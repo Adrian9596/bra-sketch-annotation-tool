@@ -1820,6 +1820,12 @@ function onWheel(e) {
       return;
     }
 
+    if (!isMeta && key === 's') {
+      e.preventDefault();
+      setTool('select');
+      return;
+    }
+
     if ((e.key === 'Delete' || e.key === 'Backspace') && state.selection.kind != null) {
       e.preventDefault();
       deleteSelected();
