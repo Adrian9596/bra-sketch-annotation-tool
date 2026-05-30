@@ -492,23 +492,24 @@
   const SELECT_COLOR = '#356dff';
 
   // Built-in Point-of-Measure template (bra measurement standard, base size L, inches).
-  // refL = standard size-L value shown as an editable reference/default per style.
+  // refL = standard size-L reference value (per-style confidential). Null in this public
+  // build; restore real values in a private copy for production use.
   const POM_UNIT = 'in';
   const POM_TEMPLATE = {
-    '1':  { desc: '1/2 bottom band (2nd hook), relax', refL: '14' },
-    '2':  { desc: '1/2 chest (2nd hook), measure straight', refL: '17' },
-    '3':  { desc: 'Cup height, fixed foam cup', refL: '8' },
-    '4':  { desc: 'Cup width, fixed foam cup', refL: '8.75' },
-    '5':  { desc: 'Sideseam height', refL: '5' },
-    '6':  { desc: 'Center back height', refL: '5' },
-    '7':  { desc: 'Center front height', refL: '5.5' },
-    '8':  { desc: 'CF length (zipper/snap/H&E/velcro)', refL: '5.75' },
-    '9':  { desc: 'H&E height @ CB', refL: '3.5' },
-    '10': { desc: 'Strap width at shoulder point', refL: '1.375' },
-    '11': { desc: 'Total body length', refL: '13.5' },
-    '12': { desc: 'Total strap length, elastic', refL: '10' },
-    '14': { desc: 'Back strap length, elastic', refL: '4.5' },
-    '15': { desc: 'Total strap length, fabric', refL: '9' },
+    '1':  { desc: '1/2 bottom band (2nd hook), relax', refL: null },
+    '2':  { desc: '1/2 chest (2nd hook), measure straight', refL: null },
+    '3':  { desc: 'Cup height, fixed foam cup', refL: null },
+    '4':  { desc: 'Cup width, fixed foam cup', refL: null },
+    '5':  { desc: 'Sideseam height', refL: null },
+    '6':  { desc: 'Center back height', refL: null },
+    '7':  { desc: 'Center front height', refL: null },
+    '8':  { desc: 'CF length (zipper/snap/H&E/velcro)', refL: null },
+    '9':  { desc: 'H&E height @ CB', refL: null },
+    '10': { desc: 'Strap width at shoulder point', refL: null },
+    '11': { desc: 'Total body length', refL: null },
+    '12': { desc: 'Total strap length, elastic', refL: null },
+    '14': { desc: 'Back strap length, elastic', refL: null },
+    '15': { desc: 'Total strap length, fabric', refL: null },
   };
   const MIN_ZOOM = 0.15;
   const MAX_ZOOM = 8;
