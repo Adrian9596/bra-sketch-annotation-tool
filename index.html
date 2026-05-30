@@ -436,6 +436,13 @@
     </div>
 
     <div class="group">
+      <div class="group-label">Project</div>
+      <button id="saveProjectBtn" type="button" title="Save the whole board (images, lines, measurements) to a file you can reopen later">Save Project</button>
+      <button id="openProjectBtn" type="button" title="Open a previously saved project file">Open Project</button>
+      <input id="projectFileInput" type="file" accept=".json,application/json" hidden />
+    </div>
+
+    <div class="group">
       <div class="group-label">Import</div>
       <button id="importPptxBtn" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PPTX</button>
       <input id="pptxFileInput" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" hidden />
@@ -511,6 +518,8 @@
     '14': { desc: 'Back strap length, elastic', refL: null },
     '15': { desc: 'Total strap length, fabric', refL: null },
   };
+  const PROJECT_FORMAT = 'bra-sketch-project';
+  const PROJECT_VERSION = 1;
   const MIN_ZOOM = 0.15;
   const MAX_ZOOM = 8;
   const HISTORY_LIMIT = 120;
@@ -544,6 +553,9 @@
     exportPdfBtn: document.getElementById('exportPdfBtn'),
     importPptxBtn: document.getElementById('importPptxBtn'),
     pptxFileInput: document.getElementById('pptxFileInput'),
+    saveProjectBtn: document.getElementById('saveProjectBtn'),
+    openProjectBtn: document.getElementById('openProjectBtn'),
+    projectFileInput: document.getElementById('projectFileInput'),
     labelEditor: document.getElementById('labelEditor'),
     specBody: document.getElementById('specBody'),
     specEmpty: document.getElementById('specEmpty'),
@@ -555,6 +567,10 @@
   };
 
   let ctx = el.canvas.getContext('2d');
+
+  // Image pixel data is stored once per image id here, so history snapshots can
+  // reference images by id instead of carrying (and re-serializing) base64 copies.
+  const imageDataById = new Map();
 
   const state = {
     tool: 'select',
@@ -625,6 +641,9 @@
     el.exportPdfBtn.addEventListener('click', exportPdf);
     el.importPptxBtn.addEventListener('click', () => el.pptxFileInput.click());
     el.pptxFileInput.addEventListener('change', onPptxFileChosen);
+    el.saveProjectBtn.addEventListener('click', saveProject);
+    el.openProjectBtn.addEventListener('click', () => el.projectFileInput.click());
+    el.projectFileInput.addEventListener('change', onProjectFileChosen);
 
     el.labelEditor.addEventListener('keydown', onLabelEditorKeyDown);
     el.labelEditor.addEventListener('blur', commitLabelEditor);
@@ -777,6 +796,7 @@
     pushHistoryIfChanged();
     showToast('Scale cleared. Values are now manual only.');
     updateUI();
+    requestRender();
   }
 
   function parseLengthInput(raw) {
@@ -901,7 +921,7 @@
     const imageCount = state.images.length;
     const selectedAnnotation = getSelectedAnnotation();
     const selectedImage = getSelectedImage();
-    const activeStyle = selectedAnnotation ? selectedAnnotation.style : state.drawStyle;
+    const activeStyle = selectedAnnotation ? getLineStyle(selectedAnnotation) : state.drawStyle;
     const activeColor = selectedAnnotation ? normalizeColorKey(selectedAnnotation.color) : state.drawColor;
     const activeArrowType = selectedAnnotation ? getArrowType(selectedAnnotation) : state.arrowType;
     el.dashedToggle.checked = activeStyle === 'dashed';
@@ -911,6 +931,13 @@
     el.colorRedBtn.classList.toggle('active', activeColor === 'red');
     el.colorBlueBtn.classList.toggle('active', activeColor === 'blue');
     el.colorBlackBtn.classList.toggle('active', activeColor === 'black');
+
+    // Lock dashed/arrow controls for POMs with an enforced style (e.g. 2 and 4).
+    const styleLocked = !!(selectedAnnotation && forcedStyleFor(selectedAnnotation));
+    el.dashedToggle.disabled = styleLocked;
+    el.arrowDoubleBtn.disabled = styleLocked;
+    el.arrowSingleBtn.disabled = styleLocked;
+    el.arrowNoneBtn.disabled = styleLocked;
 
     let toolText = '';
     if (state.tool === 'select') {
@@ -944,6 +971,7 @@
 
     el.countStatus.innerHTML = '<strong>Images:</strong> ' + imageCount + ' &nbsp;•&nbsp; <strong>Annotations:</strong> ' + annotationCount;
     el.deleteBtn.disabled = !(selectedAnnotation || selectedImage);
+    el.saveProjectBtn.disabled = annotationCount === 0 && imageCount === 0;
     el.clearBtn.disabled = annotationCount === 0;
     el.fitBtn.disabled = imageCount === 0;
     el.undoBtn.disabled = state.history.past.length <= 1;
@@ -1003,18 +1031,15 @@ function resizeCanvas() {
       images: state.images.map(stripImageForSnapshot),
       nextSequence: state.nextSequence,
       selection: clone(state.selection),
-      zoom: state.zoom,
-      panX: state.panX,
-      panY: state.panY,
       idCounter: state.idCounter,
       calibration: clone(state.calibration),
     };
   }
 
+  // Snapshots reference images by id only; the heavy base64 lives in imageDataById.
   function stripImageForSnapshot(image) {
     return {
       id: image.id,
-      dataURL: image.dataURL,
       x: image.x,
       y: image.y,
       width: image.width,
@@ -1050,9 +1075,6 @@ function resizeCanvas() {
     state.annotations = clone(snapshot.annotations || []);
     state.nextSequence = snapshot.nextSequence || (state.annotations.length + 1);
     state.selection = snapshot.selection || { kind: null, id: null };
-    state.zoom = clamp(snapshot.zoom ?? 1, MIN_ZOOM, MAX_ZOOM);
-    state.panX = snapshot.panX ?? 0;
-    state.panY = snapshot.panY ?? 0;
     state.idCounter = snapshot.idCounter || inferNextIdCounter();
     state.calibration = snapshot.calibration || { unitsPerPx: null, unit: 'cm' };
     state.editingLabelId = null;
@@ -1060,8 +1082,9 @@ function resizeCanvas() {
     state.interaction = null;
 
     state.images = await Promise.all((snapshot.images || []).map(async (meta) => {
-      const img = await loadImageFromDataURL(meta.dataURL);
-      return { ...meta, img };
+      const dataURL = imageDataById.get(meta.id) || meta.dataURL;
+      const img = await loadImageFromDataURL(dataURL);
+      return { ...meta, dataURL, img };
     }));
 
     if (state.selection.kind === 'annotation' && !state.annotations.some(a => a.id === state.selection.id)) {
@@ -1170,6 +1193,107 @@ function resizeCanvas() {
       el.importPptxBtn.disabled = false;
       el.importPptxBtn.textContent = prevLabel;
     }
+  }
+
+  // ---- Save / open project ----
+  function saveProject() {
+    if (!state.annotations.length && !state.images.length) {
+      showToast('Nothing to save yet. Paste an image or draw a line first.');
+      return;
+    }
+    const project = {
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      savedAt: new Date().toISOString(),
+      state: {
+        annotations: clone(state.annotations),
+        images: state.images.map(img => ({
+          id: img.id, dataURL: img.dataURL,
+          x: img.x, y: img.y, width: img.width, height: img.height,
+        })),
+        calibration: clone(state.calibration),
+        nextSequence: state.nextSequence,
+        idCounter: state.idCounter,
+        drawStyle: state.drawStyle,
+        drawColor: state.drawColor,
+        arrowType: state.arrowType,
+        zoom: state.zoom,
+        panX: state.panX,
+        panY: state.panY,
+      },
+    };
+    const blob = new Blob([JSON.stringify(project)], { type: 'application/json' });
+    downloadBlob(blob, makeProjectFileName());
+    showToast('Project saved. Reopen it later with Open Project.');
+  }
+
+  function makeProjectFileName() {
+    const now = new Date();
+    const pad = (value) => String(value).padStart(2, '0');
+    return 'bra-sketch-project-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' + pad(now.getHours()) + pad(now.getMinutes()) + '.json';
+  }
+
+  function onProjectFileChosen(e) {
+    const input = e.target;
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    if ((state.annotations.length || state.images.length) &&
+        !window.confirm('Open this project? Your current board will be replaced. Save it first if you want to keep it.')) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const project = JSON.parse(String(reader.result || ''));
+        await loadProject(project);
+        showToast('Project opened.');
+      } catch (error) {
+        console.error(error);
+        showToast('Could not open that file. It may not be a saved project.', 4200);
+      }
+    };
+    reader.onerror = () => showToast('Could not read that file.', 4200);
+    reader.readAsText(file);
+  }
+
+  async function loadProject(project) {
+    if (!project || project.format !== PROJECT_FORMAT || !project.state) {
+      throw new Error('Unrecognized project file');
+    }
+    const s = project.state;
+
+    state.annotations = clone(s.annotations || []);
+    state.calibration = s.calibration || { unitsPerPx: null, unit: 'cm' };
+    state.nextSequence = s.nextSequence || (state.annotations.length + 1);
+    state.drawStyle = s.drawStyle || 'solid';
+    state.drawColor = s.drawColor || 'red';
+    state.arrowType = s.arrowType || 'double';
+    state.tool = 'select';
+    state.selection = { kind: null, id: null };
+    state.drawSession = null;
+    state.interaction = null;
+    state.editingLabelId = null;
+    el.labelEditor.style.display = 'none';
+
+    imageDataById.clear();
+    state.images = await Promise.all((s.images || []).map(async (meta) => {
+      const img = await loadImageFromDataURL(meta.dataURL);
+      imageDataById.set(meta.id, meta.dataURL);
+      return {
+        id: meta.id, dataURL: meta.dataURL, img,
+        x: meta.x, y: meta.y, width: meta.width, height: meta.height,
+      };
+    }));
+
+    state.idCounter = s.idCounter || inferNextIdCounter();
+    state.zoom = clamp(s.zoom ?? 1, MIN_ZOOM, MAX_ZOOM);
+    state.panX = s.panX ?? 0;
+    state.panY = s.panY ?? 0;
+
+    seedHistory();
+    updateUI();
+    requestRender();
   }
 
   // A .pptx is a ZIP container. Parse it natively and pull one or more
@@ -1386,8 +1510,10 @@ function resizeCanvas() {
     const centerWorld = screenToWorld(rect.width / 2, rect.height / 2);
     const offset = stackIndex * (18 / Math.max(state.zoom, 0.25));
 
+    const id = state.idCounter++;
+    imageDataById.set(id, dataURL);
     return {
-      id: state.idCounter++,
+      id,
       dataURL,
       img,
       width,
@@ -1829,6 +1955,7 @@ function startImageResize(id, corner) {
       state.selection = { kind: 'annotation', id: ann.id };
       state.nextSequence += 1;
       state.drawSession = null;
+      state.tool = 'select';
       pushHistoryIfChanged();
       updateUI();
       requestRender();
@@ -1988,7 +2115,26 @@ function startImageResize(id, corner) {
     return LINE_COLORS[key] || LINE_COLOR;
   }
 
+  // Certain POMs are always drawn a fixed way regardless of stored style.
+  // POM 2 (1/2 chest) and POM 4 (cup width) are extension measures: dashed + single arrow.
+  const FORCED_POM_STYLE = {
+    '2': { style: 'dashed', arrowType: 'single' },
+    '4': { style: 'dashed', arrowType: 'single' },
+  };
+
+  function forcedStyleFor(ann) {
+    return FORCED_POM_STYLE[getLabelText(ann)] || null;
+  }
+
+  function getLineStyle(ann) {
+    const forced = forcedStyleFor(ann);
+    if (forced) return forced.style;
+    return ann?.style || 'solid';
+  }
+
   function getArrowType(ann) {
+    const forced = forcedStyleFor(ann);
+    if (forced) return forced.arrowType;
     if (ann?.arrowType === 'single' || ann?.arrowType === 'double' || ann?.arrowType === 'none') {
       return ann.arrowType;
     }
@@ -2280,7 +2426,8 @@ function makeSinglePagePdfBlob(jpegBytes, imageWidthPx, imageHeightPx, pageWidth
 
   const contentStream = 'q\n' + fixed(pageWidthPt) + ' 0 0 ' + fixed(pageHeightPt) + ' 0 0 cm\n/Im0 Do\nQ\n';
 
-  add('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+  add('%PDF-1.4\n');
+  add(new Uint8Array([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A])); // binary comment marker, raw bytes
   addObject(1, '<< /Type /Catalog /Pages 2 0 R >>');
   addObject(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
   addObject(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + fixed(pageWidthPt) + ' ' + fixed(pageHeightPt) + '] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>');
@@ -2471,7 +2618,7 @@ function requestRender() {
     ctx.lineWidth = 2.5 / state.zoom;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    const dash = ann.style === 'dashed' ? [10 / state.zoom, 7 / state.zoom] : [];
+    const dash = getLineStyle(ann) === 'dashed' ? [10 / state.zoom, 7 / state.zoom] : [];
 
     ctx.beginPath();
     ctx.setLineDash(dash);
