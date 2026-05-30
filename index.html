@@ -1826,6 +1826,18 @@ function onWheel(e) {
       return;
     }
 
+    if (!isMeta && key === '0') {
+      e.preventDefault();
+      setTool('straight');
+      return;
+    }
+
+    if (!isMeta && key === 'b') {
+      e.preventDefault();
+      setTool('curved');
+      return;
+    }
+
     if ((e.key === 'Delete' || e.key === 'Backspace') && state.selection.kind != null) {
       e.preventDefault();
       deleteSelected();
