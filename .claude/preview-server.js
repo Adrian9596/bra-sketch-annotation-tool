@@ -7,7 +7,7 @@ const port = 8123;
 
 http.createServer((req, res) => {
   let urlPath = decodeURIComponent(req.url.split('?')[0]);
-  if (urlPath === '/') urlPath = '/Bra ketch annotation.html';
+  if (urlPath === '/') urlPath = '/index.html';
   const filePath = path.join(root, urlPath);
   if (!filePath.startsWith(root)) {
     res.writeHead(403); res.end('Forbidden'); return;
