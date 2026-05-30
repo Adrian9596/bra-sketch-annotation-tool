@@ -11,8 +11,9 @@
     --text:#1f2937;
     --muted:#6b7280;
     --border:#d9dbe1;
-    --shadow:0 10px 28px rgba(17,24,39,.08), 0 2px 8px rgba(17,24,39,.04);
-    --soft-shadow:0 4px 14px rgba(17,24,39,.06);
+    --shadow:0 1px 2px rgba(17,24,39,.05), 0 6px 20px rgba(17,24,39,.05);
+    --soft-shadow:0 1px 2px rgba(17,24,39,.04);
+    --hairline:#ececef;
     --accent:#d93434;
     --chip:#f2f4f7;
     --chip-border:#d7dbe3;
@@ -30,28 +31,27 @@
     height:100vh;
     display:grid;
     grid-template-rows:auto auto 1fr;
-    gap:12px;
-    padding:14px;
+    gap:10px;
+    padding:12px;
   }
   .toolbar, .statusbar{
-    background:rgba(255,255,255,.86);
-    backdrop-filter:saturate(1.2) blur(10px);
-    border:1px solid rgba(215,219,227,.9);
-    border-radius:16px;
+    background:#fff;
+    border:1px solid var(--hairline);
+    border-radius:12px;
     box-shadow:var(--soft-shadow);
   }
   .toolbar{
     display:flex;
     align-items:center;
-    gap:10px;
-    padding:10px 12px;
+    gap:6px;
+    padding:7px 8px;
     flex-wrap:wrap;
   }
   .group{
     display:flex;
     align-items:center;
-    gap:8px;
-    padding-right:12px;
+    gap:6px;
+    padding-right:8px;
     margin-right:2px;
     position:relative;
   }
@@ -59,56 +59,45 @@
     content:"";
     position:absolute;
     right:0;
-    top:4px;
-    bottom:4px;
+    top:7px;
+    bottom:7px;
     width:1px;
-    background:linear-gradient(to bottom, transparent, #dde1e8, transparent);
-  }
-  .group-label{
-    font-size:13px;
-    font-weight:700;
-    color:var(--muted);
-    letter-spacing:.02em;
-    text-transform:uppercase;
-    margin-right:2px;
+    background:var(--hairline);
   }
   button, .chip{
     appearance:none;
-    border:1px solid var(--border);
+    border:1px solid #e4e4ea;
     background:#fff;
     color:var(--text);
-    border-radius:12px;
-    padding:9px 12px;
-    font:600 14px/1 system-ui, sans-serif;
+    border-radius:9px;
+    padding:7px 11px;
+    font:500 13.5px/1 system-ui, sans-serif;
     cursor:pointer;
-    transition:background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
-    box-shadow:0 1px 0 rgba(16,24,40,.03);
+    transition:background .15s ease, border-color .15s ease, color .15s ease;
     user-select:none;
   }
   button:hover, .chip:hover{
-    border-color:#c6ccd7;
-    background:#fafbfc;
+    border-color:#d2d2da;
+    background:#f7f7f9;
   }
-  button:active, .chip:active{ transform:translateY(1px); }
+  button:active, .chip:active{ transform:translateY(.5px); }
   button.active{
-    background:#fff3f3;
-    border-color:#efacac;
-    color:#b32222;
-    box-shadow:0 0 0 3px rgba(230,57,57,.08);
+    background:#eef0f4;
+    border-color:#cfd2da;
+    color:#111827;
   }
   button:disabled{
-    opacity:.48;
+    opacity:.42;
     cursor:not-allowed;
     transform:none;
-    box-shadow:none;
   }
   .chip{
     display:flex;
     align-items:center;
-    gap:8px;
-    background:var(--chip);
-    border-color:var(--chip-border);
-    padding:8px 11px;
+    gap:7px;
+    background:#fff;
+    border-color:#e4e4ea;
+    padding:6px 10px;
   }
   .chip input{
     width:16px;
@@ -119,20 +108,20 @@
   }
   .statusbar{
     display:grid;
-    grid-template-columns:minmax(260px, 1.4fr) minmax(220px,1fr) auto;
+    grid-template-columns:1fr auto;
     gap:14px;
     align-items:center;
-    padding:10px 14px;
-    min-height:52px;
+    padding:7px 14px;
   }
   .status-item{
     min-width:0;
-    font-size:14px;
-    color:#374151;
+    font-size:12.5px;
+    color:var(--muted);
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
   }
+  .status-item[hidden]{ display:none; }
   .status-item strong{ font-weight:700; }
   .muted{ color:var(--muted); }
   .workspace{
@@ -144,23 +133,20 @@
     flex:1;
     min-width:0;
     min-height:0;
-    background:linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.28));
-    border-radius:24px;
-    padding:12px;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.45);
+    padding:0;
   }
   .board-card{
     position:relative;
     width:100%;
     height:100%;
     background:#fff;
-    border-radius:20px;
+    border-radius:12px;
     overflow:hidden;
-    box-shadow:var(--shadow);
-    border:1px solid rgba(228,231,236,.92);
+    box-shadow:var(--soft-shadow);
+    border:1px solid var(--hairline);
   }
   .board-card.no-image{
-    border:2px dashed #d8dbe3;
+    border:1px dashed #dcdce2;
   }
   canvas{
     display:block;
@@ -220,24 +206,24 @@
   .segmented-control{
     display:flex;
     align-items:center;
-    gap:6px;
+    gap:4px;
     padding:3px;
-    border:1px solid #dde2ea;
-    border-radius:14px;
-    background:#f7f8fb;
+    border:1px solid var(--hairline);
+    border-radius:10px;
+    background:#f6f6f8;
   }
   .segmented-control button{
     box-shadow:none;
-    padding:7px 10px;
-    border-radius:10px;
+    padding:6px 10px;
+    border-radius:7px;
     background:transparent;
     border-color:transparent;
   }
   .segmented-control button.active{
     background:#fff;
-    border-color:#d8dde7;
+    border-color:#e0e0e8;
     color:#111827;
-    box-shadow:0 1px 3px rgba(17,24,39,.08);
+    box-shadow:0 1px 2px rgba(17,24,39,.06);
   }
   .color-btn{
     min-width:38px;
@@ -273,14 +259,14 @@
 
   /* Measurement side panel */
   .specPanel{
-    width:344px;
-    flex:0 0 344px;
-    margin-left:12px;
+    width:320px;
+    flex:0 0 320px;
+    margin-left:10px;
     display:flex;
     flex-direction:column;
-    background:rgba(255,255,255,.92);
-    border:1px solid rgba(215,219,227,.9);
-    border-radius:18px;
+    background:#fff;
+    border:1px solid var(--hairline);
+    border-radius:12px;
     box-shadow:var(--soft-shadow);
     overflow:hidden;
   }
@@ -387,27 +373,21 @@
 <div class="app">
   <div class="toolbar">
     <div class="group">
-      <div class="group-label">Drawing Tools</div>
       <button id="toolSelect" class="active" type="button">Select</button>
-      <button id="toolStraight" type="button">Straight Line</button>
-      <button id="toolCurved" type="button">Curved Line</button>
+      <button id="toolStraight" type="button">Straight</button>
+      <button id="toolCurved" type="button">Curved</button>
       <label class="chip" title="Toggle dashed line style for the active drawing tool or selected line">
         <input id="dashedToggle" type="checkbox" />
-        <span>Dashed / Solid</span>
+        <span>Dashed</span>
       </label>
     </div>
 
     <div class="group">
-      <div class="group-label">Arrow</div>
       <div class="segmented-control" role="group" aria-label="Arrow type">
         <button id="arrowDoubleBtn" class="active" type="button" title="Arrowheads on both ends">Double</button>
         <button id="arrowSingleBtn" type="button" title="Arrowhead on end point only">Single</button>
-        <button id="arrowNoneBtn" type="button" title="Line without arrowhead">No Arrow</button>
+        <button id="arrowNoneBtn" type="button" title="Line without arrowhead">None</button>
       </div>
-    </div>
-
-    <div class="group">
-      <div class="group-label">Color</div>
       <div class="segmented-control" role="group" aria-label="Line color">
         <button id="colorRedBtn" class="color-btn active" data-color="red" type="button" title="Red line"><span class="color-swatch"></span></button>
         <button id="colorBlueBtn" class="color-btn" data-color="blue" type="button" title="Blue line"><span class="color-swatch"></span></button>
@@ -416,48 +396,33 @@
     </div>
 
     <div class="group">
-      <div class="group-label">Edit</div>
       <button id="undoBtn" type="button">Undo</button>
       <button id="redoBtn" type="button">Redo</button>
-      <button id="deleteBtn" type="button">Delete Selected</button>
-      <button id="clearBtn" type="button">Clear All Annotations</button>
+      <button id="deleteBtn" type="button" title="Delete the selected line or image">Delete</button>
+      <button id="clearBtn" type="button" title="Clear all annotations">Clear</button>
     </div>
 
     <div class="group">
-      <div class="group-label">Viewport</div>
       <button id="fitBtn" type="button">Fit</button>
       <button id="togglePanelBtn" type="button" title="Hide the Measurements panel to give the board more room">Hide Panel</button>
-    </div>
-
-    <div class="group">
-      <div class="group-label">Measure</div>
       <button id="setScaleBtn" type="button" title="Calibrate: select a line whose real length you know, then set the scale">Set Scale</button>
       <button id="clearScaleBtn" type="button" title="Remove calibration">Clear Scale</button>
     </div>
 
     <div class="group">
-      <div class="group-label">Project</div>
-      <button id="saveProjectBtn" type="button" title="Save the whole board (images, lines, measurements) to a file you can reopen later">Save Project</button>
-      <button id="openProjectBtn" type="button" title="Open a previously saved project file">Open Project</button>
+      <button id="saveProjectBtn" type="button" title="Save the whole board (images, lines, measurements) to a file you can reopen later">Save</button>
+      <button id="openProjectBtn" type="button" title="Open a previously saved project file">Open</button>
       <input id="projectFileInput" type="file" accept=".json,application/json" hidden />
-    </div>
-
-    <div class="group">
-      <div class="group-label">Import</div>
       <button id="importPptxBtn" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PPTX</button>
       <input id="pptxFileInput" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" hidden />
-    </div>
-
-    <div class="group">
-      <div class="group-label">Export</div>
       <button id="exportPdfBtn" class="export-btn" type="button">Export PDF</button>
     </div>
   </div>
 
   <div class="statusbar">
     <div id="toolStatus" class="status-item"></div>
-    <div id="imageStatus" class="status-item"></div>
-    <div id="countStatus" class="status-item" style="text-align:right;"></div>
+    <div id="imageStatus" class="status-item" style="text-align:right;"></div>
+    <div id="countStatus" class="status-item" hidden></div>
   </div>
 
   <div class="workspace">
@@ -1864,7 +1829,12 @@ function onWheel(e) {
     if (e.key === 'Escape') {
       if (state.drawSession) {
         state.drawSession = null;
-        showToast('Current drawing canceled.');
+        state.tool = 'select';
+        showToast('Drawing canceled.');
+        updateUI();
+        requestRender();
+      } else if (state.tool === 'straight' || state.tool === 'curved') {
+        state.tool = 'select';
         updateUI();
         requestRender();
       } else if (state.selection.kind != null) {
@@ -1955,7 +1925,6 @@ function startImageResize(id, corner) {
       state.selection = { kind: 'annotation', id: ann.id };
       state.nextSequence += 1;
       state.drawSession = null;
-      state.tool = 'select';
       pushHistoryIfChanged();
       updateUI();
       requestRender();
@@ -1967,7 +1936,6 @@ function startImageResize(id, corner) {
     state.selection = { kind: 'annotation', id: ann.id };
     state.nextSequence += 1;
     state.drawSession = null;
-    state.tool = 'select';
     pushHistoryIfChanged();
     updateUI();
     requestRender();
