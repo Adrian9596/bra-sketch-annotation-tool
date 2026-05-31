@@ -185,6 +185,119 @@
     opacity:1;
     transform:translateX(-50%) translateY(0);
   }
+  .picker-overlay{
+    position:fixed;
+    inset:0;
+    z-index:1000;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    background:rgba(17,24,39,.38);
+    backdrop-filter:blur(2px);
+  }
+  .picker-panel{
+    display:flex;
+    flex-direction:column;
+    width:min(960px, 100%);
+    max-height:88vh;
+    background:#fff;
+    border:1px solid var(--hairline);
+    border-radius:14px;
+    box-shadow:0 18px 50px rgba(17,24,39,.28);
+    overflow:hidden;
+  }
+  .picker-header{
+    display:flex;
+    align-items:baseline;
+    gap:12px;
+    padding:16px 20px;
+    border-bottom:1px solid var(--hairline);
+  }
+  .picker-header h2{
+    margin:0;
+    font-size:16px;
+    font-weight:700;
+  }
+  .picker-sub{
+    color:#6b7280;
+    font-size:13px;
+  }
+  .picker-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
+    gap:12px;
+    padding:18px 20px;
+    overflow:auto;
+  }
+  .picker-cell{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    padding:8px;
+    background:#fff;
+    border:1px solid var(--hairline);
+    border-radius:10px;
+    cursor:pointer;
+    transition:border-color .12s ease, box-shadow .12s ease, transform .06s ease;
+  }
+  .picker-cell:hover{ border-color:#cfd2d7; }
+  .picker-cell.selected{
+    border-color:var(--accent);
+    box-shadow:0 0 0 2px rgba(217,52,52,.18);
+  }
+  .picker-thumb{
+    width:100%;
+    height:120px;
+    object-fit:contain;
+    background:#fafafa;
+    border-radius:6px;
+  }
+  .picker-cap{
+    font-size:12px;
+    font-weight:600;
+    color:#374151;
+    text-align:center;
+  }
+  .picker-footer{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:14px 20px;
+    border-top:1px solid var(--hairline);
+  }
+  .picker-count{
+    font-size:13px;
+    color:#6b7280;
+  }
+  .picker-link{
+    background:none;
+    border:none;
+    padding:0;
+    color:var(--accent);
+    font-weight:600;
+    font-size:13px;
+    cursor:pointer;
+  }
+  .picker-btn{
+    padding:8px 16px;
+    border-radius:9px;
+    border:1px solid var(--hairline);
+    background:#fff;
+    color:var(--text);
+    font-weight:600;
+    font-size:14px;
+    cursor:pointer;
+  }
+  .picker-btn.primary{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#fff;
+  }
+  .picker-btn:disabled{
+    opacity:.5;
+    cursor:default;
+  }
   .kbd{
     display:inline-flex;
     align-items:center;
@@ -1144,13 +1257,16 @@ function resizeCanvas() {
     el.importPptxBtn.textContent = 'Importing…';
     try {
       const buffer = await file.arrayBuffer();
-      const dataURLs = await extractSlideImagesFromPptx(buffer);
-      if (!dataURLs.length) {
+      const entries = await extractSlidesFromPptx(buffer);
+      if (!entries.length) {
         showToast('No usable sketch images were found in that deck.', 4200);
         return;
       }
-      await addImagesFromDataURLs(dataURLs);
-      showToast(dataURLs.length + ' slide image' + (dataURLs.length === 1 ? '' : 's') + ' imported. Delete any logos you don’t need.', 4200);
+      if (entries.length === 1) {
+        await addImagesFromDataURLs([entries[0].dataURL]);
+        return;
+      }
+      openPptxPicker(entries);
     } catch (error) {
       console.error(error);
       showToast('Could not read that .pptx file. It may be corrupt or use an unsupported format.', 4600);
@@ -1158,6 +1274,144 @@ function resizeCanvas() {
       el.importPptxBtn.disabled = false;
       el.importPptxBtn.textContent = prevLabel;
     }
+  }
+
+  // Modal that previews every page found in a deck and lets the user import
+  // only the ones they want, instead of dumping all slides onto the board.
+  function openPptxPicker(entries) {
+    const selected = new Set();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'picker-overlay';
+
+    const panel = document.createElement('div');
+    panel.className = 'picker-panel';
+    overlay.appendChild(panel);
+
+    const header = document.createElement('div');
+    header.className = 'picker-header';
+    const title = document.createElement('h2');
+    title.textContent = 'Import pages';
+    const sub = document.createElement('span');
+    sub.className = 'picker-sub';
+    sub.textContent = entries.length + ' pages found — pick the ones to add.';
+    header.appendChild(title);
+    header.appendChild(sub);
+    panel.appendChild(header);
+
+    const grid = document.createElement('div');
+    grid.className = 'picker-grid';
+    panel.appendChild(grid);
+
+    entries.forEach((entry, index) => {
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'picker-cell';
+      cell.setAttribute('aria-pressed', 'false');
+
+      const thumb = document.createElement('img');
+      thumb.className = 'picker-thumb';
+      thumb.src = entry.dataURL;
+      thumb.alt = 'Slide ' + entry.slide;
+      cell.appendChild(thumb);
+
+      const cap = document.createElement('span');
+      cap.className = 'picker-cap';
+      cap.textContent = 'Slide ' + entry.slide;
+      cell.appendChild(cap);
+
+      cell.addEventListener('click', () => {
+        if (selected.has(index)) {
+          selected.delete(index);
+          cell.classList.remove('selected');
+          cell.setAttribute('aria-pressed', 'false');
+        } else {
+          selected.add(index);
+          cell.classList.add('selected');
+          cell.setAttribute('aria-pressed', 'true');
+        }
+        updateFooter();
+      });
+      grid.appendChild(cell);
+    });
+
+    const footer = document.createElement('div');
+    footer.className = 'picker-footer';
+    const selectAllBtn = document.createElement('button');
+    selectAllBtn.type = 'button';
+    selectAllBtn.className = 'picker-link';
+    const count = document.createElement('span');
+    count.className = 'picker-count';
+    const spacer = document.createElement('span');
+    spacer.style.flex = '1';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'picker-btn';
+    cancelBtn.textContent = 'Cancel';
+    const importBtn = document.createElement('button');
+    importBtn.type = 'button';
+    importBtn.className = 'picker-btn primary';
+    footer.appendChild(selectAllBtn);
+    footer.appendChild(spacer);
+    footer.appendChild(count);
+    footer.appendChild(cancelBtn);
+    footer.appendChild(importBtn);
+    panel.appendChild(footer);
+
+    function updateFooter() {
+      const n = selected.size;
+      count.textContent = n + ' selected';
+      importBtn.disabled = n === 0;
+      importBtn.textContent = n === 0 ? 'Import' : 'Import ' + n;
+      selectAllBtn.textContent = n === entries.length ? 'Clear all' : 'Select all';
+    }
+
+    function close() {
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+    }
+    function onKey(ev) {
+      if (ev.key === 'Escape') { ev.stopPropagation(); close(); }
+    }
+
+    selectAllBtn.addEventListener('click', () => {
+      const all = selected.size === entries.length;
+      selected.clear();
+      Array.from(grid.children).forEach((cell, index) => {
+        if (all) {
+          cell.classList.remove('selected');
+          cell.setAttribute('aria-pressed', 'false');
+        } else {
+          selected.add(index);
+          cell.classList.add('selected');
+          cell.setAttribute('aria-pressed', 'true');
+        }
+      });
+      updateFooter();
+    });
+
+    cancelBtn.addEventListener('click', close);
+    overlay.addEventListener('click', ev => { if (ev.target === overlay) close(); });
+    document.addEventListener('keydown', onKey, true);
+
+    importBtn.addEventListener('click', async () => {
+      if (!selected.size) return;
+      const chosen = Array.from(selected).sort((a, b) => a - b).map(i => entries[i].dataURL);
+      importBtn.disabled = true;
+      importBtn.textContent = 'Importing…';
+      try {
+        await addImagesFromDataURLs(chosen);
+        close();
+      } catch (error) {
+        console.error(error);
+        showToast('Could not import the selected pages.', 4200);
+        importBtn.disabled = false;
+        updateFooter();
+      }
+    });
+
+    updateFooter();
+    document.body.appendChild(overlay);
   }
 
   // ---- Save / open project ----
@@ -1263,7 +1517,9 @@ function resizeCanvas() {
 
   // A .pptx is a ZIP container. Parse it natively and pull one or more
   // picture images per slide, in slide order, skipping tiny logo/icon art.
-  async function extractSlideImagesFromPptx(buffer) {
+  // Returns slide-tagged entries [{slide, dataURL}] so the import picker can
+  // show which page each image came from.
+  async function extractSlidesFromPptx(buffer) {
     const zip = parseZip(buffer);
     const slideArea = await readSlideArea(zip);
     const minArea = slideArea ? slideArea * 0.03 : 0;
@@ -1272,7 +1528,7 @@ function resizeCanvas() {
       .filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name))
       .sort((a, b) => slideNumber(a) - slideNumber(b));
 
-    const dataURLs = [];
+    const entries = [];
     const seenTargets = new Set();
 
     for (const slideName of slideNames) {
@@ -1281,27 +1537,29 @@ function resizeCanvas() {
       const relsName = slideName.replace(/slides\/(slide\d+\.xml)$/, 'slides/_rels/$1.rels');
       const relsText = await readZipEntryText(zip, relsName);
       const relMap = parseRels(relsText);
+      const slide = slideNumber(slideName);
 
       const picks = pickSlidePictures(xmlText, relMap, slideName, minArea);
       for (const target of picks) {
         if (seenTargets.has(target)) continue;
         seenTargets.add(target);
         const dataURL = await mediaTargetToDataURL(zip, target);
-        if (dataURL) dataURLs.push(dataURL);
+        if (dataURL) entries.push({ slide, dataURL });
       }
     }
 
     // Fallback: deck stores images outside <p:pic> (e.g. backgrounds) — grab raw media.
-    if (!dataURLs.length) {
+    if (!entries.length) {
       const mediaNames = Object.keys(zip.entries)
         .filter(name => /^ppt\/media\/[^/]+\.(png|jpe?g|gif|bmp)$/i.test(name))
         .sort((a, b) => slideNumber(a) - slideNumber(b));
+      let i = 1;
       for (const name of mediaNames) {
         const dataURL = await mediaTargetToDataURL(zip, name);
-        if (dataURL) dataURLs.push(dataURL);
+        if (dataURL) entries.push({ slide: i++, dataURL });
       }
     }
-    return dataURLs;
+    return entries;
   }
 
   function slideNumber(name) {
