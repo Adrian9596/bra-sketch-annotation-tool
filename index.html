@@ -1262,11 +1262,14 @@ function resizeCanvas() {
         showToast('No usable sketch images were found in that deck.', 4200);
         return;
       }
-      if (entries.length === 1) {
-        await addImagesFromDataURLs([entries[0].dataURL]);
+      // Group images by their source slide so each picker choice is a whole
+      // page: a slide with several pictures imports all of them together.
+      const pages = groupEntriesBySlide(entries);
+      if (pages.length === 1) {
+        await addImagesFromDataURLs(pages[0].dataURLs);
         return;
       }
-      openPptxPicker(entries);
+      openPptxPicker(pages);
     } catch (error) {
       console.error(error);
       showToast('Could not read that .pptx file. It may be corrupt or use an unsupported format.', 4600);
@@ -1276,9 +1279,27 @@ function resizeCanvas() {
     }
   }
 
+  // Collapse per-image entries [{slide, dataURL}] into per-page groups
+  // [{slide, dataURLs:[...]}], preserving slide order, so a slide that holds
+  // multiple pictures is presented (and imported) as a single page.
+  function groupEntriesBySlide(entries) {
+    const order = [];
+    const bySlide = new Map();
+    for (const entry of entries) {
+      let page = bySlide.get(entry.slide);
+      if (!page) {
+        page = { slide: entry.slide, dataURLs: [] };
+        bySlide.set(entry.slide, page);
+        order.push(page);
+      }
+      page.dataURLs.push(entry.dataURL);
+    }
+    return order;
+  }
+
   // Modal that previews every page found in a deck and lets the user import
   // only the ones they want, instead of dumping all slides onto the board.
-  function openPptxPicker(entries) {
+  function openPptxPicker(pages) {
     const selected = new Set();
 
     const overlay = document.createElement('div');
@@ -1294,7 +1315,7 @@ function resizeCanvas() {
     title.textContent = 'Import pages';
     const sub = document.createElement('span');
     sub.className = 'picker-sub';
-    sub.textContent = entries.length + ' pages found — pick the ones to add.';
+    sub.textContent = pages.length + ' pages found — pick the ones to add.';
     header.appendChild(title);
     header.appendChild(sub);
     panel.appendChild(header);
@@ -1303,7 +1324,7 @@ function resizeCanvas() {
     grid.className = 'picker-grid';
     panel.appendChild(grid);
 
-    entries.forEach((entry, index) => {
+    pages.forEach((page, index) => {
       const cell = document.createElement('button');
       cell.type = 'button';
       cell.className = 'picker-cell';
@@ -1311,13 +1332,15 @@ function resizeCanvas() {
 
       const thumb = document.createElement('img');
       thumb.className = 'picker-thumb';
-      thumb.src = entry.dataURL;
-      thumb.alt = 'Slide ' + entry.slide;
+      thumb.src = page.dataURLs[0];
+      thumb.alt = 'Slide ' + page.slide;
       cell.appendChild(thumb);
 
       const cap = document.createElement('span');
       cap.className = 'picker-cap';
-      cap.textContent = 'Slide ' + entry.slide;
+      cap.textContent = page.dataURLs.length > 1
+        ? 'Slide ' + page.slide + ' · ' + page.dataURLs.length + ' images'
+        : 'Slide ' + page.slide;
       cell.appendChild(cap);
 
       cell.addEventListener('click', () => {
@@ -1363,7 +1386,7 @@ function resizeCanvas() {
       count.textContent = n + ' selected';
       importBtn.disabled = n === 0;
       importBtn.textContent = n === 0 ? 'Import' : 'Import ' + n;
-      selectAllBtn.textContent = n === entries.length ? 'Clear all' : 'Select all';
+      selectAllBtn.textContent = n === pages.length ? 'Clear all' : 'Select all';
     }
 
     function close() {
@@ -1375,7 +1398,7 @@ function resizeCanvas() {
     }
 
     selectAllBtn.addEventListener('click', () => {
-      const all = selected.size === entries.length;
+      const all = selected.size === pages.length;
       selected.clear();
       Array.from(grid.children).forEach((cell, index) => {
         if (all) {
@@ -1396,7 +1419,9 @@ function resizeCanvas() {
 
     importBtn.addEventListener('click', async () => {
       if (!selected.size) return;
-      const chosen = Array.from(selected).sort((a, b) => a - b).map(i => entries[i].dataURL);
+      const chosen = Array.from(selected)
+        .sort((a, b) => a - b)
+        .flatMap(i => pages[i].dataURLs);
       importBtn.disabled = true;
       importBtn.textContent = 'Importing…';
       try {
