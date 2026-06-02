@@ -452,6 +452,8 @@
     box-shadow:0 0 0 3px rgba(53,109,255,.12);
   }
   .spec-table input.spec-val::placeholder{ color:#b6bcc8; font-weight:500; }
+  .spec-table input.spec-desc{ font-weight:500; font-size:12px; color:var(--muted); }
+  .spec-table input.spec-desc::placeholder{ color:#b6bcc8; font-weight:500; }
   .spec-empty{
     padding:22px 14px;
     text-align:center;
@@ -918,7 +920,7 @@
       pomInput.placeholder = String(ann.seq);
       pomInput.addEventListener('focus', () => setSelection('annotation', ann.id));
       pomInput.addEventListener('input', () => {
-        descCell.textContent = getPomInfo(pomInput.value.trim() || ann.seq).desc || '—';
+        descInput.placeholder = getPomInfo(pomInput.value.trim() || ann.seq).desc || '—';
         valInput.placeholder = placeholderFor(ann, pomInput.value.trim() || String(ann.seq));
       });
       pomInput.addEventListener('change', () => {
@@ -928,10 +930,20 @@
       });
       pomTd.appendChild(pomInput);
 
-      // Description column (auto from POM template)
-      const descCell = document.createElement('td');
-      descCell.className = 'spec-desc';
-      descCell.textContent = getPomInfo(getLabelText(ann)).desc || '—';
+      // Description column (editable per callout; placeholder shows the POM standard description)
+      const descTd = document.createElement('td');
+      const descInput = document.createElement('input');
+      descInput.type = 'text';
+      descInput.className = 'spec-desc';
+      descInput.value = ann.desc != null ? ann.desc : '';
+      descInput.placeholder = getPomInfo(getLabelText(ann)).desc || '—';
+      descInput.addEventListener('focus', () => setSelection('annotation', ann.id));
+      descInput.addEventListener('change', () => {
+        const v = descInput.value.trim();
+        const next = v === '' ? null : v;
+        if (ann.desc !== next) { ann.desc = next; pushHistoryIfChanged(); }
+      });
+      descTd.appendChild(descInput);
 
       // Value column (editable, standard size-L value shown as reference placeholder)
       const valTd = document.createElement('td');
@@ -950,7 +962,7 @@
       valTd.appendChild(valInput);
 
       tr.appendChild(pomTd);
-      tr.appendChild(descCell);
+      tr.appendChild(descTd);
       tr.appendChild(valTd);
       el.specBody.appendChild(tr);
     }
@@ -1869,6 +1881,18 @@ function getImageBounds(image) {
   };
 }
 
+// Annotations whose line midpoint sits within the image are treated as part of
+// that sketch, so dragging the image moves its callouts as one group.
+function getAnnotationsOnImage(image) {
+  const bounds = getImageBounds(image);
+  return state.annotations.filter(ann => {
+    const cx = (ann.start.x + ann.end.x) / 2;
+    const cy = (ann.start.y + ann.end.y) / 2;
+    return cx >= bounds.x && cx <= bounds.x + bounds.width
+      && cy >= bounds.y && cy <= bounds.y + bounds.height;
+  });
+}
+
 function setSelection(kind, id) {
     state.selection = kind && id != null ? { kind, id } : { kind: null, id: null };
     if (kind === 'annotation') {
@@ -2022,6 +2046,12 @@ function setSelection(kind, id) {
       if (dx || dy) {
         image.x += dx;
         image.y += dy;
+        if (interaction.groupedAnnotationIds) {
+          for (const annId of interaction.groupedAnnotationIds) {
+            const ann = getAnnotationById(annId);
+            if (ann) moveAnnotation(ann, dx, dy);
+          }
+        }
         interaction.changed = true;
         interaction.prevWorld = world;
         requestRender();
@@ -2185,7 +2215,9 @@ function startHandleDrag(id, part, world) {
 }
 
 function startImageDrag(id, world) {
-  beginTrackedInteraction('drag-image', { id, prevWorld: world });
+  const image = getImageById(id);
+  const groupedAnnotationIds = image ? getAnnotationsOnImage(image).map(ann => ann.id) : [];
+  beginTrackedInteraction('drag-image', { id, prevWorld: world, groupedAnnotationIds });
 }
 
 function startImageResize(id, corner) {
