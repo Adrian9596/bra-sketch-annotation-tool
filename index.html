@@ -99,6 +99,7 @@
     border-color:#e4e4ea;
     padding:6px 10px;
   }
+  .chip[hidden]{ display:none; }
   .chip input{
     width:16px;
     height:16px;
@@ -106,6 +107,25 @@
     accent-color:var(--accent);
     cursor:pointer;
   }
+  .chip input[type="number"]{
+    width:50px;
+    height:auto;
+    padding:3px 5px;
+    border:1px solid var(--hairline);
+    border-radius:6px;
+    background:#fff;
+    color:var(--text);
+    font:600 12.5px/1 system-ui, sans-serif;
+    accent-color:auto;
+    cursor:text;
+    text-align:center;
+  }
+  .chip input[type="number"]:focus{
+    outline:none;
+    border-color:var(--select);
+    box-shadow:0 0 0 3px rgba(53,109,255,.12);
+  }
+  body.tool-eraser canvas{ cursor:crosshair; }
   .statusbar{
     display:grid;
     grid-template-columns:1fr auto;
@@ -160,6 +180,70 @@
       radial-gradient(circle at 0 0, rgba(255,255,255,0) 12px, rgba(245,245,247,.7) 13px, rgba(255,255,255,0) 14px) 0 0/32px 32px,
       #fff;
   }
+  .board-empty{
+    position:absolute;
+    inset:0;
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    padding:24px;
+    text-align:center;
+    pointer-events:none;
+    color:var(--muted);
+  }
+  .board-card.is-empty .board-empty{ display:flex; }
+  .board-empty-icon{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:84px;
+    height:84px;
+    margin-bottom:4px;
+    border-radius:20px;
+    background:#fff;
+    color:#aab0bc;
+    border:1px solid var(--hairline);
+    box-shadow:var(--soft-shadow);
+    transition:color .18s ease, border-color .18s ease, transform .18s ease;
+  }
+  .board-empty-title{
+    font-size:16px;
+    font-weight:700;
+    color:#374151;
+    letter-spacing:.01em;
+  }
+  .board-empty-sub{
+    font-size:13px;
+    line-height:1.7;
+    color:var(--muted);
+  }
+  .board-empty-link{
+    appearance:none;
+    border:none;
+    background:none;
+    padding:0;
+    font:inherit;
+    font-weight:600;
+    color:var(--accent);
+    cursor:pointer;
+    pointer-events:auto;
+    text-decoration:underline;
+    text-underline-offset:2px;
+  }
+  .board-empty-link:hover{ color:#b71f1f; }
+  /* Drag-and-drop feedback */
+  .board-card.drag-over{
+    border:2px dashed var(--accent);
+    box-shadow:0 0 0 4px rgba(217,52,52,.08);
+  }
+  .board-card.drag-over .board-empty-icon{
+    color:var(--accent);
+    border-color:var(--accent);
+    transform:translateY(-2px) scale(1.04);
+  }
+  .board-card.drag-over .board-empty-title{ color:var(--accent); }
   .toast{
     position:absolute;
     left:50%;
@@ -184,6 +268,119 @@
   .toast.show{
     opacity:1;
     transform:translateX(-50%) translateY(0);
+  }
+  .picker-overlay{
+    position:fixed;
+    inset:0;
+    z-index:1000;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    background:rgba(17,24,39,.38);
+    backdrop-filter:blur(2px);
+  }
+  .picker-panel{
+    display:flex;
+    flex-direction:column;
+    width:min(960px, 100%);
+    max-height:88vh;
+    background:#fff;
+    border:1px solid var(--hairline);
+    border-radius:14px;
+    box-shadow:0 18px 50px rgba(17,24,39,.28);
+    overflow:hidden;
+  }
+  .picker-header{
+    display:flex;
+    align-items:baseline;
+    gap:12px;
+    padding:16px 20px;
+    border-bottom:1px solid var(--hairline);
+  }
+  .picker-header h2{
+    margin:0;
+    font-size:16px;
+    font-weight:700;
+  }
+  .picker-sub{
+    color:#6b7280;
+    font-size:13px;
+  }
+  .picker-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
+    gap:12px;
+    padding:18px 20px;
+    overflow:auto;
+  }
+  .picker-cell{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    padding:8px;
+    background:#fff;
+    border:1px solid var(--hairline);
+    border-radius:10px;
+    cursor:pointer;
+    transition:border-color .12s ease, box-shadow .12s ease, transform .06s ease;
+  }
+  .picker-cell:hover{ border-color:#cfd2d7; }
+  .picker-cell.selected{
+    border-color:var(--accent);
+    box-shadow:0 0 0 2px rgba(217,52,52,.18);
+  }
+  .picker-thumb{
+    width:100%;
+    height:120px;
+    object-fit:contain;
+    background:#fafafa;
+    border-radius:6px;
+  }
+  .picker-cap{
+    font-size:12px;
+    font-weight:600;
+    color:#374151;
+    text-align:center;
+  }
+  .picker-footer{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:14px 20px;
+    border-top:1px solid var(--hairline);
+  }
+  .picker-count{
+    font-size:13px;
+    color:#6b7280;
+  }
+  .picker-link{
+    background:none;
+    border:none;
+    padding:0;
+    color:var(--accent);
+    font-weight:600;
+    font-size:13px;
+    cursor:pointer;
+  }
+  .picker-btn{
+    padding:8px 16px;
+    border-radius:9px;
+    border:1px solid var(--hairline);
+    background:#fff;
+    color:var(--text);
+    font-weight:600;
+    font-size:14px;
+    cursor:pointer;
+  }
+  .picker-btn.primary{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#fff;
+  }
+  .picker-btn:disabled{
+    opacity:.5;
+    cursor:default;
   }
   .kbd{
     display:inline-flex;
@@ -225,6 +422,144 @@
     color:#111827;
     box-shadow:0 1px 2px rgba(17,24,39,.06);
   }
+  .mode-switch button.active{
+    background:#111827;
+    color:#fff;
+  }
+  .group-auto{ display:none; gap:6px; align-items:center; flex-wrap:wrap; }
+  body.app-auto .group-auto{ display:flex; }
+  .group-auto select{
+    padding:6px 8px;
+    border:1px solid var(--hairline);
+    border-radius:7px;
+    background:#fff;
+    font:600 12px/1 system-ui,sans-serif;
+    color:#374151;
+  }
+  .auto-status-chip{
+    display:inline-flex;
+    align-items:center;
+    padding:4px 8px;
+    border-radius:999px;
+    border:1px solid #d1d5db;
+    background:#f3f4f6;
+    color:#374151;
+    font:700 11px/1 system-ui,sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+  }
+  .auto-status-chip[data-status="reviewing"]{ background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
+  .auto-status-chip[data-status="ready"]{ background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
+  .auto-status-chip[data-status="loading"]{ background:#f5f3ff; border-color:#ddd6fe; color:#5b21b6; }
+  .auto-status-chip[data-status="applying"]{ background:#ecfeff; border-color:#a5f3fc; color:#155e75; }
+  .auto-status-chip[data-status="error"]{ background:#fee2e2; border-color:#fecaca; color:#991b1b; }
+  .auto-status-chip[data-status="detecting"]{ background:#ecfdf5; border-color:#a7f3d0; color:#065f46; }
+  .auto-status-chip[data-status="detected"]{ background:#ecfdf5; border-color:#6ee7b7; color:#065f46; }
+
+  /* Auto Mode review panel additions */
+  .auto-review-head{
+    padding:8px 10px;
+    background:#fff7ed;
+    border:1px solid #fed7aa;
+    border-radius:8px;
+    font:600 12px/1.4 system-ui,sans-serif;
+    color:#7c2d12;
+    margin-bottom:8px;
+  }
+  .auto-review-bulk{
+    margin-top:6px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+  }
+  .auto-bulk-btn{
+    padding:4px 10px;
+    border:1px solid #fed7aa;
+    border-radius:6px;
+    background:#fff;
+    color:#7c2d12;
+    font:700 11px/1 system-ui,sans-serif;
+    cursor:pointer;
+  }
+  .auto-bulk-btn:hover:not(:disabled){ background:#fff7ed; }
+  .auto-bulk-btn:disabled{ opacity:.5; cursor:not-allowed; }
+  .auto-review-errors{
+    padding:8px 10px;
+    background:#fef2f2;
+    border:1px solid #fecaca;
+    border-radius:8px;
+    color:#991b1b;
+    font:500 11.5px/1.45 system-ui,sans-serif;
+    margin-bottom:8px;
+    max-height:160px;
+    overflow:auto;
+  }
+  .auto-review-errors ul{ margin:4px 0 0; padding-left:18px; }
+  tr.draft-row{ background:#fffbeb; }
+  tr.draft-row.selected{ background:#fde68a !important; }
+  tr.draft-row.review-only td{ color:#92400e; font-style:italic; }
+  tr.draft-row.approved{ background:#dcfce7; }
+  tr.draft-row.approved.selected{ background:#86efac !important; }
+  tr.draft-row .draft-status{
+    font-size:10px;
+    padding:2px 6px;
+    border-radius:999px;
+    background:#fde68a;
+    color:#78350f;
+    margin-left:6px;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+  }
+  tr.draft-row.approved .draft-status{ background:#86efac; color:#14532d; }
+  tr.draft-row.review-only .draft-status{ background:#fecaca; color:#7f1d1d; }
+  body.app-auto .spec-table tr:not(.draft-row){
+    opacity:.55;
+    pointer-events:none;
+  }
+  body.app-auto .spec-table tr:not(.draft-row) input{
+    pointer-events:none;
+    background:transparent;
+  }
+  .style-menu{
+    position:relative;
+  }
+  .style-menu > button{
+    min-width:122px;
+  }
+  .style-menu > button[aria-expanded="true"]{
+    background:#eef0f4;
+    border-color:#cfd2da;
+  }
+  .style-menu-list{
+    position:absolute;
+    top:calc(100% + 6px);
+    left:0;
+    z-index:20;
+    min-width:168px;
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    padding:5px;
+    border:1px solid var(--hairline);
+    border-radius:10px;
+    background:#fff;
+    box-shadow:0 12px 30px rgba(17,24,39,.18);
+  }
+  .style-menu-list[hidden]{
+    display:none;
+  }
+  .style-menu-list button{
+    width:100%;
+    text-align:left;
+    box-shadow:none;
+    border-color:transparent;
+    background:transparent;
+    border-radius:7px;
+  }
+  .style-menu-list button.active{
+    background:#eef0f4;
+    border-color:#e0e0e8;
+  }
   .color-btn{
     min-width:38px;
     padding:7px 9px;
@@ -240,9 +575,15 @@
   .color-btn[data-color="red"] .color-swatch{ background:#e63939; }
   .color-btn[data-color="blue"] .color-swatch{ background:#2563eb; }
   .color-btn[data-color="black"] .color-swatch{ background:#111827; }
+  .color-btn[data-color="white"] .color-swatch{
+    background:#ffffff;
+    border-color:#e5e7eb;
+    box-shadow:0 0 0 1px rgba(17,24,39,.32), 0 1px 3px rgba(17,24,39,.14);
+  }
   .color-btn.active[data-color="red"]{ box-shadow:0 0 0 3px rgba(230,57,57,.12); }
   .color-btn.active[data-color="blue"]{ box-shadow:0 0 0 3px rgba(37,99,235,.13); }
   .color-btn.active[data-color="black"]{ box-shadow:0 0 0 3px rgba(17,24,39,.12); }
+  .color-btn.active[data-color="white"]{ box-shadow:0 0 0 3px rgba(17,24,39,.10); }
   .export-btn{
     background:#111827;
     color:#fff;
@@ -253,14 +594,145 @@
     border-color:#0b1220;
   }
 
+  /* Icon + label buttons */
+  .has-ico{ display:inline-flex; align-items:center; gap:6px; }
+  .ico{ width:16px; height:16px; display:block; flex:0 0 auto; }
+
+  /* Primary call-to-action (Add Image) */
+  .primary-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#fff;
+    font-weight:600;
+  }
+  .primary-btn:hover{ background:#c62f2f; border-color:#c62f2f; color:#fff; }
+  .primary-btn:active{ background:#b71f1f; }
+  .primary-btn .ico{ opacity:1; }
+
+  /* Drawing tool cluster — reads as one connected unit */
+  .toolset{
+    display:flex;
+    align-items:center;
+    gap:2px;
+    padding:3px;
+    border:1px solid var(--hairline);
+    border-radius:11px;
+    background:#f6f6f8;
+  }
+  .toolset .tool-btn{
+    box-shadow:none;
+    border-color:transparent;
+    background:transparent;
+    border-radius:8px;
+    color:var(--muted);
+    padding:6px 10px;
+  }
+  .toolset .tool-btn:hover{ background:#eceef2; color:var(--text); }
+  .toolset .tool-btn.active{
+    background:#fff;
+    border-color:#e0e0e8;
+    color:#111827;
+    box-shadow:0 1px 2px rgba(17,24,39,.08);
+  }
+  .toolset .tool-btn:disabled{ background:transparent; box-shadow:none; }
+  .tool-btn .ico{ opacity:.8; }
+  .tool-btn.active .ico{ opacity:1; }
+
+  /* Secondary button used in the empty-state */
+  .ghost-btn{
+    background:#fff;
+    border:1px solid var(--border);
+    color:var(--text);
+    font-weight:600;
+  }
+  .ghost-btn:hover{ background:#f7f7f9; }
+
+  /* Stitch / line-style previews in the dropdown */
+  .style-option{ display:flex; align-items:center; gap:10px; }
+  .style-preview{ width:36px; height:14px; flex:0 0 auto; color:var(--accent); }
+
+  /* Icon-only button (Help) */
+  .icon-btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:34px;
+    height:34px;
+    padding:0;
+    color:var(--muted);
+  }
+  .icon-btn:hover{ color:var(--text); }
+  .icon-btn .ico{ width:18px; height:18px; }
+  .group-help{ padding-right:0; margin-right:0; }
+  .group-help::after{ display:none; }
+
+  /* Empty-state action buttons */
+  .board-empty-actions{
+    display:flex;
+    gap:10px;
+    margin-top:16px;
+    pointer-events:auto;
+  }
+  .board-empty-actions .primary-btn,
+  .board-empty-actions .ghost-btn{
+    padding:9px 16px;
+    font-size:13.5px;
+  }
+
+  /* Help & Set-Scale dialogs (reuse .picker-overlay) */
+  .dialog-panel{ width:min(560px, 100%); }
+  .dialog-header{ position:relative; }
+  .dialog-close{
+    position:absolute; top:12px; right:14px;
+    width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center;
+    border:1px solid var(--hairline); border-radius:8px; background:#fff;
+    color:var(--muted); font-size:18px; line-height:1; cursor:pointer;
+  }
+  .dialog-close:hover{ background:#f3f4f6; color:var(--text); }
+  .dialog-body{ padding:16px 20px; overflow:auto; }
+  .help-section{ margin-bottom:18px; }
+  .help-section:last-child{ margin-bottom:0; }
+  .help-section h3{
+    margin:0 0 8px; font-size:12px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.04em; color:var(--muted);
+  }
+  .help-list{ margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:7px; }
+  .help-item{ display:flex; align-items:flex-start; gap:10px; font-size:13.5px; color:var(--text); line-height:1.4; }
+  .help-item .help-ico{ flex:0 0 auto; width:18px; height:18px; color:var(--muted); margin-top:1px; }
+  .help-item b{ font-weight:600; }
+  .help-keys{ display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+  .help-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:6px 0; border-bottom:1px solid #f0f1f4; font-size:13.5px;
+  }
+  .help-row:last-child{ border-bottom:none; }
+  .help-row span{ color:var(--text); }
+  .scale-body{ padding:18px 20px; }
+  .scale-lead{ margin:0 0 14px; font-size:13.5px; color:var(--text); line-height:1.45; }
+  .scale-lead b{ font-weight:600; }
+  .scale-field{ display:flex; gap:8px; align-items:stretch; }
+  .scale-field input[type=number]{
+    flex:1; min-width:0; padding:10px 12px; font-size:15px;
+    border:1px solid var(--border); border-radius:9px; background:#fff; color:var(--text);
+  }
+  .scale-field select{
+    padding:10px 12px; font-size:14px; border:1px solid var(--border);
+    border-radius:9px; background:#fff; color:var(--text); cursor:pointer;
+  }
+  .scale-field input:focus, .scale-field select:focus{ outline:2px solid rgba(217,52,52,.35); outline-offset:1px; }
+  .scale-note{ margin:12px 0 0; font-size:12.5px; color:var(--muted); }
+
   @media (max-width: 1100px){
     .statusbar{ grid-template-columns:1fr; }
   }
 
   /* Measurement side panel */
   .specPanel{
-    width:320px;
-    flex:0 0 320px;
+    width:360px;
+    flex:0 0 360px;
     margin-left:10px;
     display:flex;
     flex-direction:column;
@@ -287,6 +759,40 @@
     line-height:1.4;
   }
   .specPanel .spec-cal b{ color:var(--accent); font-weight:700; }
+  .specPanel .spec-style{
+    margin-top:8px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+  .specPanel .spec-style label{
+    font-size:11.5px;
+    color:var(--muted);
+    font-weight:700;
+    letter-spacing:.01em;
+  }
+  .specPanel .spec-style input{
+    flex:1;
+    min-width:80px;
+    padding:4px 6px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font:inherit;
+    font-size:12px;
+    color:var(--text);
+    background:#fff;
+  }
+  .specPanel .spec-style input:focus{
+    outline:none;
+    border-color:var(--select);
+  }
+  .specPanel .spec-style-hint{
+    font-size:11px;
+    color:var(--muted);
+    flex-basis:100%;
+    line-height:1.3;
+  }
   .spec-table-wrap{ overflow:auto; flex:1; }
   .spec-table{
     width:100%;
@@ -314,14 +820,68 @@
   .spec-table tr.selected td{ background:#eef3ff; }
   .spec-table tr:hover td{ background:#f6f8fc; }
   .spec-table th.th-pom{ width:48px; }
-  .spec-table th.th-val{ width:86px; }
+  .spec-table th.th-val{ width:128px; }
+  .spec-table th abbr{ text-decoration:underline dotted; text-underline-offset:2px; cursor:help; }
   .spec-desc{
     color:var(--muted);
     font-size:12px;
     line-height:1.3;
     white-space:normal;
+    word-break:break-word;
+    overflow-wrap:anywhere;
+  }
+  .spec-table input.spec-desc{
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    overflow:hidden;
   }
   .spec-pom{ font-weight:800; text-align:center; }
+  .spec-conf{
+    display:inline-block;
+    margin-top:3px;
+    padding:1px 5px;
+    border-radius:999px;
+    font:700 9px/1.4 system-ui,sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    border:1px solid transparent;
+  }
+  .spec-conf.high{ background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+  .spec-conf.medium{ background:#fef3c7; color:#92400e; border-color:#fde68a; }
+  .spec-conf.low{ background:#fee2e2; color:#991b1b; border-color:#fecaca; }
+  .spec-conf.edited{ background:#eef2ff; color:#3730a3; border-color:#c7d2fe; }
+  .spec-pom-pair{
+    display:inline-block;
+    padding:3px 8px;
+    border-radius:8px;
+    background:#eef3ff;
+    border:1px solid #c8d4ff;
+    color:#1d3a8a;
+    font:800 12px/1 system-ui, sans-serif;
+    text-align:center;
+    min-width:34px;
+  }
+  .spec-val-pair{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    width:100%;
+  }
+  .spec-val-field{
+    display:flex;
+    align-items:center;
+    gap:4px;
+  }
+  .spec-val-tag{
+    flex:0 0 auto;
+    font:700 9.5px/1 system-ui, sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:#6b7280;
+    width:42px;
+    padding-right:2px;
+  }
+  .spec-val-field .spec-val{ flex:1 1 auto; min-width:0; }
   .spec-table input{
     width:100%;
     border:1px solid transparent;
@@ -339,6 +899,8 @@
     box-shadow:0 0 0 3px rgba(53,109,255,.12);
   }
   .spec-table input.spec-val::placeholder{ color:#b6bcc8; font-weight:500; }
+  .spec-table input.spec-desc{ font-weight:500; font-size:12px; color:var(--muted); }
+  .spec-table input.spec-desc::placeholder{ color:#b6bcc8; font-weight:500; }
   .spec-empty{
     padding:22px 14px;
     text-align:center;
@@ -363,6 +925,155 @@
   }
   .label-editor:focus{ outline:none; }
 
+  /* Phase 3 — POM meaning confirmation popover. Shown only when a TD labels
+     a Manual Mode line with POM 6+ and the meaning isn't yet confirmed. */
+  .pom-meaning-popover{
+    position:absolute;
+    z-index:35;
+    display:none;
+    width:240px;
+    background:#fff;
+    border:1px solid #d0d4dc;
+    border-radius:10px;
+    box-shadow:0 8px 24px rgba(17,24,39,.18);
+    padding:10px 12px;
+    font:13px/1.4 system-ui, sans-serif;
+    color:var(--text);
+    transform:translate(-50%, 12px);
+  }
+  .pmp-title{ font-weight:700; margin-bottom:8px; }
+  .pmp-title strong{ color:var(--select); }
+  .pmp-suggestions{ display:flex; flex-direction:column; gap:4px; }
+  .pmp-suggestion{
+    text-align:left;
+    background:#f4f5f7;
+    border:1px solid transparent;
+    border-radius:6px;
+    padding:6px 8px;
+    cursor:pointer;
+    font:inherit;
+    color:var(--text);
+  }
+  .pmp-suggestion:hover{ background:#e9ebef; border-color:var(--select); }
+  .pmp-suggestion .pmp-anchors{ display:block; color:var(--muted); font-size:11px; margin-top:2px; }
+  .pmp-other{ margin-top:8px; padding-top:8px; border-top:1px solid #eee; }
+  .pmp-other-btn{
+    width:100%;
+    background:none;
+    border:1px dashed #c4c9d4;
+    border-radius:6px;
+    padding:6px 8px;
+    color:var(--muted);
+    cursor:pointer;
+    font:inherit;
+  }
+  .pmp-other-btn:hover{ border-color:var(--select); color:var(--text); }
+  .pmp-other-input{
+    width:100%;
+    padding:6px 8px;
+    border:1px solid #d0d4dc;
+    border-radius:6px;
+    box-sizing:border-box;
+    font:inherit;
+    color:var(--text);
+  }
+  .pmp-actions{ margin-top:6px; text-align:right; }
+  .pmp-link-btn{
+    background:none;
+    border:none;
+    color:var(--muted);
+    cursor:pointer;
+    font-size:12px;
+    padding:2px 4px;
+  }
+  .pmp-link-btn:hover{ color:var(--text); }
+
+  /* Annotation right-click menu (Reconfirm Meaning) */
+  .ann-context-menu{
+    position:absolute;
+    z-index:60;
+    display:none;
+    min-width:180px;
+    background:#fff;
+    border:1px solid #d0d4dc;
+    border-radius:8px;
+    box-shadow:0 6px 18px rgba(17,24,39,.16);
+    padding:4px;
+    font:13px/1.3 system-ui, sans-serif;
+    color:var(--text);
+  }
+  .ann-context-menu button{
+    display:block;
+    width:100%;
+    text-align:left;
+    background:none;
+    border:0;
+    padding:6px 10px;
+    border-radius:6px;
+    font:inherit;
+    color:inherit;
+    cursor:pointer;
+  }
+  .ann-context-menu button:hover{ background:#eef0f5; }
+  .ann-context-menu button:disabled{ color:var(--muted); cursor:not-allowed; background:none; }
+
+  /* Manage POM meanings picker */
+  .dialog-body.manage-meanings-body{
+    padding:14px 20px 18px;
+    overflow:auto;
+    max-height:60vh;
+  }
+  .mm-list{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .mm-row{
+    display:grid;
+    grid-template-columns:64px 1fr auto;
+    align-items:center;
+    gap:10px;
+    padding:6px 10px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:#fff;
+  }
+  .mm-pom{
+    font-weight:700;
+    font-size:13px;
+    color:var(--text);
+  }
+  .mm-select{
+    width:100%;
+    padding:6px 8px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font:inherit;
+    font-size:13px;
+    color:var(--text);
+    background:#fff;
+  }
+  .mm-forget{
+    background:#fff;
+    border:1px solid #e0e0e8;
+    border-radius:6px;
+    padding:5px 10px;
+    font:inherit;
+    font-size:12px;
+    cursor:pointer;
+    color:#c0392b;
+  }
+  .mm-forget:hover{
+    border-color:#c0392b;
+    background:#fef5f3;
+  }
+  .mm-empty{
+    padding:20px;
+    text-align:center;
+    color:var(--muted);
+    font-size:13px;
+  }
+
   @media (max-width: 980px){
     .workspace{ flex-direction:column; }
     .specPanel{ width:auto; flex:0 0 auto; margin-left:0; margin-top:12px; max-height:240px; }
@@ -372,13 +1083,102 @@
 <body>
 <div class="app">
   <div class="toolbar">
+    <div class="group group-mode">
+      <div class="segmented-control mode-switch" role="group" aria-label="App mode">
+        <button id="modeManualBtn" class="active" type="button" title="Manual Mode — full drawing toolset">Manual</button>
+        <button id="modeAutoBtn" type="button" title="Auto Mode — detect the sketch, review generated POM drafts, then apply approved lines">Auto</button>
+      </div>
+    </div>
+    <div id="autoModeBar" class="group group-auto">
+      <button id="autoDetectBtn" class="primary-btn" type="button" title="Run local offline vision on the source sketch to estimate view, landmarks, and anchors">Detect Sketch</button>
+      <button id="autoResetAnchorsBtn" type="button" title="Re-seed anchors from the current detection (discards manual anchor edits)">Reset Anchors</button>
+      <button id="autoGenerateBtn" class="primary-btn" type="button" title="Generate 16 POM drafts from the current anchor positions">Generate POM Drafts</button>
+      <button id="autoApproveBtn" type="button" title="Approve the selected draft line">Approve</button>
+      <button id="autoReviewOnlyBtn" type="button" title="Mark the selected draft as REVIEW_ONLY (no line will be drawn)">Mark Review-Only</button>
+      <button id="autoApplyBtn" class="primary-btn" type="button" title="Atomically copy all approved drafts into the project">Apply Approved Lines</button>
+      <button id="autoDiscardBtn" type="button" title="Discard all current drafts without changing the project">Discard Drafts</button>
+      <button id="autoResetBoardBtn" type="button" title="Reset the working board — delete all photos and lines so you can start a new bra sketch">Reset Board</button>
+      <button id="autoLearnToggleBtn" type="button" title="Apply learned anchor calibration from past TD corrections">Use Learning</button>
+      <span id="autoLearnChip" class="auto-status-chip" title="Number of recorded TD corrections that feed the calibration median">0 samples</span>
+      <div id="autoLearnMenuWrap" class="style-menu">
+        <button id="autoLearnMenuBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Reset learning or manage POM meanings">Reset / Manage ▾</button>
+        <div id="autoLearnMenuList" class="style-menu-list" role="menu" hidden>
+          <button id="resetResidualsItem" role="menuitem" type="button" title="Clear all learned anchor corrections — Auto Mode goes back to the raw geometric rules">Reset calibration residuals</button>
+          <button id="resetMeaningsCurrentItem" role="menuitem" type="button" title="Forget every confirmed POM meaning for the current style code">Forget POM meanings (current style)</button>
+          <button id="resetMeaningsAllItem" role="menuitem" type="button" title="Forget every confirmed POM meaning across every style code, plus custom measurements">Forget POM meanings (all styles)</button>
+          <button id="manageMeaningsItem" role="menuitem" type="button" title="Edit or remove individual POM meanings for the current style code">Manage POM meanings…</button>
+        </div>
+      </div>
+      <span id="autoStatusChip" class="auto-status-chip" title="Auto Mode status">idle</span>
+    </div>
+    <div class="group group-add">
+      <button id="addImageBtn" class="primary-btn has-ico" type="button" title="Add a sketch image — or paste with Ctrl/Cmd+V, or drag one onto the board">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 14.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9" />
+          <circle cx="8.5" cy="9" r="1.4" />
+          <path d="M3 16l4.5-4.5a2 2 0 0 1 2.8 0L14 15" />
+          <path d="M19 13.5v6M16 16.5h6" />
+        </svg>
+        Add Image
+      </button>
+      <input id="imageFileInput" type="file" accept="image/*" multiple hidden />
+      <button id="importPptxBtn" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PPTX</button>
+      <input id="pptxFileInput" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" hidden />
+    </div>
+
     <div class="group">
-      <button id="toolSelect" class="active" type="button">Select</button>
-      <button id="toolStraight" type="button">Straight</button>
-      <button id="toolCurved" type="button">Curved</button>
-      <label class="chip" title="Toggle dashed line style for the active drawing tool or selected line">
-        <input id="dashedToggle" type="checkbox" />
-        <span>Dashed</span>
+      <div class="toolset" role="group" aria-label="Drawing tools">
+        <button id="toolSelect" class="tool-btn active has-ico" type="button" title="Select & move — click a line, label, or image to edit it (S)">
+          <svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.4 3.1l13 6.1c.74.35.6 1.43-.2 1.59l-5 1-2 5c-.3.78-1.4.7-1.6-.1L4.2 4.4c-.2-.83.6-1.55 1.2-1.3z"/></svg>
+          Select
+        </button>
+        <button id="toolStraight" class="tool-btn has-ico" type="button" title="Straight line — click the start point, then the end point (L)">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.7" fill="currentColor" stroke="none"/></svg>
+          Straight
+        </button>
+        <button id="toolCurved" class="tool-btn has-ico" type="button" title="Curved line — click the start point, then the end point (C)">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 17C8 7 16 7 20 11"/><circle cx="4" cy="17" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="11" r="1.7" fill="currentColor" stroke="none"/></svg>
+          Curved
+        </button>
+        <button id="toolEraser" class="tool-btn has-ico" type="button" title="Eraser – paint white over unwanted lines in the photo (E)">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 18.5l-3-3a2 2 0 0 1 0-2.8l7-7a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8l-6.8 6.8z"/><line x1="8.5" y1="18.5" x2="20" y2="18.5"/></svg>
+          Eraser
+        </button>
+      </div>
+      <div id="lineStyleControl" class="style-menu">
+        <button id="stitchesBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Choose line or stitch type">
+          <span id="stitchesBtnLabel">Stitches</span>
+        </button>
+        <div id="stitchesMenu" class="style-menu-list" role="menu" hidden>
+          <button class="style-option active" data-style="solid" type="button" role="menuitem">
+            <svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="7" x2="33" y2="7"/></svg>
+            <span>Plain line</span>
+          </button>
+          <button class="style-option" data-style="dashed" type="button" role="menuitem">
+            <svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="7" x2="33" y2="7" stroke-dasharray="6 4"/></svg>
+            <span>Dashed line</span>
+          </button>
+          <button class="style-option" data-style="zigzag" type="button" role="menuitem">
+            <svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3,7 7,3 11,11 15,3 19,11 23,3 27,11 31,3 33,7"/></svg>
+            <span>Zigzag stitch</span>
+          </button>
+          <button class="style-option" data-style="cover" type="button" role="menuitem">
+            <svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="5" x2="33" y2="5" stroke-dasharray="5 4"/><line x1="3" y1="9" x2="33" y2="9" stroke-dasharray="5 4"/></svg>
+            <span>Cover stitch</span>
+          </button>
+          <button class="style-option" data-style="bartack" type="button" role="menuitem">
+            <svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="7" x2="33" y2="7" stroke-width="1.4" opacity="0.32"/><polyline points="8,4 11,10 14,4 17,10 20,4 23,10 26,4 28,10" stroke-width="1.5"/></svg>
+            <span>Bartack</span>
+          </button>
+        </div>
+      </div>
+      <label id="lineWidthChip" class="chip" title="Line thickness in pixels for the active drawing tool or selected line">
+        <span>Line</span>
+        <input id="lineWidthInput" type="number" min="1" max="16" step="0.5" />
+      </label>
+      <label id="brushSizeChip" class="chip" title="Eraser brush size in image pixels — use [ and ] to adjust" hidden>
+        <span>Size</span>
+        <input id="brushSizeInput" type="number" min="4" max="200" step="2" />
       </label>
     </div>
 
@@ -392,6 +1192,7 @@
         <button id="colorRedBtn" class="color-btn active" data-color="red" type="button" title="Red line"><span class="color-swatch"></span></button>
         <button id="colorBlueBtn" class="color-btn" data-color="blue" type="button" title="Blue line"><span class="color-swatch"></span></button>
         <button id="colorBlackBtn" class="color-btn" data-color="black" type="button" title="Black line"><span class="color-swatch"></span></button>
+        <button id="colorWhiteBtn" class="color-btn" data-color="white" type="button" title="White line (for dark sketch areas)"><span class="color-swatch"></span></button>
       </div>
     </div>
 
@@ -400,11 +1201,19 @@
       <button id="redoBtn" type="button">Redo</button>
       <button id="deleteBtn" type="button" title="Delete the selected line or image">Delete</button>
       <button id="clearBtn" type="button" title="Clear all annotations">Clear</button>
+      <button id="lockImageBtn" class="has-ico" type="button" title="Lock the selected image so it can't be moved, resized, or deleted accidentally">
+        <svg id="lockImageIco" class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="5" y="11" width="14" height="9" rx="2" />
+          <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+        </svg>
+        <span id="lockImageLabel">Lock</span>
+      </button>
     </div>
 
     <div class="group">
       <button id="fitBtn" type="button">Fit</button>
-      <button id="togglePanelBtn" type="button" title="Hide the Measurements panel to give the board more room">Hide Panel</button>
+      <button id="togglePanelBtn" type="button" class="active" title="Show the Measurements panel">Show Panel</button>
+      <button id="toggleLabelsBtn" type="button" title="Hide the callout numbers on the board (N) — the measurements panel still shows them">Hide Numbers</button>
       <button id="setScaleBtn" type="button" title="Calibrate: select a line whose real length you know, then set the scale">Set Scale</button>
       <button id="clearScaleBtn" type="button" title="Remove calibration">Clear Scale</button>
     </div>
@@ -413,9 +1222,17 @@
       <button id="saveProjectBtn" type="button" title="Save the whole board (images, lines, measurements) to a file you can reopen later">Save</button>
       <button id="openProjectBtn" type="button" title="Open a previously saved project file">Open</button>
       <input id="projectFileInput" type="file" accept=".json,application/json" hidden />
-      <button id="importPptxBtn" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PPTX</button>
-      <input id="pptxFileInput" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" hidden />
       <button id="exportPdfBtn" class="export-btn" type="button">Export PDF</button>
+    </div>
+
+    <div class="group group-help">
+      <button id="helpBtn" class="icon-btn" type="button" aria-label="Help & keyboard shortcuts" title="Help & keyboard shortcuts (?)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9.2 9.3a2.8 2.8 0 0 1 5.4 1c0 1.9-2.6 2.3-2.6 4" />
+          <circle cx="12" cy="17" r="0.7" fill="currentColor" stroke="none" />
+        </svg>
+      </button>
     </div>
   </div>
 
@@ -425,11 +1242,49 @@
     <div id="countStatus" class="status-item" hidden></div>
   </div>
 
-  <div class="workspace">
+  <div class="workspace panel-hidden">
     <div class="board-shell">
-      <div id="boardCard" class="board-card no-image">
+      <div id="boardCard" class="board-card no-image is-empty">
         <canvas id="boardCanvas" aria-label="Sketch annotation board"></canvas>
+        <div id="boardEmpty" class="board-empty" aria-hidden="true">
+          <div class="board-empty-icon">
+            <svg viewBox="0 0 48 48" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="6" y="9" width="36" height="30" rx="4" />
+              <circle cx="17" cy="19" r="3.2" />
+              <path d="M9 33l9-9 6 6 7-8 8 8" />
+            </svg>
+          </div>
+          <div class="board-empty-title">Add a sketch to get started</div>
+          <div class="board-empty-sub">
+            Drag an image onto the board, or paste with <span class="kbd">Ctrl/Cmd&nbsp;+&nbsp;V</span>
+          </div>
+          <div class="board-empty-actions">
+            <button type="button" id="boardEmptyAdd" class="primary-btn has-ico">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 14.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9" />
+                <circle cx="8.5" cy="9" r="1.4" />
+                <path d="M3 16l4.5-4.5a2 2 0 0 1 2.8 0L14 15" />
+                <path d="M19 13.5v6M16 16.5h6" />
+              </svg>
+              Add image
+            </button>
+            <button type="button" id="boardEmptyImport" class="ghost-btn">Import PowerPoint</button>
+          </div>
+        </div>
         <input id="labelEditor" class="label-editor" type="text" autocomplete="off" spellcheck="false" aria-label="Edit label text" />
+        <div id="annContextMenu" class="ann-context-menu" role="menu" aria-label="Line actions">
+          <button id="annCtxReconfirm" type="button" role="menuitem">Reconfirm Meaning</button>
+        </div>
+        <div id="pomMeaningPopover" class="pom-meaning-popover" role="dialog" aria-label="Confirm POM meaning">
+          <div class="pmp-title">What does <strong id="pmpPomLabel">POM ?</strong> measure?</div>
+          <div id="pmpSuggestions" class="pmp-suggestions"></div>
+          <div class="pmp-other">
+            <button id="pmpOtherBtn" type="button" class="pmp-other-btn">+ Add new measurement…</button>
+          </div>
+          <div class="pmp-actions">
+            <button id="pmpSkipBtn" type="button" class="pmp-link-btn">Skip</button>
+          </div>
+        </div>
         <div id="toast" class="toast"></div>
       </div>
     </div>
@@ -437,2505 +1292,33 @@
       <div class="spec-head">
         <div class="spec-title">Measurements</div>
         <div id="specCal" class="spec-cal"></div>
+        <div class="spec-style">
+          <label for="styleIdInput">Style code:</label>
+          <input id="styleIdInput" type="text" placeholder="optional" autocomplete="off" spellcheck="false" maxlength="40" />
+          <span class="spec-style-hint">Remembers POM 6+ meanings per style. Leave blank to share across styles.</span>
+        </div>
       </div>
       <div class="spec-table-wrap">
         <table class="spec-table">
           <thead>
-            <tr><th class="th-pom">POM</th><th>Description</th><th class="th-val">Value (in)</th></tr>
+            <tr><th class="th-pom"><abbr title="Point of Measure — the standard place on the garment this line records">POM</abbr></th><th>Description</th><th class="th-val">Value (in)</th></tr>
           </thead>
           <tbody id="specBody"></tbody>
         </table>
-        <div id="specEmpty" class="spec-empty">No measurements yet.<br>Draw a line to add one.</div>
+        <div id="specEmpty" class="spec-empty">No measurements yet.<br>Draw a line on the sketch — each one becomes a numbered point of measure here.</div>
       </div>
     </aside>
   </div>
 </div>
 
-<script>
-(() => {
-  'use strict';
-
-  const LINE_COLORS = {
-    red: '#e63939',
-    blue: '#2563eb',
-    black: '#111827',
-  };
-  const LINE_COLOR = LINE_COLORS.red;
-  const SELECT_COLOR = '#356dff';
-
-  // Built-in Point-of-Measure template (bra measurement standard, base size L, inches).
-  // refL = standard size-L reference value (per-style confidential). Null in this public
-  // build; restore real values in a private copy for production use.
-  const POM_UNIT = 'in';
-  const POM_TEMPLATE = {
-    '1':  { desc: '1/2 bottom band (2nd hook), relax', refL: null },
-    '2':  { desc: '1/2 chest (2nd hook), measure straight', refL: null },
-    '3':  { desc: 'Cup height, fixed foam cup', refL: null },
-    '4':  { desc: 'Cup width, fixed foam cup', refL: null },
-    '5':  { desc: 'Sideseam height', refL: null },
-    '6':  { desc: 'Center back height', refL: null },
-    '7':  { desc: 'Center front height', refL: null },
-    '8':  { desc: 'CF length (zipper/snap/H&E/velcro)', refL: null },
-    '9':  { desc: 'H&E height @ CB', refL: null },
-    '10': { desc: 'Strap width at shoulder point', refL: null },
-    '11': { desc: 'Total body length', refL: null },
-    '12': { desc: 'Total strap length, elastic', refL: null },
-    '14': { desc: 'Back strap length, elastic', refL: null },
-    '15': { desc: 'Total strap length, fabric', refL: null },
-  };
-  const PROJECT_FORMAT = 'bra-sketch-project';
-  const PROJECT_VERSION = 1;
-  const MIN_ZOOM = 0.15;
-  const MAX_ZOOM = 8;
-  const HISTORY_LIMIT = 120;
-  const BEZIER_SAMPLES = 25;
-  const IMAGE_PADDING = 48;
-  const ZOOM_SENSITIVITY = 0.0018;
-  const PRECISE_ZOOM_SENSITIVITY = 0.00105;
-
-  const el = {
-    canvas: document.getElementById('boardCanvas'),
-    boardCard: document.getElementById('boardCard'),
-    toolSelect: document.getElementById('toolSelect'),
-    toolStraight: document.getElementById('toolStraight'),
-    toolCurved: document.getElementById('toolCurved'),
-    dashedToggle: document.getElementById('dashedToggle'),
-    arrowDoubleBtn: document.getElementById('arrowDoubleBtn'),
-    arrowSingleBtn: document.getElementById('arrowSingleBtn'),
-    arrowNoneBtn: document.getElementById('arrowNoneBtn'),
-    colorRedBtn: document.getElementById('colorRedBtn'),
-    colorBlueBtn: document.getElementById('colorBlueBtn'),
-    colorBlackBtn: document.getElementById('colorBlackBtn'),
-    undoBtn: document.getElementById('undoBtn'),
-    redoBtn: document.getElementById('redoBtn'),
-    deleteBtn: document.getElementById('deleteBtn'),
-    clearBtn: document.getElementById('clearBtn'),
-    fitBtn: document.getElementById('fitBtn'),
-    togglePanelBtn: document.getElementById('togglePanelBtn'),
-    workspace: document.querySelector('.workspace'),
-    setScaleBtn: document.getElementById('setScaleBtn'),
-    clearScaleBtn: document.getElementById('clearScaleBtn'),
-    exportPdfBtn: document.getElementById('exportPdfBtn'),
-    importPptxBtn: document.getElementById('importPptxBtn'),
-    pptxFileInput: document.getElementById('pptxFileInput'),
-    saveProjectBtn: document.getElementById('saveProjectBtn'),
-    openProjectBtn: document.getElementById('openProjectBtn'),
-    projectFileInput: document.getElementById('projectFileInput'),
-    labelEditor: document.getElementById('labelEditor'),
-    specBody: document.getElementById('specBody'),
-    specEmpty: document.getElementById('specEmpty'),
-    specCal: document.getElementById('specCal'),
-    toolStatus: document.getElementById('toolStatus'),
-    imageStatus: document.getElementById('imageStatus'),
-    countStatus: document.getElementById('countStatus'),
-    toast: document.getElementById('toast'),
-  };
-
-  let ctx = el.canvas.getContext('2d');
-
-  // Image pixel data is stored once per image id here, so history snapshots can
-  // reference images by id instead of carrying (and re-serializing) base64 copies.
-  const imageDataById = new Map();
-
-  const state = {
-    tool: 'select',
-    drawStyle: 'solid',
-    drawColor: 'red',
-    arrowType: 'double',
-    annotations: [],
-    images: [],
-    nextSequence: 1,
-    selection: { kind: null, id: null },
-
-    zoom: 1,
-    panX: 0,
-    panY: 0,
-
-    drawSession: null,
-    interaction: null,
-
-    spacePan: false,
-    rafPending: false,
-    toastTimer: null,
-    lastCanvasRect: null,
-    idCounter: 1,
-
-    calibration: { unitsPerPx: null, unit: 'cm' },
-    editingLabelId: null,
-
-    history: {
-      past: [],
-      future: [],
-      restoring: false,
-    },
-  };
-
-  function init() {
-    bindUI();
-    resizeCanvas();
-    seedHistory();
-    updateUI();
-    render();
-  }
-
-  function bindUI() {
-    el.toolSelect.addEventListener('click', () => setTool('select'));
-    el.toolStraight.addEventListener('click', () => setTool('straight'));
-    el.toolCurved.addEventListener('click', () => setTool('curved'));
-
-    el.dashedToggle.addEventListener('change', (e) => {
-      setLineStyle(e.target.checked ? 'dashed' : 'solid');
-    });
-
-    el.arrowDoubleBtn.addEventListener('click', () => setArrowType('double'));
-    el.arrowSingleBtn.addEventListener('click', () => setArrowType('single'));
-    el.arrowNoneBtn.addEventListener('click', () => setArrowType('none'));
-
-    el.colorRedBtn.addEventListener('click', () => setDrawColor('red'));
-    el.colorBlueBtn.addEventListener('click', () => setDrawColor('blue'));
-    el.colorBlackBtn.addEventListener('click', () => setDrawColor('black'));
-
-    el.undoBtn.addEventListener('click', () => void undo());
-    el.redoBtn.addEventListener('click', () => void redo());
-    el.deleteBtn.addEventListener('click', deleteSelected);
-    el.clearBtn.addEventListener('click', clearAllAnnotations);
-    el.fitBtn.addEventListener('click', fitSelectionOrAll);
-    el.togglePanelBtn.addEventListener('click', toggleSpecPanel);
-    el.setScaleBtn.addEventListener('click', setScaleFromSelection);
-    el.clearScaleBtn.addEventListener('click', clearScale);
-    el.exportPdfBtn.addEventListener('click', exportPdf);
-    el.importPptxBtn.addEventListener('click', () => el.pptxFileInput.click());
-    el.pptxFileInput.addEventListener('change', onPptxFileChosen);
-    el.saveProjectBtn.addEventListener('click', saveProject);
-    el.openProjectBtn.addEventListener('click', () => el.projectFileInput.click());
-    el.projectFileInput.addEventListener('change', onProjectFileChosen);
-
-    el.labelEditor.addEventListener('keydown', onLabelEditorKeyDown);
-    el.labelEditor.addEventListener('blur', commitLabelEditor);
-
-    el.canvas.addEventListener('mousedown', onMouseDown);
-    el.canvas.addEventListener('dblclick', onDoubleClick);
-    el.canvas.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    el.canvas.addEventListener('wheel', onWheel, { passive: false });
-    el.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-
-    document.addEventListener('paste', onPasteEvent);
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('keyup', onKeyUp);
-    window.addEventListener('resize', resizeCanvas);
-  }
-
-  function setTool(tool) {
-    state.tool = tool;
-    state.drawSession = null;
-    updateUI();
-    requestRender();
-  }
-
-
-  function setLineStyle(style) {
-    state.drawStyle = style;
-    applyToSelectedAnnotation({ style });
-  }
-
-  function setArrowType(arrowType) {
-    state.arrowType = arrowType;
-    applyToSelectedAnnotation({ arrowType });
-  }
-
-  function setDrawColor(color) {
-    state.drawColor = color;
-    applyToSelectedAnnotation({ color });
-  }
-
-  function applyToSelectedAnnotation(settings) {
-    const ann = getSelectedAnnotation();
-    if (!ann) {
-      updateUI();
-      requestRender();
-      return;
-    }
-
-    const before = snapshotFingerprint(makeSnapshot());
-    Object.assign(ann, settings);
-    const after = snapshotFingerprint(makeSnapshot());
-    if (before !== after) pushHistoryIfChanged();
-    updateUI();
-    requestRender();
-  }
-
-  function worldToScreen(x, y) {
-    return { x: x * state.zoom + state.panX, y: y * state.zoom + state.panY };
-  }
-
-  // ---- Editable labels ----
-  function openLabelEditor(id) {
-    const ann = getAnnotationById(id);
-    if (!ann) return;
-    state.editingLabelId = id;
-    const screen = worldToScreen(ann.label.x, ann.label.y);
-    el.labelEditor.style.display = 'block';
-    el.labelEditor.style.left = screen.x + 'px';
-    el.labelEditor.style.top = screen.y + 'px';
-    el.labelEditor.style.color = getAnnotationColor(ann);
-    el.labelEditor.value = getLabelText(ann);
-    requestRender();
-    requestAnimationFrame(() => {
-      el.labelEditor.focus();
-      el.labelEditor.select();
-    });
-  }
-
-  function onLabelEditorKeyDown(e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      commitLabelEditor();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      cancelLabelEditor();
-    }
-    e.stopPropagation();
-  }
-
-  function commitLabelEditor() {
-    const id = state.editingLabelId;
-    if (id == null) return;
-    const ann = getAnnotationById(id);
-    state.editingLabelId = null;
-    el.labelEditor.style.display = 'none';
-    if (ann) {
-      const raw = el.labelEditor.value.trim();
-      const next = raw === '' || raw === String(ann.seq) ? null : raw;
-      if (ann.text !== next) {
-        ann.text = next;
-        pushHistoryIfChanged();
-      }
-    }
-    updateUI();
-    requestRender();
-  }
-
-  function cancelLabelEditor() {
-    state.editingLabelId = null;
-    el.labelEditor.style.display = 'none';
-    updateUI();
-    requestRender();
-  }
-
-  // ---- Calibration ----
-  function setScaleFromSelection() {
-    const ann = getSelectedAnnotation();
-    if (!ann) {
-      showToast('Select a line first, then click Set Scale to calibrate by its real length.');
-      return;
-    }
-    const px = lineLength(ann);
-    if (px <= 0) {
-      showToast('That line is too short to calibrate.');
-      return;
-    }
-    const current = state.calibration.unitsPerPx != null
-      ? formatMeasure(px * state.calibration.unitsPerPx)
-      : '';
-    const answer = window.prompt(
-      'Real length of the selected line (e.g. "70 cm", "12", "30 mm"):',
-      current
-    );
-    if (answer == null) return;
-    const parsed = parseLengthInput(answer);
-    if (!parsed || parsed.value <= 0) {
-      showToast('Could not read that length. Try something like "70 cm".');
-      return;
-    }
-    state.calibration = { unitsPerPx: parsed.value / px, unit: parsed.unit };
-    pushHistoryIfChanged();
-    showToast('Scale set: the table now estimates every line in ' + parsed.unit + '.');
-    updateUI();
-    requestRender();
-  }
-
-  function clearScale() {
-    if (state.calibration.unitsPerPx == null) return;
-    state.calibration = { unitsPerPx: null, unit: state.calibration.unit };
-    pushHistoryIfChanged();
-    showToast('Scale cleared. Values are now manual only.');
-    updateUI();
-    requestRender();
-  }
-
-  function parseLengthInput(raw) {
-    const m = String(raw).trim().match(/^([0-9]*\.?[0-9]+)\s*([a-zA-Z"']*)$/);
-    if (!m) return null;
-    const value = parseFloat(m[1]);
-    if (!isFinite(value)) return null;
-    let unit = (m[2] || '').toLowerCase();
-    if (unit === '' || unit === 'cm') unit = 'cm';
-    else if (unit === 'mm') unit = 'mm';
-    else if (unit === 'm') unit = 'm';
-    else if (unit === 'in' || unit === '"' || unit === 'inch') unit = 'in';
-    return { value, unit };
-  }
-
-  // ---- Measurement table panel ----
-  function renderSpecPanel() {
-    renderSpecCalNote();
-    // Don't rebuild while the user is typing in a panel field; just refresh highlight.
-    if (el.specBody.contains(document.activeElement)) {
-      updateSpecHighlightOnly();
-      return;
-    }
-    const anns = state.annotations.slice().sort((a, b) => labelSortKey(a) - labelSortKey(b) || a.seq - b.seq);
-    el.specEmpty.style.display = anns.length ? 'none' : 'block';
-    el.specBody.innerHTML = '';
-    for (const ann of anns) {
-      const tr = document.createElement('tr');
-      tr.dataset.annId = ann.id;
-      if (state.selection.kind === 'annotation' && state.selection.id === ann.id) {
-        tr.className = 'selected';
-      }
-      tr.addEventListener('click', () => setSelection('annotation', ann.id));
-
-      // POM column (editable callout number)
-      const pomTd = document.createElement('td');
-      const pomInput = document.createElement('input');
-      pomInput.type = 'text';
-      pomInput.className = 'spec-pom';
-      pomInput.value = ann.text != null ? ann.text : '';
-      pomInput.placeholder = String(ann.seq);
-      pomInput.addEventListener('focus', () => setSelection('annotation', ann.id));
-      pomInput.addEventListener('input', () => {
-        descCell.textContent = getPomInfo(pomInput.value.trim() || ann.seq).desc || '—';
-        valInput.placeholder = placeholderFor(ann, pomInput.value.trim() || String(ann.seq));
-      });
-      pomInput.addEventListener('change', () => {
-        const v = pomInput.value.trim();
-        const next = v === '' || v === String(ann.seq) ? null : v;
-        if (ann.text !== next) { ann.text = next; pushHistoryIfChanged(); requestRender(); }
-      });
-      pomTd.appendChild(pomInput);
-
-      // Description column (auto from POM template)
-      const descCell = document.createElement('td');
-      descCell.className = 'spec-desc';
-      descCell.textContent = getPomInfo(getLabelText(ann)).desc || '—';
-
-      // Value column (editable, standard size-L value shown as reference placeholder)
-      const valTd = document.createElement('td');
-      const valInput = document.createElement('input');
-      valInput.type = 'text';
-      valInput.className = 'spec-val';
-      valInput.value = ann.value != null ? ann.value : '';
-      valInput.placeholder = autoValuePlaceholder(ann);
-      valInput.addEventListener('focus', () => setSelection('annotation', ann.id));
-      valInput.addEventListener('change', () => {
-        const v = valInput.value.trim();
-        const next = v === '' ? null : v;
-        if (ann.value !== next) { ann.value = next; pushHistoryIfChanged(); }
-        valInput.placeholder = autoValuePlaceholder(ann);
-      });
-      valTd.appendChild(valInput);
-
-      tr.appendChild(pomTd);
-      tr.appendChild(descCell);
-      tr.appendChild(valTd);
-      el.specBody.appendChild(tr);
-    }
-  }
-
-  function labelSortKey(ann) {
-    const m = String(getLabelText(ann)).match(/\d+(\.\d+)?/);
-    return m ? parseFloat(m[0]) : 9999;
-  }
-
-  function renderSpecCalNote() {
-    let note = 'Label a callout with its <b>POM number</b> (e.g. 8) to auto-fill its description and standard size-L value. Values are editable per style.';
-    if (state.calibration.unitsPerPx != null) {
-      note += ' Scale set — non-POM lines estimated in <b>' + state.calibration.unit + '</b>.';
-    }
-    el.specCal.innerHTML = note;
-  }
-
-  function updateSpecHighlightOnly() {
-    const rows = el.specBody.querySelectorAll('tr');
-    rows.forEach((tr) => {
-      const isSel = state.selection.kind === 'annotation' && String(state.selection.id) === tr.dataset.annId;
-      tr.classList.toggle('selected', isSel);
-    });
-  }
-
-  function autoValuePlaceholder(ann) {
-    return placeholderFor(ann, getLabelText(ann));
-  }
-
-  // Value placeholder priority: POM standard reference > calibration estimate > none.
-  function placeholderFor(ann, labelText) {
-    const pom = getPomInfo(labelText);
-    if (pom.refL != null) return 'std ' + pom.refL + ' ' + POM_UNIT;
-    if (state.calibration.unitsPerPx != null) {
-      return '≈ ' + formatMeasure(lineLength(ann) * state.calibration.unitsPerPx) + ' ' + state.calibration.unit;
-    }
-    return '—';
-  }
-
-  function updateUI() {
-    el.toolSelect.classList.toggle('active', state.tool === 'select');
-    el.toolStraight.classList.toggle('active', state.tool === 'straight');
-    el.toolCurved.classList.toggle('active', state.tool === 'curved');
-    const annotationCount = state.annotations.length;
-    const imageCount = state.images.length;
-    const selectedAnnotation = getSelectedAnnotation();
-    const selectedImage = getSelectedImage();
-    const activeStyle = selectedAnnotation ? getLineStyle(selectedAnnotation) : state.drawStyle;
-    const activeColor = selectedAnnotation ? normalizeColorKey(selectedAnnotation.color) : state.drawColor;
-    const activeArrowType = selectedAnnotation ? getArrowType(selectedAnnotation) : state.arrowType;
-    el.dashedToggle.checked = activeStyle === 'dashed';
-    el.arrowDoubleBtn.classList.toggle('active', activeArrowType === 'double');
-    el.arrowSingleBtn.classList.toggle('active', activeArrowType === 'single');
-    el.arrowNoneBtn.classList.toggle('active', activeArrowType === 'none');
-    el.colorRedBtn.classList.toggle('active', activeColor === 'red');
-    el.colorBlueBtn.classList.toggle('active', activeColor === 'blue');
-    el.colorBlackBtn.classList.toggle('active', activeColor === 'black');
-
-    // Lock dashed/arrow controls for POMs with an enforced style (e.g. 2 and 4).
-    const styleLocked = !!(selectedAnnotation && forcedStyleFor(selectedAnnotation));
-    el.dashedToggle.disabled = styleLocked;
-    el.arrowDoubleBtn.disabled = styleLocked;
-    el.arrowSingleBtn.disabled = styleLocked;
-    el.arrowNoneBtn.disabled = styleLocked;
-
-    let toolText = '';
-    if (state.tool === 'select') {
-      if (selectedAnnotation) {
-        toolText = 'Select – Drag line, endpoints, curve controls, or label. Use wheel to zoom, or hold <span class="kbd">Space</span> to pan.';
-      } else if (selectedImage) {
-        toolText = 'Select – Drag the image to move it, drag a corner handle to resize, use wheel to zoom, or hold <span class="kbd">Space</span> to pan.';
-      } else {
-        toolText = 'Select – Click an image, line, or label to select. Use wheel to zoom, double-click to fit, or hold <span class="kbd">Space</span> to pan.';
-      }
-    } else if (state.tool === 'straight') {
-      toolText = state.drawSession
-        ? 'Straight Line – Click second point to finish.'
-        : 'Straight Line – Click first point.';
-    } else {
-      toolText = state.drawSession
-        ? 'Curved Line – Click second point to finish the curve.'
-        : 'Curved Line – Click first point.';
-    }
-    el.toolStatus.innerHTML = '<strong>Tool:</strong> ' + toolText;
-
-    if (imageCount > 0) {
-      el.imageStatus.innerHTML = '<strong>Board:</strong> ' + imageCount + ' image' + (imageCount === 1 ? '' : 's') + ' • ' + annotationCount + ' line' + (annotationCount === 1 ? '' : 's');
-      el.boardCard.classList.remove('no-image');
-    } else {
-      el.imageStatus.innerHTML = annotationCount > 0
-        ? '<strong>Board:</strong> <span class="muted">No image loaded • Press <span class="kbd">Ctrl/Cmd + V</span> to paste</span> • ' + annotationCount + ' line' + (annotationCount === 1 ? '' : 's')
-        : '<strong>Board:</strong> <span class="muted">No image loaded • Press <span class="kbd">Ctrl/Cmd + V</span> to paste</span>';
-      el.boardCard.classList.add('no-image');
-    }
-
-    el.countStatus.innerHTML = '<strong>Images:</strong> ' + imageCount + ' &nbsp;•&nbsp; <strong>Annotations:</strong> ' + annotationCount;
-    el.deleteBtn.disabled = !(selectedAnnotation || selectedImage);
-    el.saveProjectBtn.disabled = annotationCount === 0 && imageCount === 0;
-    el.clearBtn.disabled = annotationCount === 0;
-    el.fitBtn.disabled = imageCount === 0;
-    el.undoBtn.disabled = state.history.past.length <= 1;
-    el.redoBtn.disabled = state.history.future.length === 0;
-    el.setScaleBtn.disabled = !selectedAnnotation;
-    el.setScaleBtn.classList.toggle('active', state.calibration.unitsPerPx != null);
-    el.clearScaleBtn.disabled = state.calibration.unitsPerPx == null;
-    renderSpecPanel();
-  }
-
-  function showToast(message, duration = 2600) {
-    el.toast.textContent = message;
-    el.toast.classList.add('show');
-    clearTimeout(state.toastTimer);
-    state.toastTimer = setTimeout(() => {
-      el.toast.classList.remove('show');
-    }, duration);
-  }
-
-function resizeCanvas() {
-  const previousRect = state.lastCanvasRect;
-  const worldCenter = previousRect
-    ? {
-        x: (previousRect.width / 2 - state.panX) / state.zoom,
-        y: (previousRect.height / 2 - state.panY) / state.zoom,
-      }
-    : null;
-
-  const rect = el.canvas.getBoundingClientRect();
-  state.lastCanvasRect = rect;
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  el.canvas.width = Math.round(rect.width * dpr);
-  el.canvas.height = Math.round(rect.height * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  if (worldCenter) {
-    state.panX = rect.width / 2 - worldCenter.x * state.zoom;
-    state.panY = rect.height / 2 - worldCenter.y * state.zoom;
-  }
-
-  requestRender();
-}
-
-  function seedHistory() {
-    const snap = makeSnapshot();
-    state.history.past = [{ snapshot: snap, fingerprint: snapshotFingerprint(snap) }];
-    state.history.future = [];
-  }
-
-  function makeSnapshot() {
-    return {
-      tool: state.tool,
-      drawStyle: state.drawStyle,
-      drawColor: state.drawColor,
-      arrowType: state.arrowType,
-      annotations: clone(state.annotations),
-      images: state.images.map(stripImageForSnapshot),
-      nextSequence: state.nextSequence,
-      selection: clone(state.selection),
-      idCounter: state.idCounter,
-      calibration: clone(state.calibration),
-    };
-  }
-
-  // Snapshots reference images by id only; the heavy base64 lives in imageDataById.
-  function stripImageForSnapshot(image) {
-    return {
-      id: image.id,
-      x: image.x,
-      y: image.y,
-      width: image.width,
-      height: image.height,
-    };
-  }
-
-  function snapshotFingerprint(snapshot) {
-    return JSON.stringify(snapshot);
-  }
-
-  function pushHistoryIfChanged() {
-    if (state.history.restoring) return;
-    const snap = makeSnapshot();
-    const fingerprint = snapshotFingerprint(snap);
-    const last = state.history.past[state.history.past.length - 1];
-    if (last && last.fingerprint === fingerprint) return;
-
-    state.history.past.push({ snapshot: snap, fingerprint });
-    if (state.history.past.length > HISTORY_LIMIT) {
-      state.history.past.shift();
-    }
-    state.history.future = [];
-    updateUI();
-  }
-
-  async function restoreSnapshot(snapshot) {
-    state.history.restoring = true;
-    state.tool = snapshot.tool || 'select';
-    state.drawStyle = snapshot.drawStyle || 'solid';
-    state.drawColor = snapshot.drawColor || 'red';
-    state.arrowType = snapshot.arrowType || 'double';
-    state.annotations = clone(snapshot.annotations || []);
-    state.nextSequence = snapshot.nextSequence || (state.annotations.length + 1);
-    state.selection = snapshot.selection || { kind: null, id: null };
-    state.idCounter = snapshot.idCounter || inferNextIdCounter();
-    state.calibration = snapshot.calibration || { unitsPerPx: null, unit: 'cm' };
-    state.editingLabelId = null;
-    state.drawSession = null;
-    state.interaction = null;
-
-    state.images = await Promise.all((snapshot.images || []).map(async (meta) => {
-      const dataURL = imageDataById.get(meta.id) || meta.dataURL;
-      const img = await loadImageFromDataURL(dataURL);
-      return { ...meta, dataURL, img };
-    }));
-
-    if (state.selection.kind === 'annotation' && !state.annotations.some(a => a.id === state.selection.id)) {
-      state.selection = { kind: null, id: null };
-    }
-    if (state.selection.kind === 'image' && !state.images.some(i => i.id === state.selection.id)) {
-      state.selection = { kind: null, id: null };
-    }
-
-    state.history.restoring = false;
-    updateUI();
-    requestRender();
-  }
-
-  async function undo() {
-    if (state.history.past.length <= 1) return;
-    const current = state.history.past.pop();
-    state.history.future.push(current);
-    const target = state.history.past[state.history.past.length - 1];
-    await restoreSnapshot(target.snapshot);
-  }
-
-  async function redo() {
-    if (!state.history.future.length) return;
-    const next = state.history.future.pop();
-    state.history.past.push(next);
-    await restoreSnapshot(next.snapshot);
-  }
-
-  function clone(value) {
-    return value == null ? value : JSON.parse(JSON.stringify(value));
-  }
-
-  function inferNextIdCounter() {
-    let max = 0;
-    for (const ann of state.annotations) max = Math.max(max, Number(ann.id) || 0);
-    for (const image of state.images) max = Math.max(max, Number(image.id) || 0);
-    return max + 1;
-  }
-
-
-  async function onPasteEvent(e) {
-    const items = Array.from(e.clipboardData?.items || []);
-    const imageItems = items.filter(item => item.type && item.type.startsWith('image/'));
-    if (!imageItems.length) return;
-    e.preventDefault();
-    const dataURLs = [];
-    for (const imageItem of imageItems) {
-      const blob = imageItem.getAsFile();
-      if (!blob) continue;
-      dataURLs.push(await blobToDataURL(blob));
-    }
-    if (dataURLs.length) {
-      await addImagesFromDataURLs(dataURLs);
-    }
-  }
-
-  async function addImagesFromDataURLs(dataURLs) {
-    const hadImages = state.images.length > 0;
-    const baseCount = state.images.length;
-    let added = 0;
-
-    for (let batchIndex = 0; batchIndex < dataURLs.length; batchIndex += 1) {
-      const dataURL = dataURLs[batchIndex];
-      const img = await loadImageFromDataURL(dataURL);
-      const imageRecord = createImageRecord(img, dataURL, baseCount + batchIndex);
-      state.images.push(imageRecord);
-      state.selection = { kind: 'image', id: imageRecord.id };
-      added += 1;
-    }
-
-    if (!hadImages && state.images.length > 0) {
-      fitImagesToBoard();
-    } else {
-      updateUI();
-      requestRender();
-    }
-
-    pushHistoryIfChanged();
-    updateUI();
-    requestRender();
-    showToast(added === 1 ? '1 image added to the board.' : added + ' images added to the board.');
-  }
-
-  async function onPptxFileChosen(e) {
-    const input = e.target;
-    const file = input.files && input.files[0];
-    input.value = '';
-    if (!file) return;
-    el.importPptxBtn.disabled = true;
-    const prevLabel = el.importPptxBtn.textContent;
-    el.importPptxBtn.textContent = 'Importing…';
-    try {
-      const buffer = await file.arrayBuffer();
-      const dataURLs = await extractSlideImagesFromPptx(buffer);
-      if (!dataURLs.length) {
-        showToast('No usable sketch images were found in that deck.', 4200);
-        return;
-      }
-      await addImagesFromDataURLs(dataURLs);
-      showToast(dataURLs.length + ' slide image' + (dataURLs.length === 1 ? '' : 's') + ' imported. Delete any logos you don’t need.', 4200);
-    } catch (error) {
-      console.error(error);
-      showToast('Could not read that .pptx file. It may be corrupt or use an unsupported format.', 4600);
-    } finally {
-      el.importPptxBtn.disabled = false;
-      el.importPptxBtn.textContent = prevLabel;
-    }
-  }
-
-  // ---- Save / open project ----
-  function saveProject() {
-    if (!state.annotations.length && !state.images.length) {
-      showToast('Nothing to save yet. Paste an image or draw a line first.');
-      return;
-    }
-    const project = {
-      format: PROJECT_FORMAT,
-      version: PROJECT_VERSION,
-      savedAt: new Date().toISOString(),
-      state: {
-        annotations: clone(state.annotations),
-        images: state.images.map(img => ({
-          id: img.id, dataURL: img.dataURL,
-          x: img.x, y: img.y, width: img.width, height: img.height,
-        })),
-        calibration: clone(state.calibration),
-        nextSequence: state.nextSequence,
-        idCounter: state.idCounter,
-        drawStyle: state.drawStyle,
-        drawColor: state.drawColor,
-        arrowType: state.arrowType,
-        zoom: state.zoom,
-        panX: state.panX,
-        panY: state.panY,
-      },
-    };
-    const blob = new Blob([JSON.stringify(project)], { type: 'application/json' });
-    downloadBlob(blob, makeProjectFileName());
-    showToast('Project saved. Reopen it later with Open Project.');
-  }
-
-  function makeProjectFileName() {
-    const now = new Date();
-    const pad = (value) => String(value).padStart(2, '0');
-    return 'bra-sketch-project-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' + pad(now.getHours()) + pad(now.getMinutes()) + '.json';
-  }
-
-  function onProjectFileChosen(e) {
-    const input = e.target;
-    const file = input.files && input.files[0];
-    input.value = '';
-    if (!file) return;
-    if ((state.annotations.length || state.images.length) &&
-        !window.confirm('Open this project? Your current board will be replaced. Save it first if you want to keep it.')) {
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const project = JSON.parse(String(reader.result || ''));
-        await loadProject(project);
-        showToast('Project opened.');
-      } catch (error) {
-        console.error(error);
-        showToast('Could not open that file. It may not be a saved project.', 4200);
-      }
-    };
-    reader.onerror = () => showToast('Could not read that file.', 4200);
-    reader.readAsText(file);
-  }
-
-  async function loadProject(project) {
-    if (!project || project.format !== PROJECT_FORMAT || !project.state) {
-      throw new Error('Unrecognized project file');
-    }
-    const s = project.state;
-
-    state.annotations = clone(s.annotations || []);
-    state.calibration = s.calibration || { unitsPerPx: null, unit: 'cm' };
-    state.nextSequence = s.nextSequence || (state.annotations.length + 1);
-    state.drawStyle = s.drawStyle || 'solid';
-    state.drawColor = s.drawColor || 'red';
-    state.arrowType = s.arrowType || 'double';
-    state.tool = 'select';
-    state.selection = { kind: null, id: null };
-    state.drawSession = null;
-    state.interaction = null;
-    state.editingLabelId = null;
-    el.labelEditor.style.display = 'none';
-
-    imageDataById.clear();
-    state.images = await Promise.all((s.images || []).map(async (meta) => {
-      const img = await loadImageFromDataURL(meta.dataURL);
-      imageDataById.set(meta.id, meta.dataURL);
-      return {
-        id: meta.id, dataURL: meta.dataURL, img,
-        x: meta.x, y: meta.y, width: meta.width, height: meta.height,
-      };
-    }));
-
-    state.idCounter = s.idCounter || inferNextIdCounter();
-    state.zoom = clamp(s.zoom ?? 1, MIN_ZOOM, MAX_ZOOM);
-    state.panX = s.panX ?? 0;
-    state.panY = s.panY ?? 0;
-
-    seedHistory();
-    updateUI();
-    requestRender();
-  }
-
-  // A .pptx is a ZIP container. Parse it natively and pull one or more
-  // picture images per slide, in slide order, skipping tiny logo/icon art.
-  async function extractSlideImagesFromPptx(buffer) {
-    const zip = parseZip(buffer);
-    const slideArea = await readSlideArea(zip);
-    const minArea = slideArea ? slideArea * 0.03 : 0;
-
-    const slideNames = Object.keys(zip.entries)
-      .filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name))
-      .sort((a, b) => slideNumber(a) - slideNumber(b));
-
-    const dataURLs = [];
-    const seenTargets = new Set();
-
-    for (const slideName of slideNames) {
-      const xmlText = await readZipEntryText(zip, slideName);
-      if (!xmlText) continue;
-      const relsName = slideName.replace(/slides\/(slide\d+\.xml)$/, 'slides/_rels/$1.rels');
-      const relsText = await readZipEntryText(zip, relsName);
-      const relMap = parseRels(relsText);
-
-      const picks = pickSlidePictures(xmlText, relMap, slideName, minArea);
-      for (const target of picks) {
-        if (seenTargets.has(target)) continue;
-        seenTargets.add(target);
-        const dataURL = await mediaTargetToDataURL(zip, target);
-        if (dataURL) dataURLs.push(dataURL);
-      }
-    }
-
-    // Fallback: deck stores images outside <p:pic> (e.g. backgrounds) — grab raw media.
-    if (!dataURLs.length) {
-      const mediaNames = Object.keys(zip.entries)
-        .filter(name => /^ppt\/media\/[^/]+\.(png|jpe?g|gif|bmp)$/i.test(name))
-        .sort((a, b) => slideNumber(a) - slideNumber(b));
-      for (const name of mediaNames) {
-        const dataURL = await mediaTargetToDataURL(zip, name);
-        if (dataURL) dataURLs.push(dataURL);
-      }
-    }
-    return dataURLs;
-  }
-
-  function slideNumber(name) {
-    const m = name.match(/(\d+)\D*$/);
-    return m ? parseInt(m[1], 10) : 0;
-  }
-
-  async function readSlideArea(zip) {
-    try {
-      if (!zip.entries['ppt/presentation.xml']) return 0;
-      const text = await readZipEntryText(zip, 'ppt/presentation.xml');
-      if (!text) return 0;
-      const doc = new DOMParser().parseFromString(text, 'application/xml');
-      const sz = doc.getElementsByTagName('p:sldSz')[0] || doc.getElementsByTagName('sldSz')[0];
-      if (!sz) return 0;
-      const cx = parseFloat(sz.getAttribute('cx') || '0');
-      const cy = parseFloat(sz.getAttribute('cy') || '0');
-      return cx > 0 && cy > 0 ? cx * cy : 0;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  function parseRels(relsText) {
-    const map = {};
-    if (!relsText) return map;
-    const doc = new DOMParser().parseFromString(relsText, 'application/xml');
-    const rels = doc.getElementsByTagName('Relationship');
-    for (const rel of Array.from(rels)) {
-      const id = rel.getAttribute('Id');
-      const target = rel.getAttribute('Target');
-      if (id && target) map[id] = target;
-    }
-    return map;
-  }
-
-  function pickSlidePictures(xmlText, relMap, slideName, minArea) {
-    const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-    const pics = Array.from(doc.getElementsByTagName('p:pic'));
-    const results = [];
-    let largest = null;
-    let largestArea = -1;
-
-    for (const pic of pics) {
-      const blip = pic.getElementsByTagName('a:blip')[0];
-      if (!blip) continue;
-      const embed = blip.getAttribute('r:embed') || blip.getAttribute('embed');
-      if (!embed || !relMap[embed]) continue;
-      const target = resolveRelTarget(relMap[embed], slideName);
-      if (!target) continue;
-
-      let area = 0;
-      for (const ext of Array.from(pic.getElementsByTagName('a:ext'))) {
-        const cx = parseFloat(ext.getAttribute('cx') || '0');
-        const cy = parseFloat(ext.getAttribute('cy') || '0');
-        area = Math.max(area, cx * cy);
-      }
-      if (area > largestArea) { largestArea = area; largest = target; }
-      if (minArea && area && area < minArea) continue;
-      results.push(target);
-    }
-
-    // Never drop a slide entirely: if everything was filtered out, keep its biggest picture.
-    if (!results.length && largest) results.push(largest);
-    return results;
-  }
-
-  function resolveRelTarget(target, slideName) {
-    if (/^https?:/i.test(target)) return null;
-    const baseDir = slideName.replace(/\/[^/]*$/, '/');
-    const parts = (baseDir + target).split('/');
-    const stack = [];
-    for (const part of parts) {
-      if (part === '..') stack.pop();
-      else if (part !== '.' && part !== '') stack.push(part);
-    }
-    return stack.join('/');
-  }
-
-  async function mediaTargetToDataURL(zip, target) {
-    const ext = (target.split('.').pop() || '').toLowerCase();
-    const mime = {
-      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-      gif: 'image/gif', bmp: 'image/bmp',
-    }[ext];
-    if (!mime) return null; // emf/wmf/svg etc. can't be drawn to canvas reliably
-    const bytes = await readZipEntryBytes(zip, target);
-    if (!bytes) return null;
-    return 'data:' + mime + ';base64,' + bytesToBase64(bytes);
-  }
-
-  // ---- Minimal ZIP reader (central directory + DEFLATE via DecompressionStream) ----
-
-  function parseZip(buffer) {
-    const dv = new DataView(buffer);
-    const bytes = new Uint8Array(buffer);
-    let eocd = -1;
-    for (let i = buffer.byteLength - 22; i >= 0; i -= 1) {
-      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
-    }
-    if (eocd < 0) throw new Error('Not a valid ZIP/.pptx file');
-    const count = dv.getUint16(eocd + 10, true);
-    let p = dv.getUint32(eocd + 16, true);
-    const entries = {};
-    for (let n = 0; n < count; n += 1) {
-      if (dv.getUint32(p, true) !== 0x02014b50) break;
-      const method = dv.getUint16(p + 10, true);
-      const compSize = dv.getUint32(p + 20, true);
-      const nameLen = dv.getUint16(p + 28, true);
-      const extraLen = dv.getUint16(p + 30, true);
-      const commentLen = dv.getUint16(p + 32, true);
-      const localOffset = dv.getUint32(p + 42, true);
-      const name = utf8Decode(bytes.subarray(p + 46, p + 46 + nameLen));
-      entries[name] = { method, compSize, localOffset };
-      p += 46 + nameLen + extraLen + commentLen;
-    }
-    return { dv, bytes, entries, _cache: {} };
-  }
-
-  function entryCompressedBytes(zip, name) {
-    const e = zip.entries[name];
-    if (!e) return null;
-    const lo = e.localOffset;
-    if (zip.dv.getUint32(lo, true) !== 0x04034b50) return null;
-    const nameLen = zip.dv.getUint16(lo + 26, true);
-    const extraLen = zip.dv.getUint16(lo + 28, true);
-    const start = lo + 30 + nameLen + extraLen;
-    return { method: e.method, data: zip.bytes.subarray(start, start + e.compSize) };
-  }
-
-  async function readZipEntryBytes(zip, name) {
-    const raw = entryCompressedBytes(zip, name);
-    if (!raw) return null;
-    if (raw.method === 0) return raw.data;
-    if (raw.method === 8) return await inflateRaw(raw.data);
-    throw new Error('Unsupported ZIP compression method ' + raw.method);
-  }
-
-  async function readZipEntryText(zip, name) {
-    const bytes = await readZipEntryBytes(zip, name);
-    return bytes ? utf8Decode(bytes) : '';
-  }
-
-  async function inflateRaw(bytes) {
-    const ds = new DecompressionStream('deflate-raw');
-    const stream = new Response(bytes).body.pipeThrough(ds);
-    const ab = await new Response(stream).arrayBuffer();
-    return new Uint8Array(ab);
-  }
-
-  function utf8Decode(bytes) {
-    return new TextDecoder('utf-8').decode(bytes);
-  }
-
-  function bytesToBase64(bytes) {
-    let binary = '';
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-    }
-    return btoa(binary);
-  }
-
-  function createImageRecord(img, dataURL, stackIndex) {
-    const rect = state.lastCanvasRect || el.canvas.getBoundingClientRect();
-    const maxW = Math.max(180, rect.width * 0.42);
-    const maxH = Math.max(180, rect.height * 0.42);
-    const scale = Math.min(maxW / img.width, maxH / img.height, 1);
-    const width = Math.max(60, img.width * scale);
-    const height = Math.max(60, img.height * scale);
-    const centerWorld = screenToWorld(rect.width / 2, rect.height / 2);
-    const offset = stackIndex * (18 / Math.max(state.zoom, 0.25));
-
-    const id = state.idCounter++;
-    imageDataById.set(id, dataURL);
-    return {
-      id,
-      dataURL,
-      img,
-      width,
-      height,
-      x: centerWorld.x - width / 2 + offset,
-      y: centerWorld.y - height / 2 + offset,
-    };
-  }
-
-  function blobToDataURL(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  function loadImageFromDataURL(dataURL) {
-    return new Promise((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = reject;
-      image.src = dataURL;
-    });
-  }
-
-function toggleSpecPanel() {
-  const hidden = el.workspace.classList.toggle('panel-hidden');
-  el.togglePanelBtn.textContent = hidden ? 'Show Panel' : 'Hide Panel';
-  el.togglePanelBtn.classList.toggle('active', hidden);
-  // Layout changed — recompute canvas size and keep current view.
-  resizeCanvas();
-}
-
-function fitSelectionOrAll() {
-  const selectedImage = getSelectedImage();
-  if (selectedImage) {
-    fitBoundsToViewport(getImageBounds(selectedImage));
-    return;
-  }
-  fitImagesToBoard();
-}
-
-function fitImagesToBoard() {
-  if (!state.images.length) {
-    resetViewport();
-    return;
-  }
-  fitBoundsToViewport(getImagesBounds());
-}
-
-function fitBoundsToViewport(bounds) {
-  const rect = getViewportRect();
-  if (!bounds || rect.width <= 0 || rect.height <= 0) {
-    resetViewport();
-    return;
-  }
-
-  const availW = Math.max(80, rect.width - IMAGE_PADDING * 2);
-  const availH = Math.max(80, rect.height - IMAGE_PADDING * 2);
-  const zoom = clamp(Math.min(availW / bounds.width, availH / bounds.height), MIN_ZOOM, MAX_ZOOM);
-  state.zoom = zoom;
-  state.panX = rect.width / 2 - (bounds.x + bounds.width / 2) * zoom;
-  state.panY = rect.height / 2 - (bounds.y + bounds.height / 2) * zoom;
-  updateUI();
-  requestRender();
-}
-
-function resetViewport() {
-  state.zoom = 1;
-  state.panX = 0;
-  state.panY = 0;
-  updateUI();
-  requestRender();
-}
-
-function getImagesBounds() {
-    const first = state.images[0];
-    let minX = first.x;
-    let minY = first.y;
-    let maxX = first.x + first.width;
-    let maxY = first.y + first.height;
-    for (let i = 1; i < state.images.length; i += 1) {
-      const image = state.images[i];
-      minX = Math.min(minX, image.x);
-      minY = Math.min(minY, image.y);
-      maxX = Math.max(maxX, image.x + image.width);
-      maxY = Math.max(maxY, image.y + image.height);
-    }
-    return {
-      x: minX,
-      y: minY,
-      width: Math.max(1, maxX - minX),
-      height: Math.max(1, maxY - minY),
-    };
-  }
-
-function getImageBounds(image) {
-  return {
-    x: image.x,
-    y: image.y,
-    width: Math.max(1, image.width),
-    height: Math.max(1, image.height),
-  };
-}
-
-function setSelection(kind, id) {
-    state.selection = kind && id != null ? { kind, id } : { kind: null, id: null };
-    if (kind === 'annotation') {
-      const ann = getAnnotationById(id);
-      if (ann) {
-        state.drawStyle = ann.style || state.drawStyle;
-        state.drawColor = normalizeColorKey(ann.color);
-        state.arrowType = getArrowType(ann);
-      }
-    }
-    updateUI();
-    requestRender();
-  }
-
-  function clearSelection() {
-    setSelection(null, null);
-  }
-
-  function getSelectedAnnotation() {
-    return state.selection.kind === 'annotation'
-      ? state.annotations.find(a => a.id === state.selection.id) || null
-      : null;
-  }
-
-  function getSelectedImage() {
-    return state.selection.kind === 'image'
-      ? state.images.find(image => image.id === state.selection.id) || null
-      : null;
-  }
-
-  function onMouseDown(e) {
-    const isPanButton = state.spacePan || e.button === 1 || e.button === 2;
-    if (isPanButton) {
-      startPanInteraction(e);
-      return;
-    }
-    if (e.button !== 0) return;
-
-    const screen = getMousePos(e);
-    const world = screenToWorld(screen.x, screen.y);
-
-    if (state.tool === 'straight' || state.tool === 'curved') {
-      handleDrawToolClick(world);
-      return;
-    }
-
-    const selectedAnnotation = getSelectedAnnotation();
-    const handleHit = selectedAnnotation ? hitTestSelectedHandles(world, selectedAnnotation) : null;
-    if (handleHit) {
-      startHandleDrag(selectedAnnotation.id, handleHit.part, world);
-      return;
-    }
-
-    const selectedImage = getSelectedImage();
-    const imageHandleHit = selectedImage ? hitTestSelectedImageHandles(world, selectedImage) : null;
-    if (imageHandleHit) {
-      startImageResize(selectedImage.id, imageHandleHit.corner);
-      return;
-    }
-
-    const annotationHit = hitTestAnnotations(world);
-    if (annotationHit) {
-      setSelection('annotation', annotationHit.id);
-      if (annotationHit.part === 'label') {
-        startLabelDrag(annotationHit.id, world);
-      } else {
-        startAnnotationDrag(annotationHit.id, world);
-      }
-      return;
-    }
-
-    const imageHit = hitTestImages(world);
-    if (imageHit) {
-      setSelection('image', imageHit.id);
-      startImageDrag(imageHit.id, world);
-      return;
-    }
-
-    if (state.selection.kind != null) {
-      clearSelection();
-    }
-  }
-
-  function onMouseMove(e) {
-    const screen = getMousePos(e);
-    const world = screenToWorld(screen.x, screen.y);
-
-    if (state.drawSession) {
-      state.drawSession.current = world;
-      requestRender();
-    }
-
-    const interaction = state.interaction;
-    if (!interaction) return;
-
-    if (interaction.type === 'pan') {
-      const dx = screen.x - interaction.startScreen.x;
-      const dy = screen.y - interaction.startScreen.y;
-      state.panX = interaction.startPan.x + dx;
-      state.panY = interaction.startPan.y + dy;
-      updateUI();
-      requestRender();
-      return;
-    }
-
-    if (interaction.type === 'drag-annotation') {
-      const ann = getAnnotationById(interaction.id);
-      if (!ann) return;
-      const dx = world.x - interaction.prevWorld.x;
-      const dy = world.y - interaction.prevWorld.y;
-      if (dx || dy) {
-        moveAnnotation(ann, dx, dy);
-        interaction.changed = true;
-        interaction.prevWorld = world;
-        requestRender();
-      }
-      return;
-    }
-
-    if (interaction.type === 'drag-label') {
-      const ann = getAnnotationById(interaction.id);
-      if (!ann) return;
-      const dx = world.x - interaction.prevWorld.x;
-      const dy = world.y - interaction.prevWorld.y;
-      if (dx || dy) {
-        ann.label.x += dx;
-        ann.label.y += dy;
-        ann.labelManual = true;
-        interaction.changed = true;
-        interaction.prevWorld = world;
-        requestRender();
-      }
-      return;
-    }
-
-    if (interaction.type === 'drag-handle') {
-      const ann = getAnnotationById(interaction.id);
-      if (!ann) return;
-      dragHandle(ann, interaction.part, world, interaction.prevWorld);
-      interaction.changed = true;
-      interaction.prevWorld = world;
-      requestRender();
-      return;
-    }
-
-    if (interaction.type === 'drag-image') {
-      const image = getImageById(interaction.id);
-      if (!image) return;
-      const dx = world.x - interaction.prevWorld.x;
-      const dy = world.y - interaction.prevWorld.y;
-      if (dx || dy) {
-        image.x += dx;
-        image.y += dy;
-        interaction.changed = true;
-        interaction.prevWorld = world;
-        requestRender();
-      }
-      return;
-    }
-
-    if (interaction.type === 'drag-image-resize') {
-      const image = getImageById(interaction.id);
-      if (!image) return;
-      resizeImageFromCorner(image, interaction.corner, interaction.anchor, interaction.aspect, world);
-      interaction.changed = true;
-      interaction.prevWorld = world;
-      requestRender();
-    }
-  }
-
-  function onMouseUp() {
-    const interaction = state.interaction;
-    if (!interaction) return;
-
-    document.body.classList.remove('grabbing');
-
-    if (interaction.type !== 'pan' && interaction.changed) {
-      const before = interaction.beforeFingerprint;
-      const after = snapshotFingerprint(makeSnapshot());
-      if (before !== after) {
-        pushHistoryIfChanged();
-      }
-    }
-
-    state.interaction = null;
-  }
-
-function onWheel(e) {
-  e.preventDefault();
-
-  if (e.shiftKey) {
-    state.panX -= normalizeWheelDelta(e) * 0.45;
-    updateUI();
-    requestRender();
-    return;
-  }
-
-  const mouse = getMousePos(e);
-  const sensitivity = e.altKey ? PRECISE_ZOOM_SENSITIVITY : ZOOM_SENSITIVITY;
-  const factor = Math.exp(-normalizeWheelDelta(e) * sensitivity);
-  zoomAtScreenPoint(state.zoom * factor, mouse.x, mouse.y);
-}
-
-  function onKeyDown(e) {
-    const target = e.target;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
-      return;
-    }
-    const isMeta = e.metaKey || e.ctrlKey;
-    const key = e.key.toLowerCase();
-
-    if (e.code === 'Space' && !state.spacePan) {
-      state.spacePan = true;
-      document.body.classList.add('space-pan');
-      e.preventDefault();
-    }
-
-    if (isMeta && key === 'z' && !e.shiftKey) {
-      e.preventDefault();
-      void undo();
-      return;
-    }
-    if (isMeta && ((key === 'z' && e.shiftKey) || key === 'y')) {
-      e.preventDefault();
-      void redo();
-      return;
-    }
-
-    if ((isMeta && key === '0') || (!isMeta && key === 'f')) {
-      e.preventDefault();
-      fitSelectionOrAll();
-      return;
-    }
-
-    if (!isMeta && key === 's') {
-      e.preventDefault();
-      setTool('select');
-      return;
-    }
-
-    if (!isMeta && key === '0') {
-      e.preventDefault();
-      setTool('straight');
-      return;
-    }
-
-    if (!isMeta && key === 'b') {
-      e.preventDefault();
-      setTool('curved');
-      return;
-    }
-
-    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selection.kind != null) {
-      e.preventDefault();
-      deleteSelected();
-      return;
-    }
-
-    if (e.key === 'Escape') {
-      if (state.drawSession) {
-        state.drawSession = null;
-        state.tool = 'select';
-        showToast('Drawing canceled.');
-        updateUI();
-        requestRender();
-      } else if (state.tool === 'straight' || state.tool === 'curved') {
-        state.tool = 'select';
-        updateUI();
-        requestRender();
-      } else if (state.selection.kind != null) {
-        clearSelection();
-      }
-    }
-  }
-
-  function onKeyUp(e) {
-    if (e.code === 'Space') {
-      state.spacePan = false;
-      document.body.classList.remove('space-pan');
-      document.body.classList.remove('grabbing');
-    }
-  }
-
-  function startPanInteraction(e) {
-    const startScreen = getMousePos(e);
-    state.interaction = {
-      type: 'pan',
-      startScreen,
-      startPan: { x: state.panX, y: state.panY },
-      changed: false,
-    };
-    document.body.classList.add('grabbing');
-  }
-
-function beginTrackedInteraction(type, payload) {
-  state.interaction = {
-    type,
-    changed: false,
-    beforeFingerprint: snapshotFingerprint(makeSnapshot()),
-    ...payload,
-  };
-}
-
-function startAnnotationDrag(id, world) {
-  beginTrackedInteraction('drag-annotation', { id, prevWorld: world });
-}
-
-function startLabelDrag(id, world) {
-  beginTrackedInteraction('drag-label', { id, prevWorld: world });
-}
-
-function startHandleDrag(id, part, world) {
-  beginTrackedInteraction('drag-handle', { id, part, prevWorld: world });
-}
-
-function startImageDrag(id, world) {
-  beginTrackedInteraction('drag-image', { id, prevWorld: world });
-}
-
-function startImageResize(id, corner) {
-  const image = getImageById(id);
-  if (!image) return;
-  beginTrackedInteraction('drag-image-resize', {
-    id,
-    corner,
-    anchor: getOppositeImageCorner(image, corner),
-    aspect: image.width / Math.max(1, image.height),
-  });
-}
-
-  function handleDrawToolClick(world) {
-    if (!state.drawSession) {
-      state.drawSession = {
-        type: state.tool,
-        style: state.drawStyle,
-        color: state.drawColor,
-        arrowType: state.arrowType,
-        start: world,
-        current: world,
-      };
-      updateUI();
-      requestRender();
-      return;
-    }
-
-    const start = state.drawSession.start;
-    const end = world;
-    if (distance(start, end) < (4 / state.zoom)) {
-      return;
-    }
-
-    if (state.tool === 'straight') {
-      const ann = createStraightAnnotation(start, end, state.drawStyle, state.drawColor, state.arrowType);
-      state.annotations.push(ann);
-      state.selection = { kind: 'annotation', id: ann.id };
-      state.nextSequence += 1;
-      state.drawSession = null;
-      pushHistoryIfChanged();
-      updateUI();
-      requestRender();
-      return;
-    }
-
-    const ann = createCurvedAnnotation(start, end, state.drawStyle, state.drawColor, state.arrowType);
-    state.annotations.push(ann);
-    state.selection = { kind: 'annotation', id: ann.id };
-    state.nextSequence += 1;
-    state.drawSession = null;
-    pushHistoryIfChanged();
-    updateUI();
-    requestRender();
-  }
-
-  function createStraightAnnotation(start, end, style, color = 'red', arrowType = 'double') {
-    const id = state.idCounter++;
-    const label = computeDefaultLabelPosition({
-      type: 'straight',
-      start,
-      end,
-    });
-    return {
-      id,
-      seq: state.nextSequence,
-      type: 'straight',
-      style,
-      color,
-      arrowType,
-      start: clonePoint(start),
-      end: clonePoint(end),
-      control1: null,
-      control2: null,
-      label,
-      labelManual: false,
-      text: null,
-      value: null,
-    };
-  }
-
-  function createCurvedAnnotation(start, end, style, color = 'red', arrowType = 'double') {
-    const id = state.idCounter++;
-    const controls = makeNaturalCurveControls(start, end);
-    const label = computeDefaultLabelPosition({
-      type: 'curved',
-      start,
-      end,
-      control1: controls.control1,
-      control2: controls.control2,
-    });
-    return {
-      id,
-      seq: state.nextSequence,
-      type: 'curved',
-      style,
-      color,
-      arrowType,
-      start: clonePoint(start),
-      end: clonePoint(end),
-      control1: controls.control1,
-      control2: controls.control2,
-      label,
-      labelManual: false,
-      text: null,
-      value: null,
-    };
-  }
-
-  function makeNaturalCurveControls(start, end) {
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const len = Math.max(1, Math.hypot(dx, dy));
-    const nx = -dy / len;
-    const ny = dx / len;
-    const offset = clamp(len * 0.16, 26 / state.zoom, 82 / state.zoom);
-    return {
-      control1: {
-        x: start.x + dx / 3 + nx * offset,
-        y: start.y + dy / 3 + ny * offset
-      },
-      control2: {
-        x: start.x + (dx * 2) / 3 + nx * offset,
-        y: start.y + (dy * 2) / 3 + ny * offset
-      }
-    };
-  }
-
-  function computeDefaultLabelPosition(annLike) {
-    if (annLike.type === 'straight') {
-      const mid = midpoint(annLike.start, annLike.end);
-      const angle = Math.atan2(annLike.end.y - annLike.start.y, annLike.end.x - annLike.start.x);
-      const offset = 18 / state.zoom;
-      return {
-        x: mid.x + Math.cos(angle - Math.PI / 2) * offset,
-        y: mid.y + Math.sin(angle - Math.PI / 2) * offset
-      };
-    }
-    const point = bezierPoint(annLike.start, annLike.control1, annLike.control2, annLike.end, 0.5);
-    const tangent = bezierTangent(annLike.start, annLike.control1, annLike.control2, annLike.end, 0.5);
-    const angle = Math.atan2(tangent.y, tangent.x);
-    const offset = 20 / state.zoom;
-    return {
-      x: point.x + Math.cos(angle - Math.PI / 2) * offset,
-      y: point.y + Math.sin(angle - Math.PI / 2) * offset
-    };
-  }
-
-  function dragHandle(ann, part, world, prevWorld) {
-    const dx = world.x - prevWorld.x;
-    const dy = world.y - prevWorld.y;
-
-    if (part === 'start') {
-      ann.start = clonePoint(world);
-      if (ann.type === 'curved' && ann.control1) {
-        ann.control1.x += dx;
-        ann.control1.y += dy;
-      }
-    } else if (part === 'end') {
-      ann.end = clonePoint(world);
-      if (ann.type === 'curved' && ann.control2) {
-        ann.control2.x += dx;
-        ann.control2.y += dy;
-      }
-    } else if (part === 'control1' && ann.control1) {
-      ann.control1 = clonePoint(world);
-    } else if (part === 'control2' && ann.control2) {
-      ann.control2 = clonePoint(world);
-    }
-
-    if (!ann.labelManual) {
-      ann.label = computeDefaultLabelPosition(ann);
-    }
-  }
-
-  function moveAnnotation(ann, dx, dy) {
-    ann.start.x += dx; ann.start.y += dy;
-    ann.end.x += dx; ann.end.y += dy;
-    if (ann.control1) {
-      ann.control1.x += dx; ann.control1.y += dy;
-    }
-    if (ann.control2) {
-      ann.control2.x += dx; ann.control2.y += dy;
-    }
-    ann.label.x += dx; ann.label.y += dy;
-  }
-
-  function normalizeColorKey(color) {
-    if (LINE_COLORS[color]) return color;
-    const found = Object.entries(LINE_COLORS).find(([, value]) => value.toLowerCase() === String(color || '').toLowerCase());
-    return found ? found[0] : 'red';
-  }
-
-  function getAnnotationColor(ann) {
-    const key = normalizeColorKey(ann?.color);
-    return LINE_COLORS[key] || LINE_COLOR;
-  }
-
-  // Certain POMs are always drawn a fixed way regardless of stored style.
-  // POM 2 (1/2 chest) and POM 4 (cup width) are extension measures: dashed + single arrow.
-  const FORCED_POM_STYLE = {
-    '2': { style: 'dashed', arrowType: 'single' },
-    '4': { style: 'dashed', arrowType: 'single' },
-  };
-
-  function forcedStyleFor(ann) {
-    return FORCED_POM_STYLE[getLabelText(ann)] || null;
-  }
-
-  function getLineStyle(ann) {
-    const forced = forcedStyleFor(ann);
-    if (forced) return forced.style;
-    return ann?.style || 'solid';
-  }
-
-  function getArrowType(ann) {
-    const forced = forcedStyleFor(ann);
-    if (forced) return forced.arrowType;
-    if (ann?.arrowType === 'single' || ann?.arrowType === 'double' || ann?.arrowType === 'none') {
-      return ann.arrowType;
-    }
-    return ann?.style === 'solid' ? 'double' : 'single';
-  }
-
-  function getLabelText(ann) {
-    if (ann && ann.text != null && String(ann.text).trim() !== '') return String(ann.text);
-    return String(ann.seq);
-  }
-
-  function lineLength(ann) {
-    if (ann.type === 'straight') return distance(ann.start, ann.end);
-    let total = 0;
-    let prev = ann.start;
-    for (let i = 1; i <= BEZIER_SAMPLES; i += 1) {
-      const cur = bezierPoint(ann.start, ann.control1, ann.control2, ann.end, i / BEZIER_SAMPLES);
-      total += distance(prev, cur);
-      prev = cur;
-    }
-    return total;
-  }
-
-  function getMeasuredValue(ann) {
-    if (ann.value != null && String(ann.value).trim() !== '') return String(ann.value);
-    if (state.calibration.unitsPerPx != null) {
-      const real = lineLength(ann) * state.calibration.unitsPerPx;
-      return formatMeasure(real) + ' ' + state.calibration.unit;
-    }
-    return '';
-  }
-
-  function formatMeasure(value) {
-    const rounded = Math.round(value * 10) / 10;
-    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-  }
-
-  // Map a callout label ("8", "1,2") to POM standard info. Joins descriptions for
-  // multi-POM labels; returns a reference value only when a single POM is matched.
-  function getPomInfo(labelText) {
-    const text = String(labelText == null ? '' : labelText).trim();
-    if (!text) return { desc: '', refL: null };
-    const nums = text.split(/[,\s]+/).filter(Boolean);
-    const descs = [];
-    for (const n of nums) {
-      const info = POM_TEMPLATE[n];
-      if (info) descs.push(info.desc);
-    }
-    const single = nums.length === 1 && POM_TEMPLATE[nums[0]] ? POM_TEMPLATE[nums[0]] : null;
-    return { desc: descs.join('; '), refL: single ? single.refL : null };
-  }
-
-  function getAnnotationById(id) {
-    return state.annotations.find(a => a.id === id) || null;
-  }
-
-  function getImageById(id) {
-    return state.images.find(image => image.id === id) || null;
-  }
-
-  function deleteSelected() {
-    if (state.selection.kind == null) return;
-
-    if (state.selection.kind === 'annotation') {
-      const before = state.annotations.length;
-      state.annotations = state.annotations.filter(a => a.id !== state.selection.id);
-      if (state.annotations.length === before) return;
-      renumberAnnotations();
-    } else if (state.selection.kind === 'image') {
-      const before = state.images.length;
-      state.images = state.images.filter(image => image.id !== state.selection.id);
-      if (state.images.length === before) return;
-    }
-
-    state.selection = { kind: null, id: null };
-    pushHistoryIfChanged();
-    updateUI();
-    requestRender();
-  }
-
-  function clearAllAnnotations() {
-    if (!state.annotations.length) return;
-    state.annotations = [];
-    state.nextSequence = 1;
-    if (state.selection.kind === 'annotation') {
-      state.selection = { kind: null, id: null };
-    }
-    state.drawSession = null;
-    pushHistoryIfChanged();
-    updateUI();
-    requestRender();
-  }
-
-  function renumberAnnotations() {
-    state.annotations.forEach((ann, index) => {
-      ann.seq = index + 1;
-    });
-    state.nextSequence = state.annotations.length + 1;
-  }
-
-
-  function getMousePos(e) {
-    const rect = state.lastCanvasRect || el.canvas.getBoundingClientRect();
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
-    };
-  }
-
-function screenToWorld(x, y) {
-  return {
-    x: (x - state.panX) / state.zoom,
-    y: (y - state.panY) / state.zoom
-  };
-}
-
-function getViewportRect() {
-  return state.lastCanvasRect || el.canvas.getBoundingClientRect();
-}
-
-function normalizeWheelDelta(e) {
-  if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) return e.deltaY * 16;
-  if (e.deltaMode === WheelEvent.DOM_DELTA_PAGE) return e.deltaY * getViewportRect().height;
-  return e.deltaY;
-}
-
-function zoomAtScreenPoint(nextZoom, screenX, screenY) {
-  const clampedZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
-  if (Math.abs(clampedZoom - state.zoom) < 0.0001) return;
-  const before = screenToWorld(screenX, screenY);
-  state.zoom = clampedZoom;
-  state.panX = screenX - before.x * state.zoom;
-  state.panY = screenY - before.y * state.zoom;
-  updateUI();
-  requestRender();
-}
-
-function onDoubleClick(e) {
-  if (state.tool !== 'select') return;
-  const mouse = getMousePos(e);
-  const world = screenToWorld(mouse.x, mouse.y);
-  const annHit = hitTestAnnotations(world);
-  if (annHit) {
-    setSelection('annotation', annHit.id);
-    openLabelEditor(annHit.id);
-    return;
-  }
-  const imageHit = hitTestImages(world);
-  if (imageHit) {
-    setSelection('image', imageHit.id);
-    const image = getImageById(imageHit.id);
-    if (image) fitBoundsToViewport(getImageBounds(image));
-    return;
-  }
-  fitSelectionOrAll();
-}
-
-async function exportPdf() {
-  const bounds = getContentBounds();
-  if (!bounds) {
-    showToast('Nothing to export yet. Paste an image or draw annotations first.');
-    return;
-  }
-
-  try {
-    const page = createExportCanvas(bounds);
-    const jpegDataURL = page.canvas.toDataURL('image/jpeg', 0.94);
-    const jpegBytes = dataURLToUint8Array(jpegDataURL);
-    const pdfBlob = makeSinglePagePdfBlob(jpegBytes, page.canvas.width, page.canvas.height, page.pageWidthPt, page.pageHeightPt);
-    downloadBlob(pdfBlob, makeExportFileName());
-    showToast('PDF exported. It is fitted to a clean A4 page.');
-  } catch (error) {
-    console.error(error);
-    showToast('PDF export failed. Please try again after reducing image size.', 4200);
-  }
-}
-
-function getContentBounds() {
-  const boxes = [];
-  for (const image of state.images) boxes.push(getImageBounds(image));
-  for (const ann of state.annotations) boxes.push(getAnnotationBounds(ann));
-  const validBoxes = boxes.filter(box => box && isFinite(box.x) && isFinite(box.y) && isFinite(box.width) && isFinite(box.height));
-  if (!validBoxes.length) return null;
-  let minX = validBoxes[0].x;
-  let minY = validBoxes[0].y;
-  let maxX = validBoxes[0].x + validBoxes[0].width;
-  let maxY = validBoxes[0].y + validBoxes[0].height;
-  for (let i = 1; i < validBoxes.length; i += 1) {
-    const box = validBoxes[i];
-    minX = Math.min(minX, box.x);
-    minY = Math.min(minY, box.y);
-    maxX = Math.max(maxX, box.x + box.width);
-    maxY = Math.max(maxY, box.y + box.height);
-  }
-  const padding = 26;
-  return { x: minX - padding, y: minY - padding, width: Math.max(1, maxX - minX + padding * 2), height: Math.max(1, maxY - minY + padding * 2) };
-}
-
-function getAnnotationBounds(ann) {
-  const points = [ann.start, ann.end, ann.label];
-  if (ann.type === 'curved') {
-    points.push(ann.control1, ann.control2);
-    for (let i = 0; i <= BEZIER_SAMPLES; i += 1) points.push(bezierPoint(ann.start, ann.control1, ann.control2, ann.end, i / BEZIER_SAMPLES));
-  }
-  let minX = points[0].x, minY = points[0].y, maxX = points[0].x, maxY = points[0].y;
-  for (const point of points) {
-    minX = Math.min(minX, point.x);
-    minY = Math.min(minY, point.y);
-    maxX = Math.max(maxX, point.x);
-    maxY = Math.max(maxY, point.y);
-  }
-  const pad = 32;
-  return { x: minX - pad, y: minY - pad, width: Math.max(1, maxX - minX + pad * 2), height: Math.max(1, maxY - minY + pad * 2) };
-}
-
-function createExportCanvas(bounds) {
-  const isLandscape = bounds.width > bounds.height;
-  const mmToPx = 150 / 25.4;
-  const pageWidthMm = isLandscape ? 297 : 210;
-  const pageHeightMm = isLandscape ? 210 : 297;
-  const pageWidthPx = Math.round(pageWidthMm * mmToPx);
-  const pageHeightPx = Math.round(pageHeightMm * mmToPx);
-  const marginPx = Math.round(12 * mmToPx);
-  const printableWidth = pageWidthPx - marginPx * 2;
-  const printableHeight = pageHeightPx - marginPx * 2;
-  const exportZoom = Math.min(printableWidth / bounds.width, printableHeight / bounds.height);
-  const exportPanX = (pageWidthPx - bounds.width * exportZoom) / 2 - bounds.x * exportZoom;
-  const exportPanY = (pageHeightPx - bounds.height * exportZoom) / 2 - bounds.y * exportZoom;
-  const exportCanvas = document.createElement('canvas');
-  exportCanvas.width = pageWidthPx;
-  exportCanvas.height = pageHeightPx;
-  const exportCtx = exportCanvas.getContext('2d');
-  const oldCtx = ctx;
-  const oldZoom = state.zoom;
-  const oldPanX = state.panX;
-  const oldPanY = state.panY;
-  ctx = exportCtx;
-  state.zoom = exportZoom;
-  state.panX = exportPanX;
-  state.panY = exportPanY;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
-  ctx.save();
-  ctx.translate(state.panX, state.panY);
-  ctx.scale(state.zoom, state.zoom);
-  for (const image of state.images) drawImageItem(image);
-  for (const ann of state.annotations) drawAnnotationForExport(ann);
-  ctx.restore();
-  ctx = oldCtx;
-  state.zoom = oldZoom;
-  state.panX = oldPanX;
-  state.panY = oldPanY;
-  requestRender();
-  return { canvas: exportCanvas, pageWidthPt: pageWidthMm * 72 / 25.4, pageHeightPt: pageHeightMm * 72 / 25.4 };
-}
-
-function drawAnnotationForExport(ann) {
-  drawLineCore(ann, 1);
-  drawLabel(ann.label, getLabelText(ann), false, 1, getAnnotationColor(ann));
-}
-
-function dataURLToUint8Array(dataURL) {
-  const base64 = dataURL.split(',')[1] || '';
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-function makeSinglePagePdfBlob(jpegBytes, imageWidthPx, imageHeightPx, pageWidthPt, pageHeightPt) {
-  const encoder = new TextEncoder();
-  const chunks = [];
-  const offsets = [0];
-  let offset = 0;
-
-  function add(data) {
-    const bytes = typeof data === 'string' ? encoder.encode(data) : data;
-    chunks.push(bytes);
-    offset += bytes.length;
-  }
-
-  function addObject(number, content) {
-    offsets[number] = offset;
-    add(number + ' 0 obj\n');
-    add(content);
-    add('\nendobj\n');
-  }
-
-  const contentStream = 'q\n' + fixed(pageWidthPt) + ' 0 0 ' + fixed(pageHeightPt) + ' 0 0 cm\n/Im0 Do\nQ\n';
-
-  add('%PDF-1.4\n');
-  add(new Uint8Array([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A])); // binary comment marker, raw bytes
-  addObject(1, '<< /Type /Catalog /Pages 2 0 R >>');
-  addObject(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  addObject(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + fixed(pageWidthPt) + ' ' + fixed(pageHeightPt) + '] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>');
-  addObject(4, '<< /Length ' + encoder.encode(contentStream).length + ' >>\nstream\n' + contentStream + 'endstream');
-
-  offsets[5] = offset;
-  add('5 0 obj\n');
-  add('<< /Type /XObject /Subtype /Image /Width ' + imageWidthPx + ' /Height ' + imageHeightPx + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpegBytes.length + ' >>\nstream\n');
-  add(jpegBytes);
-  add('\nendstream\nendobj\n');
-
-  const xrefOffset = offset;
-  add('xref\n0 6\n');
-  add('0000000000 65535 f \n');
-  for (let i = 1; i <= 5; i += 1) {
-    add(String(offsets[i]).padStart(10, '0') + ' 00000 n \n');
-  }
-  add('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xrefOffset + '\n%%EOF');
-
-  return new Blob(chunks, { type: 'application/pdf' });
-}
-
-function fixed(value) {
-  return Number(value).toFixed(2).replace(/\.00$/, '');
-}
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
-}
-
-function makeExportFileName() {
-  const now = new Date();
-  const pad = (value) => String(value).padStart(2, '0');
-  return 'bra-sketch-annotation-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' + pad(now.getHours()) + pad(now.getMinutes()) + '.pdf';
-}
-
-function requestRender() {
-    if (state.rafPending) return;
-    state.rafPending = true;
-    requestAnimationFrame(() => {
-      state.rafPending = false;
-      render();
-    });
-  }
-
-  function render() {
-    const rect = state.lastCanvasRect || el.canvas.getBoundingClientRect();
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, rect.width, rect.height);
-
-    ctx.save();
-    ctx.translate(state.panX, state.panY);
-    ctx.scale(state.zoom, state.zoom);
-
-    for (const image of state.images) {
-      drawImageItem(image);
-    }
-
-    for (const ann of state.annotations) {
-      drawAnnotation(ann);
-    }
-
-    if (state.drawSession) {
-      drawPreview();
-    }
-
-    const selectedImage = getSelectedImage();
-    if (selectedImage) {
-      drawImageSelection(selectedImage);
-    }
-
-    const selectedAnnotation = getSelectedAnnotation();
-    if (selectedAnnotation) {
-      drawSelectionHelpers(selectedAnnotation);
-    }
-
-    ctx.restore();
-    positionLabelEditor();
-  }
-
-  function positionLabelEditor() {
-    if (state.editingLabelId == null) return;
-    const ann = getAnnotationById(state.editingLabelId);
-    if (!ann) { cancelLabelEditor(); return; }
-    const screen = worldToScreen(ann.label.x, ann.label.y);
-    el.labelEditor.style.left = screen.x + 'px';
-    el.labelEditor.style.top = screen.y + 'px';
-  }
-
-  function drawImageItem(image) {
-    if (!image.img) return;
-    ctx.drawImage(image.img, image.x, image.y, image.width, image.height);
-  }
-
-  function drawImageSelection(image) {
-    ctx.save();
-    ctx.lineWidth = 2 / state.zoom;
-    ctx.strokeStyle = SELECT_COLOR;
-    ctx.setLineDash([10 / state.zoom, 6 / state.zoom]);
-    ctx.strokeRect(image.x, image.y, image.width, image.height);
-    ctx.setLineDash([]);
-    for (const corner of getImageCorners(image)) {
-      drawImageResizeHandle(corner);
-    }
-    ctx.restore();
-  }
-
-  function drawImageResizeHandle(point) {
-    const r = 6.5 / state.zoom;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.lineWidth = 2 / state.zoom;
-    ctx.strokeStyle = SELECT_COLOR;
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function drawPreview() {
-    const preview = state.drawSession;
-    const seq = state.nextSequence;
-    if (!preview || !preview.current) return;
-
-    if (preview.type === 'straight') {
-      const temp = {
-        type: 'straight',
-        style: preview.style,
-        color: preview.color,
-        arrowType: preview.arrowType,
-        start: preview.start,
-        end: preview.current,
-        label: computeDefaultLabelPosition({
-          type: 'straight',
-          start: preview.start,
-          end: preview.current
-        }),
-        seq
-      };
-      drawLineCore(temp, 0.78);
-      drawLabel(temp.label, seq, false, 0.9, getAnnotationColor(temp));
-      return;
-    }
-
-    const controls = makeNaturalCurveControls(preview.start, preview.current);
-    const temp = {
-      type: 'curved',
-      style: preview.style,
-      color: preview.color,
-      arrowType: preview.arrowType,
-      start: preview.start,
-      end: preview.current,
-      control1: controls.control1,
-      control2: controls.control2,
-      label: computeDefaultLabelPosition({
-        type: 'curved',
-        start: preview.start,
-        end: preview.current,
-        control1: controls.control1,
-        control2: controls.control2
-      }),
-      seq
-    };
-    drawLineCore(temp, 0.78);
-    drawLabel(temp.label, seq, false, 0.9, getAnnotationColor(temp));
-  }
-
-  function drawAnnotation(ann) {
-    drawLineCore(ann, 1);
-    if (state.editingLabelId === ann.id) return;
-    drawLabel(ann.label, getLabelText(ann), state.selection.kind === 'annotation' && ann.id === state.selection.id, 1, getAnnotationColor(ann));
-  }
-
-  function drawLineCore(ann, alpha = 1) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    const color = getAnnotationColor(ann);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2.5 / state.zoom;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    const dash = getLineStyle(ann) === 'dashed' ? [10 / state.zoom, 7 / state.zoom] : [];
-
-    ctx.beginPath();
-    ctx.setLineDash(dash);
-    if (ann.type === 'straight') {
-      ctx.moveTo(ann.start.x, ann.start.y);
-      ctx.lineTo(ann.end.x, ann.end.y);
-    } else {
-      ctx.moveTo(ann.start.x, ann.start.y);
-      ctx.bezierCurveTo(
-        ann.control1.x, ann.control1.y,
-        ann.control2.x, ann.control2.y,
-        ann.end.x, ann.end.y
-      );
-    }
-    ctx.stroke();
-
-    ctx.setLineDash([]);
-    if (ann.type === 'straight') {
-      drawArrowheadsForStraight(ann, color);
-    } else {
-      drawArrowheadsForCurve(ann, color);
-    }
-    ctx.restore();
-  }
-
-  function drawArrowheadsForStraight(ann, color) {
-    const arrowType = getArrowType(ann);
-    if (arrowType === 'none') return;
-    const arrowSize = 11 / state.zoom;
-    drawArrowhead(ann.end, Math.atan2(ann.end.y - ann.start.y, ann.end.x - ann.start.x), arrowSize, color);
-    if (arrowType === 'double') {
-      drawArrowhead(ann.start, Math.atan2(ann.start.y - ann.end.y, ann.start.x - ann.end.x), arrowSize, color);
-    }
-  }
-
-  function drawArrowheadsForCurve(ann, color) {
-    const arrowType = getArrowType(ann);
-    if (arrowType === 'none') return;
-    const arrowSize = 11 / state.zoom;
-    const endAngle = Math.atan2(ann.end.y - ann.control2.y, ann.end.x - ann.control2.x);
-    drawArrowhead(ann.end, endAngle, arrowSize, color);
-    if (arrowType === 'double') {
-      const startAngle = Math.atan2(ann.start.y - ann.control1.y, ann.start.x - ann.control1.x);
-      drawArrowhead(ann.start, startAngle, arrowSize, color);
-    }
-  }
-
-  function drawArrowhead(point, angle, size, color = LINE_COLOR) {
-    const spread = Math.PI / 7;
-    const wing = size * 0.9;
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(point.x, point.y);
-    ctx.lineTo(
-      point.x - Math.cos(angle - spread) * wing,
-      point.y - Math.sin(angle - spread) * wing
-    );
-    ctx.lineTo(
-      point.x - Math.cos(angle + spread) * wing,
-      point.y - Math.sin(angle + spread) * wing
-    );
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-
-  function drawLabel(pos, text, selected, alpha = 1, color = LINE_COLOR) {
-    const fontSize = 17 / state.zoom;
-    const halo = 3 / state.zoom;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.font = '700 ' + fontSize + 'px system-ui, -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = halo;
-    ctx.shadowColor = 'rgba(17,24,39,.18)';
-    ctx.shadowBlur = 4 / state.zoom;
-    ctx.shadowOffsetY = 1 / state.zoom;
-    ctx.strokeStyle = '#ffffff';
-    ctx.strokeText(String(text), pos.x, pos.y);
-    ctx.fillStyle = color;
-    ctx.fillText(String(text), pos.x, pos.y);
-    ctx.restore();
-  }
-
-  function drawSelectionHelpers(ann) {
-    ctx.save();
-
-    if (ann.type === 'curved') {
-      ctx.setLineDash([6 / state.zoom, 5 / state.zoom]);
-      ctx.strokeStyle = 'rgba(53,109,255,.45)';
-      ctx.lineWidth = 1.2 / state.zoom;
-      ctx.beginPath();
-      ctx.moveTo(ann.start.x, ann.start.y);
-      ctx.lineTo(ann.control1.x, ann.control1.y);
-      ctx.moveTo(ann.end.x, ann.end.y);
-      ctx.lineTo(ann.control2.x, ann.control2.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      drawHandle(ann.control1, false);
-      drawHandle(ann.control2, false);
-    }
-
-    drawHandle(ann.start, true);
-    drawHandle(ann.end, true);
-    drawLabelHandle(ann.label, getAnnotationColor(ann));
-    ctx.restore();
-  }
-
-  function drawHandle(point, emphasized) {
-    const r = (emphasized ? 6.5 : 5.5) / state.zoom;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.lineWidth = 2 / state.zoom;
-    ctx.strokeStyle = emphasized ? SELECT_COLOR : 'rgba(53,109,255,.72)';
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function drawLabelHandle(point, color = LINE_COLOR) {
-    const r = 7 / state.zoom;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,.95)';
-    ctx.fill();
-    ctx.lineWidth = 2 / state.zoom;
-    ctx.strokeStyle = color;
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function hitTestSelectedHandles(world, ann) {
-    const handleRadius = 9 / state.zoom;
-    if (distance(world, ann.start) <= handleRadius) return { part: 'start' };
-    if (distance(world, ann.end) <= handleRadius) return { part: 'end' };
-    if (ann.type === 'curved') {
-      if (distance(world, ann.control1) <= handleRadius) return { part: 'control1' };
-      if (distance(world, ann.control2) <= handleRadius) return { part: 'control2' };
-    }
-    if (pointInLabelBounds(world, ann.label, getLabelText(ann), 9 / state.zoom)) return { part: 'label' };
-    return null;
-  }
-
-  function hitTestAnnotations(world) {
-    for (let i = state.annotations.length - 1; i >= 0; i -= 1) {
-      const ann = state.annotations[i];
-      if (pointInLabelBounds(world, ann.label, getLabelText(ann), 8 / state.zoom)) {
-        return { id: ann.id, part: 'label' };
-      }
-      if (isPointNearAnnotation(world, ann, 8 / state.zoom)) {
-        return { id: ann.id, part: 'body' };
-      }
-    }
-    return null;
-  }
-
-  function hitTestImages(world) {
-    for (let i = state.images.length - 1; i >= 0; i -= 1) {
-      const image = state.images[i];
-      if (
-        world.x >= image.x &&
-        world.x <= image.x + image.width &&
-        world.y >= image.y &&
-        world.y <= image.y + image.height
-      ) {
-        return { id: image.id };
-      }
-    }
-    return null;
-  }
-
-  function hitTestSelectedImageHandles(world, image) {
-    const radius = 10 / state.zoom;
-    const corners = getImageCorners(image);
-    for (const corner of corners) {
-      if (distance(world, corner) <= radius) {
-        return { corner: corner.name };
-      }
-    }
-    return null;
-  }
-
-  function getImageCorners(image) {
-    return [
-      { name: 'nw', x: image.x, y: image.y },
-      { name: 'ne', x: image.x + image.width, y: image.y },
-      { name: 'sw', x: image.x, y: image.y + image.height },
-      { name: 'se', x: image.x + image.width, y: image.y + image.height },
-    ];
-  }
-
-  function getOppositeImageCorner(image, corner) {
-    if (corner === 'nw') return { x: image.x + image.width, y: image.y + image.height };
-    if (corner === 'ne') return { x: image.x, y: image.y + image.height };
-    if (corner === 'sw') return { x: image.x + image.width, y: image.y };
-    return { x: image.x, y: image.y };
-  }
-
-  function resizeImageFromCorner(image, corner, anchor, aspect, world) {
-    const MIN_IMAGE_SIZE = 48;
-    let localW = 0;
-    let localH = 0;
-
-    if (corner === 'nw') {
-      localW = anchor.x - world.x;
-      localH = anchor.y - world.y;
-    } else if (corner === 'ne') {
-      localW = world.x - anchor.x;
-      localH = anchor.y - world.y;
-    } else if (corner === 'sw') {
-      localW = anchor.x - world.x;
-      localH = world.y - anchor.y;
-    } else {
-      localW = world.x - anchor.x;
-      localH = world.y - anchor.y;
-    }
-
-    localW = Math.max(MIN_IMAGE_SIZE, localW);
-    localH = Math.max(MIN_IMAGE_SIZE, localH);
-
-    let width = Math.max(localW, localH * aspect);
-    let height = width / aspect;
-
-    if (height < MIN_IMAGE_SIZE) {
-      height = MIN_IMAGE_SIZE;
-      width = height * aspect;
-    }
-
-    if (corner === 'nw') {
-      image.x = anchor.x - width;
-      image.y = anchor.y - height;
-    } else if (corner === 'ne') {
-      image.x = anchor.x;
-      image.y = anchor.y - height;
-    } else if (corner === 'sw') {
-      image.x = anchor.x - width;
-      image.y = anchor.y;
-    } else {
-      image.x = anchor.x;
-      image.y = anchor.y;
-    }
-
-    image.width = width;
-    image.height = height;
-  }
-
-  function pointInLabelBounds(point, labelPos, seq, padding) {
-    const fontSize = 17 / state.zoom;
-    ctx.save();
-    ctx.font = '700 ' + fontSize + 'px system-ui, -apple-system, sans-serif';
-    const metrics = ctx.measureText(String(seq));
-    ctx.restore();
-    const width = Math.max(14 / state.zoom, metrics.width) + padding * 2;
-    const height = fontSize + padding * 1.6;
-    return (
-      point.x >= labelPos.x - width / 2 &&
-      point.x <= labelPos.x + width / 2 &&
-      point.y >= labelPos.y - height / 2 &&
-      point.y <= labelPos.y + height / 2
-    );
-  }
-
-  function isPointNearAnnotation(point, ann, tolerance) {
-    if (ann.type === 'straight') {
-      return pointToSegmentDistance(point, ann.start, ann.end) <= tolerance;
-    }
-    let prev = ann.start;
-    for (let i = 1; i <= BEZIER_SAMPLES; i += 1) {
-      const t = i / BEZIER_SAMPLES;
-      const cur = bezierPoint(ann.start, ann.control1, ann.control2, ann.end, t);
-      if (pointToSegmentDistance(point, prev, cur) <= tolerance) return true;
-      prev = cur;
-    }
-    return false;
-  }
-
-  function bezierPoint(p0, p1, p2, p3, t) {
-    const mt = 1 - t;
-    const mt2 = mt * mt;
-    const t2 = t * t;
-    const a = mt2 * mt;
-    const b = 3 * mt2 * t;
-    const c = 3 * mt * t2;
-    const d = t * t2;
-    return {
-      x: a * p0.x + b * p1.x + c * p2.x + d * p3.x,
-      y: a * p0.y + b * p1.y + c * p2.y + d * p3.y
-    };
-  }
-
-  function bezierTangent(p0, p1, p2, p3, t) {
-    const mt = 1 - t;
-    return {
-      x: 3 * mt * mt * (p1.x - p0.x) + 6 * mt * t * (p2.x - p1.x) + 3 * t * t * (p3.x - p2.x),
-      y: 3 * mt * mt * (p1.y - p0.y) + 6 * mt * t * (p2.y - p1.y) + 3 * t * t * (p3.y - p2.y)
-    };
-  }
-
-  function pointToSegmentDistance(p, a, b) {
-    const l2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
-    if (l2 === 0) return distance(p, a);
-    let t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2;
-    t = clamp(t, 0, 1);
-    const proj = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
-    return distance(p, proj);
-  }
-
-  function midpoint(a, b) {
-    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  }
-
-  function distance(a, b) {
-    return Math.hypot(a.x - b.x, a.y - b.y);
-  }
-
-  function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value));
-  }
-
-  function clonePoint(point) {
-    return { x: point.x, y: point.y };
-  }
-
-  init();
-})();
-</script>
+<script src="opencv_free_api.js?v=free-opencv-20260617-1"></script>
+<!-- Real opencv.js (WASM, ~8MB) — async so it never blocks first paint.
+     If the CDN is unreachable, RealOpenCVAPI.whenReady() returns false and
+     getCvApi() transparently falls back to FreeOpenCVAPI. -->
+<script async src="https://docs.opencv.org/4.10.0/opencv.js"></script>
+<script src="opencv_real_api.js?v=real-opencv-20260618-1"></script>
+<script src="potrace.js?v=potrace-20260617-1"></script>
+<script src="auto_mode_rules.js?v=20260618-1"></script>
+<script src="app.js?v=20260618-1"></script>
 </body>
 </html>
