@@ -147,8 +147,8 @@
     // front view is identified — otherwise the dashed extensions overshoot
     // into the back view on combined-image layouts.
     const det = state.autoMode && state.autoMode.detection;
-    const frontView = det && det.viewBoxes
-      ? det.viewBoxes.find(v => v && v.role === 'front')
+    const frontView = det
+      ? findDetectedViewForRole(det, 'front_outer')
       : null;
     const frontRightLimit = frontView
       ? Math.max(bandR.x + 0.01, (frontView.x + frontView.width) - 0.01)
@@ -234,12 +234,14 @@
 
     const pom15Row = hasBackStrap
       ? { fixtureId: 'gen-15', pom: '15', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('15'),
         start: backStrapL, end: backStrapR,
         drawability: 'APPROXIMATE', confidence: 'medium',
         proposedStartLandmark: 'back-strap-left',
         proposedEndLandmark: 'back-strap-right',
         reason: 'Back strap distance from the detected back view.' }
       : { fixtureId: 'gen-15', pom: '15', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('15'),
         drawability: 'REVIEW_ONLY', confidence: 'low',
         uncertainty: 'Back strap distance requires a side / back view, which offline detection cannot localise.',
         reason: 'Back strap distance — review only until a side view is available.' };
@@ -247,6 +249,7 @@
     const rows = [
       // POM 1 — bottom band (relax)
       { fixtureId: 'gen-1', pom: '1', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('1'),
         start: bandL, end: bandR,
         drawability: 'DRAWABLE', confidence: 'high',
         proposedStartLandmark: 'band-left', proposedEndLandmark: 'band-right',
@@ -254,6 +257,7 @@
 
       // POM 2 — bottom band extension (dashed) off band-right
       { fixtureId: 'gen-2', pom: '2', type: 'straight', style: 'dashed', arrowType: 'single',
+        viewRole: effectivePomViewRole('2'),
         start: bandR, end: ext2End,
         drawability: 'APPROXIMATE', confidence: 'medium',
         proposedStartLandmark: 'band-right', proposedEndLandmark: 'band-right extension',
@@ -261,6 +265,7 @@
 
       // POM 3 — chest line
       { fixtureId: 'gen-3', pom: '3', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('3'),
         start: chestL, end: chestR,
         drawability: 'DRAWABLE', confidence: 'medium',
         proposedStartLandmark: 'chest-left', proposedEndLandmark: 'chest-right',
@@ -268,6 +273,7 @@
 
       // POM 4 — chest extension
       { fixtureId: 'gen-4', pom: '4', type: 'straight', style: 'dashed', arrowType: 'single',
+        viewRole: effectivePomViewRole('4'),
         start: chestR, end: ext4End,
         drawability: 'APPROXIMATE', confidence: 'medium',
         proposedStartLandmark: 'chest-right', proposedEndLandmark: 'chest-right + 25% extension',
@@ -275,6 +281,7 @@
 
       // POM 5 — center front height (vertical, cf-top → cf-bottom)
       { fixtureId: 'gen-5', pom: '5', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('5'),
         start: cfTop, end: cfBot,
         drawability: 'DRAWABLE', confidence: cfTop === fallback || cfBot === fallback ? 'low' : 'high',
         proposedStartLandmark: 'cf-top', proposedEndLandmark: 'cf-bottom',
@@ -282,6 +289,7 @@
 
       // POM 6 — cradle height at CF: half-way down between chest line and band, along the CF axis
       { fixtureId: 'gen-6', pom: '6', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('6'),
         start: cradleCfTop,
         end: cradleCfBottom,
         drawability: 'APPROXIMATE', confidence: 'medium',
@@ -291,6 +299,7 @@
 
       // POM 7 — cradle height at the bottom of the cup (vertical on cup side)
       { fixtureId: 'gen-7', pom: '7', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('7'),
         start: cradleCupTop,
         end: cradleCupBottom,
         drawability: 'APPROXIMATE', confidence: 'medium',
@@ -300,6 +309,7 @@
 
       // POM 8 — cup height at CF (vertical from chest line to cf-bottom along CF axis)
       { fixtureId: 'gen-8', pom: '8', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('8'),
         start: cupHeightTop,
         end: cupHeightBottom,
         drawability: 'DRAWABLE', confidence: 'medium',
@@ -309,6 +319,7 @@
 
       // POM 9 — inner cup vertical (curved)
       { fixtureId: 'gen-9', pom: '9', type: 'curved', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('9'),
         start: icTop, end: icBot, control1: ic9controls.c1, control2: ic9controls.c2,
         drawability: 'DRAWABLE', confidence: 'medium',
         sharedAnchorFamily: 'inner-cup',
@@ -318,6 +329,7 @@
 
       // POM 10 — inner cup horizontal (curved)
       { fixtureId: 'gen-10', pom: '10', type: 'curved', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('10'),
         start: icL, end: icR, control1: ic10controls.c1, control2: ic10controls.c2,
         drawability: 'DRAWABLE', confidence: 'medium',
         sharedAnchorFamily: 'inner-cup',
@@ -327,6 +339,7 @@
 
       // POM 11 — side seam
       { fixtureId: 'gen-11', pom: '11', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('11'),
         start: sideTop, end: sideBot,
         drawability: 'DRAWABLE', confidence: 'medium',
         proposedStartLandmark: 'side-top', proposedEndLandmark: 'side-bottom',
@@ -334,6 +347,7 @@
 
       // POM 12 — back center length (back-top → back-bottom)
       { fixtureId: 'gen-12', pom: '12', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('12'),
         start: backTop, end: backBot,
         drawability: 'APPROXIMATE', confidence: 'low',
         proposedStartLandmark: 'back-top', proposedEndLandmark: 'back-bottom',
@@ -341,6 +355,7 @@
 
       // POM 13 — back panel height (parallel to POM 12, slightly outboard)
       { fixtureId: 'gen-13', pom: '13', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('13'),
         start: backPanelTop, end: backPanelBot,
         drawability: 'APPROXIMATE', confidence: hasBackPanel ? 'medium' : 'low',
         proposedStartLandmark: 'back panel top',
@@ -349,6 +364,7 @@
 
       // POM 14 — shoulder strap (curved)
       { fixtureId: 'gen-14', pom: '14', type: 'curved', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('14'),
         start: strapTop, end: strapBot, control1: strap14c1, control2: strap14c2,
         drawability: 'DRAWABLE', confidence: 'medium',
         proposedStartLandmark: 'strap-top', proposedEndLandmark: 'strap-bottom',
@@ -359,6 +375,7 @@
 
       // POM 16 — front apex distance
       { fixtureId: 'gen-16', pom: '16', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('16'),
         start: apexL, end: apexR,
         drawability: 'DRAWABLE', confidence: 'medium',
         proposedStartLandmark: 'apex-left', proposedEndLandmark: 'apex-right',
@@ -371,6 +388,29 @@
       ruleVersion: AUTO_RULE_VERSION,
       annotations: rows,
     };
+  }
+
+  function findDetectedViewForRole(detection, role) {
+    const views = Array.isArray(detection && detection.views) && detection.views.length
+      ? detection.views
+      : (Array.isArray(detection && detection.viewBoxes) ? detection.viewBoxes : []);
+    return views.find(v => v && (v.viewRole === role || v.role === role || (role === 'front_outer' && v.role === 'front'))) || null;
+  }
+
+  function hasDetectedViewRole(role) {
+    const det = state.autoMode && state.autoMode.detection;
+    return !!findDetectedViewForRole(det, role);
+  }
+
+  function defaultPomViewRole(pom) {
+    const entry = POM_TEMPLATE[String(pom)];
+    return entry && entry.viewRole ? entry.viewRole : 'front_outer';
+  }
+
+  function effectivePomViewRole(pom) {
+    const role = defaultPomViewRole(pom);
+    if (role === 'front_inner' && !hasDetectedViewRole('front_inner')) return 'front_outer';
+    return role;
   }
 
   if (typeof window !== 'undefined') {
@@ -616,6 +656,7 @@
       reason: row.reason || null,
       uncertainty: row.uncertainty || null,
       sharedAnchorFamily: row.sharedAnchorFamily || null,
+      viewRole: row.viewRole || effectivePomViewRole(row.pom),
       approvedAt: null,
     };
     return baseAnn;
@@ -675,6 +716,16 @@
       if (!row.drawability || !['DRAWABLE', 'APPROXIMATE', 'REVIEW_ONLY'].includes(row.drawability)) {
         errors.push(`${tag}: invalid drawability "${row.drawability}".`);
         continue;
+      }
+      if (!['front_outer', 'back', 'front_inner', 'unknown'].includes(row.viewRole || 'unknown')) {
+        errors.push(`${tag}: invalid viewRole "${row.viewRole}".`);
+        continue;
+      }
+      const requiredRole = defaultPomViewRole(row.pom);
+      if (requiredRole === 'front_inner' && hasDetectedViewRole('front_inner')) {
+        if (row.viewRole !== 'front_inner') warnings.push(`${tag}: should use front_inner when that view exists.`);
+      } else if (requiredRole !== 'front_inner' && row.viewRole !== requiredRole) {
+        warnings.push(`${tag}: expected viewRole ${requiredRole}, got ${row.viewRole}.`);
       }
       if (row.drawability === 'REVIEW_ONLY') {
         // No stale geometry allowed
@@ -984,6 +1035,7 @@
       reason: draft.reason || null,
       uncertainty: draft.uncertainty || null,
       sharedAnchorFamily: draft.sharedAnchorFamily || null,
+      viewRole: draft.viewRole || effectivePomViewRole(draft.seq),
       originDraftId: draft.id,
     };
   }
@@ -1062,8 +1114,9 @@
   //   - measurable : sample count + per-bucket medians inspectable
   //   - resettable : one-click clear of every bucket
   //
-  // Buckets are keyed by (anchorKind × view). View is derived from the
-  // ANCHOR_SCHEMA group: 'back' => back view, anything else => front.
+  // Buckets are keyed by (anchorKind × viewRole). View role is explicit on
+  // detected anchors where available, with schema-based fallback for older
+  // projects.
   // Nothing leaves the browser — sketch IP stays local.
   // =============================================================
 
@@ -1106,13 +1159,18 @@
     updateUI();
   }
 
-  function anchorView(anchorKind) {
+  function anchorView(anchorKind, anchor) {
+    if (anchor && anchor.viewRole) return anchor.viewRole;
     const schema = ANCHOR_SCHEMA.find(s => s.kind === anchorKind);
-    return (schema && schema.group === 'back') ? 'back' : 'front';
+    if (schema && schema.group === 'back') return 'back';
+    if (anchorKind && anchorKind.indexOf('inner-cup-') === 0 && hasDetectedViewRole('front_inner')) {
+      return 'front_inner';
+    }
+    return 'front_outer';
   }
 
-  function learningBucketKey(anchorKind) {
-    return anchorKind + '|' + anchorView(anchorKind);
+  function learningBucketKey(anchorKind, anchor) {
+    return anchorKind + '|' + anchorView(anchorKind, anchor);
   }
 
   function medianOf(arr) {

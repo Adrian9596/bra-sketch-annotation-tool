@@ -505,9 +505,12 @@ function requestRender() {
     // the front/back classifier so the TD can see what the detector decided.
     if (Array.isArray(detection.viewBoxes) && detection.viewBoxes.length > 1) {
       const VIEW_STYLE = {
-        front: { stroke: 'rgba(14, 165, 233, 0.85)', fill: 'rgba(14, 165, 233, 0.95)', dash: [], lineW: 1.4 },
-        back:  { stroke: 'rgba(168, 85, 247, 0.85)', fill: 'rgba(168, 85, 247, 0.95)', dash: [], lineW: 1.4 },
-        none:  { stroke: 'rgba(100, 116, 139, 0.45)', fill: 'rgba(100, 116, 139, 0.85)', dash: [3, 3], lineW: 0.9 },
+        front_outer: { stroke: 'rgba(14, 165, 233, 0.85)', fill: 'rgba(14, 165, 233, 0.95)', dash: [], lineW: 1.4 },
+        front_inner: { stroke: 'rgba(22, 163, 74, 0.85)', fill: 'rgba(22, 163, 74, 0.95)', dash: [], lineW: 1.4 },
+        front:       { stroke: 'rgba(14, 165, 233, 0.85)', fill: 'rgba(14, 165, 233, 0.95)', dash: [], lineW: 1.4 },
+        back:        { stroke: 'rgba(168, 85, 247, 0.85)', fill: 'rgba(168, 85, 247, 0.95)', dash: [], lineW: 1.4 },
+        unknown:     { stroke: 'rgba(100, 116, 139, 0.45)', fill: 'rgba(100, 116, 139, 0.85)', dash: [3, 3], lineW: 0.9 },
+        none:        { stroke: 'rgba(100, 116, 139, 0.45)', fill: 'rgba(100, 116, 139, 0.85)', dash: [3, 3], lineW: 0.9 },
       };
       detection.viewBoxes.forEach((view, index) => {
         if (!view) return;
@@ -515,9 +518,11 @@ function requestRender() {
         const vy = image.y + view.y * image.height;
         const vw = view.width * image.width;
         const vh = view.height * image.height;
-        const role = view.role || (index === (detection.primaryViewIndex || 0) ? 'front' : null);
+        const role = view.viewRole || view.role || (index === (detection.primaryViewIndex || 0) ? 'front_outer' : 'unknown');
         const style = VIEW_STYLE[role] || VIEW_STYLE.none;
-        const label = role ? role.toUpperCase() : ('view ' + (index + 1));
+        const label = role && role !== 'unknown'
+          ? role.replace('_', ' ').toUpperCase()
+          : ('view ' + (index + 1));
         ctx.strokeStyle = style.stroke;
         ctx.lineWidth = style.lineW * px;
         ctx.setLineDash(style.dash.map((v) => v * px));

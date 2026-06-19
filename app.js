@@ -1188,15 +1188,19 @@
           : '';
         let views = '';
         if (det.viewBoxes && det.viewBoxes.length > 1) {
-          const front = det.viewBoxes.find(v => v && v.role === 'front');
-          const back  = det.viewBoxes.find(v => v && v.role === 'back');
-          if (front && back) {
-            views = ' • front + back identified';
-          } else if (front) {
-            views = ' • ' + det.viewBoxes.length + ' views, front identified';
+          const frontOuter = det.viewBoxes.find(v => v && (v.viewRole === 'front_outer' || v.role === 'front'));
+          const frontInner = det.viewBoxes.find(v => v && v.viewRole === 'front_inner');
+          const back  = det.viewBoxes.find(v => v && (v.viewRole === 'back' || v.role === 'back'));
+          if (frontOuter && back && frontInner) {
+            views = ' • front outer + back + front inner identified';
+          } else if (frontOuter && back) {
+            views = ' • front outer + back identified';
+          } else if (frontOuter) {
+            views = ' • ' + det.viewBoxes.length + ' views, front outer identified';
           } else {
             views = ' • ' + det.viewBoxes.length + ' views, using #' + ((det.primaryViewIndex || 0) + 1);
           }
+          if (det.viewRoleReviewRequired) views += ' • roles need review';
         }
         note = '<b>Auto Mode — detected sketch.</b> ' + det.sampleWidth + '×' + det.sampleHeight +
           ' • local offline vision' + views + ' • ' + pct + '% coverage' + sym + fit +
@@ -4175,6 +4179,7 @@ function startImageResize(id, corner) {
     }
 
     state.autoMode.detection = detection;
+    maybePromptForViewRoles(detection);
     // Seed anchors from the new detection. If anchors already exist for a
     // PRIOR detection we replace them — re-detecting is the explicit signal
     // that the old seeds are stale. The TD can still drag any wrong ones,
@@ -4191,6 +4196,64 @@ function startImageResize(id, corner) {
       ? ' + ' + detection.contourCount + ' contours (' + detection.traceDurationMs + 'ms)'
       : '';
     showToast('Detected sketch (' + detection.durationMs + 'ms)' + traceInfo + '. Anchors seeded — drag any that look wrong, then Generate POM Drafts.');
+  }
+
+  function maybePromptForViewRoles(detection) {
+    if (!detection || !Array.isArray(detection.views) || detection.views.length < 2) return;
+    if (!detection.viewRoleReviewRequired && !detection.views.some(v => !v.viewRole || v.viewRole === 'unknown')) return;
+    if (typeof window === 'undefined' || typeof window.prompt !== 'function') return;
+    const params = new URLSearchParams(window.location.search || '');
+    if (params.has('autoDraft') || params.has('smoke') || params.has('learningTests') || params.has('meaningTests')) return;
+    const current = detection.views
+      .map((v, i) => (i + 1) + ':' + shortViewRole(v.viewRole || v.role || 'unknown'))
+      .join(', ');
+    const answer = window.prompt(
+      'Confirm view roles. Use F=Front Outer, B=Back, I=Front Inner, U=Unknown.\n' +
+      'Current: ' + current + '\n' +
+      'Enter one letter per detected view, left to right:',
+      detection.views.map(v => roleToPromptLetter(v.viewRole || v.role)).join('')
+    );
+    if (!answer) return;
+    const letters = String(answer).toUpperCase().replace(/[^FBIU]/g, '').split('');
+    if (!letters.length) return;
+    const roleByLetter = { F: 'front_outer', B: 'back', I: 'front_inner', U: 'unknown' };
+    for (let i = 0; i < detection.views.length && i < letters.length; i += 1) {
+      const role = roleByLetter[letters[i]] || 'unknown';
+      detection.views[i].viewRole = role;
+      detection.views[i].role = role;
+      if (detection.viewBoxes && detection.viewBoxes[i]) {
+        detection.viewBoxes[i].viewRole = role;
+        detection.viewBoxes[i].role = role === 'front_outer' ? 'front' : role;
+      }
+    }
+    syncDetectionRoleIndexes(detection);
+    detection.viewRoleReviewRequired = false;
+  }
+
+  function roleToPromptLetter(role) {
+    if (role === 'front_outer' || role === 'front') return 'F';
+    if (role === 'back') return 'B';
+    if (role === 'front_inner') return 'I';
+    return 'U';
+  }
+
+  function shortViewRole(role) {
+    if (role === 'front_outer' || role === 'front') return 'F';
+    if (role === 'back') return 'B';
+    if (role === 'front_inner') return 'I';
+    return 'U';
+  }
+
+  function syncDetectionRoleIndexes(detection) {
+    const views = detection.views || detection.viewBoxes || [];
+    const roleAt = (role) => views.findIndex(v => v && (v.viewRole === role || v.role === role));
+    detection.frontOuterViewIndex = roleAt('front_outer');
+    detection.frontViewIndex = detection.frontOuterViewIndex;
+    detection.backViewIndex = roleAt('back');
+    detection.frontInnerViewIndex = roleAt('front_inner');
+    detection.primaryViewIndex = detection.frontOuterViewIndex >= 0
+      ? detection.frontOuterViewIndex
+      : (detection.primaryViewIndex || 0);
   }
 
   // Prefer real opencv.js when its WASM has finished loading; fall back
@@ -4353,14 +4416,14 @@ function startImageResize(id, corner) {
       const subdivided = splitMergedViewByVerticalValley(dark, w, h, viewBoxesPx[0]);
       if (subdivided.length > 1) viewBoxesPx = subdivided;
     }
-    // Front/back classification. The classifier uses a layout prior (front
-    // is the leftmost view by tech-sketch convention) — see comment on
-    // classifyViewsAsFrontBack. When confident, front becomes the primary
-    // view so anchors / axis / band / chest are taken from the front sketch.
-    const viewClassification = classifyViewsAsFrontBack(dark, w, h, viewBoxesPx);
+    // Flexible view-role classification. Supports a two-view layout
+    // (front_outer + back) and a three-view layout (front_outer + back +
+    // front_inner). Role metadata, rather than image position, drives later
+    // POM placement.
+    const viewClassification = classifySketchViewRoles(dark, w, h, viewBoxesPx);
     const symPrimaryIndex = choosePrimaryViewBox(viewBoxesPx, dark, w, h);
-    const primaryViewIndex = viewClassification.frontIndex >= 0
-      ? viewClassification.frontIndex
+    const primaryViewIndex = viewClassification.frontOuterIndex >= 0
+      ? viewClassification.frontOuterIndex
       : symPrimaryIndex;
     const primaryBounds = viewBoxesPx[primaryViewIndex] || statsToBounds(globalStats);
     let localStats = buildMaskStats(dark, w, h, primaryBounds);
@@ -4708,21 +4771,41 @@ function startImageResize(id, corner) {
       backgroundLum: Math.round(cvAnalysis.backgroundLum || 255),
       componentCount: filtered.componentCount,
       keptComponentCount: filtered.keptComponents.length,
-      viewBoxes: viewBoxesPx.map((box, index) => {
-        const role = index === viewClassification.frontIndex
-          ? 'front'
-          : (index === backViewIndex ? 'back' : null);
+      views: viewBoxesPx.map((box, index) => {
+        const role = viewClassification.roles[index] || 'unknown';
         const score = viewClassification.scores[index] || null;
         return {
           ...normalizeBounds(box, w, h),
           role,
+          viewRole: role,
+          roleConfidence: score && score.roleConfidence != null
+            ? Number(score.roleConfidence.toFixed(3))
+            : null,
+          centroidX: score ? Number(score.centroidX.toFixed(3)) : null,
+          widthRatio: score ? Number(score.widthRatio.toFixed(3)) : null,
+        };
+      }),
+      viewBoxes: viewBoxesPx.map((box, index) => {
+        const role = viewClassification.roles[index] || 'unknown';
+        const legacyRole = role === 'front_outer' ? 'front' : role;
+        const score = viewClassification.scores[index] || null;
+        return {
+          ...normalizeBounds(box, w, h),
+          role: legacyRole,
+          viewRole: role,
+          roleConfidence: score && score.roleConfidence != null
+            ? Number(score.roleConfidence.toFixed(3))
+            : null,
           centroidX: score ? Number(score.centroidX.toFixed(3)) : null,
           widthRatio: score ? Number(score.widthRatio.toFixed(3)) : null,
         };
       }),
       primaryViewIndex,
-      frontViewIndex: viewClassification.frontIndex,
+      frontViewIndex: viewClassification.frontOuterIndex,
+      frontOuterViewIndex: viewClassification.frontOuterIndex,
+      frontInnerViewIndex: viewClassification.frontInnerIndex,
       backViewIndex,
+      viewRoleReviewRequired: viewClassification.reviewRequired,
       symmetry,
       quality,
       confidence,
@@ -5812,51 +5895,192 @@ function startImageResize(id, corner) {
     return [left, right];
   }
 
-  // Decide which viewBox is the front of the bra and which (if any) is the
-  // back, using a layout prior that holds across the demo sketches (and the
-  // industry-standard tech-pack layout): front view is on the LEFT, back on
-  // the RIGHT. Ink-based features were not reliable enough to use on their
-  // own — the cradle / V-neck shape varies too much across styles — so we
-  // anchor the decision on x-position and use ink density only as a sanity
-  // check for the single-view case.
-  function classifyViewsAsFrontBack(dark, w, h, viewBoxes) {
-    const scores = (viewBoxes || []).map((view) => scoreViewLayout(view, w));
+  // Decide each detected garment component's semantic role. Visual features
+  // get first vote; layout only breaks ties. This keeps two-view styles
+  // working while allowing a third inner-cup/front-lining detail view.
+  function classifySketchViewRoles(dark, w, h, viewBoxes) {
+    const scores = (viewBoxes || []).map((view) => scoreViewLayout(view, w, dark, h));
+    const roles = new Array(scores.length).fill('unknown');
     if (!viewBoxes || !viewBoxes.length) {
-      return { frontIndex: -1, backIndex: -1, scores };
+      return {
+        roles,
+        frontOuterIndex: -1,
+        backIndex: -1,
+        frontInnerIndex: -1,
+        scores,
+        reviewRequired: true,
+      };
     }
     if (viewBoxes.length === 1) {
-      // Single view — assume it's the front since back-only tech sketches
-      // are rare; the spec panel will say "front identified" so a TD knows.
-      return { frontIndex: 0, backIndex: -1, scores };
+      roles[0] = 'front_outer';
+      scores[0].roleConfidence = 0.55;
+      return {
+        roles,
+        frontOuterIndex: 0,
+        backIndex: -1,
+        frontInnerIndex: -1,
+        scores,
+        reviewRequired: false,
+      };
     }
-    // Multi-view: pick the leftmost qualifying view as front and the
-    // rightmost as back. Filter out very small views (under 5% of the
-    // largest view's count) so a stray annotation can't outvote a real view.
+
     const largest = viewBoxes.reduce((m, v) => Math.max(m, v.count || 0), 0);
     const minQualifyingCount = Math.max(1, largest * 0.05);
     const eligible = viewBoxes
-      .map((view, index) => ({ view, index, cx: (view.minX + view.maxX) / 2 }))
-      .filter((item) => (item.view.count || 0) >= minQualifyingCount)
-      .sort((a, b) => a.cx - b.cx);
-    if (eligible.length === 0) return { frontIndex: 0, backIndex: -1, scores };
-    if (eligible.length === 1) return { frontIndex: eligible[0].index, backIndex: -1, scores };
+      .map((view, index) => ({ view, index, score: scores[index] }))
+      .filter((item) => (item.view.count || 0) >= minQualifyingCount);
+    if (!eligible.length) {
+      roles[0] = 'front_outer';
+      scores[0].roleConfidence = 0.35;
+      return {
+        roles,
+        frontOuterIndex: 0,
+        backIndex: -1,
+        frontInnerIndex: -1,
+        scores,
+        reviewRequired: true,
+      };
+    }
+
+    const assignBest = (role, metric, exclude) => {
+      let best = null;
+      for (const item of eligible) {
+        if (exclude && exclude.has(item.index)) continue;
+        if (!best || item.score[metric] > best.score[metric]) best = item;
+      }
+      if (!best) return -1;
+      roles[best.index] = role;
+      return best.index;
+    };
+
+    const used = new Set();
+    let backIndex = assignBest('back', 'backScore', used);
+    if (backIndex >= 0) used.add(backIndex);
+
+    let frontInnerIndex = -1;
+    if (eligible.length >= 3) {
+      frontInnerIndex = assignBest('front_inner', 'frontInnerScore', used);
+      if (frontInnerIndex >= 0) used.add(frontInnerIndex);
+    }
+
+    let frontOuterIndex = assignBest('front_outer', 'frontOuterScore', used);
+    if (frontOuterIndex < 0) {
+      const fallback = eligible
+        .filter(item => !used.has(item.index))
+        .sort((a, b) => a.score.centroidX - b.score.centroidX)[0] || eligible[0];
+      frontOuterIndex = fallback.index;
+      roles[frontOuterIndex] = 'front_outer';
+    }
+
+    const roleConfidence = (index, metric) => {
+      if (index < 0 || !scores[index]) return 0;
+      const values = eligible
+        .filter(item => item.index !== index)
+        .map(item => item.score[metric])
+        .sort((a, b) => b - a);
+      const runnerUp = values.length ? values[0] : 0;
+      return clamp01(0.45 + (scores[index][metric] - runnerUp) * 0.55);
+    };
+    if (frontOuterIndex >= 0) scores[frontOuterIndex].roleConfidence = roleConfidence(frontOuterIndex, 'frontOuterScore');
+    if (backIndex >= 0) scores[backIndex].roleConfidence = roleConfidence(backIndex, 'backScore');
+    if (frontInnerIndex >= 0) scores[frontInnerIndex].roleConfidence = roleConfidence(frontInnerIndex, 'frontInnerScore');
+
+    const reviewRequired =
+      eligible.length > 3 ||
+      eligible.some(item => roles[item.index] === 'unknown') ||
+      eligible.some(item => {
+        const role = roles[item.index];
+        if (role === 'front_outer') return (scores[item.index].roleConfidence || 0) < 0.52;
+        if (role === 'front_inner') return (scores[item.index].roleConfidence || 0) < 0.52;
+        if (role === 'back') return (scores[item.index].roleConfidence || 0) < 0.52;
+        return true;
+      });
+
+    return { roles, frontOuterIndex, backIndex, frontInnerIndex, scores, reviewRequired };
+  }
+
+  // Back-compat wrapper for any older debug/test code that still asks for
+  // front/back indexes.
+  function classifyViewsAsFrontBack(dark, w, h, viewBoxes) {
+    const result = classifySketchViewRoles(dark, w, h, viewBoxes);
     return {
-      frontIndex: eligible[0].index,
-      backIndex: eligible[eligible.length - 1].index,
-      scores,
+      frontIndex: result.frontOuterIndex,
+      backIndex: result.backIndex,
+      scores: result.scores,
     };
   }
 
-  // Layout-only score, surfaced for the spec-panel header / overlay tooltips.
-  // We expose the centroid x and the area so a future, image-based classifier
-  // can refine this without changing callers.
-  function scoreViewLayout(view, w) {
+  function scoreViewLayout(view, w, dark, h) {
     const bw = (view.maxX - view.minX + 1);
+    const bh = (view.maxY - view.minY + 1);
     const cx = (view.minX + view.maxX) / 2;
+    const ink = view.count || 1;
+    let innerInk = 0;
+    let edgeInk = 0;
+    let centerVerticalInk = 0;
+    if (dark && w && h && bw > 0 && bh > 0) {
+      const insetX = Math.max(2, Math.round(bw * 0.16));
+      const insetY = Math.max(2, Math.round(bh * 0.12));
+      const centerLo = Math.round(view.minX + bw * 0.42);
+      const centerHi = Math.round(view.minX + bw * 0.58);
+      for (let y = view.minY; y <= view.maxY; y += 1) {
+        const base = y * w;
+        for (let x = view.minX; x <= view.maxX; x += 1) {
+          if (!dark[base + x]) continue;
+          const inInner = x >= view.minX + insetX && x <= view.maxX - insetX
+            && y >= view.minY + insetY && y <= view.maxY - insetY;
+          if (inInner) innerInk += 1;
+          else edgeInk += 1;
+          if (x >= centerLo && x <= centerHi) centerVerticalInk += 1;
+        }
+      }
+    }
+    const widthRatio = w > 0 ? bw / w : 0;
+    const aspect = bh / Math.max(1, bw);
+    const innerRatio = innerInk / ink;
+    const edgeRatio = edgeInk / ink;
+    const centerVerticalRatio = centerVerticalInk / ink;
+    const leftness = 1 - clamp01(cx / Math.max(1, w));
+    const rightness = clamp01(cx / Math.max(1, w));
+    const symmetry = computeSymmetryScore(
+      dark,
+      w,
+      Math.round(cx),
+      view.minX,
+      view.maxX,
+      view.minY,
+      view.maxY
+    );
+    const frontOuterScore =
+      symmetry * 0.34 +
+      widthRatio * 0.22 +
+      edgeRatio * 0.16 +
+      leftness * 0.14 +
+      (1 - clamp01(Math.abs(aspect - 1.05))) * 0.14;
+    const backScore =
+      rightness * 0.30 +
+      centerVerticalRatio * 0.24 +
+      edgeRatio * 0.20 +
+      clamp01(aspect / 1.45) * 0.16 +
+      (1 - symmetry) * 0.10;
+    const frontInnerScore =
+      innerRatio * 0.38 +
+      symmetry * 0.18 +
+      (1 - edgeRatio) * 0.18 +
+      (1 - rightness * 0.45) * 0.10 +
+      (1 - clamp01(Math.abs(aspect - 1.0))) * 0.16;
     return {
       centroidX: w > 0 ? cx / w : 0,
-      widthRatio: w > 0 ? bw / w : 0,
+      widthRatio,
       count: view.count || 0,
+      innerRatio,
+      edgeRatio,
+      centerVerticalRatio,
+      symmetry,
+      frontOuterScore,
+      backScore,
+      frontInnerScore,
+      roleConfidence: 0,
     };
   }
 
@@ -5957,7 +6181,9 @@ function startImageResize(id, corner) {
   function seedAnchorsFromDetection(detection, sourceImage, options) {
     if (!detection || !detection.bbox || !sourceImage) return [];
 
-    const views = Array.isArray(detection.viewBoxes) ? detection.viewBoxes : [];
+    const views = Array.isArray(detection.views) && detection.views.length
+      ? detection.views
+      : (Array.isArray(detection.viewBoxes) ? detection.viewBoxes : []);
     // Prefer the explicit front/back classification produced by detection.
     // Older detection blobs (no classifier output) fall back to "primary view
     // is front, largest non-primary is back" so saved projects still load.
@@ -5965,6 +6191,7 @@ function startImageResize(id, corner) {
       ? detection.frontViewIndex
       : (Number.isFinite(detection.primaryViewIndex) ? detection.primaryViewIndex : 0);
     const frontView = views[frontIdx] || detection.bbox;
+    const frontInnerView = findDetectionViewByRole(detection, 'front_inner');
     let backView = null;
     if (Number.isFinite(detection.backViewIndex) && detection.backViewIndex >= 0) {
       backView = views[detection.backViewIndex] || null;
@@ -5979,6 +6206,10 @@ function startImageResize(id, corner) {
       x: clamp01(view.x + view.width * rx),
       y: clamp01(view.y + view.height * ry),
     });
+    const roleByKind = Object.create(null);
+    for (const schema of ANCHOR_SCHEMA) {
+      roleByKind[schema.kind] = defaultViewRoleForAnchorKind(schema.kind);
+    }
 
     const bb = detection.bbox;
     const left  = bb.x;
@@ -6145,6 +6376,29 @@ function startImageResize(id, corner) {
       };
     }
 
+    if (frontInnerView && frontInnerView.width > 0 && frontInnerView.height > 0) {
+      const i = frontInnerView;
+      const innerBandY = i.y + i.height * 0.92;
+      const innerChestY = i.y + i.height * 0.22;
+      const innerCupMidY = i.y + i.height * 0.54;
+      seeds = {
+        ...seeds,
+        'inner-cup-top':    inView(i, 0.50, 0.18),
+        'inner-cup-bottom': inView(i, 0.50, 0.82),
+        'inner-cup-left':   inView(i, 0.20, 0.53),
+        'inner-cup-right':  inView(i, 0.80, 0.53),
+      };
+      roleByKind['inner-cup-top'] = 'front_inner';
+      roleByKind['inner-cup-bottom'] = 'front_inner';
+      roleByKind['inner-cup-left'] = 'front_inner';
+      roleByKind['inner-cup-right'] = 'front_inner';
+      if (!detection.innerCupTop) {
+        detection.innerCupTop = { x: i.x + i.width * 0.50, y: innerChestY };
+      }
+      if (detection.cradleY == null) detection.cradleY = innerBandY;
+      if (detection.underbustY == null) detection.underbustY = innerCupMidY;
+    }
+
     if (backView && backView.width > 0 && backView.height > 0) {
       const b = backView;
       // Prefer detected back center landmarks (POM 12) over fixed view-box
@@ -6257,6 +6511,7 @@ function startImageResize(id, corner) {
         x: seed.x,
         y: seed.y,
         sourceImageId: sourceImage.id,
+        viewRole: roleByKind[schema.kind] || defaultViewRoleForAnchorKind(schema.kind),
         confidence: confByKind[schema.kind] || 'medium',
         autoFilled: true,
       });
@@ -6274,6 +6529,20 @@ function startImageResize(id, corner) {
   }
 
   function clamp01(v) { return Math.max(0, Math.min(1, Number(v) || 0)); }
+
+  function findDetectionViewByRole(detection, role) {
+    const views = Array.isArray(detection && detection.views) && detection.views.length
+      ? detection.views
+      : (Array.isArray(detection && detection.viewBoxes) ? detection.viewBoxes : []);
+    return views.find(v => v && (v.viewRole === role || v.role === role)) || null;
+  }
+
+  function defaultViewRoleForAnchorKind(kind) {
+    if (/^back-|^back$/.test(kind)) return 'back';
+    if (kind === 'side-top' || kind === 'side-bottom') return 'back';
+    if (kind.indexOf('inner-cup-') === 0) return 'front_outer';
+    return 'front_outer';
+  }
 
   function resetAnchorsToDetection() {
     const detection = state.autoMode.detection;
@@ -6497,8 +6766,8 @@ function startImageResize(id, corner) {
     // front view is identified — otherwise the dashed extensions overshoot
     // into the back view on combined-image layouts.
     const det = state.autoMode && state.autoMode.detection;
-    const frontView = det && det.viewBoxes
-      ? det.viewBoxes.find(v => v && v.role === 'front')
+    const frontView = det
+      ? findDetectedViewForRole(det, 'front_outer')
       : null;
     const frontRightLimit = frontView
       ? Math.max(bandR.x + 0.01, (frontView.x + frontView.width) - 0.01)
@@ -6584,12 +6853,14 @@ function startImageResize(id, corner) {
 
     const pom15Row = hasBackStrap
       ? { fixtureId: 'gen-15', pom: '15', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('15'),
         start: backStrapL, end: backStrapR,
         drawability: 'APPROXIMATE', confidence: 'medium',
         proposedStartLandmark: 'back-strap-left',
         proposedEndLandmark: 'back-strap-right',
         reason: 'Back strap distance from the detected back view.' }
       : { fixtureId: 'gen-15', pom: '15', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('15'),
         drawability: 'REVIEW_ONLY', confidence: 'low',
         uncertainty: 'Back strap distance requires a side / back view, which offline detection cannot localise.',
         reason: 'Back strap distance — review only until a side view is available.' };
@@ -6597,6 +6868,7 @@ function startImageResize(id, corner) {
     const rows = [
       // POM 1 — bottom band (relax)
       { fixtureId: 'gen-1', pom: '1', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('1'),
         start: bandL, end: bandR,
         drawability: 'DRAWABLE', confidence: 'high',
         proposedStartLandmark: 'band-left', proposedEndLandmark: 'band-right',
@@ -6604,6 +6876,7 @@ function startImageResize(id, corner) {
 
       // POM 2 — bottom band extension (dashed) off band-right
       { fixtureId: 'gen-2', pom: '2', type: 'straight', style: 'dashed', arrowType: 'single',
+        viewRole: effectivePomViewRole('2'),
         start: bandR, end: ext2End,
         drawability: 'APPROXIMATE', confidence: 'medium',
         proposedStartLandmark: 'band-right', proposedEndLandmark: 'band-right extension',
@@ -6611,6 +6884,7 @@ function startImageResize(id, corner) {
 
       // POM 3 — chest line
       { fixtureId: 'gen-3', pom: '3', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('3'),
         start: chestL, end: chestR,
         drawability: 'DRAWABLE', confidence: 'medium',
         proposedStartLandmark: 'chest-left', proposedEndLandmark: 'chest-right',
@@ -6618,6 +6892,7 @@ function startImageResize(id, corner) {
 
       // POM 4 — chest extension
       { fixtureId: 'gen-4', pom: '4', type: 'straight', style: 'dashed', arrowType: 'single',
+        viewRole: effectivePomViewRole('4'),
         start: chestR, end: ext4End,
         drawability: 'APPROXIMATE', confidence: 'medium',
         proposedStartLandmark: 'chest-right', proposedEndLandmark: 'chest-right + 25% extension',
@@ -6625,6 +6900,7 @@ function startImageResize(id, corner) {
 
       // POM 5 — center front height (vertical, cf-top → cf-bottom)
       { fixtureId: 'gen-5', pom: '5', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('5'),
         start: cfTop, end: cfBot,
         drawability: 'DRAWABLE', confidence: cfTop === fallback || cfBot === fallback ? 'low' : 'high',
         proposedStartLandmark: 'cf-top', proposedEndLandmark: 'cf-bottom',
@@ -6632,6 +6908,7 @@ function startImageResize(id, corner) {
 
       // POM 6 — cradle height at CF: half-way down between chest line and band, along the CF axis
       { fixtureId: 'gen-6', pom: '6', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('6'),
         start: cradleCfTop,
         end: cradleCfBottom,
         drawability: 'APPROXIMATE', confidence: 'medium',
@@ -6641,6 +6918,7 @@ function startImageResize(id, corner) {
 
       // POM 7 — cradle height at the bottom of the cup (vertical on cup side)
       { fixtureId: 'gen-7', pom: '7', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('7'),
         start: cradleCupTop,
         end: cradleCupBottom,
         drawability: 'APPROXIMATE', confidence: 'medium',
@@ -6650,6 +6928,7 @@ function startImageResize(id, corner) {
 
       // POM 8 — cup height at CF (vertical from chest line to cf-bottom along CF axis)
       { fixtureId: 'gen-8', pom: '8', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('8'),
         start: cupHeightTop,
         end: cupHeightBottom,
         drawability: 'DRAWABLE', confidence: 'medium',
@@ -6659,6 +6938,7 @@ function startImageResize(id, corner) {
 
       // POM 9 — inner cup vertical (curved)
       { fixtureId: 'gen-9', pom: '9', type: 'curved', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('9'),
         start: icTop, end: icBot, control1: ic9controls.c1, control2: ic9controls.c2,
         drawability: 'DRAWABLE', confidence: 'medium',
         sharedAnchorFamily: 'inner-cup',
@@ -6668,6 +6948,7 @@ function startImageResize(id, corner) {
 
       // POM 10 — inner cup horizontal (curved)
       { fixtureId: 'gen-10', pom: '10', type: 'curved', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('10'),
         start: icL, end: icR, control1: ic10controls.c1, control2: ic10controls.c2,
         drawability: 'DRAWABLE', confidence: 'medium',
         sharedAnchorFamily: 'inner-cup',
@@ -6677,6 +6958,7 @@ function startImageResize(id, corner) {
 
       // POM 11 — side seam
       { fixtureId: 'gen-11', pom: '11', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('11'),
         start: sideTop, end: sideBot,
         drawability: 'DRAWABLE', confidence: 'medium',
         proposedStartLandmark: 'side-top', proposedEndLandmark: 'side-bottom',
@@ -6684,6 +6966,7 @@ function startImageResize(id, corner) {
 
       // POM 12 — back center length (back-top → back-bottom)
       { fixtureId: 'gen-12', pom: '12', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('12'),
         start: backTop, end: backBot,
         drawability: 'APPROXIMATE', confidence: 'low',
         proposedStartLandmark: 'back-top', proposedEndLandmark: 'back-bottom',
@@ -6691,6 +6974,7 @@ function startImageResize(id, corner) {
 
       // POM 13 — back panel height (parallel to POM 12, slightly outboard)
       { fixtureId: 'gen-13', pom: '13', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('13'),
         start: backPanelTop, end: backPanelBot,
         drawability: 'APPROXIMATE', confidence: hasBackPanel ? 'medium' : 'low',
         proposedStartLandmark: 'back panel top',
@@ -6699,6 +6983,7 @@ function startImageResize(id, corner) {
 
       // POM 14 — shoulder strap (curved)
       { fixtureId: 'gen-14', pom: '14', type: 'curved', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('14'),
         start: strapTop, end: strapBot, control1: strap14c1, control2: strap14c2,
         drawability: 'DRAWABLE', confidence: 'medium',
         proposedStartLandmark: 'strap-top', proposedEndLandmark: 'strap-bottom',
@@ -6709,6 +6994,7 @@ function startImageResize(id, corner) {
 
       // POM 16 — front apex distance
       { fixtureId: 'gen-16', pom: '16', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('16'),
         start: apexL, end: apexR,
         drawability: 'DRAWABLE', confidence: 'medium',
         proposedStartLandmark: 'apex-left', proposedEndLandmark: 'apex-right',
@@ -6721,6 +7007,29 @@ function startImageResize(id, corner) {
       ruleVersion: AUTO_RULE_VERSION,
       annotations: rows,
     };
+  }
+
+  function findDetectedViewForRole(detection, role) {
+    const views = Array.isArray(detection && detection.views) && detection.views.length
+      ? detection.views
+      : (Array.isArray(detection && detection.viewBoxes) ? detection.viewBoxes : []);
+    return views.find(v => v && (v.viewRole === role || v.role === role || (role === 'front_outer' && v.role === 'front'))) || null;
+  }
+
+  function hasDetectedViewRole(role) {
+    const det = state.autoMode && state.autoMode.detection;
+    return !!findDetectedViewForRole(det, role);
+  }
+
+  function defaultPomViewRole(pom) {
+    const entry = POM_TEMPLATE[String(pom)];
+    return entry && entry.viewRole ? entry.viewRole : 'front_outer';
+  }
+
+  function effectivePomViewRole(pom) {
+    const role = defaultPomViewRole(pom);
+    if (role === 'front_inner' && !hasDetectedViewRole('front_inner')) return 'front_outer';
+    return role;
   }
 
   if (typeof window !== 'undefined') {
@@ -6966,6 +7275,7 @@ function startImageResize(id, corner) {
       reason: row.reason || null,
       uncertainty: row.uncertainty || null,
       sharedAnchorFamily: row.sharedAnchorFamily || null,
+      viewRole: row.viewRole || effectivePomViewRole(row.pom),
       approvedAt: null,
     };
     return baseAnn;
@@ -7025,6 +7335,16 @@ function startImageResize(id, corner) {
       if (!row.drawability || !['DRAWABLE', 'APPROXIMATE', 'REVIEW_ONLY'].includes(row.drawability)) {
         errors.push(`${tag}: invalid drawability "${row.drawability}".`);
         continue;
+      }
+      if (!['front_outer', 'back', 'front_inner', 'unknown'].includes(row.viewRole || 'unknown')) {
+        errors.push(`${tag}: invalid viewRole "${row.viewRole}".`);
+        continue;
+      }
+      const requiredRole = defaultPomViewRole(row.pom);
+      if (requiredRole === 'front_inner' && hasDetectedViewRole('front_inner')) {
+        if (row.viewRole !== 'front_inner') warnings.push(`${tag}: should use front_inner when that view exists.`);
+      } else if (requiredRole !== 'front_inner' && row.viewRole !== requiredRole) {
+        warnings.push(`${tag}: expected viewRole ${requiredRole}, got ${row.viewRole}.`);
       }
       if (row.drawability === 'REVIEW_ONLY') {
         // No stale geometry allowed
@@ -7334,6 +7654,7 @@ function startImageResize(id, corner) {
       reason: draft.reason || null,
       uncertainty: draft.uncertainty || null,
       sharedAnchorFamily: draft.sharedAnchorFamily || null,
+      viewRole: draft.viewRole || effectivePomViewRole(draft.seq),
       originDraftId: draft.id,
     };
   }
@@ -7412,8 +7733,9 @@ function startImageResize(id, corner) {
   //   - measurable : sample count + per-bucket medians inspectable
   //   - resettable : one-click clear of every bucket
   //
-  // Buckets are keyed by (anchorKind × view). View is derived from the
-  // ANCHOR_SCHEMA group: 'back' => back view, anything else => front.
+  // Buckets are keyed by (anchorKind × viewRole). View role is explicit on
+  // detected anchors where available, with schema-based fallback for older
+  // projects.
   // Nothing leaves the browser — sketch IP stays local.
   // =============================================================
 
@@ -7456,13 +7778,18 @@ function startImageResize(id, corner) {
     updateUI();
   }
 
-  function anchorView(anchorKind) {
+  function anchorView(anchorKind, anchor) {
+    if (anchor && anchor.viewRole) return anchor.viewRole;
     const schema = ANCHOR_SCHEMA.find(s => s.kind === anchorKind);
-    return (schema && schema.group === 'back') ? 'back' : 'front';
+    if (schema && schema.group === 'back') return 'back';
+    if (anchorKind && anchorKind.indexOf('inner-cup-') === 0 && hasDetectedViewRole('front_inner')) {
+      return 'front_inner';
+    }
+    return 'front_outer';
   }
 
-  function learningBucketKey(anchorKind) {
-    return anchorKind + '|' + anchorView(anchorKind);
+  function learningBucketKey(anchorKind, anchor) {
+    return anchorKind + '|' + anchorView(anchorKind, anchor);
   }
 
   function medianOf(arr) {
@@ -8520,9 +8847,12 @@ function requestRender() {
     // the front/back classifier so the TD can see what the detector decided.
     if (Array.isArray(detection.viewBoxes) && detection.viewBoxes.length > 1) {
       const VIEW_STYLE = {
-        front: { stroke: 'rgba(14, 165, 233, 0.85)', fill: 'rgba(14, 165, 233, 0.95)', dash: [], lineW: 1.4 },
-        back:  { stroke: 'rgba(168, 85, 247, 0.85)', fill: 'rgba(168, 85, 247, 0.95)', dash: [], lineW: 1.4 },
-        none:  { stroke: 'rgba(100, 116, 139, 0.45)', fill: 'rgba(100, 116, 139, 0.85)', dash: [3, 3], lineW: 0.9 },
+        front_outer: { stroke: 'rgba(14, 165, 233, 0.85)', fill: 'rgba(14, 165, 233, 0.95)', dash: [], lineW: 1.4 },
+        front_inner: { stroke: 'rgba(22, 163, 74, 0.85)', fill: 'rgba(22, 163, 74, 0.95)', dash: [], lineW: 1.4 },
+        front:       { stroke: 'rgba(14, 165, 233, 0.85)', fill: 'rgba(14, 165, 233, 0.95)', dash: [], lineW: 1.4 },
+        back:        { stroke: 'rgba(168, 85, 247, 0.85)', fill: 'rgba(168, 85, 247, 0.95)', dash: [], lineW: 1.4 },
+        unknown:     { stroke: 'rgba(100, 116, 139, 0.45)', fill: 'rgba(100, 116, 139, 0.85)', dash: [3, 3], lineW: 0.9 },
+        none:        { stroke: 'rgba(100, 116, 139, 0.45)', fill: 'rgba(100, 116, 139, 0.85)', dash: [3, 3], lineW: 0.9 },
       };
       detection.viewBoxes.forEach((view, index) => {
         if (!view) return;
@@ -8530,9 +8860,11 @@ function requestRender() {
         const vy = image.y + view.y * image.height;
         const vw = view.width * image.width;
         const vh = view.height * image.height;
-        const role = view.role || (index === (detection.primaryViewIndex || 0) ? 'front' : null);
+        const role = view.viewRole || view.role || (index === (detection.primaryViewIndex || 0) ? 'front_outer' : 'unknown');
         const style = VIEW_STYLE[role] || VIEW_STYLE.none;
-        const label = role ? role.toUpperCase() : ('view ' + (index + 1));
+        const label = role && role !== 'unknown'
+          ? role.replace('_', ' ').toUpperCase()
+          : ('view ' + (index + 1));
         ctx.strokeStyle = style.stroke;
         ctx.lineWidth = style.lineW * px;
         ctx.setLineDash(style.dash.map((v) => v * px));

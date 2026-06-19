@@ -924,15 +924,19 @@
           : '';
         let views = '';
         if (det.viewBoxes && det.viewBoxes.length > 1) {
-          const front = det.viewBoxes.find(v => v && v.role === 'front');
-          const back  = det.viewBoxes.find(v => v && v.role === 'back');
-          if (front && back) {
-            views = ' • front + back identified';
-          } else if (front) {
-            views = ' • ' + det.viewBoxes.length + ' views, front identified';
+          const frontOuter = det.viewBoxes.find(v => v && (v.viewRole === 'front_outer' || v.role === 'front'));
+          const frontInner = det.viewBoxes.find(v => v && v.viewRole === 'front_inner');
+          const back  = det.viewBoxes.find(v => v && (v.viewRole === 'back' || v.role === 'back'));
+          if (frontOuter && back && frontInner) {
+            views = ' • front outer + back + front inner identified';
+          } else if (frontOuter && back) {
+            views = ' • front outer + back identified';
+          } else if (frontOuter) {
+            views = ' • ' + det.viewBoxes.length + ' views, front outer identified';
           } else {
             views = ' • ' + det.viewBoxes.length + ' views, using #' + ((det.primaryViewIndex || 0) + 1);
           }
+          if (det.viewRoleReviewRequired) views += ' • roles need review';
         }
         note = '<b>Auto Mode — detected sketch.</b> ' + det.sampleWidth + '×' + det.sampleHeight +
           ' • local offline vision' + views + ' • ' + pct + '% coverage' + sym + fit +

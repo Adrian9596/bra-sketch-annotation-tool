@@ -11,22 +11,22 @@
   // refL = standard size-L reference value (per-style confidential). Null in this public
   // build; restore real values in a private copy for production use.
   const POM_TEMPLATE = {
-    '1':  { desc: '1/2 Bottom band - Relax', refL: null },
-    '2':  { desc: '1/2 Bottom band - Extend', refL: null },
-    '3':  { desc: '1/2 chest - Measure straight', refL: null },
-    '4':  { desc: '1/2 chest - Extend', refL: null },
-    '5':  { desc: 'Center front height', refL: null },
-    '6':  { desc: 'Cradle height at center front', refL: null },
-    '7':  { desc: 'Cradle height at bottom cup', refL: null },
-    '8':  { desc: 'Cup height at center front', refL: null },
-    '9':  { desc: 'Inner cup height', refL: null },
-    '10': { desc: 'Inner cup width', refL: null },
-    '11': { desc: 'Side seam length', refL: null },
-    '12': { desc: 'Back center length', refL: null },
-    '13': { desc: 'Back panel height', refL: null },
-    '14': { desc: 'Shoulder strap length', refL: null },
-    '15': { desc: 'Back strap distances', refL: null },
-    '16': { desc: 'Front apex distance', refL: null },
+    '1':  { desc: '1/2 Bottom band - Relax', refL: null, viewRole: 'front_outer' },
+    '2':  { desc: '1/2 Bottom band - Extend', refL: null, viewRole: 'front_outer' },
+    '3':  { desc: '1/2 chest - Measure straight', refL: null, viewRole: 'front_outer' },
+    '4':  { desc: '1/2 chest - Extend', refL: null, viewRole: 'front_outer' },
+    '5':  { desc: 'Center front height', refL: null, viewRole: 'front_outer' },
+    '6':  { desc: 'Cradle height at center front', refL: null, viewRole: 'front_outer' },
+    '7':  { desc: 'Cradle height at bottom cup', refL: null, viewRole: 'front_outer' },
+    '8':  { desc: 'Cup height at center front', refL: null, viewRole: 'front_outer' },
+    '9':  { desc: 'Inner cup height', refL: null, viewRole: 'front_inner' },
+    '10': { desc: 'Inner cup width', refL: null, viewRole: 'front_inner' },
+    '11': { desc: 'Side seam length', refL: null, viewRole: 'back' },
+    '12': { desc: 'Back center length', refL: null, viewRole: 'back' },
+    '13': { desc: 'Back panel height', refL: null, viewRole: 'back' },
+    '14': { desc: 'Shoulder strap length', refL: null, viewRole: 'front_outer' },
+    '15': { desc: 'Back strap distances', refL: null, viewRole: 'back' },
+    '16': { desc: 'Front apex distance', refL: null, viewRole: 'front_outer' },
   };
 
   // Spec-panel pairing: POMs that share a physical measurement on the sketch
