@@ -1,0 +1,13 @@
+{
+  "name": "bra-measurement-assistant",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-app.mjs",
+    "serve": "node scripts/serve.mjs",
+    "check": "node scripts/check.mjs",
+    "smoke": "node scripts/auto-mode-smoke.mjs",
+    "learning-tests": "node scripts/learning-tests.mjs",
+    "meaning-tests": "node scripts/meaning-tests.mjs"
+  }
+}
