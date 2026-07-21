@@ -1,0 +1,196 @@
+{
+  "anchors": [
+    {
+      "kind": "cf-top",
+      "name": "CF top",
+      "group": "axis",
+      "hint": "Top of the center-front, where the cradle meets the chest line."
+    },
+    {
+      "kind": "cf-bottom",
+      "name": "CF bottom",
+      "group": "axis",
+      "hint": "Bottom of the center front, on the underbust band.",
+      "derivation": {
+        "method": "drop_to_line",
+        "args": [
+          "cf-top",
+          "band-left",
+          "band-right"
+        ],
+        "axis": "vertical"
+      }
+    },
+    {
+      "kind": "cradle-cf-top",
+      "name": "Cradle CF",
+      "group": "axis",
+      "hint": "Where the cradle / cup-bottom seam approaches the center front. POM 6 top."
+    },
+    {
+      "kind": "cradle-cup-top",
+      "name": "Cradle cup top",
+      "group": "axis",
+      "hint": "Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."
+    },
+    {
+      "kind": "cradle-cup-bottom",
+      "name": "Cradle cup btm",
+      "group": "axis",
+      "hint": "Band baseline directly below the bottom-cup cradle point (POM 7 bottom).",
+      "derivation": {
+        "method": "drop_to_line",
+        "args": [
+          "cradle-cup-top",
+          "band-left",
+          "band-right"
+        ],
+        "axis": "vertical"
+      }
+    },
+    {
+      "kind": "band-left",
+      "name": "Band L",
+      "group": "band",
+      "hint": "Leftmost end of the underbust band line."
+    },
+    {
+      "kind": "band-right",
+      "name": "Band R",
+      "group": "band",
+      "hint": "Rightmost end of the underbust band line."
+    },
+    {
+      "kind": "chest-left",
+      "name": "Chest L",
+      "group": "chest",
+      "hint": "Left end of the chest / overbust horizontal line."
+    },
+    {
+      "kind": "chest-right",
+      "name": "Chest R",
+      "group": "chest",
+      "hint": "Right end of the chest / overbust horizontal line."
+    },
+    {
+      "kind": "inner-cup-top",
+      "name": "IC top",
+      "group": "inner-cup",
+      "hint": "Top of the cup (apex) on the front (outer) view — POM 9 start."
+    },
+    {
+      "kind": "inner-cup-bottom",
+      "name": "IC btm",
+      "group": "inner-cup",
+      "hint": "Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."
+    },
+    {
+      "kind": "inner-cup-left",
+      "name": "IC L",
+      "group": "inner-cup",
+      "hint": "Cup width, gore-side edge at mid-height, front (outer) view — POM 10 start."
+    },
+    {
+      "kind": "inner-cup-right",
+      "name": "IC R",
+      "group": "inner-cup",
+      "hint": "Cup width, armhole-side edge at mid-height, front (outer) view — POM 10 end."
+    },
+    {
+      "kind": "side-top",
+      "name": "Side top",
+      "group": "side",
+      "hint": "Top of the side seam at the underarm."
+    },
+    {
+      "kind": "side-bottom",
+      "name": "Side btm",
+      "group": "side",
+      "hint": "Bottom of the side seam at the band."
+    },
+    {
+      "kind": "apex-left",
+      "name": "Apex L",
+      "group": "apex",
+      "hint": "Left shoulder-strap/cup joining seam, the highest point of the cup when present."
+    },
+    {
+      "kind": "apex-right",
+      "name": "Apex R",
+      "group": "apex",
+      "hint": "Right shoulder-strap/cup joining seam, the highest point of the cup when present."
+    },
+    {
+      "kind": "strap-top",
+      "name": "Front strap join",
+      "group": "strap",
+      "hint": "Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."
+    },
+    {
+      "kind": "strap-bottom",
+      "name": "Back strap join",
+      "group": "strap",
+      "hint": "End of the shoulder strap at the back / back-panel join — POM 14 end."
+    },
+    {
+      "kind": "back-top",
+      "name": "Back top",
+      "group": "back",
+      "hint": "Top edge of the back panel."
+    },
+    {
+      "kind": "back-bottom",
+      "name": "Back btm",
+      "group": "back",
+      "hint": "Bottom edge of the back panel."
+    },
+    {
+      "kind": "back-panel-top",
+      "name": "Panel top",
+      "group": "back",
+      "hint": "Upper point for back panel height."
+    },
+    {
+      "kind": "back-panel-bottom",
+      "name": "Panel btm",
+      "group": "back",
+      "hint": "Lower point for back panel height."
+    },
+    {
+      "kind": "back-strap-left",
+      "name": "Back strap L",
+      "group": "back",
+      "hint": "Left point of the back strap distance."
+    },
+    {
+      "kind": "back-strap-right",
+      "name": "Back strap R",
+      "group": "back",
+      "hint": "Right point of the back strap distance."
+    },
+    {
+      "kind": "171",
+      "name": "171",
+      "group": "neckline",
+      "hint": "Left upper neckline corner, where the cup/gore top edge meets the strap base."
+    },
+    {
+      "kind": "172",
+      "name": "172",
+      "group": "neckline",
+      "hint": "Right upper neckline corner (mirror of Neckline L)."
+    },
+    {
+      "kind": "181",
+      "name": "181",
+      "group": "armhole",
+      "hint": "Underarm side point at the bottom of the arm opening."
+    },
+    {
+      "kind": "182",
+      "name": "182",
+      "group": "armhole",
+      "hint": "Strap/shoulder junction at the top of the arm opening."
+    }
+  ]
+}

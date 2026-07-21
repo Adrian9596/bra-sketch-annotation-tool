@@ -1,0 +1,110 @@
+// Auto Mode entry/exit: mode switching, Auto Mode status chip, source
+// image selection. Source part for app.js. Run `npm run build`
+// after editing.
+//
+// requestAppModeChange guards the manual ← auto transition with an
+// 'apply / discard / stay' dialog when there are unapplied drafts —
+// canLeaveAutoMode is the single predicate that decides if a clean exit
+// is possible. pickAutoSourceImage prefers the selected image, falling
+// back to the first one on the board.
+
+  // =============================================================
+  // Auto Mode — offline sketch detection + anchor-driven POM drafting.
+  // Drafts live entirely outside state.annotations until an
+  // explicit, atomic Apply moves approved rows into the project.
+  // =============================================================
+
+  function setAppMode(mode) {
+    // mode is 'auto' or 'manual'. Auto is the default on fresh load; Manual
+    // is entered via the toolbar toggle, the post-Apply handoff, or by
+    // reopening a saved project that contains applied lines.
+    state.appMode = mode;
+    document.body.classList.toggle('app-auto', mode === 'auto');
+    el.modeManualBtn.classList.toggle('active', mode === 'manual');
+    el.modeAutoBtn.classList.toggle('active', mode === 'auto');
+    // visibility handled by body.app-auto CSS class
+
+    if (mode === 'auto') {
+      // Force the user out of any creation-flavored tool so manual line
+      // creation cannot fire while project annotations are locked.
+      state.drawSession = null;
+      state.eraseSession = null;
+      state.tool = 'select';
+      document.body.classList.remove('tool-eraser');
+      // Clear any project selection so the user does not accidentally edit
+      // locked annotations.
+      if (state.selection.kind === 'annotation' || state.selection.kind === 'image') {
+        state.selection = { kind: null, id: null };
+      }
+      ensureAutoModeStatus();
+    } else {
+      // Leaving Auto Mode: clear draft selection + drop detection /
+      // anchors so nothing leaks into Manual rendering.
+      if (state.selection.kind === 'draft') {
+        state.selection = { kind: null, id: null };
+      }
+      state.autoMode.detection = null;
+      state.autoMode.anchors = [];
+      state.autoMode.anchorSelectedId = null;
+    }
+    updateUI();
+    // Showing/hiding the Auto toolbar changes the canvas' page position and
+    // available height. Recompute immediately so subsequent clicks map to the
+    // correct world coordinates.
+    resizeCanvas();
+  }
+
+  function requestAppModeChange(mode) {
+    if (mode === state.appMode) return;
+    if (mode === 'manual' && !canLeaveAutoMode()) {
+      // Leaving Auto Mode with unapplied drafts: the draft layer would be
+      // stranded, so ask the TD to apply, discard, or stay first.
+      const drafts = state.autoMode.draftAnnotations;
+      const approvedCount = drafts.filter(d => d.tdApproved && !isReviewOnlyDraft(d)).length;
+      openAutoModeExitDialog({
+        approvedCount,
+        totalCount: drafts.length,
+      }).then(choice => {
+        if (choice === 'apply') {
+          // A successful apply hands off to Manual Mode by itself (see
+          // applyApprovedDraftsAtomically); on failure we stay in Auto with
+          // the drafts intact. Unapplied rows (e.g. REVIEW_ONLY) stay in
+          // the Auto draft layer — toggling back to Auto shows them again.
+          applyApprovedDraftsAtomically();
+        } else if (choice === 'discard') {
+          discardAutoDrafts(true);
+          setAppMode('manual');
+        }
+        // 'stay' = no-op: user keeps Auto Mode and their drafts.
+      });
+      return;
+    }
+    setAppMode(mode);
+  }
+
+  function canLeaveAutoMode() {
+    return state.autoMode.draftAnnotations.length === 0;
+  }
+
+  function ensureAutoModeStatus() {
+    // Status priority:
+    //   reviewing > detected > ready > idle
+    // Drafts win because they need the most attention. Detection (with
+    // anchors seeded) is next so the chip reflects "you can generate now".
+    if (state.autoMode.draftAnnotations.length > 0) {
+      state.autoMode.status = 'reviewing';
+      return;
+    }
+    if (state.autoMode.detection) {
+      state.autoMode.status = 'detected';
+      return;
+    }
+    state.autoMode.status = pickAutoSourceImage() ? 'ready' : 'idle';
+  }
+
+  function pickAutoSourceImage() {
+    // Use the currently selected image; otherwise the first image.
+    const selected = getSelectedImage();
+    if (selected) return selected;
+    return state.images[0] || null;
+  }

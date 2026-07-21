@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Sketch Line Tool</title>
+<title>Bra Auto Measure</title>
 <style>
   :root{
     --bg:#f5f5f7;
@@ -165,6 +165,41 @@
     box-shadow:var(--soft-shadow);
     border:1px solid var(--hairline);
   }
+  /* US-038: floating anchor manager — a testing/accuracy tool, kept apart
+     from the exported Measurements panel. Docked top-left over the board,
+     non-modal so pins stay visible/clickable. */
+  .anchor-panel{
+    position:absolute; top:12px; left:12px; z-index:20;
+    width:300px; max-height:calc(100% - 24px);
+    display:flex; flex-direction:column;
+    background:#fff; border:1px solid var(--hairline); border-radius:10px;
+    box-shadow:0 8px 28px rgba(15,23,42,.18);
+    font-size:12px;
+  }
+  .anchor-panel[hidden]{ display:none; }
+  .anchor-panel-head{
+    display:flex; align-items:flex-start; gap:8px;
+    padding:9px 10px; border-bottom:1px solid #eef2f7;
+  }
+  .anchor-panel-title{ font-weight:700; color:#0f172a; font-size:13px; }
+  .anchor-panel-sub{ font-size:10.5px; color:#b45309; margin-top:1px; }
+  .anchor-panel-close{
+    margin-left:auto; border:0; background:none; cursor:pointer;
+    font-size:18px; line-height:1; color:#64748b; padding:0 2px;
+  }
+  .anchor-panel-close:hover{ color:#0f172a; }
+  .anchor-panel-actions{
+    display:flex; align-items:center; gap:6px; padding:7px 10px;
+    border-bottom:1px solid #eef2f7; background:#f8fafc;
+  }
+  .anchor-panel-count{ color:#64748b; }
+  .anchor-panel-spacer{ flex:1; }
+  .anchor-panel-btn{
+    border:1px solid #cbd5e1; background:#fff; border-radius:5px;
+    cursor:pointer; font-size:11px; padding:2px 8px; color:#334155;
+  }
+  .anchor-panel-btn:hover{ border-color:#94a3b8; }
+  .anchor-panel-body{ overflow-y:auto; padding:2px 0 6px; }
   .board-card.no-image{
     border:1px dashed #dcdce2;
   }
@@ -174,6 +209,10 @@
     height:100%;
     background:#fff;
     cursor:default;
+    /* US-036: the board owns its touch gestures (one-finger drag, pinch
+       zoom/pan) — suppress the browser's own scrolling/zooming here only.
+       Panel and dialogs keep native touch scrolling. */
+    touch-action:none;
   }
   .board-card.no-image canvas{
     background:
@@ -426,8 +465,25 @@
     background:#111827;
     color:#fff;
   }
-  .group-auto{ display:none; gap:6px; align-items:center; flex-wrap:wrap; }
+  .group-auto{
+    display:none;
+    gap:4px;
+    align-items:center;
+    flex-wrap:wrap;
+    padding:4px 6px;
+    border:1px solid var(--hairline);
+    border-radius:10px;
+    background:#fafafa;
+  }
+  .group-auto::after{ display:none; }
   body.app-auto .group-auto{ display:flex; }
+  .group-auto button,
+  .group-auto .auto-status-chip{
+    padding:5px 8px;
+    font-size:12px;
+    line-height:1;
+  }
+  .group-auto .primary-btn{ gap:5px; font-weight:700; }
   .group-auto select{
     padding:6px 8px;
     border:1px solid var(--hairline);
@@ -448,6 +504,11 @@
     text-transform:uppercase;
     letter-spacing:.04em;
   }
+  .auto-status-chip.acceptance{
+    background:#f8fafc;
+    border-color:#cbd5e1;
+    color:#334155;
+  }
   .auto-status-chip[data-status="reviewing"]{ background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
   .auto-status-chip[data-status="ready"]{ background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
   .auto-status-chip[data-status="loading"]{ background:#f5f3ff; border-color:#ddd6fe; color:#5b21b6; }
@@ -455,6 +516,34 @@
   .auto-status-chip[data-status="error"]{ background:#fee2e2; border-color:#fecaca; color:#991b1b; }
   .auto-status-chip[data-status="detecting"]{ background:#ecfdf5; border-color:#a7f3d0; color:#065f46; }
   .auto-status-chip[data-status="detected"]{ background:#ecfdf5; border-color:#6ee7b7; color:#065f46; }
+  /* U4/S1: humanized copy is sentence-case, not shouting. Scoped to the
+     status + vision chips so the sample-count chips keep their look. */
+  #autoStatusChip, .auto-status-chip.vision{ text-transform:none; }
+
+  /* S1: vision-engine readiness chip (OpenCV WASM warm-up). */
+  .auto-status-chip.vision[data-engine="warming"]{ background:#f5f3ff; border-color:#ddd6fe; color:#5b21b6; }
+  .auto-status-chip.vision[data-engine="ready"]{ background:#ecfdf5; border-color:#6ee7b7; color:#065f46; }
+  .auto-status-chip.vision[data-engine="unavailable"]{ background:#f3f4f6; border-color:#d1d5db; color:#6b7280; }
+
+  /* U4: Detect → Generate → Review step indicator. */
+  .auto-step-indicator{ display:inline-flex; align-items:center; gap:3px; }
+  .auto-step-indicator .step{
+    padding:4px 7px;
+    border-radius:999px;
+    border:1px solid #e5e7eb;
+    background:#f9fafb;
+    color:#9ca3af;
+    font:700 10px/1 system-ui,sans-serif;
+    letter-spacing:.02em;
+  }
+  .auto-step-indicator .step[data-state="active"]{ background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
+  .auto-step-indicator .step[data-state="done"]{ background:#ecfdf5; border-color:#a7f3d0; color:#065f46; }
+
+  /* U5: recovery-only controls (Approve / Review-Only / Apply Lines /
+     Discard Drafts) matter only on the rare failed-apply path — the happy
+     path auto-applies inside Generate. updateAutoModeUI() adds .recovery to
+     #autoModeBar when an error or lingering drafts actually need them. */
+  #autoModeBar:not(.recovery) .recovery-only{ display:none; }
 
   /* Auto Mode review panel additions */
   .auto-review-head{
@@ -512,14 +601,10 @@
   }
   tr.draft-row.approved .draft-status{ background:#86efac; color:#14532d; }
   tr.draft-row.review-only .draft-status{ background:#fecaca; color:#7f1d1d; }
-  body.app-auto .spec-table tr:not(.draft-row){
-    opacity:.55;
-    pointer-events:none;
-  }
-  body.app-auto .spec-table tr:not(.draft-row) input{
-    pointer-events:none;
-    background:transparent;
-  }
+  /* Applied / template rows are an editable measurement table in Auto Mode:
+     the TD edits 中文 / Size L / TOL, toggles a POM's line with the × button,
+     and clicks a row to select its line on the sketch. (Previously these
+     rows were dimmed + pointer-events:none as read-only review history.) */
   .style-menu{
     position:relative;
   }
@@ -611,6 +696,13 @@
   .primary-btn:hover{ background:#c62f2f; border-color:#c62f2f; color:#fff; }
   .primary-btn:active{ background:#b71f1f; }
   .primary-btn .ico{ opacity:1; }
+
+  .learning-toolbar-btn.active{
+    background:#ecfdf5;
+    border-color:#86efac;
+    color:#065f46;
+    font-weight:700;
+  }
 
   /* Drawing tool cluster — reads as one connected unit */
   .toolset{
@@ -731,8 +823,8 @@
 
   /* Measurement side panel */
   .specPanel{
-    width:360px;
-    flex:0 0 360px;
+    width:460px;
+    flex:0 0 460px;
     margin-left:10px;
     display:flex;
     flex-direction:column;
@@ -819,8 +911,61 @@
   }
   .spec-table tr.selected td{ background:#eef3ff; }
   .spec-table tr:hover td{ background:#f6f8fc; }
-  .spec-table th.th-pom{ width:48px; }
-  .spec-table th.th-val{ width:128px; }
+  .spec-table th.th-pom{ width:40px; }
+  .spec-table th.th-zh{ width:100px; }
+  .spec-table th.th-val{ width:66px; }
+  .spec-table th.th-size{ width:60px; }
+  .spec-table th.th-tol{ width:52px; }
+  .spec-table td.spec-td-size input,
+  .spec-table td.spec-td-tol input{
+    text-align:center;
+    font-variant-numeric:tabular-nums;
+    /* US-050: always read as an editable field. These were borderless +
+       transparent (only bordered on hover), so a pre-filled library value
+       looked like static text and TDs didn't realise they could type over it. */
+    border-color:#e2e8f0;
+    background:#f8fafc;
+    cursor:text;
+  }
+  .spec-table td.spec-td-zh input.spec-zh{
+    width:100%;
+    text-align:left;
+  }
+  /* Measured value — read-only, auto-derived from the drawn line's length. */
+  .spec-table td.spec-td-value{
+    text-align:center;
+    font-variant-numeric:tabular-nums;
+    font-size:11.5px;
+    color:#111827;
+    white-space:nowrap;
+  }
+  .spec-table tr.template-row td.spec-td-value{ color:#9ca3af; }
+  /* Tolerance flag: measured vs Size L ± TOL. Chip shows the signed delta;
+     cell tint + colour signal in/out of tolerance at a glance. */
+  .spec-table td.spec-td-value .spec-measured{ display:inline-block; }
+  .spec-delta{
+    display:inline-block;
+    margin-left:5px;
+    padding:0 4px;
+    border-radius:3px;
+    font-size:10px;
+    font-weight:600;
+    font-variant-numeric:tabular-nums;
+    white-space:nowrap;
+  }
+  .spec-delta-in{ color:#166534; background:#dcfce7; }
+  .spec-delta-out{ color:#991b1b; background:#fee2e2; }
+  .spec-delta-neutral{ color:#6b7280; background:#f3f4f6; }
+  .spec-table td.spec-td-value.spec-in{ background:rgba(22,163,74,.07); }
+  .spec-table td.spec-td-value.spec-out{ background:rgba(220,38,38,.08); }
+  /* Relax↔Extend relationship hint under the description on POM 1–4. */
+  .spec-pair-hint{
+    margin-top:3px;
+    font-size:10px;
+    line-height:1.3;
+    color:#8a6d3b;
+  }
+  .spec-table tr.template-row td{ background:#fafbfc; }
   .spec-table th abbr{ text-decoration:underline dotted; text-underline-offset:2px; cursor:help; }
   .spec-desc{
     color:var(--muted);
@@ -830,12 +975,118 @@
     word-break:break-word;
     overflow-wrap:anywhere;
   }
+  .spec-desc-text{
+    color:var(--text);
+    font-size:12.5px;
+    line-height:1.35;
+    white-space:normal;
+    overflow-wrap:anywhere;
+  }
   .spec-table input.spec-desc{
     text-overflow:ellipsis;
     white-space:nowrap;
     overflow:hidden;
   }
+  .spec-table textarea.spec-desc{
+    min-height:42px;
+    line-height:1.35;
+    resize:vertical;
+    overflow:auto;
+    white-space:normal;
+  }
   .spec-pom{ font-weight:800; text-align:center; }
+  /* Per-POM hide/show toggle. Tiny × / + button lives under the POM badge
+     and lets the TD isolate one line at a time while reviewing evidence. */
+  .pom-vis-btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:22px;
+    height:22px;
+    margin-top:4px;
+    padding:0;
+    border:1px solid var(--border);
+    border-radius:6px;
+    background:#fff;
+    color:#374151;
+    font:700 14px/1 system-ui, sans-serif;
+    cursor:pointer;
+    transition:background .12s, border-color .12s, color .12s;
+  }
+  .pom-vis-btn:hover:not(:disabled){
+    background:#f3f4f6;
+    border-color:#9ca3af;
+  }
+  .pom-vis-btn.is-hidden{
+    background:#fee2e2;
+    border-color:#fca5a5;
+    color:#991b1b;
+  }
+  .pom-vis-btn.is-hidden:hover{
+    background:#fecaca;
+    border-color:#f87171;
+  }
+  .pom-vis-btn:disabled{
+    opacity:.3;
+    cursor:not-allowed;
+  }
+  .pom-vis-group{
+    display:inline-flex;
+    gap:4px;
+    margin-top:4px;
+  }
+  .pom-vis-group .pom-vis-btn{ margin-top:0; }
+  /* Row-level dim when this POM's line is hidden on the canvas — makes the
+     off-state obvious at a glance without touching the spec inputs. */
+  .spec-table tr.pom-hidden .spec-desc-text,
+  .spec-table tr.pom-hidden .spec-pom,
+  .spec-table tr.pom-hidden .spec-pom-pair,
+  .spec-table tr.pom-hidden input.spec-pom,
+  .spec-table tr.pom-hidden .spec-desc,
+  .spec-table tr.pom-hidden .draft-status{
+    opacity:.4;
+  }
+  /* "Show all POMs (N hidden)" sticky reset row at the top of the panel. */
+  tr.spec-show-all-row td{
+    padding:6px 10px !important;
+    background:#fff7ed;
+    border-bottom:1px solid #fed7aa;
+  }
+  .spec-show-all-btn{
+    width:100%;
+    padding:6px 10px;
+    border:1px solid #fdba74;
+    border-radius:8px;
+    background:#ffedd5;
+    color:#9a3412;
+    font:600 12px/1.2 system-ui, sans-serif;
+    cursor:pointer;
+  }
+  .spec-show-all-btn:hover{
+    background:#fed7aa;
+    border-color:#fb923c;
+  }
+  /* Row can hold "Hide all" and "Show all" side by side; each fills its half. */
+  .spec-vis-actions{
+    display:flex;
+    gap:8px;
+  }
+  .spec-vis-actions > button{
+    flex:1 1 0;
+  }
+  .spec-hide-all-btn{
+    padding:6px 10px;
+    border:1px solid #cbd5e1;
+    border-radius:8px;
+    background:#f1f5f9;
+    color:#334155;
+    font:600 12px/1.2 system-ui, sans-serif;
+    cursor:pointer;
+  }
+  .spec-hide-all-btn:hover{
+    background:#e2e8f0;
+    border-color:#94a3b8;
+  }
   .spec-conf{
     display:inline-block;
     margin-top:3px;
@@ -850,6 +1101,15 @@
   .spec-conf.medium{ background:#fef3c7; color:#92400e; border-color:#fde68a; }
   .spec-conf.low{ background:#fee2e2; color:#991b1b; border-color:#fecaca; }
   .spec-conf.edited{ background:#eef2ff; color:#3730a3; border-color:#c7d2fe; }
+  .spec-conf.drawable{ background:#e0f2fe; color:#075985; border-color:#bae6fd; }
+  .spec-conf.approximate{ background:#ffedd5; color:#9a3412; border-color:#fed7aa; }
+  .spec-conf.review_only{ background:#fee2e2; color:#991b1b; border-color:#fecaca; }
+  .spec-conf.accepted{ background:#f0fdf4; color:#166534; border-color:#bbf7d0; }
+  .spec-conf.very_low{ background:#f3f4f6; color:#6b7280; border-color:#e5e7eb; }
+  .spec-conf.library{ background:#eef3ff; color:#1d3a8a; border-color:#c8d4ff; }
+  /* Size-L suggestion badge: sits under the input, non-uppercase so the
+     "library · medium" provenance reads as a hint, not a status flag. */
+  .spec-suggest-badge{ text-transform:none; letter-spacing:0; font-weight:600; cursor:help; }
   .spec-pom-pair{
     display:inline-block;
     padding:3px 8px;
@@ -861,28 +1121,8 @@
     text-align:center;
     min-width:34px;
   }
-  .spec-val-pair{
-    display:flex;
-    flex-direction:column;
-    gap:4px;
-    width:100%;
-  }
-  .spec-val-field{
-    display:flex;
-    align-items:center;
-    gap:4px;
-  }
-  .spec-val-tag{
-    flex:0 0 auto;
-    font:700 9.5px/1 system-ui, sans-serif;
-    text-transform:uppercase;
-    letter-spacing:.04em;
-    color:#6b7280;
-    width:42px;
-    padding-right:2px;
-  }
-  .spec-val-field .spec-val{ flex:1 1 auto; min-width:0; }
-  .spec-table input{
+  .spec-table input,
+  .spec-table textarea{
     width:100%;
     border:1px solid transparent;
     background:transparent;
@@ -890,17 +1130,40 @@
     padding:5px 6px;
     font:600 13px/1 system-ui, sans-serif;
     color:var(--text);
+    font-family:inherit;
   }
-  .spec-table input:hover{ border-color:var(--border); background:#fff; }
-  .spec-table input:focus{
+  .spec-table input:hover,
+  .spec-table textarea:hover{ border-color:var(--border); background:#fff; }
+  .spec-table input:focus,
+  .spec-table textarea:focus{
     outline:none;
     border-color:var(--select);
     background:#fff;
     box-shadow:0 0 0 3px rgba(53,109,255,.12);
   }
+  /* US-034: keyboard focus must be visible on every button (toolbar, panel,
+     dialogs). :focus-visible keeps mouse clicks outline-free. */
+  button:focus-visible{
+    outline:2px solid var(--select);
+    outline-offset:2px;
+  }
+  /* US-035: unit hint in the numeric column headers, and a visible invalid
+     state for Size L / L2 / TOL values that don't parse. */
+  .th-unit{ font-weight:500; color:#9ca3af; font-size:10px; }
+  .spec-table input.spec-invalid,
+  .spec-table input.spec-invalid:focus{
+    border-color:#dc2626;
+    background:#fef2f2;
+    box-shadow:0 0 0 3px rgba(220,38,38,.10);
+  }
   .spec-table input.spec-val::placeholder{ color:#b6bcc8; font-weight:500; }
-  .spec-table input.spec-desc{ font-weight:500; font-size:12px; color:var(--muted); }
-  .spec-table input.spec-desc::placeholder{ color:#b6bcc8; font-weight:500; }
+  /* A pre-filled library suggestion (no TD override yet) reads muted + italic
+     so it is visibly distinct from a value the TD typed. */
+  .spec-table input.spec-val.is-suggested{ color:#7b8496; font-style:italic; font-weight:600; }
+  .spec-table input.spec-desc,
+  .spec-table textarea.spec-desc{ font-weight:500; font-size:12px; color:var(--muted); }
+  .spec-table input.spec-desc::placeholder,
+  .spec-table textarea.spec-desc::placeholder{ color:#b6bcc8; font-weight:500; }
   .spec-empty{
     padding:22px 14px;
     text-align:center;
@@ -925,162 +1188,328 @@
   }
   .label-editor:focus{ outline:none; }
 
-  /* Phase 3 — POM meaning confirmation popover. Shown only when a TD labels
-     a Manual Mode line with POM 6+ and the meaning isn't yet confirmed. */
-  .pom-meaning-popover{
-    position:absolute;
-    z-index:35;
-    display:none;
-    width:240px;
+  /* Learning data dialog (Transparent Learning) */
+  .dialog-panel.ld-wide{ width:min(820px, 100%); }
+  .dialog-body.learning-data-body{
+    padding:14px 20px 18px;
+    overflow:auto;
+    max-height:72vh;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+  }
+  .ld-section{ display:flex; flex-direction:column; gap:8px; }
+  .ld-section-title{
+    margin:0; font-size:12px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.04em; color:var(--muted);
+  }
+  .ld-section-note{ margin:0; font-size:12.5px; color:var(--muted); line-height:1.4; }
+  .ld-summary-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));
+    gap:8px;
+  }
+  .ld-top-summary .ld-summary-grid-top{
+    grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));
+  }
+  .ld-card{
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:8px 10px;
     background:#fff;
-    border:1px solid #d0d4dc;
-    border-radius:10px;
-    box-shadow:0 8px 24px rgba(17,24,39,.18);
-    padding:10px 12px;
-    font:13px/1.4 system-ui, sans-serif;
-    color:var(--text);
-    transform:translate(-50%, 12px);
   }
-  .pmp-title{ font-weight:700; margin-bottom:8px; }
-  .pmp-title strong{ color:var(--select); }
-  .pmp-suggestions{ display:flex; flex-direction:column; gap:4px; }
-  .pmp-suggestion{
-    text-align:left;
-    background:#f4f5f7;
+  .ld-card-label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:var(--muted);
+    font-weight:600;
+  }
+  .ld-card-value{
+    margin-top:3px;
+    font-size:14px;
+    color:var(--text);
+    font-weight:600;
+  }
+  .ld-card-value.ok{ color:#1c7a3a; }
+  .ld-card-value.muted{ color:var(--muted); }
+  .ld-card-value.warn{ color:#a8302e; }
+  .ld-card-value.attention{ color:#8a6612; }
+
+  /* Tab bar */
+  .ld-tab-shell{ display:flex; flex-direction:column; gap:10px; }
+  .ld-tabs{
+    display:flex; gap:4px;
+    border-bottom:1px solid var(--hairline);
+    padding-bottom:0;
+    flex-wrap:wrap;
+  }
+  .ld-tab{
+    appearance:none;
+    background:transparent;
     border:1px solid transparent;
-    border-radius:6px;
-    padding:6px 8px;
-    cursor:pointer;
-    font:inherit;
-    color:var(--text);
-  }
-  .pmp-suggestion:hover{ background:#e9ebef; border-color:var(--select); }
-  .pmp-suggestion .pmp-anchors{ display:block; color:var(--muted); font-size:11px; margin-top:2px; }
-  .pmp-other{ margin-top:8px; padding-top:8px; border-top:1px solid #eee; }
-  .pmp-other-btn{
-    width:100%;
-    background:none;
-    border:1px dashed #c4c9d4;
-    border-radius:6px;
-    padding:6px 8px;
+    border-bottom:none;
+    border-radius:8px 8px 0 0;
+    padding:7px 12px 8px;
+    font-size:12.5px;
+    font-weight:600;
     color:var(--muted);
     cursor:pointer;
-    font:inherit;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    margin-bottom:-1px;
   }
-  .pmp-other-btn:hover{ border-color:var(--select); color:var(--text); }
-  .pmp-other-input{
-    width:100%;
-    padding:6px 8px;
-    border:1px solid #d0d4dc;
-    border-radius:6px;
-    box-sizing:border-box;
-    font:inherit;
+  .ld-tab:hover{ color:var(--text); background:#f5f6f9; }
+  .ld-tab.is-active{
     color:var(--text);
+    background:#fff;
+    border-color:var(--hairline);
+    border-bottom-color:#fff;
   }
-  .pmp-actions{ margin-top:6px; text-align:right; }
-  .pmp-link-btn{
-    background:none;
+  .ld-tab-badge{
+    display:inline-block;
+    min-width:18px;
+    padding:1px 6px;
+    border-radius:999px;
+    background:#eef0f4;
+    color:var(--muted);
+    font-size:11px;
+    font-weight:600;
+    text-align:center;
+  }
+  .ld-tab.is-active .ld-tab-badge{ background:#eaf0fa; color:#1f4a86; }
+  .ld-tab-panels{ display:block; }
+  .ld-tab-panel{ display:none; }
+  .ld-tab-panel.is-active{ display:flex; flex-direction:column; gap:10px; }
+
+  /* Tables */
+  .ld-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:12.5px;
+  }
+  .ld-table th, .ld-table td{
+    padding:6px 8px;
+    text-align:left;
+    border-bottom:1px solid #f0f1f4;
+    vertical-align:top;
+  }
+  .ld-table th{
+    color:var(--muted);
+    font-weight:600;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+    background:#fafbfc;
+  }
+  .ld-table .ld-num{ text-align:right; font-variant-numeric:tabular-nums; }
+
+  /* Status chips */
+  .ld-status{
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:999px;
+    font-size:11px;
+    font-weight:600;
+    border:1px solid transparent;
+  }
+  .ld-status-active{ background:#e6f4ec; color:#1c7a3a; border-color:#c7e6d3; }
+  .ld-status-needs-more-samples{ background:#fef6e0; color:#8a6612; border-color:#f3e1a8; }
+  .ld-status-large-correction{ background:#fde9e9; color:#a8302e; border-color:#f4c2c1; }
+  .ld-status-conflicting{ background:#fff3e0; color:#a3550a; border-color:#f5c98a; }
+  .ld-status-empty{ background:#f1f2f5; color:var(--muted); border-color:#e2e3e8; }
+  .ld-status-fixed{ background:#eaf0fa; color:#1f4a86; border-color:#cfdcf3; }
+  .ld-status-confirmed{ background:#e6f4ec; color:#1c7a3a; border-color:#c7e6d3; }
+  .ld-status-absent{ background:#fde9e9; color:#a8302e; border-color:#f4c2c1; }
+
+  /* Evidence expand */
+  .ld-table-evidence .ld-expand-col{ width:26px; padding-left:6px; padding-right:0; }
+  .ld-expand-btn{
+    appearance:none;
+    background:transparent;
     border:none;
     color:var(--muted);
     cursor:pointer;
-    font-size:12px;
     padding:2px 4px;
+    font-size:12px;
+    line-height:1;
+    border-radius:4px;
   }
-  .pmp-link-btn:hover{ color:var(--text); }
-
-  /* Annotation right-click menu (Reconfirm Meaning) */
-  .ann-context-menu{
-    position:absolute;
-    z-index:60;
-    display:none;
-    min-width:180px;
-    background:#fff;
-    border:1px solid #d0d4dc;
+  .ld-expand-btn:hover:not(:disabled){ color:var(--text); background:#eef0f4; }
+  .ld-expand-btn:disabled{ opacity:.35; cursor:default; }
+  .ld-expand-btn.is-open{ color:var(--text); }
+  .ld-evidence-row-absent td{ background:#fff7f6; }
+  .ld-evidence-row-pom7-absent td{ background:#fde9e9; }
+  .ld-callout{
+    padding:8px 12px;
     border-radius:8px;
-    box-shadow:0 6px 18px rgba(17,24,39,.16);
-    padding:4px;
-    font:13px/1.3 system-ui, sans-serif;
-    color:var(--text);
+    font-size:12.5px;
+    line-height:1.4;
+    border:1px solid transparent;
   }
-  .ann-context-menu button{
-    display:block;
-    width:100%;
-    text-align:left;
-    background:none;
-    border:0;
-    padding:6px 10px;
-    border-radius:6px;
-    font:inherit;
-    color:inherit;
-    cursor:pointer;
+  .ld-callout-absent{
+    background:#fde9e9;
+    color:#7d2522;
+    border-color:#f4c2c1;
   }
-  .ann-context-menu button:hover{ background:#eef0f5; }
-  .ann-context-menu button:disabled{ color:var(--muted); cursor:not-allowed; background:none; }
 
-  /* Manage POM meanings picker */
-  .dialog-body.manage-meanings-body{
-    padding:14px 20px 18px;
-    overflow:auto;
-    max-height:60vh;
+  /* Expanded row detail */
+  .ld-detail-cell{ background:#fafbfc; padding:10px 14px; }
+  .ld-detail{ display:flex; flex-direction:column; gap:8px; }
+  .ld-detail-header{
+    font-size:12px; font-weight:600; color:var(--text);
   }
-  .mm-list{
-    display:flex;
-    flex-direction:column;
+  .ld-detail-empty{
+    font-size:12px; color:var(--muted); font-style:italic;
+  }
+  .ld-detail-list{
+    list-style:none;
+    margin:0; padding:0;
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
     gap:8px;
   }
-  .mm-row{
+  .ld-detail-item{
+    background:#fff;
+    border:1px solid var(--hairline);
+    border-radius:6px;
+    padding:8px 10px;
+  }
+  .ld-detail-item-title{
+    font-size:12px; font-weight:600; color:var(--text);
+    margin-bottom:4px;
+  }
+  .ld-detail-item-title.is-absent{ color:#a8302e; }
+  .ld-detail-meta{
+    margin:0;
     display:grid;
-    grid-template-columns:64px 1fr auto;
-    align-items:center;
-    gap:10px;
-    padding:6px 10px;
-    border:1px solid var(--border);
-    border-radius:8px;
-    background:#fff;
+    grid-template-columns:max-content 1fr;
+    gap:2px 8px;
+    font-size:11.5px;
   }
-  .mm-pom{
-    font-weight:700;
-    font-size:13px;
-    color:var(--text);
-  }
-  .mm-select{
-    width:100%;
-    padding:6px 8px;
-    border:1px solid var(--border);
-    border-radius:6px;
-    font:inherit;
-    font-size:13px;
-    color:var(--text);
-    background:#fff;
-  }
-  .mm-forget{
-    background:#fff;
-    border:1px solid #e0e0e8;
-    border-radius:6px;
-    padding:5px 10px;
-    font:inherit;
-    font-size:12px;
-    cursor:pointer;
-    color:#c0392b;
-  }
-  .mm-forget:hover{
-    border-color:#c0392b;
-    background:#fef5f3;
-  }
-  .mm-empty{
-    padding:20px;
+  .ld-detail-meta dt{ color:var(--muted); font-weight:600; }
+  .ld-detail-meta dd{ margin:0; color:var(--text); word-break:break-word; }
+
+  .ld-empty{
+    padding:14px;
     text-align:center;
     color:var(--muted);
-    font-size:13px;
+    font-size:12.5px;
+    border:1px dashed var(--hairline);
+    border-radius:8px;
+    background:#fafbfc;
   }
+  .ld-style-list{
+    margin:0;
+    padding-left:18px;
+    color:var(--text);
+    font-size:12.5px;
+    line-height:1.5;
+  }
+  .learning-data-foot-note{
+    flex:1;
+    font-size:12px;
+    color:var(--muted);
+  }
+
+  /* Save-time style evidence prompt */
+  .dialog-body.save-evidence-body{
+    padding:16px 20px 18px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    max-height:60vh;
+    overflow:auto;
+  }
+  .save-evidence-body .se-style{ margin:0; font-size:13px; color:var(--text); }
+  .save-evidence-body .se-heading{ margin:6px 0 0; font-size:13px; color:var(--text); }
+  .save-evidence-body .se-note{ margin:6px 0 0; font-size:12px; color:var(--muted); line-height:1.45; }
+  .save-evidence-body .se-hint{ margin:2px 0 0; font-size:11.5px; color:var(--muted); line-height:1.45; }
+  /* Style-code input: prominent enough to invite typing, neutral enough
+     to not compete with the candidate list below. */
+  .se-style-section{ display:flex; flex-direction:column; gap:4px; }
+  .se-style-label{ font-size:12px; font-weight:600; color:var(--muted); }
+  .se-style-input{
+    width:100%;
+    box-sizing:border-box;
+    padding:7px 10px;
+    border:1px solid var(--border);
+    border-radius:7px;
+    font-size:13px;
+    color:var(--text);
+    background:#fff;
+  }
+  .se-style-input:focus{ outline:2px solid #2f6ce5; outline-offset:-1px; border-color:#2f6ce5; }
+  .se-candidate-list{
+    margin:0;
+    padding:6px 10px;
+    list-style:none;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:#fafbfc;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    font-size:12.5px;
+  }
+  .se-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:5px 4px;
+    border-radius:6px;
+    color:var(--text);
+  }
+  .se-row + .se-row{ border-top:1px dashed #e7e9ee; }
+  .se-row .se-pom{ font-weight:700; min-width:54px; color:var(--muted); }
+  .se-row .se-label{ flex:1; }
+  .se-row .se-meta{ color:var(--muted); font-size:11.5px; white-space:nowrap; }
+  .se-row.is-pending{ background:#fff8e6; }
+  .se-row.is-pending .se-label{ color:#8a6612; font-style:italic; }
+  .se-row.is-confirmed .se-label{ color:#1c7a3a; font-weight:600; }
+  .se-row.is-absent .se-label{ color:#a8302e; }
+  .se-row .se-check{ color:#1c7a3a; font-weight:700; margin-right:2px; }
+  /* Inline picker — a select + Confirm button, compact so several rows
+     can share the dialog without scrolling. */
+  .se-picker{ display:flex; gap:6px; align-items:center; }
+  .se-picker-select{
+    padding:4px 6px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font-size:12px;
+    background:#fff;
+    max-width:200px;
+  }
+  .se-confirm{ padding:4px 10px; font-size:12px; }
+  .se-undo{
+    margin-left:auto;
+    background:transparent;
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:3px 8px;
+    font-size:11.5px;
+    color:var(--muted);
+    cursor:pointer;
+  }
+  .se-undo:hover{ background:#f1f2f5; color:var(--text); }
+  .se-bulk-bar{ display:flex; justify-content:flex-end; }
+  .se-bulk-btn{ font-size:12px; padding:5px 10px; }
 
   @media (max-width: 980px){
     .workspace{ flex-direction:column; }
     .specPanel{ width:auto; flex:0 0 auto; margin-left:0; margin-top:12px; max-height:240px; }
   }
+
+  /* ===== Auto-first build =====
+     Elements tagged .manual-only are hidden while the app is in Auto Mode
+     (body.app-auto) and revealed in Manual Mode. Manual Mode is entered via
+     the Manual/Auto toggle, the automatic post-Apply handoff, or by
+     reopening a saved project that contains applied lines. */
+  body.app-auto .manual-only{ display:none !important; }
 </style>
 </head>
-<body>
+<body class="app-auto">
 <div class="app">
   <div class="toolbar">
     <div class="group group-mode">
@@ -1090,29 +1519,37 @@
       </div>
     </div>
     <div id="autoModeBar" class="group group-auto">
-      <button id="autoDetectBtn" class="primary-btn" type="button" title="Run local offline vision on the source sketch to estimate view, landmarks, and anchors">Detect Sketch</button>
+      <button id="autoDetectBtn" class="primary-btn" type="button" title="Run local offline vision on the source sketch to estimate view, landmarks, and anchors">Detect</button>
       <button id="autoResetAnchorsBtn" type="button" title="Re-seed anchors from the current detection (discards manual anchor edits)">Reset Anchors</button>
-      <button id="autoGenerateBtn" class="primary-btn" type="button" title="Generate 16 POM drafts from the current anchor positions">Generate POM Drafts</button>
-      <button id="autoApproveBtn" type="button" title="Approve the selected draft line">Approve</button>
-      <button id="autoReviewOnlyBtn" type="button" title="Mark the selected draft as REVIEW_ONLY (no line will be drawn)">Mark Review-Only</button>
-      <button id="autoApplyBtn" class="primary-btn" type="button" title="Atomically copy all approved drafts into the project">Apply Approved Lines</button>
-      <button id="autoDiscardBtn" type="button" title="Discard all current drafts without changing the project">Discard Drafts</button>
+      <button id="autoManageAnchorsBtn" type="button" title="Manage anchor visibility — hide all / show all, hide a group, or isolate one anchor">Anchors</button>
+      <button id="autoGenerateBtn" class="primary-btn" type="button" title="Generate 16 POM drafts from the current anchor positions">Generate Drafts</button>
+      <button id="autoApproveBtn" class="recovery-only" type="button" title="Approve the selected draft line">Approve</button>
+      <button id="autoReviewOnlyBtn" class="recovery-only" type="button" title="Mark the selected draft as REVIEW_ONLY (no line will be drawn)">Review-Only</button>
+      <button id="autoApplyBtn" class="primary-btn recovery-only" type="button" title="Atomically copy all approved drafts into the project">Apply Lines</button>
+      <button id="autoDiscardBtn" class="recovery-only" type="button" title="Discard all current drafts without changing the project">Discard Drafts</button>
       <button id="autoResetBoardBtn" type="button" title="Reset the working board — delete all photos and lines so you can start a new bra sketch">Reset Board</button>
-      <button id="autoLearnToggleBtn" type="button" title="Apply learned anchor calibration from past TD corrections">Use Learning</button>
-      <span id="autoLearnChip" class="auto-status-chip" title="Number of recorded TD corrections that feed the calibration median">0 samples</span>
-      <div id="autoLearnMenuWrap" class="style-menu">
-        <button id="autoLearnMenuBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Reset learning or manage POM meanings">Reset / Manage ▾</button>
+      <button id="autoLearnToggleBtn" class="manual-only" type="button" title="Apply learned anchor calibration from past TD corrections">Learning</button>
+      <span id="autoLearnChip" class="auto-status-chip manual-only" title="Number of recorded TD corrections that feed the calibration median">0 samples</span>
+      <span id="autoAcceptanceChip" class="auto-status-chip acceptance manual-only" title="Auto-applied POM lines accepted without edit">0/0 accepted</span>
+      <div id="autoLearnMenuWrap" class="style-menu manual-only">
+        <button id="autoLearnMenuBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Reset learning or manage POM meanings">Manage ▾</button>
         <div id="autoLearnMenuList" class="style-menu-list" role="menu" hidden>
+          <button id="viewLearningDataItem" role="menuitem" type="button" title="See what the tool has learned: anchor calibration samples, confirmed POM meanings, and known style buckets">View learning data…</button>
           <button id="resetResidualsItem" role="menuitem" type="button" title="Clear all learned anchor corrections — Auto Mode goes back to the raw geometric rules">Reset calibration residuals</button>
           <button id="resetMeaningsCurrentItem" role="menuitem" type="button" title="Forget every confirmed POM meaning for the current style code">Forget POM meanings (current style)</button>
           <button id="resetMeaningsAllItem" role="menuitem" type="button" title="Forget every confirmed POM meaning across every style code, plus custom measurements">Forget POM meanings (all styles)</button>
-          <button id="manageMeaningsItem" role="menuitem" type="button" title="Edit or remove individual POM meanings for the current style code">Manage POM meanings…</button>
         </div>
       </div>
-      <span id="autoStatusChip" class="auto-status-chip" title="Auto Mode status">idle</span>
+      <span id="autoStepIndicator" class="auto-step-indicator" title="Where you are in the auto-measure pass">
+        <span class="step" data-step="detect">1 Detect</span>
+        <span class="step" data-step="generate">2 Generate</span>
+        <span class="step" data-step="review">3 Review</span>
+      </span>
+      <span id="autoStatusChip" class="auto-status-chip" title="Auto Mode status">Add a sketch to start</span>
+      <span id="visionEngineChip" class="auto-status-chip vision" data-engine="warming" title="The OpenCV vision engine compiles in the background after the page loads">vision warming…</span>
     </div>
     <div class="group group-add">
-      <button id="addImageBtn" class="primary-btn has-ico" type="button" title="Add a sketch image — or paste with Ctrl/Cmd+V, or drag one onto the board">
+      <button id="addImageBtn" class="primary-btn has-ico" type="button" title="Add a sketch image (A) — or paste with Ctrl/Cmd+V, or drag one onto the board">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 14.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9" />
           <circle cx="8.5" cy="9" r="1.4" />
@@ -1122,17 +1559,17 @@
         Add Image
       </button>
       <input id="imageFileInput" type="file" accept="image/*" multiple hidden />
-      <button id="importPptxBtn" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PPTX</button>
+      <button id="importPptxBtn" class="manual-only" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PPTX</button>
       <input id="pptxFileInput" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" hidden />
     </div>
 
-    <div class="group">
+    <div class="group manual-only">
       <div class="toolset" role="group" aria-label="Drawing tools">
         <button id="toolSelect" class="tool-btn active has-ico" type="button" title="Select & move — click a line, label, or image to edit it (S)">
           <svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.4 3.1l13 6.1c.74.35.6 1.43-.2 1.59l-5 1-2 5c-.3.78-1.4.7-1.6-.1L4.2 4.4c-.2-.83.6-1.55 1.2-1.3z"/></svg>
           Select
         </button>
-        <button id="toolStraight" class="tool-btn has-ico" type="button" title="Straight line — click the start point, then the end point (L)">
+        <button id="toolStraight" class="tool-btn has-ico" type="button" title="Straight line — click the start point, then the end point (0)">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.7" fill="currentColor" stroke="none"/></svg>
           Straight
         </button>
@@ -1140,7 +1577,7 @@
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 17C8 7 16 7 20 11"/><circle cx="4" cy="17" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="11" r="1.7" fill="currentColor" stroke="none"/></svg>
           Curved
         </button>
-        <button id="toolEraser" class="tool-btn has-ico" type="button" title="Eraser – paint white over unwanted lines in the photo (E)">
+        <button id="toolEraser" class="tool-btn has-ico" type="button" title="Eraser – paint white over unwanted lines in the photo (X)">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 18.5l-3-3a2 2 0 0 1 0-2.8l7-7a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8l-6.8 6.8z"/><line x1="8.5" y1="18.5" x2="20" y2="18.5"/></svg>
           Eraser
         </button>
@@ -1182,7 +1619,7 @@
       </label>
     </div>
 
-    <div class="group">
+    <div class="group manual-only">
       <div class="segmented-control" role="group" aria-label="Arrow type">
         <button id="arrowDoubleBtn" class="active" type="button" title="Arrowheads on both ends">Double</button>
         <button id="arrowSingleBtn" type="button" title="Arrowhead on end point only">Single</button>
@@ -1196,9 +1633,12 @@
       </div>
     </div>
 
-    <div class="group">
+    <div class="group manual-only">
       <button id="undoBtn" type="button">Undo</button>
       <button id="redoBtn" type="button">Redo</button>
+      <button id="copyLineBtn" type="button" title="Copy the selected line (⌘/Ctrl+C)">Copy</button>
+      <button id="pasteLineBtn" type="button" title="Paste the copied line (⌘/Ctrl+V)">Paste</button>
+      <button id="reflectLineBtn" type="button" title="Reflect the selected line across the sketch axis (M)">Reflect</button>
       <button id="deleteBtn" type="button" title="Delete the selected line or image">Delete</button>
       <button id="clearBtn" type="button" title="Clear all annotations">Clear</button>
       <button id="lockImageBtn" class="has-ico" type="button" title="Lock the selected image so it can't be moved, resized, or deleted accidentally">
@@ -1212,20 +1652,27 @@
 
     <div class="group">
       <button id="fitBtn" type="button">Fit</button>
-      <button id="togglePanelBtn" type="button" class="active" title="Show the Measurements panel">Show Panel</button>
-      <button id="toggleLabelsBtn" type="button" title="Hide the callout numbers on the board (N) — the measurements panel still shows them">Hide Numbers</button>
+      <button id="togglePanelBtn" type="button" title="Hide the Measurements panel (H)">Hide Panel</button>
+      <button id="toggleLabelsBtn" class="manual-only" type="button" title="Hide the callout numbers on the board (N) — the measurements panel still shows them">Hide Numbers</button>
+      <button id="learningToolbarBtn" class="learning-toolbar-btn manual-only" type="button" title="Turn learning on, then correct Auto lines and save evidence for reuse">Learning Off</button>
+      <span id="learningToolbarChip" class="auto-status-chip manual-only" title="Recorded learning samples">0 samples</span>
       <button id="setScaleBtn" type="button" title="Calibrate: select a line whose real length you know, then set the scale">Set Scale</button>
       <button id="clearScaleBtn" type="button" title="Remove calibration">Clear Scale</button>
+      <button id="sizeRunBtn" type="button" title="Grade the base spec into a full size run (S–5XL)">Size Run</button>
+      <button id="gradingBtn" type="button" title="View and edit the per-size grading rule (G) — saved with the project">Grading</button>
     </div>
 
     <div class="group">
       <button id="saveProjectBtn" type="button" title="Save the whole board (images, lines, measurements) to a file you can reopen later">Save</button>
       <button id="openProjectBtn" type="button" title="Open a previously saved project file">Open</button>
       <input id="projectFileInput" type="file" accept=".json,application/json" hidden />
-      <button id="exportPdfBtn" class="export-btn" type="button">Export PDF</button>
+      <button id="libraryBtn" class="manual-only" type="button" title="Browse every saved project archived inside this tool (per-style history, available for review and editing)">Library</button>
+      <button id="copyImageBtn" class="export-btn manual-only" type="button" title="Copy the whole board (sketch + lines + labels) to the clipboard as a PNG image (Ctrl/Cmd+Shift+C)">Copy Image</button>
+      <button id="exportPdfBtn" class="export-btn manual-only" type="button">Export PDF</button>
+      <button id="exportExcelBtn" class="export-btn manual-only" type="button" title="Export the measurement spec (E) — POMs, size run, sketch, as an .xlsx">Export Excel</button>
     </div>
 
-    <div class="group group-help">
+    <div class="group group-help manual-only">
       <button id="helpBtn" class="icon-btn" type="button" aria-label="Help & keyboard shortcuts" title="Help & keyboard shortcuts (?)">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="9" />
@@ -1242,10 +1689,29 @@
     <div id="countStatus" class="status-item" hidden></div>
   </div>
 
-  <div class="workspace panel-hidden">
+  <div class="workspace">
     <div class="board-shell">
       <div id="boardCard" class="board-card no-image is-empty">
         <canvas id="boardCanvas" aria-label="Sketch annotation board"></canvas>
+        <!-- US-038: anchor visibility is a TEST / accuracy tool, deliberately
+             separate from the Measurements panel (which is what gets exported).
+             Floating, non-modal, opened from the Auto toolbar "Anchors" button. -->
+        <div id="anchorManagerPanel" class="anchor-panel" hidden aria-label="Anchor visibility (testing tool)">
+          <div class="anchor-panel-head">
+            <div class="anchor-panel-titles">
+              <div class="anchor-panel-title">Anchors</div>
+              <div class="anchor-panel-sub">Testing &amp; accuracy tool — not exported</div>
+            </div>
+            <button id="anchorManagerCloseBtn" type="button" class="anchor-panel-close" title="Close">×</button>
+          </div>
+          <div class="anchor-panel-actions">
+            <span id="anchorManagerCount" class="anchor-panel-count">0/0 shown</span>
+            <span class="anchor-panel-spacer"></span>
+            <button id="anchorManagerHideAllBtn" type="button" class="anchor-panel-btn">Hide all</button>
+            <button id="anchorManagerShowAllBtn" type="button" class="anchor-panel-btn">Show all</button>
+          </div>
+          <div id="anchorManagerBody" class="anchor-panel-body"></div>
+        </div>
         <div id="boardEmpty" class="board-empty" aria-hidden="true">
           <div class="board-empty-icon">
             <svg viewBox="0 0 48 48" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1268,24 +1734,11 @@
               </svg>
               Add image
             </button>
-            <button type="button" id="boardEmptyImport" class="ghost-btn">Import PowerPoint</button>
+            <button type="button" id="boardEmptyImport" class="ghost-btn manual-only">Import PowerPoint</button>
           </div>
         </div>
         <input id="labelEditor" class="label-editor" type="text" autocomplete="off" spellcheck="false" aria-label="Edit label text" />
-        <div id="annContextMenu" class="ann-context-menu" role="menu" aria-label="Line actions">
-          <button id="annCtxReconfirm" type="button" role="menuitem">Reconfirm Meaning</button>
-        </div>
-        <div id="pomMeaningPopover" class="pom-meaning-popover" role="dialog" aria-label="Confirm POM meaning">
-          <div class="pmp-title">What does <strong id="pmpPomLabel">POM ?</strong> measure?</div>
-          <div id="pmpSuggestions" class="pmp-suggestions"></div>
-          <div class="pmp-other">
-            <button id="pmpOtherBtn" type="button" class="pmp-other-btn">+ Add new measurement…</button>
-          </div>
-          <div class="pmp-actions">
-            <button id="pmpSkipBtn" type="button" class="pmp-link-btn">Skip</button>
-          </div>
-        </div>
-        <div id="toast" class="toast"></div>
+        <div id="toast" class="toast" role="status" aria-live="polite"></div>
       </div>
     </div>
     <aside class="specPanel" aria-label="Measurement list">
@@ -1301,7 +1754,7 @@
       <div class="spec-table-wrap">
         <table class="spec-table">
           <thead>
-            <tr><th class="th-pom"><abbr title="Point of Measure — the standard place on the garment this line records">POM</abbr></th><th>Description</th><th class="th-val">Value (in)</th></tr>
+            <tr><th class="th-pom"><abbr title="Point of Measure — the standard place on the garment this line records">POM</abbr></th><th>Description</th><th class="th-zh">中文</th><th class="th-val"><abbr title="Measured length of the drawn line — pixels until you Set Scale, then real units">Value</abbr></th><th class="th-size"><abbr title="Target measurement for size L from the spec sheet">Size L</abbr> <span class="th-unit"></span></th><th class="th-size"><abbr title="Optional second sample base for the depth tier (M2–5XL2) in the Excel export — blank derives L2 from Size L">Size L2</abbr> <span class="th-unit"></span></th><th class="th-tol"><abbr title="Tolerance — allowed variance from Size L">TOL</abbr> <span class="th-unit"></span></th></tr>
           </thead>
           <tbody id="specBody"></tbody>
         </table>
@@ -1311,14 +1764,18 @@
   </div>
 </div>
 
-<script src="opencv_free_api.js?v=free-opencv-20260617-1"></script>
-<!-- Real opencv.js (WASM, ~8MB) — async so it never blocks first paint.
-     If the CDN is unreachable, RealOpenCVAPI.whenReady() returns false and
-     getCvApi() transparently falls back to FreeOpenCVAPI. -->
-<script async src="https://docs.opencv.org/4.10.0/opencv.js"></script>
-<script src="opencv_real_api.js?v=real-opencv-20260618-1"></script>
-<script src="potrace.js?v=potrace-20260617-1"></script>
-<script src="auto_mode_rules.js?v=20260618-1"></script>
-<script src="app.js?v=20260618-1"></script>
+<script src="vendor/opencv_free_api.js?v=free-opencv-20260617-1"></script>
+<!-- Real opencv.js (WASM embedded, ~11MB) — async so it never blocks first
+     paint. Self-hosted from vendor/ (see vendor/README.md for provenance):
+     offline stays genuinely offline and the build is version-pinned, which
+     protects determinism (the old https://docs.opencv.org/4.x/ URL was a
+     moving alias). If the script fails to load or compile,
+     RealOpenCVAPI.whenReady() returns false and getCvApi() transparently
+     falls back to FreeOpenCVAPI. Test harnesses pin the free path
+     explicitly with ?freeCv=1. -->
+<script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
+<script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
+<script src="vendor/potrace.js?v=potrace-20260617-1"></script>
+<script src="app.js?v=20260707-1"></script>
 </body>
 </html>

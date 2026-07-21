@@ -4,17 +4,21 @@
 // in index.html can switch between them without branching: same input shape,
 // same output shape. Runtime picker (getCvApi) prefers this one when ready,
 // otherwise falls back to FreeOpenCVAPI. opencv.js itself is loaded async
-// from a CDN by a separate <script> tag in index.html.
+// from the vendored build (vendor/, version-pinned — see vendor/README.md)
+// by a separate <script> tag in index.html.
 
 (function (global) {
   'use strict';
 
-  const VERSION = 'real-opencv-api-20260618';
+  const VERSION = 'real-opencv-api-20260708';
 
   // Resolves true once cv.Mat + cv.adaptiveThreshold are available
-  // (i.e. WASM finished loading). Resolves false after ~30s if opencv.js
-  // never arrives — typically because the CDN is unreachable or the user
-  // is offline. We never reject so callers can `await whenReady()` safely.
+  // (i.e. WASM finished compiling). Resolves false after ~150s if opencv.js
+  // never arrives — e.g. the vendored script failed to load or compile.
+  // The window is sized to comfortably cover the documented ~90s cold WASM
+  // compile on slow machines; the S1 warm-up chip watches this promise, so
+  // giving up too early would wrongly report "basic vision" mid-compile.
+  // We never reject so callers can `await whenReady()` safely.
   let readyPromise = null;
 
   function probeReady() {
@@ -32,8 +36,8 @@
         if (probeReady()) {
           clearInterval(poll);
           resolve(true);
-        } else if (attempts > 500) {
-          // ~30 s at 60 ms — give up so callers don't hang forever.
+        } else if (attempts > 2500) {
+          // ~150 s at 60 ms — give up so callers don't hang forever.
           clearInterval(poll);
           resolve(false);
         }

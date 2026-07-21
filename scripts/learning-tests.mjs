@@ -161,21 +161,17 @@ async function connectCdp(wsUrl) {
 }
 
 async function waitForDebugApi(cdp) {
-  await evaluate(cdp, `
-    new Promise((resolve, reject) => {
-      let checks = 0;
-      const timer = setInterval(() => {
-        checks += 1;
-        if (window.__braAutoModeDebug && window.__braAutoModeDebug.learning) {
-          clearInterval(timer);
-          resolve(true);
-        } else if (checks > 100) {
-          clearInterval(timer);
-          reject(new Error('window.__braAutoModeDebug.learning was not exposed'));
-        }
-      }, 100);
-    })
-  `);
+  // Poll from the node side so it survives the execution-context destruction
+  // that happens during a Page.navigate (an in-page setInterval would die).
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    try {
+      const ok = await evaluate(cdp, '!!(window.__braAutoModeDebug && window.__braAutoModeDebug.learning)');
+      if (ok) return;
+    } catch (e) { /* context mid-navigation — retry */ }
+    await sleep(150);
+  }
+  throw new Error('window.__braAutoModeDebug.learning was not exposed within 15s');
 }
 
 async function runLearningTests(cdp, imagePath) {
@@ -204,6 +200,31 @@ async function runLearningTests(cdp, imagePath) {
           { recorded, bias });
       } catch (e) {
         record('5 consistent corrections activate bias', false, String(e && e.message || e));
+      }
+
+      // --- TEST 1b: Band corrections tune detector parameters ------------
+      try {
+        L.setEnabled(true);
+        L.clearBuckets();
+        for (let i = 0; i < 5; i += 1) {
+          L.recordResidual('band-left', 0, 0.012, {
+            kind: 'band-left',
+            viewRole: 'front_outer',
+            confidence: 'high',
+          });
+        }
+        const params = L.getDetectionParams();
+        const samples = L.getParamSamples();
+        const bandSamples = samples.bandPreferredRatio || [];
+        const ok = bandSamples.length === 5
+          && params.sampleCounts.bandPreferredRatio === 5
+          && params.bandPreferredRatio > 0.82
+          && params.bandSearchStartRatio > 0.58;
+        record('Band corrections tune detector parameters', ok,
+          'params=' + JSON.stringify(params) + ' samples=' + bandSamples.length,
+          { params, bandSamples });
+      } catch (e) {
+        record('Band corrections tune detector parameters', false, String(e && e.message || e));
       }
 
       // --- TEST 2: Learning OFF blocks collection AND application --------
@@ -309,6 +330,46 @@ async function runLearningTests(cdp, imagePath) {
         record('Duplicate manual samples are ignored', false, String(e && e.message || e));
       }
 
+      // --- TEST 3b: Edited Auto-applied lines teach learning -------------
+      try {
+        if (!pom1Draft) throw new Error('POM 1 draft missing; loadErr=' + loadErr);
+        L.setEnabled(true);
+        L.clearBuckets();
+        const images = debug.getImages();
+        const image = images && images[images.length - 1];
+        if (!image) throw new Error('no image loaded');
+        const dx = image.width  * 0.025;
+        const dy = image.height * 0.018;
+        const ann = {
+          id: 'ltest-3b-auto-applied',
+          seq: 1,
+          type: pom1Draft.type || 'straight',
+          text: null,
+          auto: true,
+          sourceMode: 'auto-mode',
+          autoRunId: 'learning-test-run',
+          sourceImageId: image.id,
+          start: { x: pom1Draft.start.x + dx, y: pom1Draft.start.y + dy },
+          end:   { x: pom1Draft.end.x   + dx, y: pom1Draft.end.y   + dy },
+        };
+        const first = L.evaluateAutoAppliedSample(ann);
+        const after1 = L.getSampleCount();
+        const second = L.evaluateAutoAppliedSample(ann);
+        const after2 = L.getSampleCount();
+        const ok =
+          first.status === 'recorded'
+          && first.pom === '1'
+          && after1 > 0
+          && second.status === 'skipped'
+          && after2 === after1;
+        record('Edited Auto-applied lines teach learning', ok,
+          'first=' + first.status + ' pom=' + first.pom
+          + ' second=' + second.status + ' after1=' + after1 + ' after2=' + after2,
+          { first, second, after1, after2 });
+      } catch (e) {
+        record('Edited Auto-applied lines teach learning', false, String(e && e.message || e));
+      }
+
       // --- TEST 4: Large residuals are rejected --------------------------
       try {
         if (!pom1Draft) throw new Error('POM 1 draft missing; loadErr=' + loadErr);
@@ -351,19 +412,64 @@ async function runLearningTests(cdp, imagePath) {
         L.clearBuckets();
         const cleared = L.getSampleCount();
         const buckets = L.getBuckets();
+        const paramSamples = L.getParamSamples();
         const bucketCount = buckets ? Object.keys(buckets).length : -1;
+        const paramBucketCount = paramSamples ? Object.keys(paramSamples).length : -1;
         const biasAfter = L.getBias('band-left');
+        const paramsAfter = L.getDetectionParams();
         const ok =
           seeded === 10
           && cleared === 0
           && bucketCount === 0
+          && paramBucketCount === 0
           && biasAfter.dx === 0
-          && biasAfter.dy === 0;
+          && biasAfter.dy === 0
+          && paramsAfter.bandPreferredRatio === 0.82
+          && paramsAfter.rowNoiseMultiplier === 1;
         record('Reset Learning clears all residual buckets', ok,
-          'seeded=' + seeded + ' cleared=' + cleared + ' bucketCount=' + bucketCount,
-          { seeded, cleared, bucketCount, biasAfter });
+          'seeded=' + seeded + ' cleared=' + cleared + ' bucketCount=' + bucketCount
+          + ' paramBucketCount=' + paramBucketCount,
+          { seeded, cleared, bucketCount, paramBucketCount, biasAfter, paramsAfter });
       } catch (e) {
         record('Reset Learning clears all residual buckets', false, String(e && e.message || e));
+      }
+
+      // --- TEST 6: Phase 8 stage attribution + sample context -------------
+      // A correction below the nudge limit is an 'anchor-nudge' regardless of
+      // detection state; a large one must be attributed to a real pipeline
+      // stage (which one depends on the fixture's detection — the learning
+      // fixture's geometry frame is flagged weak, so geometry-wrong is a
+      // legitimate verdict) and the recorded sample must carry the SAME
+      // attribution plus the Phase 8 context fields (part / style / conf),
+      // without disturbing the bias math.
+      try {
+        L.setEnabled(true);
+        L.clearBuckets();
+        const STAGES = ['segmentation-weak', 'contour-missing', 'geometry-wrong', 'landmark-wrong'];
+        const nudge = L.classifyResidual('band-left', 0.005, 0.004);
+        const large = L.classifyResidual('band-left', 0.03, 0.02);
+        L.recordResidual('band-left', 0.03, 0.02,
+          { kind: 'band-left', viewRole: 'front_outer', confidence: 'high' });
+        const buckets = L.getBuckets();
+        const sample = (buckets['band-left|front_outer'] || [])[0] || null;
+        const bias = L.getBias('band-left', { kind: 'band-left', viewRole: 'front_outer' });
+        const summary = L.summarize();
+        const stageCounts = summary && summary.stageCounts ? summary.stageCounts : {};
+        const ok = nudge === 'anchor-nudge'
+          && STAGES.indexOf(large) >= 0
+          && !!sample
+          && sample.stage === large
+          && sample.part === 'bottomBand'
+          && typeof sample.style === 'string' && sample.style.length > 0
+          && sample.conf === 'high'
+          && bias.n === 1
+          && stageCounts[large] === 1;
+        record('Stage attribution + context recorded on corrections', ok,
+          'nudge=' + nudge + ' large=' + large + ' sample=' + JSON.stringify(sample)
+          + ' stageCounts=' + JSON.stringify(stageCounts),
+          { nudge, large, sample, stageCounts });
+      } catch (e) {
+        record('Stage attribution + context recorded on corrections', false, String(e && e.message || e));
       }
 
       return { tests };

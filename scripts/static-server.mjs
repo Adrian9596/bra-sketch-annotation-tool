@@ -72,5 +72,6 @@ function mimeType(filePath) {
   if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) return 'image/jpeg';
   if (filePath.endsWith('.png')) return 'image/png';
   if (filePath.endsWith('.svg')) return 'image/svg+xml';
+  if (filePath.endsWith('.wasm')) return 'application/wasm';
   return 'application/octet-stream';
 }

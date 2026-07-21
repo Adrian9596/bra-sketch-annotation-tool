@@ -1,0 +1,279 @@
+{
+  "rows": [
+    {
+      "id": "1",
+      "name": "1/2 Bottom band - Relax",
+      "zh": "下围半宽（放松量）",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "band-left",
+        "band-right"
+      ],
+      "derivation": null,
+      "pairing": {
+        "role": "primary",
+        "partner": "2",
+        "groupName": "1/2 Bottom band",
+        "primaryLabel": "Relax",
+        "secondaryLabel": "Extend"
+      },
+      "expected_confidence_tier": "high"
+    },
+    {
+      "id": "2",
+      "name": "1/2 Bottom band - Extend",
+      "zh": "下围半宽（延伸量）",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "band-left",
+        "band-right"
+      ],
+      "derivation": null,
+      "pairing": {
+        "role": "secondary",
+        "primary": "1"
+      },
+      "expected_confidence_tier": "high"
+    },
+    {
+      "id": "3",
+      "name": "1/2 chest - Measure straight",
+      "zh": "胸围半宽（放松量）",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "chest-left",
+        "chest-right"
+      ],
+      "derivation": null,
+      "pairing": {
+        "role": "primary",
+        "partner": "4",
+        "groupName": "1/2 Chest",
+        "primaryLabel": "Measure straight",
+        "secondaryLabel": "Extend"
+      },
+      "expected_confidence_tier": "high"
+    },
+    {
+      "id": "4",
+      "name": "1/2 chest - Extend",
+      "zh": "胸围半宽（延伸量）",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "chest-left",
+        "chest-right"
+      ],
+      "derivation": null,
+      "pairing": {
+        "role": "secondary",
+        "primary": "3"
+      },
+      "expected_confidence_tier": "high"
+    },
+    {
+      "id": "5",
+      "name": "Center front height",
+      "zh": "前中高度",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "cf-top",
+        "cf-bottom"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "medium"
+    },
+    {
+      "id": "6",
+      "name": "Cradle height at center front",
+      "zh": "托架前中高度",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "cradle-cf-top",
+        "cf-bottom"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "medium"
+    },
+    {
+      "id": "7",
+      "name": "Cradle height at bottom cup",
+      "zh": "托架底杯高度",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "cradle-cup-top",
+        "cradle-cup-bottom"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "medium"
+    },
+    {
+      "id": "8",
+      "name": "Cup height at center front",
+      "zh": "前中杯高",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "cf-top",
+        "cradle-cf-top"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "medium"
+    },
+    {
+      "id": "9",
+      "name": "Cup height",
+      "zh": "杯高",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "inner-cup-top",
+        "inner-cup-bottom"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "medium"
+    },
+    {
+      "id": "10",
+      "name": "Cup width",
+      "zh": "杯宽",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "inner-cup-left",
+        "inner-cup-right"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "medium"
+    },
+    {
+      "id": "11",
+      "name": "Side seam length",
+      "zh": "侧缝长度",
+      "view": "back",
+      "refL": null,
+      "requiredAnchors": [
+        "side-top",
+        "side-bottom"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "medium"
+    },
+    {
+      "id": "12",
+      "name": "Back center length",
+      "zh": "后中高度",
+      "view": "back",
+      "refL": null,
+      "requiredAnchors": [
+        "back-top",
+        "back-bottom"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "medium"
+    },
+    {
+      "id": "13",
+      "name": "Back panel height",
+      "zh": "后背片高度",
+      "view": "back",
+      "refL": null,
+      "requiredAnchors": [
+        "back-top",
+        "back-bottom"
+      ],
+      "optionalAnchors": [
+        "back-panel-top",
+        "back-panel-bottom"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "medium"
+    },
+    {
+      "id": "14",
+      "name": "Shoulder strap length",
+      "zh": "肩带长度",
+      "view": "front_to_back",
+      "placementViewRole": "back",
+      "refL": null,
+      "requiredAnchors": [
+        "strap-top",
+        "strap-bottom"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "low"
+    },
+    {
+      "id": "15",
+      "name": "Back strap distances",
+      "zh": "后肩带间距",
+      "view": "back",
+      "refL": null,
+      "requiredAnchors": [
+        "back-strap-left",
+        "back-strap-right"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "medium"
+    },
+    {
+      "id": "16",
+      "name": "Front apex distance",
+      "zh": "乳点间距",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "apex-left",
+        "apex-right"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "medium"
+    },
+    {
+      "id": "17",
+      "name": "Neckline length",
+      "zh": "领口长",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "171",
+        "172"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "medium"
+    },
+    {
+      "id": "18",
+      "name": "Armhole curve length",
+      "zh": "袖窿弧长",
+      "view": "front_outer",
+      "refL": null,
+      "requiredAnchors": [
+        "181",
+        "182"
+      ],
+      "derivation": null,
+      "pairing": null,
+      "expected_confidence_tier": "low"
+    }
+  ]
+}

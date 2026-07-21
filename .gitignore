@@ -1,4 +1,60 @@
-.claude/settings.local.json
+# ---- OS / editor noise ----
 .DS_Store
 .tmp-*
 output*.jpg
+
+# ---- Dependencies (restore with npm install) ----
+node_modules/
+**/node_modules/
+
+# ---- Local agent / harness state ----
+.claude/settings.local.json
+.codex/
+.agents/
+.harness-backup/
+.gitdir/
+harness.db
+harness.db-wal
+harness.db-shm
+scripts/bin/
+
+# ---- Proprietary IP / PII / brand — never publish ----
+SC.xlsx
+Grading rules.md
+AI_Ideas_Registry.xlsx
+demo/
+scripts/golden/
+scripts/groundtruth/
+library/
+pitch/
+
+# ---- Internal docs / planning — kept out of the public repo ----
+docs/
+CLAUDE.md
+AGENTS.md
+PROJECT_CHARTER.md
+ARCHITECTURE.md
+POMS_CONTRACT.md
+TESTING.md
+PROJECT_STATUS.md
+demo.md
+HACKATHON_PITCH_SCRIPT.md
+ENHANCEMENT_OPPORTUNITIES.md
+EXPORT_GRADING_ENHANCEMENTS.md
+EXPORT_IMPLEMENT_PLAN.md
+MEASUREMENTS_FROM_SKETCH_AND_LIBRARY.md
+MEASUREMENTS_PLAN_EVALUATION.md
+measurement logic.md
+measurement workflow and implement plan.md
+manual mode plan.md
+limitation.md
+commit plan.md
+test/
+
+# ---- Superseded ROOT files (now under vendor/ or auto_mode_rules/) ----
+# Leading slash = repo-root only, so the vendor/ copies (loaded at runtime)
+# are NOT ignored.
+/auto_mode_rules.js
+/opencv_free_api.js
+/opencv_real_api.js
+/potrace.js
