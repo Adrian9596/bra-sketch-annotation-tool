@@ -732,9 +732,10 @@ function onWheel(e) {
     }
 
     if ((e.key === 'Delete' || e.key === 'Backspace') && state.selection.kind != null) {
-      // In Auto Mode, project annotations are locked; Delete on a draft also
-      // does nothing (use Discard Drafts or Mark Review-Only instead).
-      if (state.appMode === 'auto') return;
+      // In Auto Mode, project annotations/drafts are locked from Delete (use
+      // Discard Drafts or Mark Review-Only). Deleting an added PHOTO is allowed
+      // (US-052) — otherwise the only way to remove a photo is Reset Board.
+      if (state.appMode === 'auto' && state.selection.kind !== 'image') return;
       e.preventDefault();
       deleteSelected();
       return;

@@ -182,7 +182,11 @@
     el.toolCurved.disabled = isAuto;
     if (isAuto) {
       el.toolEraser.disabled = true;
-      el.deleteBtn.disabled = true;
+      // US-052: Delete in Auto Mode removes a selected PHOTO only (annotations/
+      // drafts use Discard Drafts / Review-Only). Enable it when a non-locked
+      // image is selected so an added photo can be removed without Reset Board.
+      const selImg = getSelectedImage();
+      el.deleteBtn.disabled = !(selImg && !selImg.locked);
       el.clearBtn.disabled = true;
     }
 

@@ -214,16 +214,19 @@
     // inner cup / cradle / princess seam instead of the edge (TD 2026-07-18,
     // demo5: 172/182 at the join → the arc between them found a dipping seam and
     // POM 17/18 drew a V into the cup). Sample the (clamped) cubic in y.
-    const traceShapeOk = (t, A, B) => {
+    const traceShapeOk = (t, A, B, tolFloor, spanFactor) => {
       if (!t) return false;
       const c1y = clamp01(t.c1.y), c2y = clamp01(t.c2.y);
       const lowerY = Math.max(A.y, B.y);
-      // Tolerance is SPAN-RELATIVE (with a small floor): a fixed absolute
-      // tolerance reads as tight on short arcs and loose on long ones, so a long
-      // armhole could dip a visible fraction of its own span yet still pass
-      // (demo1). Allow the belly to sit at most 7% of the endpoint span below
-      // the lower endpoint.
-      const tol = Math.max(0.015, Math.abs(A.y - B.y) * 0.07);
+      // Tolerance is SPAN-RELATIVE (with a floor): a fixed absolute tolerance
+      // reads as tight on short arcs and loose on long ones, so a long armhole
+      // could dip a visible fraction of its own span yet still pass (demo1).
+      // Defaults (armhole) allow the belly at most 7% of the span below the
+      // lower endpoint. Callers pass a GENEROUS override for the neckline
+      // (POM 17): on a deep/plunging V the edge legitimately continues well
+      // below the CF anchor (171 sits partway up the edge, not at the V-bottom),
+      // so a good edge-following trace dips ~10% — see US-051.
+      const tol = Math.max(tolFloor != null ? tolFloor : 0.015, Math.abs(A.y - B.y) * (spanFactor != null ? spanFactor : 0.07));
       let maxY = -Infinity;
       for (let u = 0.15; u <= 0.86; u += 0.1) {
         const m = 1 - u;
@@ -258,7 +261,14 @@
       // controls, TD-confirmed) but gains the SHAPE guard: reject a trace that
       // dips into the cup (demo5) so it doesn't draw a V. Clean monotonic
       // necklines (demo8) still trace.
-      if (traced && traced.score >= 0.55 && traceShapeOk(traced, neck17start, neck17end)) {
+      // US-051: accept the neckline trace when it matches a contour well AND its
+      // controls are sane. The shape guard uses a GENEROUS neckline tolerance
+      // (floor 0.13, 60% of span) because a deep/plunging V legitimately dips
+      // ~10% below the CF anchor — the old tight guard rejected the real edge
+      // and fell back to a chord that visibly cut across the neckline.
+      if (traced && traced.score >= 0.55
+          && traceControlSane(traced.c1) && traceControlSane(traced.c2)
+          && traceShapeOk(traced, neck17start, neck17end, 0.13, 0.6)) {
         // Controls may fall slightly outside [0,1]; clamp defensively. The
         // neckline is interior so this rarely bites.
         neck17c1.x = clamp01(traced.c1.x); neck17c1.y = clamp01(traced.c1.y);

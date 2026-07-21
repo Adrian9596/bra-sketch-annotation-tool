@@ -169,6 +169,23 @@
       state.images = state.images.filter(image => image.id !== deletedId);
       if (state.images.length === before) return;
       state.eraseStrokes = state.eraseStrokes.filter(stroke => stroke.imageId !== deletedId);
+      // US-052: purge Auto Mode state tied to the removed photo so nothing
+      // orphans (anchors/drafts pointing at a gone image, or its aux view). If
+      // it was the detection SOURCE, clear the detection; if an aux view, drop
+      // just that view. Re-derive the status chip afterward.
+      const am = state.autoMode;
+      if (am) {
+        am.anchors = (am.anchors || []).filter(a => a.sourceImageId !== deletedId);
+        am.draftAnnotations = (am.draftAnnotations || []).filter(d => d.sourceImageId !== deletedId);
+        if (am.anchorSelectedId != null && !am.anchors.some(a => a.id === am.anchorSelectedId)) am.anchorSelectedId = null;
+        if (am.detection) {
+          if (am.detection.sourceImageId === deletedId) am.detection = null;
+          else if (Array.isArray(am.detection.auxViews)) {
+            am.detection.auxViews = am.detection.auxViews.filter(v => v.sourceImageId !== deletedId);
+          }
+        }
+        if (typeof ensureAutoModeStatus === 'function') ensureAutoModeStatus();
+      }
     }
 
     state.selection = { kind: null, id: null };
