@@ -364,7 +364,13 @@
       const img = await loadImageFromDataURL(dataURL);
       const imageRecord = createImageRecord(img, dataURL, baseCount + batchIndex);
       state.images.push(imageRecord);
+      // Select the new photo as the sole selection. This assigns directly
+      // (rather than setSelection, which would updateUI/render every loop
+      // iteration), so it must also reset the multi-selection set — otherwise a
+      // previously-clicked photo lingers in selectedImageIds and a later plain
+      // drag of the new photo moves both together.
       state.selection = { kind: 'image', id: imageRecord.id };
+      state.selectedImageIds = [imageRecord.id];
       recordAutoTelemetryEvent('image_loaded', {
         sourceImageId: imageRecord.id,
         sketch_id: imageRecord.id,

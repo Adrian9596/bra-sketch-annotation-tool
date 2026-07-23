@@ -31,14 +31,20 @@ function setSelection(kind, id) {
   // The set of currently-selected image ids. Derived from state so a direct
   // `state.selection = {...}` assignment elsewhere (which bypasses
   // setSelection) can't leave a stale multi-selection: if the primary is not
-  // an image the set is empty, and the primary is always included. Only ids of
+  // an image the set is empty. A real multi-selection is ALWAYS built around
+  // the current primary (setSelection / toggleImageInSelection keep it in the
+  // set), so if the raw set does not contain the primary it is stale — a new
+  // primary was assigned directly, e.g. when adding a photo — and we return
+  // just the primary rather than silently widening the group to the
+  // previously-selected photo (which made a plain drag move both). Only ids of
   // images that still exist are returned.
   function getSelectedImageIds() {
     if (state.selection.kind !== 'image' || state.selection.id == null) return [];
     const raw = Array.isArray(state.selectedImageIds) ? state.selectedImageIds : [];
-    const ids = raw.slice();
-    if (!ids.includes(state.selection.id)) ids.push(state.selection.id);
-    return ids.filter((id) => !!getImageById(id));
+    if (!raw.includes(state.selection.id)) {
+      return getImageById(state.selection.id) ? [state.selection.id] : [];
+    }
+    return raw.filter((id) => !!getImageById(id));
   }
 
   function getSelectedImages() {
@@ -79,9 +85,16 @@ function setSelection(kind, id) {
   function getSelectedAnnotationIds() {
     if (state.selection.kind !== 'annotation' || state.selection.id == null) return [];
     const raw = Array.isArray(state.selectedAnnotationIds) ? state.selectedAnnotationIds : [];
-    const ids = raw.slice();
-    if (!ids.includes(state.selection.id)) ids.push(state.selection.id);
-    return ids.filter((id) => !!getAnnotationById(id) && !isAnnHidden(id));
+    // Same stale-set guard as getSelectedImageIds: a multi-selection only
+    // counts when its raw set was built around the current primary. A direct
+    // `state.selection = {...}` assignment (e.g. selecting a freshly drawn
+    // line) leaves the previous set behind — ignore it instead of merging the
+    // new primary into a group it never belonged to.
+    if (!raw.includes(state.selection.id)) {
+      return (getAnnotationById(state.selection.id) && !isAnnHidden(state.selection.id))
+        ? [state.selection.id] : [];
+    }
+    return raw.filter((id) => !!getAnnotationById(id) && !isAnnHidden(id));
   }
 
   function getSelectedAnnotations() {
@@ -374,6 +387,19 @@ function setSelection(kind, id) {
       } else {
         startAnnotationDrag(annotationHit.id, world);
       }
+      return;
+    }
+
+    // Shift is dedicated to building a line multi-selection. A Shift+click that
+    // misses every line must NOT fall through to the image branch below, which
+    // would call setSelection('image', …) and wipe the group the TD is
+    // assembling (a near-miss of a thin line on a dense sketch is easy). Route
+    // to an ADDITIVE marquee instead: a Shift+drag then rubber-bands more lines
+    // in, and a plain Shift+click on empty space / the sketch commits nothing
+    // and leaves the current selection intact (see the marquee branch in
+    // onMouseUp: additive + not-moved = no clear).
+    if (e.shiftKey) {
+      startMarquee(world, true);
       return;
     }
 
