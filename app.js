@@ -441,6 +441,11 @@
     // resize/spec anchor — this set only widens what a group drag / delete acts
     // on. Session-only (not part of the project snapshot).
     selectedImageIds: [],
+    // Shift+click / marquee-drag multi-selection of POM lines (annotations).
+    // Same derive-through-primary contract as selectedImageIds — always
+    // includes the primary `selection` when it is an annotation. Widens what
+    // group copy / reflect / delete / drag act on. Session-only.
+    selectedAnnotationIds: [],
 
     zoom: 1,
     panX: 0,
@@ -7887,22 +7892,24 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     if (state.selection.kind == null) return;
 
     if (state.selection.kind === 'annotation') {
-      const selectedAnn = state.annotations.find(a => a.id === state.selection.id) || null;
+      // Delete every selected line (Shift+click / marquee group).
+      const ids = getSelectedAnnotationIds();
+      if (!ids.length) return;
+      const targets = ids.map(id => state.annotations.find(a => a.id === id)).filter(Boolean);
+      const idSet = new Set(ids);
       const before = state.annotations.length;
-      state.annotations = state.annotations.filter(a => a.id !== state.selection.id);
+      state.annotations = state.annotations.filter(a => !idSet.has(a.id));
       if (state.annotations.length === before) return;
-      // POM numbers are measurement identities, not list positions. Deleting
-      // POM 7 must leave a gap instead of turning POM 8 into POM 7.
-      if (selectedAnn && typeof markDeletedAutoAnnotationForEvidence === 'function') {
-        markDeletedAutoAnnotationForEvidence(selectedAnn);
-      }
-      // US-047: deleting a POM line excludes that POM from the exported spec,
-      // exactly like the review × Hide toggle (TD: "delete = hide"). The
-      // annotation id is gone after this, so remember the POM label; the export
-      // drops the row unless a line with that label is later redrawn.
       if (!Array.isArray(state.deletedPomKeys)) state.deletedPomKeys = [];
-      if (selectedAnn) {
-        const label = String(getLabelText(selectedAnn));
+      for (const ann of targets) {
+        // POM numbers are measurement identities, not list positions. Deleting
+        // POM 7 must leave a gap instead of turning POM 8 into POM 7.
+        if (typeof markDeletedAutoAnnotationForEvidence === 'function') markDeletedAutoAnnotationForEvidence(ann);
+        // US-047: deleting a POM line excludes that POM from the exported spec,
+        // exactly like the review × Hide toggle (TD: "delete = hide"). The id is
+        // gone after this, so remember the POM label; the export drops the row
+        // unless a line with that label is later redrawn.
+        const label = String(getLabelText(ann));
         if (label && !state.deletedPomKeys.includes(label)) state.deletedPomKeys.push(label);
       }
     } else if (state.selection.kind === 'image') {
@@ -7925,6 +7932,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
 
     state.selection = { kind: null, id: null };
     state.selectedImageIds = [];
+    state.selectedAnnotationIds = [];
     pushHistoryIfChanged();
     updateUI();
     requestRender();
@@ -7951,102 +7959,117 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
 
   function copySelectedAnnotation() {
     if (state.appMode === 'auto') return;
-    if (state.selection.kind !== 'annotation') {
+    const anns = getSelectedAnnotations();
+    if (!anns.length) {
       showToast('Select a line to copy first.');
       return;
     }
-    const ann = state.annotations.find(a => a.id === state.selection.id);
-    if (!ann) return;
-    lineClipboard = clone(ann);
+    lineClipboard = anns.map(clone);
     updateUI();
-    showToast('Line copied.');
+    showToast(anns.length > 1 ? anns.length + ' lines copied.' : 'Line copied.');
   }
 
   function pasteLineFromClipboard() {
     if (state.appMode === 'auto') return;
-    if (!lineClipboard) {
+    const clips = Array.isArray(lineClipboard) ? lineClipboard : (lineClipboard ? [lineClipboard] : []);
+    if (!clips.length) {
       showToast('Nothing to paste — copy a line first.');
       return;
     }
-    const src = clone(lineClipboard);
     const offset = 20 / state.zoom;
     const shift = (p) => (p ? { x: p.x + offset, y: p.y + offset } : null);
-    const start = shift(src.start);
-    const end = shift(src.end);
-    const isCurved = src.type === 'curved';
-    const midPoint = isCurved ? shift(src.midPoint) : null;
-    const midHandleIn = isCurved ? shift(src.midHandleIn) : null;
-    const midHandleOut = isCurved ? shift(src.midHandleOut) : null;
-    const control1 = isCurved ? shift(src.control1) : null;
-    const control2 = isCurved ? shift(src.control2) : null;
-    const ann = {
-      id: state.idCounter++,
-      seq: state.nextSequence,
-      type: src.type,
-      style: src.style,
-      color: src.color,
-      arrowType: src.arrowType,
-      lineWidth: src.lineWidth,
-      start,
-      end,
-      midPoint,
-      midHandleIn,
-      midHandleOut,
-      control1,
-      control2,
-      label: computeDefaultLabelPosition({ type: src.type, start, end, control1, control2, midPoint, midHandleIn, midHandleOut }),
-      labelManual: false,
-      text: src.text || null,
-      value: null,
-    };
-    if (isCurved) ensureCurveControls(ann);
-    state.annotations.push(ann);
-    state.selection = { kind: 'annotation', id: ann.id };
-    state.nextSequence += 1;
+    const pastedIds = [];
+    for (const clip of clips) {
+      const src = clone(clip);
+      const isCurved = src.type === 'curved';
+      const start = shift(src.start);
+      const end = shift(src.end);
+      const midPoint = isCurved ? shift(src.midPoint) : null;
+      const midHandleIn = isCurved ? shift(src.midHandleIn) : null;
+      const midHandleOut = isCurved ? shift(src.midHandleOut) : null;
+      const control1 = isCurved ? shift(src.control1) : null;
+      const control2 = isCurved ? shift(src.control2) : null;
+      const ann = {
+        id: state.idCounter++,
+        seq: state.nextSequence,
+        type: src.type,
+        style: src.style,
+        color: src.color,
+        arrowType: src.arrowType,
+        lineWidth: src.lineWidth,
+        start,
+        end,
+        midPoint,
+        midHandleIn,
+        midHandleOut,
+        control1,
+        control2,
+        label: computeDefaultLabelPosition({ type: src.type, start, end, control1, control2, midPoint, midHandleIn, midHandleOut }),
+        labelManual: false,
+        text: src.text || null,
+        value: null,
+      };
+      if (isCurved) ensureCurveControls(ann);
+      state.annotations.push(ann);
+      state.nextSequence += 1;
+      pastedIds.push(ann.id);
+    }
+    // Select the pasted group so it can be moved/nudged as one immediately.
+    state.selectedAnnotationIds = pastedIds;
+    state.selection = { kind: 'annotation', id: pastedIds[pastedIds.length - 1] };
     pushHistoryIfChanged();
     updateUI();
     requestRender();
-    showToast('Line pasted.');
+    showToast(pastedIds.length > 1 ? pastedIds.length + ' lines pasted.' : 'Line pasted.');
   }
 
   function reflectSelectedAnnotation() {
     if (state.appMode === 'auto') return;
-    if (state.selection.kind !== 'annotation') {
+    const srcs = getSelectedAnnotations();
+    if (!srcs.length) {
       showToast('Select a line to reflect first.');
       return;
     }
-    const src = state.annotations.find(a => a.id === state.selection.id);
-    if (!src) return;
-    const axisX = findReflectionAxisX(src);
-    if (axisX == null) {
+    const reflectedIds = [];
+    let skipped = 0;
+    for (const src of srcs) {
+      // Each line mirrors across ITS OWN view-box / image axis, so a group that
+      // spans front + back reflects correctly per panel.
+      const axisX = findReflectionAxisX(src);
+      if (axisX == null) { skipped += 1; continue; }
+      const mirror = (p) => (p ? { x: 2 * axisX - p.x, y: p.y } : null);
+      const ann = {
+        ...clone(src),
+        id: state.idCounter++,
+        seq: state.nextSequence,
+        start: mirror(src.start),
+        end: mirror(src.end),
+        control1: mirror(src.control1),
+        control2: mirror(src.control2),
+        midPoint: mirror(src.midPoint),
+        midHandleIn: mirror(src.midHandleIn),
+        midHandleOut: mirror(src.midHandleOut),
+        label: mirror(src.label),
+        value: null,
+      };
+      // Mirroring is exact, so every handle carries over and the curve keeps its
+      // shape; backfill the anchor set for any older single-cubic source.
+      ensureCurveControls(ann);
+      state.annotations.push(ann);
+      state.nextSequence += 1;
+      reflectedIds.push(ann.id);
+    }
+    if (!reflectedIds.length) {
       showToast('Place the line over an image to reflect.');
       return;
     }
-    const mirror = (p) => (p ? { x: 2 * axisX - p.x, y: p.y } : null);
-    const ann = {
-      ...clone(src),
-      id: state.idCounter++,
-      seq: state.nextSequence,
-      start: mirror(src.start),
-      end: mirror(src.end),
-      control1: mirror(src.control1),
-      control2: mirror(src.control2),
-      midPoint: mirror(src.midPoint),
-      midHandleIn: mirror(src.midHandleIn),
-      midHandleOut: mirror(src.midHandleOut),
-      label: mirror(src.label),
-      value: null,
-    };
-    // Mirroring is exact, so every handle carries over and the curve keeps its
-    // shape; backfill the anchor set for any older single-cubic source.
-    ensureCurveControls(ann);
-    state.annotations.push(ann);
-    state.selection = { kind: 'annotation', id: ann.id };
-    state.nextSequence += 1;
+    state.selectedAnnotationIds = reflectedIds;
+    state.selection = { kind: 'annotation', id: reflectedIds[reflectedIds.length - 1] };
     pushHistoryIfChanged();
     updateUI();
     requestRender();
-    showToast('Reflected copy added.');
+    const base = reflectedIds.length > 1 ? reflectedIds.length + ' reflected copies added.' : 'Reflected copy added.';
+    showToast(skipped ? base + ' (' + skipped + ' skipped — not over an image)' : base);
   }
 
   // Pick the vertical axis to mirror across: prefer the detected view box
@@ -8082,7 +8105,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   }
 
   function hasLineClipboard() {
-    return lineClipboard != null;
+    return Array.isArray(lineClipboard) ? lineClipboard.length > 0 : lineClipboard != null;
   }
 
   // ---- src/manual/interactions.js ----
@@ -8099,10 +8122,11 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
 
 function setSelection(kind, id) {
     state.selection = kind && id != null ? { kind, id } : { kind: null, id: null };
-    // Keep the image multi-selection in lockstep: selecting one image (or
-    // anything else, or nothing) collapses the set. Cmd/Ctrl+click widens it
-    // through toggleImageInSelection, which sets the set itself.
+    // Keep the image + annotation multi-selections in lockstep: selecting one
+    // (or anything else, or nothing) collapses the set. Shift+click / marquee
+    // widen the annotation set through the helpers below.
     state.selectedImageIds = kind === 'image' && id != null ? [id] : [];
+    state.selectedAnnotationIds = kind === 'annotation' && id != null ? [id] : [];
     if (kind === 'annotation') {
       const ann = getAnnotationById(id);
       if (ann) {
@@ -8155,6 +8179,111 @@ function setSelection(kind, id) {
       state.selection = { kind: 'image', id: primary };
     }
     if (state.autoMode) state.autoMode.anchorSelectedId = null;
+    updateUI();
+    requestRender();
+  }
+
+  // ---- Annotation (POM line) multi-selection: Shift+click + marquee ----
+  // Same derive-through-primary contract as the image helpers: the set is empty
+  // unless the primary selection is an annotation, and the primary is always
+  // included; only ids of lines that still exist (and aren't hidden) count.
+  function getSelectedAnnotationIds() {
+    if (state.selection.kind !== 'annotation' || state.selection.id == null) return [];
+    const raw = Array.isArray(state.selectedAnnotationIds) ? state.selectedAnnotationIds : [];
+    const ids = raw.slice();
+    if (!ids.includes(state.selection.id)) ids.push(state.selection.id);
+    return ids.filter((id) => !!getAnnotationById(id) && !isAnnHidden(id));
+  }
+
+  function getSelectedAnnotations() {
+    return getSelectedAnnotationIds().map((id) => getAnnotationById(id)).filter(Boolean);
+  }
+
+  function isAnnInSelection(id) {
+    return getSelectedAnnotationIds().includes(id);
+  }
+
+  // Adopt an annotation as the primary selection AND keep its draw defaults in
+  // sync, mirroring setSelection('annotation', …) without collapsing the set.
+  function setPrimaryAnnotation(id) {
+    state.selection = { kind: 'annotation', id };
+    const ann = getAnnotationById(id);
+    if (ann) {
+      state.drawStyle = ann.style || state.drawStyle;
+      state.drawColor = normalizeColorKey(ann.color);
+      state.arrowType = getArrowType(ann);
+    }
+  }
+
+  // Shift+click: add the line to the multi-selection, or remove it if already in.
+  function toggleAnnInSelection(id) {
+    if (!getAnnotationById(id) || isAnnHidden(id)) return;
+    const current = getSelectedAnnotationIds();
+    const had = current.includes(id);
+    const next = had ? current.filter((x) => x !== id) : current.concat([id]);
+    if (next.length === 0) {
+      state.selectedAnnotationIds = [];
+      state.selection = { kind: null, id: null };
+    } else {
+      state.selectedAnnotationIds = next;
+      setPrimaryAnnotation(had ? next[next.length - 1] : id);
+    }
+    updateUI();
+    requestRender();
+  }
+
+  // Does a segment a→b touch the axis-aligned rect? Liang–Barsky clip: true iff
+  // any part of the segment (incl. an endpoint inside) lies within the rect.
+  function segmentTouchesRect(a, b, minX, minY, maxX, maxY) {
+    let t0 = 0, t1 = 1;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const p = [-dx, dx, -dy, dy];
+    const q = [a.x - minX, maxX - a.x, a.y - minY, maxY - a.y];
+    for (let i = 0; i < 4; i += 1) {
+      if (p[i] === 0) { if (q[i] < 0) return false; }
+      else {
+        const r = q[i] / p[i];
+        if (p[i] < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+        else { if (r < t0) return false; if (r < t1) t1 = r; }
+      }
+    }
+    return t0 <= t1;
+  }
+
+  // A line is in the marquee only if its ACTUAL geometry passes through the box
+  // — test the drawn polyline (curves sampled), NOT the padded export bbox, so a
+  // small box over 3 lines doesn't grab every densely-packed POM around it.
+  function annotationTouchesRect(ann, minX, minY, maxX, maxY) {
+    const pts = getAnnotationPolyline(ann, BEZIER_SAMPLES);
+    for (let i = 0; i < pts.length - 1; i += 1) {
+      if (segmentTouchesRect(pts[i], pts[i + 1], minX, minY, maxX, maxY)) return true;
+    }
+    // A zero-length / single-point line still counts if that point is inside.
+    if (pts.length === 1) {
+      const p = pts[0];
+      return p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY;
+    }
+    return false;
+  }
+
+  // Replace/extend the line selection with everything a marquee rectangle
+  // touched. `additive` (Shift held) merges with the existing selection.
+  function selectAnnotationsInRect(x1, y1, x2, y2, additive) {
+    const loX = Math.min(x1, x2), hiX = Math.max(x1, x2);
+    const loY = Math.min(y1, y2), hiY = Math.max(y1, y2);
+    const hits = [];
+    for (const ann of state.annotations) {
+      if (isAnnHidden(ann.id)) continue;
+      if (annotationTouchesRect(ann, loX, loY, hiX, hiY)) hits.push(ann.id);
+    }
+    let ids = hits;
+    if (additive) ids = Array.from(new Set(getSelectedAnnotationIds().concat(hits)));
+    if (!ids.length) {
+      if (!additive) { state.selection = { kind: null, id: null }; state.selectedAnnotationIds = []; }
+    } else {
+      state.selectedAnnotationIds = ids;
+      setPrimaryAnnotation(ids[ids.length - 1]);
+    }
     updateUI();
     requestRender();
   }
@@ -8312,7 +8441,10 @@ function setSelection(kind, id) {
     }
 
     const selectedAnnotation = getSelectedAnnotation();
-    const handleHit = selectedAnnotation ? hitTestSelectedHandles(world, selectedAnnotation) : null;
+    // Endpoint/handle editing is a single-line action — a multi-selection is
+    // for moving/copying the group, so skip handles when more than one is picked.
+    const handleHit = selectedAnnotation && getSelectedAnnotationIds().length <= 1
+      ? hitTestSelectedHandles(world, selectedAnnotation) : null;
     if (handleHit) {
       startHandleDrag(selectedAnnotation.id, handleHit.part, world);
       return;
@@ -8338,7 +8470,16 @@ function setSelection(kind, id) {
 
     const annotationHit = hitTestAnnotations(world);
     if (annotationHit) {
-      setSelection('annotation', annotationHit.id);
+      // Shift+click toggles the line in the multi-selection (no drag).
+      if (e.shiftKey) {
+        toggleAnnInSelection(annotationHit.id);
+        return;
+      }
+      // Plain click on a line already part of a multi-selection keeps the group
+      // so the drag moves them all; otherwise it selects just this line.
+      if (!(getSelectedAnnotationIds().length > 1 && isAnnInSelection(annotationHit.id))) {
+        setSelection('annotation', annotationHit.id);
+      }
       if (annotationHit.part === 'label') {
         startLabelDrag(annotationHit.id, world);
       } else {
@@ -8361,9 +8502,10 @@ function setSelection(kind, id) {
       return;
     }
 
-    if (state.selection.kind != null) {
-      clearSelection();
-    }
+    // Empty canvas (select tool): start a marquee to rubber-band select lines.
+    // A plain click (no drag past a small threshold) clears the selection on
+    // mouseup; Shift adds the marquee's hits to the current selection.
+    startMarquee(world, e.shiftKey);
   }
 
   function onMouseMove(e) {
@@ -8393,17 +8535,30 @@ function setSelection(kind, id) {
     }
 
     if (interaction.type === 'drag-annotation') {
-      const ann = getAnnotationById(interaction.id);
-      if (!ann) return;
+      const ids = interaction.groupIds || [interaction.id];
       const dx = world.x - interaction.prevWorld.x;
       const dy = world.y - interaction.prevWorld.y;
       if (dx || dy) {
-        moveAnnotation(ann, dx, dy);
-        if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
+        for (const aid of ids) {
+          const a = getAnnotationById(aid);
+          if (!a) continue;
+          moveAnnotation(a, dx, dy);
+          if (isAutoDraft(a)) markDraftTouchedByTD(a);
+        }
         interaction.changed = true;
         interaction.prevWorld = world;
         requestRender();
       }
+      return;
+    }
+
+    if (interaction.type === 'marquee') {
+      interaction.currentWorld = { x: world.x, y: world.y };
+      const dx = interaction.currentWorld.x - interaction.startWorld.x;
+      const dy = interaction.currentWorld.y - interaction.startWorld.y;
+      // A tiny wobble is still a click; only past a few screen px is it a drag.
+      if (Math.abs(dx) > 3 / state.zoom || Math.abs(dy) > 3 / state.zoom) interaction.moved = true;
+      requestRender();
       return;
     }
 
@@ -8494,6 +8649,22 @@ function setSelection(kind, id) {
     if (!interaction) return;
 
     document.body.classList.remove('grabbing');
+
+    if (interaction.type === 'marquee') {
+      if (interaction.moved) {
+        selectAnnotationsInRect(
+          interaction.startWorld.x, interaction.startWorld.y,
+          interaction.currentWorld.x, interaction.currentWorld.y,
+          interaction.additive
+        );
+      } else if (!interaction.additive && state.selection.kind != null) {
+        // Plain click on empty canvas = clear selection.
+        clearSelection();
+      }
+      state.interaction = null;
+      requestRender();
+      return;
+    }
 
     if (interaction.type !== 'pan' && interaction.changed) {
       if (interaction.type === 'drag-anchor') {
@@ -9004,7 +9175,20 @@ function beginTrackedInteraction(type, payload) {
 }
 
 function startAnnotationDrag(id, world) {
-  beginTrackedInteraction('drag-annotation', { id, prevWorld: world });
+  // Move every selected line together (Shift+click / marquee group), or just
+  // this one when it isn't part of a multi-selection.
+  const selected = getSelectedAnnotationIds();
+  const groupIds = (selected.length > 1 && selected.includes(id)) ? selected.slice() : [id];
+  beginTrackedInteraction('drag-annotation', { id, prevWorld: world, groupIds });
+}
+
+function startMarquee(world, additive) {
+  beginTrackedInteraction('marquee', {
+    startWorld: { x: world.x, y: world.y },
+    currentWorld: { x: world.x, y: world.y },
+    additive: !!additive,
+    moved: false,
+  });
 }
 
 function startLabelDrag(id, world) {
@@ -23081,7 +23265,12 @@ function getAnnotationBounds(ann) {
 
 function createExportCanvas(bounds) {
   const isLandscape = bounds.width > bounds.height;
-  const mmToPx = 150 / 25.4;
+  // 300 DPI (print standard). At the old 150 DPI the A4 page held too few
+  // pixels, so a photo fit to the page rendered below its native resolution and
+  // looked soft; 300 DPI lets a single/dual-photo board render at (or above)
+  // native. Doubling DPI quadruples the JPEG pixels — still well within a
+  // single-page PDF budget at quality 0.94.
+  const mmToPx = 300 / 25.4;
   const pageWidthMm = isLandscape ? 297 : 210;
   const pageHeightMm = isLandscape ? 210 : 297;
   const pageWidthPx = Math.round(pageWidthMm * mmToPx);
@@ -23096,6 +23285,8 @@ function createExportCanvas(bounds) {
   exportCanvas.width = pageWidthPx;
   exportCanvas.height = pageHeightPx;
   const exportCtx = exportCanvas.getContext('2d');
+  exportCtx.imageSmoothingEnabled = true;
+  exportCtx.imageSmoothingQuality = 'high';
   const oldCtx = ctx;
   const oldZoom = state.zoom;
   const oldPanX = state.panX;
@@ -23248,14 +23439,30 @@ function makeExportFileName() {
   // export-pdf.js; restore is wrapped in try/finally so a draw error can
   // never leave the live board pointing at the temp canvas.
   function renderBoardRegionToCanvas(bounds) {
-    const MAX_COPY_DIMENSION = 4096;
-    const scale = Math.min(2, MAX_COPY_DIMENSION / bounds.width, MAX_COPY_DIMENSION / bounds.height);
+    const MAX_COPY_DIMENSION = 6000;
+    // Render at (at least) the NATIVE pixel density of the sharpest photo in
+    // view. Photos are stored at a downscaled board-display size (~42% of the
+    // canvas), so a fixed 2x — the old value — exported them well below their
+    // source resolution and looked blurry. Driving the scale off naturalWidth /
+    // world-width makes each photo export at full resolution; a lines-only board
+    // keeps the 2x crisp-line default. Still capped so a big multi-photo board
+    // can't allocate an absurd bitmap.
+    let contentScale = 2;
+    for (const image of state.images) {
+      if (!image || !image.img || !image.width || !image.height) continue;
+      const natW = image.img.naturalWidth || image.width;
+      const natH = image.img.naturalHeight || image.height;
+      contentScale = Math.max(contentScale, natW / image.width, natH / image.height);
+    }
+    const scale = Math.min(contentScale, MAX_COPY_DIMENSION / bounds.width, MAX_COPY_DIMENSION / bounds.height);
     const width = Math.max(1, Math.round(bounds.width * scale));
     const height = Math.max(1, Math.round(bounds.height * scale));
     const copyCanvas = document.createElement('canvas');
     copyCanvas.width = width;
     copyCanvas.height = height;
     const copyCtx = copyCanvas.getContext('2d');
+    copyCtx.imageSmoothingEnabled = true;
+    copyCtx.imageSmoothingQuality = 'high';
     const oldCtx = ctx;
     const oldZoom = state.zoom;
     const oldPanX = state.panX;
@@ -24511,6 +24718,34 @@ function makeExportFileName() {
     drawAdjustmentReadout(ann);
   }
 
+  // Lighter per-line marker for a MULTI-selection (Shift+click / marquee): just
+  // the endpoint dots, no control/label handles or readout — enough to show the
+  // line is in the group without the busy single-line editing apparatus.
+  function drawAnnotationSelectedOutline(ann) {
+    if (!ann || !ann.start || !ann.end) return;
+    ctx.save();
+    drawHandle(ann.start, true, false);
+    drawHandle(ann.end, true, false);
+    ctx.restore();
+  }
+
+  // Rubber-band selection rectangle, in world coordinates.
+  function drawMarquee(m) {
+    if (!m || !m.startWorld || !m.currentWorld) return;
+    const x = Math.min(m.startWorld.x, m.currentWorld.x);
+    const y = Math.min(m.startWorld.y, m.currentWorld.y);
+    const w = Math.abs(m.currentWorld.x - m.startWorld.x);
+    const h = Math.abs(m.currentWorld.y - m.startWorld.y);
+    ctx.save();
+    ctx.fillStyle = 'rgba(53,109,255,0.10)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(53,109,255,0.75)';
+    ctx.lineWidth = 1 / state.zoom;
+    ctx.setLineDash([5 / state.zoom, 4 / state.zoom]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.restore();
+  }
+
   // US-029: floating measurement readout, shown only WHILE the line is being
   // adjusted (endpoint/handle mouse-drag or an open key-nudge burst) so the
   // TD can steer toward a target value without looking away to the panel.
@@ -25616,9 +25851,20 @@ function requestRender() {
       drawImageSelection(selectedImage, showImageHandles);
     }
 
-    const selectedAnnotation = getSelectedAnnotation();
-    if (selectedAnnotation && !isAnnHidden(selectedAnnotation.id)) {
-      drawSelectionHelpers(selectedAnnotation);
+    // Line selection: a single selection shows full endpoint/handle helpers; a
+    // multi-selection (Shift+click / marquee) shows a lighter per-line outline
+    // on each member so the group reads as one.
+    const selAnnIds = state.appMode !== 'auto' ? getSelectedAnnotationIds() : [];
+    if (selAnnIds.length > 1) {
+      for (const id of selAnnIds) {
+        const a = getAnnotationById(id);
+        if (a && !isAnnHidden(a.id)) drawAnnotationSelectedOutline(a);
+      }
+    } else {
+      const selectedAnnotation = getSelectedAnnotation();
+      if (selectedAnnotation && !isAnnHidden(selectedAnnotation.id)) {
+        drawSelectionHelpers(selectedAnnotation);
+      }
     }
 
     if (state.appMode === 'auto') {
@@ -25635,6 +25881,12 @@ function requestRender() {
     // they can size the line accurately without releasing to check the
     // measurement panel.
     drawLengthReadoutDuringHandleDrag();
+
+    // Rubber-band selection rectangle (drawn last, over everything, in world
+    // space so it tracks the sketch while zoomed/panned).
+    if (state.interaction && state.interaction.type === 'marquee' && state.interaction.moved) {
+      drawMarquee(state.interaction);
+    }
 
     ctx.restore();
     positionLabelEditor();

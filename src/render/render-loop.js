@@ -162,9 +162,20 @@ function requestRender() {
       drawImageSelection(selectedImage, showImageHandles);
     }
 
-    const selectedAnnotation = getSelectedAnnotation();
-    if (selectedAnnotation && !isAnnHidden(selectedAnnotation.id)) {
-      drawSelectionHelpers(selectedAnnotation);
+    // Line selection: a single selection shows full endpoint/handle helpers; a
+    // multi-selection (Shift+click / marquee) shows a lighter per-line outline
+    // on each member so the group reads as one.
+    const selAnnIds = state.appMode !== 'auto' ? getSelectedAnnotationIds() : [];
+    if (selAnnIds.length > 1) {
+      for (const id of selAnnIds) {
+        const a = getAnnotationById(id);
+        if (a && !isAnnHidden(a.id)) drawAnnotationSelectedOutline(a);
+      }
+    } else {
+      const selectedAnnotation = getSelectedAnnotation();
+      if (selectedAnnotation && !isAnnHidden(selectedAnnotation.id)) {
+        drawSelectionHelpers(selectedAnnotation);
+      }
     }
 
     if (state.appMode === 'auto') {
@@ -181,6 +192,12 @@ function requestRender() {
     // they can size the line accurately without releasing to check the
     // measurement panel.
     drawLengthReadoutDuringHandleDrag();
+
+    // Rubber-band selection rectangle (drawn last, over everything, in world
+    // space so it tracks the sketch while zoomed/panned).
+    if (state.interaction && state.interaction.type === 'marquee' && state.interaction.moved) {
+      drawMarquee(state.interaction);
+    }
 
     ctx.restore();
     positionLabelEditor();

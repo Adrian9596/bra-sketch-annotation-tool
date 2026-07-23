@@ -231,6 +231,11 @@
     // resize/spec anchor — this set only widens what a group drag / delete acts
     // on. Session-only (not part of the project snapshot).
     selectedImageIds: [],
+    // Shift+click / marquee-drag multi-selection of POM lines (annotations).
+    // Same derive-through-primary contract as selectedImageIds — always
+    // includes the primary `selection` when it is an annotation. Widens what
+    // group copy / reflect / delete / drag act on. Session-only.
+    selectedAnnotationIds: [],
 
     zoom: 1,
     panX: 0,

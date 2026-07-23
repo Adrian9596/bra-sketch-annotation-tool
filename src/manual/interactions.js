@@ -11,10 +11,11 @@
 
 function setSelection(kind, id) {
     state.selection = kind && id != null ? { kind, id } : { kind: null, id: null };
-    // Keep the image multi-selection in lockstep: selecting one image (or
-    // anything else, or nothing) collapses the set. Cmd/Ctrl+click widens it
-    // through toggleImageInSelection, which sets the set itself.
+    // Keep the image + annotation multi-selections in lockstep: selecting one
+    // (or anything else, or nothing) collapses the set. Shift+click / marquee
+    // widen the annotation set through the helpers below.
     state.selectedImageIds = kind === 'image' && id != null ? [id] : [];
+    state.selectedAnnotationIds = kind === 'annotation' && id != null ? [id] : [];
     if (kind === 'annotation') {
       const ann = getAnnotationById(id);
       if (ann) {
@@ -67,6 +68,111 @@ function setSelection(kind, id) {
       state.selection = { kind: 'image', id: primary };
     }
     if (state.autoMode) state.autoMode.anchorSelectedId = null;
+    updateUI();
+    requestRender();
+  }
+
+  // ---- Annotation (POM line) multi-selection: Shift+click + marquee ----
+  // Same derive-through-primary contract as the image helpers: the set is empty
+  // unless the primary selection is an annotation, and the primary is always
+  // included; only ids of lines that still exist (and aren't hidden) count.
+  function getSelectedAnnotationIds() {
+    if (state.selection.kind !== 'annotation' || state.selection.id == null) return [];
+    const raw = Array.isArray(state.selectedAnnotationIds) ? state.selectedAnnotationIds : [];
+    const ids = raw.slice();
+    if (!ids.includes(state.selection.id)) ids.push(state.selection.id);
+    return ids.filter((id) => !!getAnnotationById(id) && !isAnnHidden(id));
+  }
+
+  function getSelectedAnnotations() {
+    return getSelectedAnnotationIds().map((id) => getAnnotationById(id)).filter(Boolean);
+  }
+
+  function isAnnInSelection(id) {
+    return getSelectedAnnotationIds().includes(id);
+  }
+
+  // Adopt an annotation as the primary selection AND keep its draw defaults in
+  // sync, mirroring setSelection('annotation', …) without collapsing the set.
+  function setPrimaryAnnotation(id) {
+    state.selection = { kind: 'annotation', id };
+    const ann = getAnnotationById(id);
+    if (ann) {
+      state.drawStyle = ann.style || state.drawStyle;
+      state.drawColor = normalizeColorKey(ann.color);
+      state.arrowType = getArrowType(ann);
+    }
+  }
+
+  // Shift+click: add the line to the multi-selection, or remove it if already in.
+  function toggleAnnInSelection(id) {
+    if (!getAnnotationById(id) || isAnnHidden(id)) return;
+    const current = getSelectedAnnotationIds();
+    const had = current.includes(id);
+    const next = had ? current.filter((x) => x !== id) : current.concat([id]);
+    if (next.length === 0) {
+      state.selectedAnnotationIds = [];
+      state.selection = { kind: null, id: null };
+    } else {
+      state.selectedAnnotationIds = next;
+      setPrimaryAnnotation(had ? next[next.length - 1] : id);
+    }
+    updateUI();
+    requestRender();
+  }
+
+  // Does a segment a→b touch the axis-aligned rect? Liang–Barsky clip: true iff
+  // any part of the segment (incl. an endpoint inside) lies within the rect.
+  function segmentTouchesRect(a, b, minX, minY, maxX, maxY) {
+    let t0 = 0, t1 = 1;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const p = [-dx, dx, -dy, dy];
+    const q = [a.x - minX, maxX - a.x, a.y - minY, maxY - a.y];
+    for (let i = 0; i < 4; i += 1) {
+      if (p[i] === 0) { if (q[i] < 0) return false; }
+      else {
+        const r = q[i] / p[i];
+        if (p[i] < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+        else { if (r < t0) return false; if (r < t1) t1 = r; }
+      }
+    }
+    return t0 <= t1;
+  }
+
+  // A line is in the marquee only if its ACTUAL geometry passes through the box
+  // — test the drawn polyline (curves sampled), NOT the padded export bbox, so a
+  // small box over 3 lines doesn't grab every densely-packed POM around it.
+  function annotationTouchesRect(ann, minX, minY, maxX, maxY) {
+    const pts = getAnnotationPolyline(ann, BEZIER_SAMPLES);
+    for (let i = 0; i < pts.length - 1; i += 1) {
+      if (segmentTouchesRect(pts[i], pts[i + 1], minX, minY, maxX, maxY)) return true;
+    }
+    // A zero-length / single-point line still counts if that point is inside.
+    if (pts.length === 1) {
+      const p = pts[0];
+      return p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY;
+    }
+    return false;
+  }
+
+  // Replace/extend the line selection with everything a marquee rectangle
+  // touched. `additive` (Shift held) merges with the existing selection.
+  function selectAnnotationsInRect(x1, y1, x2, y2, additive) {
+    const loX = Math.min(x1, x2), hiX = Math.max(x1, x2);
+    const loY = Math.min(y1, y2), hiY = Math.max(y1, y2);
+    const hits = [];
+    for (const ann of state.annotations) {
+      if (isAnnHidden(ann.id)) continue;
+      if (annotationTouchesRect(ann, loX, loY, hiX, hiY)) hits.push(ann.id);
+    }
+    let ids = hits;
+    if (additive) ids = Array.from(new Set(getSelectedAnnotationIds().concat(hits)));
+    if (!ids.length) {
+      if (!additive) { state.selection = { kind: null, id: null }; state.selectedAnnotationIds = []; }
+    } else {
+      state.selectedAnnotationIds = ids;
+      setPrimaryAnnotation(ids[ids.length - 1]);
+    }
     updateUI();
     requestRender();
   }
@@ -224,7 +330,10 @@ function setSelection(kind, id) {
     }
 
     const selectedAnnotation = getSelectedAnnotation();
-    const handleHit = selectedAnnotation ? hitTestSelectedHandles(world, selectedAnnotation) : null;
+    // Endpoint/handle editing is a single-line action — a multi-selection is
+    // for moving/copying the group, so skip handles when more than one is picked.
+    const handleHit = selectedAnnotation && getSelectedAnnotationIds().length <= 1
+      ? hitTestSelectedHandles(world, selectedAnnotation) : null;
     if (handleHit) {
       startHandleDrag(selectedAnnotation.id, handleHit.part, world);
       return;
@@ -250,7 +359,16 @@ function setSelection(kind, id) {
 
     const annotationHit = hitTestAnnotations(world);
     if (annotationHit) {
-      setSelection('annotation', annotationHit.id);
+      // Shift+click toggles the line in the multi-selection (no drag).
+      if (e.shiftKey) {
+        toggleAnnInSelection(annotationHit.id);
+        return;
+      }
+      // Plain click on a line already part of a multi-selection keeps the group
+      // so the drag moves them all; otherwise it selects just this line.
+      if (!(getSelectedAnnotationIds().length > 1 && isAnnInSelection(annotationHit.id))) {
+        setSelection('annotation', annotationHit.id);
+      }
       if (annotationHit.part === 'label') {
         startLabelDrag(annotationHit.id, world);
       } else {
@@ -273,9 +391,10 @@ function setSelection(kind, id) {
       return;
     }
 
-    if (state.selection.kind != null) {
-      clearSelection();
-    }
+    // Empty canvas (select tool): start a marquee to rubber-band select lines.
+    // A plain click (no drag past a small threshold) clears the selection on
+    // mouseup; Shift adds the marquee's hits to the current selection.
+    startMarquee(world, e.shiftKey);
   }
 
   function onMouseMove(e) {
@@ -305,17 +424,30 @@ function setSelection(kind, id) {
     }
 
     if (interaction.type === 'drag-annotation') {
-      const ann = getAnnotationById(interaction.id);
-      if (!ann) return;
+      const ids = interaction.groupIds || [interaction.id];
       const dx = world.x - interaction.prevWorld.x;
       const dy = world.y - interaction.prevWorld.y;
       if (dx || dy) {
-        moveAnnotation(ann, dx, dy);
-        if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
+        for (const aid of ids) {
+          const a = getAnnotationById(aid);
+          if (!a) continue;
+          moveAnnotation(a, dx, dy);
+          if (isAutoDraft(a)) markDraftTouchedByTD(a);
+        }
         interaction.changed = true;
         interaction.prevWorld = world;
         requestRender();
       }
+      return;
+    }
+
+    if (interaction.type === 'marquee') {
+      interaction.currentWorld = { x: world.x, y: world.y };
+      const dx = interaction.currentWorld.x - interaction.startWorld.x;
+      const dy = interaction.currentWorld.y - interaction.startWorld.y;
+      // A tiny wobble is still a click; only past a few screen px is it a drag.
+      if (Math.abs(dx) > 3 / state.zoom || Math.abs(dy) > 3 / state.zoom) interaction.moved = true;
+      requestRender();
       return;
     }
 
@@ -406,6 +538,22 @@ function setSelection(kind, id) {
     if (!interaction) return;
 
     document.body.classList.remove('grabbing');
+
+    if (interaction.type === 'marquee') {
+      if (interaction.moved) {
+        selectAnnotationsInRect(
+          interaction.startWorld.x, interaction.startWorld.y,
+          interaction.currentWorld.x, interaction.currentWorld.y,
+          interaction.additive
+        );
+      } else if (!interaction.additive && state.selection.kind != null) {
+        // Plain click on empty canvas = clear selection.
+        clearSelection();
+      }
+      state.interaction = null;
+      requestRender();
+      return;
+    }
 
     if (interaction.type !== 'pan' && interaction.changed) {
       if (interaction.type === 'drag-anchor') {
@@ -916,7 +1064,20 @@ function beginTrackedInteraction(type, payload) {
 }
 
 function startAnnotationDrag(id, world) {
-  beginTrackedInteraction('drag-annotation', { id, prevWorld: world });
+  // Move every selected line together (Shift+click / marquee group), or just
+  // this one when it isn't part of a multi-selection.
+  const selected = getSelectedAnnotationIds();
+  const groupIds = (selected.length > 1 && selected.includes(id)) ? selected.slice() : [id];
+  beginTrackedInteraction('drag-annotation', { id, prevWorld: world, groupIds });
+}
+
+function startMarquee(world, additive) {
+  beginTrackedInteraction('marquee', {
+    startWorld: { x: world.x, y: world.y },
+    currentWorld: { x: world.x, y: world.y },
+    additive: !!additive,
+    moved: false,
+  });
 }
 
 function startLabelDrag(id, world) {

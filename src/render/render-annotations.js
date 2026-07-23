@@ -163,6 +163,34 @@
     drawAdjustmentReadout(ann);
   }
 
+  // Lighter per-line marker for a MULTI-selection (Shift+click / marquee): just
+  // the endpoint dots, no control/label handles or readout — enough to show the
+  // line is in the group without the busy single-line editing apparatus.
+  function drawAnnotationSelectedOutline(ann) {
+    if (!ann || !ann.start || !ann.end) return;
+    ctx.save();
+    drawHandle(ann.start, true, false);
+    drawHandle(ann.end, true, false);
+    ctx.restore();
+  }
+
+  // Rubber-band selection rectangle, in world coordinates.
+  function drawMarquee(m) {
+    if (!m || !m.startWorld || !m.currentWorld) return;
+    const x = Math.min(m.startWorld.x, m.currentWorld.x);
+    const y = Math.min(m.startWorld.y, m.currentWorld.y);
+    const w = Math.abs(m.currentWorld.x - m.startWorld.x);
+    const h = Math.abs(m.currentWorld.y - m.startWorld.y);
+    ctx.save();
+    ctx.fillStyle = 'rgba(53,109,255,0.10)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(53,109,255,0.75)';
+    ctx.lineWidth = 1 / state.zoom;
+    ctx.setLineDash([5 / state.zoom, 4 / state.zoom]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.restore();
+  }
+
   // US-029: floating measurement readout, shown only WHILE the line is being
   // adjusted (endpoint/handle mouse-drag or an open key-nudge burst) so the
   // TD can steer toward a target value without looking away to the panel.

@@ -79,7 +79,12 @@ function getAnnotationBounds(ann) {
 
 function createExportCanvas(bounds) {
   const isLandscape = bounds.width > bounds.height;
-  const mmToPx = 150 / 25.4;
+  // 300 DPI (print standard). At the old 150 DPI the A4 page held too few
+  // pixels, so a photo fit to the page rendered below its native resolution and
+  // looked soft; 300 DPI lets a single/dual-photo board render at (or above)
+  // native. Doubling DPI quadruples the JPEG pixels — still well within a
+  // single-page PDF budget at quality 0.94.
+  const mmToPx = 300 / 25.4;
   const pageWidthMm = isLandscape ? 297 : 210;
   const pageHeightMm = isLandscape ? 210 : 297;
   const pageWidthPx = Math.round(pageWidthMm * mmToPx);
@@ -94,6 +99,8 @@ function createExportCanvas(bounds) {
   exportCanvas.width = pageWidthPx;
   exportCanvas.height = pageHeightPx;
   const exportCtx = exportCanvas.getContext('2d');
+  exportCtx.imageSmoothingEnabled = true;
+  exportCtx.imageSmoothingQuality = 'high';
   const oldCtx = ctx;
   const oldZoom = state.zoom;
   const oldPanX = state.panX;
