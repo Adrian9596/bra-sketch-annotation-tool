@@ -103,8 +103,23 @@
   }
 
   function pickAutoSourceImage() {
-    // Use the currently selected image; otherwise the first image.
-    const selected = getSelectedImage();
-    if (selected) return selected;
-    return state.images[0] || null;
+    const ready = state.images.filter(
+      (im) => im && im.img && im.img.complete && (im.img.naturalWidth || im.img.width) > 0
+    );
+    // Single (or no) photo: the selected one, else the first. Unchanged — this
+    // is the common case and every headless test loads exactly one image.
+    if (ready.length <= 1) {
+      return getSelectedImage() || ready[0] || state.images[0] || null;
+    }
+    // Multiple photos on the board: the PRIMARY must be the front + back OUTER
+    // view — the photo with two garment panels side by side — while a separate
+    // front-inner cutaway is a single panel (TD rule: the 2-view photo is
+    // front+back, the other is front inner). Picking the selected image is
+    // wrong here because pasting/adding a photo auto-selects it, so loading the
+    // inner second would make IT primary and swap the roles. A 2-panel board is
+    // markedly wider relative to its height (aspect ~2) than a 1-panel cutaway
+    // (aspect ~1), so pick the widest-by-aspect photo as primary; the rest
+    // become auxiliary front-inner views regardless of load order / selection.
+    const aspect = (im) => (im.img.naturalWidth || im.img.width) / Math.max(1, im.img.naturalHeight || im.img.height);
+    return ready.slice().sort((a, b) => aspect(b) - aspect(a))[0];
   }

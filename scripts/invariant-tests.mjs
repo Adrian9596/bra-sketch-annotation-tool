@@ -50,6 +50,15 @@ const has9 = (c) => c.poms && c.poms['9'] && c.poms['9'].drawability !== 'REVIEW
   && c.anchors['inner-cup-top'] && c.anchors['inner-cup-bottom'];
 const has10 = (c) => c.poms && c.poms['10'] && c.poms['10'].drawability !== 'REVIEW_ONLY'
   && c.anchors['inner-cup-left'] && c.anchors['inner-cup-right'];
+// B1/B2/B3/B4 validate the cup against the FRONT view's axis and cup side. When
+// a front-inner view exists (a 3-view board / inner cutaway), POM 9/10 relocate
+// onto that inner panel (US-049 / ADR-0034) and are no longer positioned by the
+// front axis — so these front-axis checks do not apply. The inner-view shape is
+// still guarded by the view-agnostic A-series (dimensions + endpoint ordering).
+const cupOnInnerView = (c) => {
+  const a = c.anchors['inner-cup-top'] || c.anchors['inner-cup-left'];
+  return !!(a && a.viewRole === 'front_inner');
+};
 
 const ASSERTIONS = [
   // --- A: Geometric invariants ---------------------------------------------
@@ -120,7 +129,7 @@ const ASSERTIONS = [
   // --- B: Cup-bounds invariants --------------------------------------------
   {
     id: 'B1', name: 'POM 9 sits on the picked cup side',
-    require: (c) => has9(c) && c.cupModel && c.cupModel.side != null && c.axisX != null,
+    require: (c) => has9(c) && !cupOnInnerView(c) && c.cupModel && c.cupModel.side != null && c.axisX != null,
     test: (c) => {
       const tx = c.anchors['inner-cup-top'].x;
       const side = c.cupModel.side;
@@ -130,7 +139,7 @@ const ASSERTIONS = [
   },
   {
     id: 'B2', name: 'POM 10 stays inside the picked cup half',
-    require: (c) => has10(c) && c.cupModel && c.cupModel.side != null && c.axisX != null,
+    require: (c) => has10(c) && !cupOnInnerView(c) && c.cupModel && c.cupModel.side != null && c.axisX != null,
     test: (c) => {
       const lx = c.anchors['inner-cup-left'].x;
       const rx = c.anchors['inner-cup-right'].x;
@@ -141,7 +150,7 @@ const ASSERTIONS = [
   },
   {
     id: 'B3', name: 'POM 10 endpoints clear of CF axis',
-    require: (c) => has10(c) && c.axisX != null,
+    require: (c) => has10(c) && !cupOnInnerView(c) && c.axisX != null,
     test: (c) => {
       const lx = c.anchors['inner-cup-left'].x;
       const rx = c.anchors['inner-cup-right'].x;
@@ -153,7 +162,7 @@ const ASSERTIONS = [
   },
   {
     id: 'B4', name: 'POM 10 outer endpoint clear of side seam',
-    require: (c) => has10(c) && c.cupModel && c.cupModel.side != null,
+    require: (c) => has10(c) && !cupOnInnerView(c) && c.cupModel && c.cupModel.side != null,
     test: (c) => {
       const side = c.cupModel.side;
       const sideCol = side < 0 ? c.sideLeftX : c.sideRightX;
@@ -325,7 +334,7 @@ function captureExpr(imagePath) {
       }
       const anchors = {};
       for (const a of (result.anchors || [])) {
-        anchors[a.kind] = { x: a.x, y: a.y };
+        anchors[a.kind] = { x: a.x, y: a.y, viewRole: a.viewRole || null };
       }
       const cupModel = det.cupModel ? {
         side: det.cupModel.side,

@@ -8,8 +8,15 @@
 // state-aware tweaks (e.g. selection highlight, alpha) so the same
 // helpers serve hover, selected, and draft renderings.
 
-  function drawAnnotation(ann) {
+  function drawAnnotation(ann, withLabel = true) {
     drawLineCore(ann, 1);
+    if (withLabel) drawAnnotationLabel(ann);
+  }
+
+  // The callout number is drawn in a SEPARATE pass (after every line body and
+  // the anchor layer — see render()) so a later line or anchor never paints
+  // over a POM number. Keeps each number readable on a crowded 3-view board.
+  function drawAnnotationLabel(ann) {
     if (state.editingLabelId === ann.id) return;
     if (!labelsVisible()) return;
     drawLabel(ann.label, getLabelText(ann), state.selection.kind === 'annotation' && ann.id === state.selection.id, 1, getAnnotationColor(ann));

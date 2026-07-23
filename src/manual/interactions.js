@@ -11,6 +11,10 @@
 
 function setSelection(kind, id) {
     state.selection = kind && id != null ? { kind, id } : { kind: null, id: null };
+    // Keep the image multi-selection in lockstep: selecting one image (or
+    // anything else, or nothing) collapses the set. Cmd/Ctrl+click widens it
+    // through toggleImageInSelection, which sets the set itself.
+    state.selectedImageIds = kind === 'image' && id != null ? [id] : [];
     if (kind === 'annotation') {
       const ann = getAnnotationById(id);
       if (ann) {
@@ -19,6 +23,50 @@ function setSelection(kind, id) {
         state.arrowType = getArrowType(ann);
       }
     }
+    updateUI();
+    requestRender();
+  }
+
+  // The set of currently-selected image ids. Derived from state so a direct
+  // `state.selection = {...}` assignment elsewhere (which bypasses
+  // setSelection) can't leave a stale multi-selection: if the primary is not
+  // an image the set is empty, and the primary is always included. Only ids of
+  // images that still exist are returned.
+  function getSelectedImageIds() {
+    if (state.selection.kind !== 'image' || state.selection.id == null) return [];
+    const raw = Array.isArray(state.selectedImageIds) ? state.selectedImageIds : [];
+    const ids = raw.slice();
+    if (!ids.includes(state.selection.id)) ids.push(state.selection.id);
+    return ids.filter((id) => !!getImageById(id));
+  }
+
+  function getSelectedImages() {
+    return getSelectedImageIds().map((id) => getImageById(id)).filter(Boolean);
+  }
+
+  function isImageInSelection(id) {
+    return getSelectedImageIds().includes(id);
+  }
+
+  // Cmd/Ctrl+click: add the image to the multi-selection, or remove it if it
+  // was already selected. Manages state.selection + state.selectedImageIds
+  // directly (NOT via setSelection, which would collapse the set to one).
+  function toggleImageInSelection(id) {
+    if (!getImageById(id)) return;
+    const current = getSelectedImageIds();
+    const had = current.includes(id);
+    const next = had ? current.filter((x) => x !== id) : current.concat([id]);
+    if (next.length === 0) {
+      state.selectedImageIds = [];
+      state.selection = { kind: null, id: null };
+    } else {
+      // Primary anchor: the just-clicked image when adding; when removing the
+      // primary, fall back to the last still-selected image.
+      const primary = had ? next[next.length - 1] : id;
+      state.selectedImageIds = next;
+      state.selection = { kind: 'image', id: primary };
+    }
+    if (state.autoMode) state.autoMode.anchorSelectedId = null;
     updateUI();
     requestRender();
   }
@@ -125,7 +173,9 @@ function setSelection(kind, id) {
       // anchors and drafts with it — nothing desyncs. Anchors + drafts still win
       // the click; only bare image (or its resize corner) starts an image drag.
       const selImageAuto = getSelectedImage();
-      const imageHandleHitAuto = selImageAuto && !selImageAuto.locked
+      // Resize handles are only offered for a single selected image — a group
+      // selection is for moving together, not resizing.
+      const imageHandleHitAuto = selImageAuto && !selImageAuto.locked && getSelectedImageIds().length <= 1
         ? hitTestSelectedImageHandles(world, selImageAuto) : null;
       if (imageHandleHitAuto) {
         startImageResize(selImageAuto.id, imageHandleHitAuto.corner);
@@ -134,7 +184,17 @@ function setSelection(kind, id) {
       const imageHitAuto = hitTestImages(world);
       if (imageHitAuto) {
         state.autoMode.anchorSelectedId = null;
-        setSelection('image', imageHitAuto.id);
+        // Cmd/Ctrl+click toggles this photo in the multi-selection (no drag).
+        if (e.metaKey || e.ctrlKey) {
+          toggleImageInSelection(imageHitAuto.id);
+          return;
+        }
+        // A plain click on a photo that is already part of a multi-selection
+        // keeps the group so the drag moves them all; otherwise it selects
+        // just this one.
+        if (!(getSelectedImageIds().length > 1 && isImageInSelection(imageHitAuto.id))) {
+          setSelection('image', imageHitAuto.id);
+        }
         const hitImageAuto = getImageById(imageHitAuto.id);
         if (hitImageAuto && !hitImageAuto.locked) startImageDrag(imageHitAuto.id, world);
         updateUI();
@@ -171,11 +231,21 @@ function setSelection(kind, id) {
     }
 
     const selectedImage = getSelectedImage();
-    const imageHandleHit = selectedImage && !selectedImage.locked
+    const imageHandleHit = selectedImage && !selectedImage.locked && getSelectedImageIds().length <= 1
       ? hitTestSelectedImageHandles(world, selectedImage) : null;
     if (imageHandleHit) {
       startImageResize(selectedImage.id, imageHandleHit.corner);
       return;
+    }
+
+    // Cmd/Ctrl+click on a photo toggles it in the multi-selection before the
+    // annotation hit-test, so the modifier is dedicated to picking photos.
+    if ((e.metaKey || e.ctrlKey)) {
+      const modImageHit = hitTestImages(world);
+      if (modImageHit) {
+        toggleImageInSelection(modImageHit.id);
+        return;
+      }
     }
 
     const annotationHit = hitTestAnnotations(world);
@@ -191,7 +261,11 @@ function setSelection(kind, id) {
 
     const imageHit = hitTestImages(world);
     if (imageHit) {
-      setSelection('image', imageHit.id);
+      // Keep an existing multi-selection when clicking one of its members so the
+      // drag moves the whole group; otherwise select just this photo.
+      if (!(getSelectedImageIds().length > 1 && isImageInSelection(imageHit.id))) {
+        setSelection('image', imageHit.id);
+      }
       const hitImage = getImageById(imageHit.id);
       if (hitImage && !hitImage.locked) {
         startImageDrag(imageHit.id, world);
@@ -275,13 +349,14 @@ function setSelection(kind, id) {
     }
 
     if (interaction.type === 'drag-image') {
-      const image = getImageById(interaction.id);
-      if (!image) return;
+      const imageIds = interaction.imageIds || [interaction.id];
       const dx = world.x - interaction.prevWorld.x;
       const dy = world.y - interaction.prevWorld.y;
       if (dx || dy) {
-        image.x += dx;
-        image.y += dy;
+        for (const imgId of imageIds) {
+          const image = getImageById(imgId);
+          if (image) { image.x += dx; image.y += dy; }
+        }
         if (interaction.groupedAnnotationIds) {
           for (const annId of interaction.groupedAnnotationIds) {
             const ann = getAnnotationById(annId);
@@ -548,6 +623,22 @@ function onWheel(e) {
       return;
     }
 
+    // Save / Open the project (⌘/Ctrl+S, ⌘/Ctrl+O) — mirror the toolbar
+    // buttons; work in both modes and from a focused field (commit it first).
+    // preventDefault suppresses the browser's Save-page / Open-file dialogs.
+    if (isMeta && key === 's') {
+      e.preventDefault();
+      if (inField && typeof target.blur === 'function') target.blur();
+      el.saveProjectBtn.click();
+      return;
+    }
+    if (isMeta && key === 'o') {
+      e.preventDefault();
+      if (inField && typeof target.blur === 'function') target.blur();
+      el.openProjectBtn.click();
+      return;
+    }
+
     // Everything below is a canvas-level shortcut — ignore while typing.
     if (inField) return;
 
@@ -588,6 +679,19 @@ function onWheel(e) {
       if (ann) {
         e.preventDefault();
         cycleNudgePart(ann, e.shiftKey ? -1 : 1);
+        return;
+      }
+    }
+
+    // Auto-Mode step shortcuts mirror the "1 Detect · 2 Generate · 3 Review"
+    // flow chips: 1 = Detect, 2 = Generate Drafts, 3 = Apply Lines. Clicking the
+    // button (rather than calling the handler) respects its disabled + hidden
+    // (recovery-only) state, so a step can't fire before it's available.
+    if (!isMeta && state.appMode === 'auto' && (key === '1' || key === '2' || key === '3')) {
+      const btn = key === '1' ? el.autoDetectBtn : key === '2' ? el.autoGenerateBtn : el.autoApplyBtn;
+      if (btn && !btn.disabled && btn.offsetParent !== null) {
+        e.preventDefault();
+        btn.click();
         return;
       }
     }
@@ -716,6 +820,20 @@ function onWheel(e) {
       return;
     }
 
+    // P exports the PDF, I imports a PPTX — mirror the manual-only toolbar
+    // buttons (parity with E = Export Excel). Click the button so behavior
+    // (dialogs, disabled state) matches exactly.
+    if (!isMeta && key === 'p' && state.appMode !== 'auto') {
+      e.preventDefault();
+      el.exportPdfBtn.click();
+      return;
+    }
+    if (!isMeta && key === 'i' && state.appMode !== 'auto') {
+      e.preventDefault();
+      el.importPptxBtn.click();
+      return;
+    }
+
     if (!isMeta && key === 'n') {
       e.preventDefault();
       toggleLabels();
@@ -815,9 +933,26 @@ function startHandleDrag(id, part, world) {
 }
 
 function startImageDrag(id, world) {
-  const image = getImageById(id);
-  const groupedAnnotationIds = image ? getAnnotationsOnImage(image).map(ann => ann.id) : [];
-  beginTrackedInteraction('drag-image', { id, prevWorld: world, groupedAnnotationIds });
+  // Move every selected image together (Cmd/Ctrl+click multi-selection), or
+  // just the clicked one when nothing else is selected. Locked images never
+  // move. Each moving image carries the POM lines that sit on it; the combined
+  // set is de-duplicated so a line is never nudged twice.
+  const selected = getSelectedImageIds();
+  const movingIds = (selected.length > 1 ? selected : [id])
+    .filter((imgId) => { const im = getImageById(imgId); return im && !im.locked; });
+  if (!movingIds.includes(id)) movingIds.push(id);
+  const annIdSet = new Set();
+  for (const imgId of movingIds) {
+    const im = getImageById(imgId);
+    if (!im) continue;
+    for (const ann of getAnnotationsOnImage(im)) annIdSet.add(ann.id);
+  }
+  beginTrackedInteraction('drag-image', {
+    id,
+    prevWorld: world,
+    imageIds: movingIds,
+    groupedAnnotationIds: Array.from(annIdSet),
+  });
 }
 
 function startImageResize(id, corner) {

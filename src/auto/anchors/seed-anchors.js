@@ -585,6 +585,15 @@
         useIcRight = w.right;
         useIcBottomFromCup = { x: w.centerX, y: clamp01(cradle) };
       }
+      // Front-inner cutaway (singleView): the cup-model top runs up into the
+      // strap, so inner-cup-top seeds at the apex. The TD measures cup height
+      // from the strap→cup seam, so drop IC-top DOWN to that seam (never up),
+      // keeping its x. Front-outer views are unaffected (TD 2026-07-22).
+      if (detection.singleView && useIcTop
+          && detection.strapBottom && typeof detection.strapBottom.y === 'number'
+          && detection.strapBottom.y > useIcTop.y) {
+        useIcTop = { x: useIcTop.x, y: clamp01(detection.strapBottom.y) };
+      }
       // Side-top: underarm notch detected by walking up from the side-seam
       // column. Falls back to chest-line height on the side seam.
       const useSideTop = sideTopRightInk
@@ -637,7 +646,12 @@
       // (demo5: apex 0.19 too high, strapBottom 0.42 too low, join ≈ 0.27).
       // Interpolate rather than snap. When frontStrapStart is detected it
       // already sits at the join, so it is used as-is.
-      const STRAP_JOIN_FRAC = 0.35;
+      // On a front-outer line sketch the join sits ~1/3 of the way from apex
+      // toward strapBottom (0.35). On a front-INNER molded cutaway (singleView)
+      // the apex sits much higher relative to the seam, so 0.35 leaves 172/182
+      // up at the apex; the TD wants them at the strap→cup seam itself, so bias
+      // almost all the way to strapBottom (TD 2026-07-22, Evelyn 2-photo case).
+      const STRAP_JOIN_FRAC = detection.singleView ? 0.9 : 0.35;
       const strapJoinY = (srcY) => (detection.strapBottom
         && typeof detection.strapBottom.y === 'number'
         && detection.strapBottom.y > srcY)
@@ -748,57 +762,42 @@
       }
     }
 
-    if (frontInnerView && frontInnerView.width > 0 && frontInnerView.height > 0) {
+    if (frontInnerView && frontInnerView.width > 0 && frontInnerView.height > 0
+        && frontView && frontView.width > 0 && frontView.height > 0
+        && frontInnerView !== frontView) {
       const i = frontInnerView;
-      const innerBandY = i.y + i.height * 0.92;
+      const fv = frontView;
       const innerChestY = i.y + i.height * 0.22;
-      const innerCupMidY = i.y + i.height * 0.54;
-      // Front-inner view is the cup model's preferred source per rule.md
-      // ("Prefer front_inner view if it exists and the cup is clearly
-      // visible"). When a front_inner view exists buildCupModel classifies
-      // visibility as 'direct' and produces ink-derived endpoints — those track
-      // the actual cup and differ per sketch, so we MUST prefer them over the
-      // view-box ratios (which depend only on the view box and are constant
-      // across sketches). Precedence: cupModel > innerCupTopInk (kept as-is
-      // from the frontView branch — do not clobber) > view-box ratio fallback.
-      // Computed here rather than reused from the frontView branch because a
-      // sketch can have a front_inner view without a front_outer view, so that
-      // branch may not have run. The role override below tells the rest of the
-      // pipeline these anchors belong to the front_inner view regardless of
-      // which source produced their coordinates.
-      const innerCupPts = applyContourInnerSeam(innerCupFromCupModel(cupModel), cupModel);
-      if (innerCupPts) {
-        seeds = {
-          ...seeds,
-          'inner-cup-top':    innerCupPts.top,
-          'inner-cup-bottom': innerCupPts.bottom,
-          'inner-cup-left':   innerCupPts.left,
-          'inner-cup-right':  innerCupPts.right,
-        };
-      } else if (!innerCupTopInk) {
-        // No usable cup model and no ink heuristic — fall back to view-box
-        // ratios. The view box isolates the inner cup, so these still land on
-        // cup structure (a legitimate direct-view guess, not fabrication).
-        seeds = {
-          ...seeds,
-          'inner-cup-top':    inView(i, 0.50, 0.18),
-          'inner-cup-bottom': inView(i, 0.50, 0.82),
-          'inner-cup-left':   inView(i, 0.20, 0.53),
-          'inner-cup-right':  inView(i, 0.80, 0.53),
-        };
+      // A single photo that already contains a front-inner panel (a 3-view
+      // board: front-outer + back + front-inner) needs no second photo. The
+      // inner panel shows the SAME garment as the front-outer panel, so every
+      // cup / neckline / armhole POM measured on the front maps to the
+      // corresponding RELATIVE position on the inner panel. Transfer the
+      // front-outer-derived anchors (already seeded above, in front-box space —
+      // themselves cup-model / ink derived, so this carries the real detected
+      // shape, not view-box ratios) onto the inner box, then tag them to the
+      // front-inner view. ADR-0034: POM 9/10 (inner cup) AND 17/18
+      // (neckline/armhole) measure on the inner view; POM 8 stays on the
+      // front-outer view (center-front, anchors shared with POM 5/6) so it is
+      // deliberately NOT in this list. The separate-photo (aux-view) path is
+      // handled independently in runOfflineDetection and never reaches here.
+      const remap = (pt) => (pt ? {
+        x: clamp01(i.x + (pt.x - fv.x) / fv.width * i.width),
+        y: clamp01(i.y + (pt.y - fv.y) / fv.height * i.height),
+      } : pt);
+      const INNER_VIEW_KINDS = [
+        'inner-cup-top', 'inner-cup-bottom', 'inner-cup-left', 'inner-cup-right',
+        '171', '172', '181', '182',
+      ];
+      for (const kind of INNER_VIEW_KINDS) {
+        if (seeds[kind]) seeds[kind] = remap(seeds[kind]);
+        roleByKind[kind] = 'front_inner';
       }
-      // else: innerCupTopInk fired but the cupModel is hidden — keep the
-      // innerCupTopInk-derived seeds the frontView branch already set (rule.md
-      // legacy heuristic); do not overwrite them with view-box ratios.
-      roleByKind['inner-cup-top'] = 'front_inner';
-      roleByKind['inner-cup-bottom'] = 'front_inner';
-      roleByKind['inner-cup-left'] = 'front_inner';
-      roleByKind['inner-cup-right'] = 'front_inner';
       if (!detection.innerCupTop) {
         detection.innerCupTop = { x: i.x + i.width * 0.50, y: innerChestY };
       }
-      if (detection.cradleY == null) detection.cradleY = innerBandY;
-      if (detection.underbustY == null) detection.underbustY = innerCupMidY;
+      if (detection.cradleY == null) detection.cradleY = i.y + i.height * 0.92;
+      if (detection.underbustY == null) detection.underbustY = i.y + i.height * 0.54;
     }
 
     // Demote POM 9 / POM 10 to REVIEW_ONLY when no coherent cup model could

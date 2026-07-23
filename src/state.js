@@ -226,6 +226,11 @@
     showLabels: true,
     nextSequence: 1,
     selection: { kind: null, id: null },
+    // Cmd/Ctrl+click multi-selection of images. Always includes the primary
+    // `selection` when that is an image; empty otherwise. The primary stays the
+    // resize/spec anchor — this set only widens what a group drag / delete acts
+    // on. Session-only (not part of the project snapshot).
+    selectedImageIds: [],
 
     zoom: 1,
     panX: 0,

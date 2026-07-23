@@ -116,7 +116,7 @@ function requestRender() {
 
     for (const ann of state.annotations) {
       if (isAnnHidden(ann.id)) continue;
-      drawAnnotation(ann);
+      drawAnnotation(ann, false); // line body only — numbers drawn in the label pass below
     }
 
     // Auto Mode draft layer — rendered above project annotations so reviewers
@@ -125,7 +125,7 @@ function requestRender() {
     if (state.appMode === 'auto') {
       for (const draft of state.autoMode.draftAnnotations) {
         if (isDraftHidden(draft.id)) continue;
-        drawAutoDraftAnnotation(draft);
+        drawAutoDraftAnnotation(draft, false); // line body only — number drawn in the label pass below
       }
     }
 
@@ -135,13 +135,31 @@ function requestRender() {
       drawAnchorLoupe();
     }
 
+    // Label pass — POM numbers are drawn LAST, above every line body and the
+    // anchor layer, so a line or anchor never covers a callout number (this was
+    // the "line over the number" clutter on crowded 3-view boards). Draw order
+    // only; hit-testing is separate, so anchors and lines stay grabbable.
+    for (const ann of state.annotations) {
+      if (isAnnHidden(ann.id)) continue;
+      drawAnnotationLabel(ann);
+    }
+    if (state.appMode === 'auto') {
+      for (const draft of state.autoMode.draftAnnotations) {
+        if (isDraftHidden(draft.id)) continue;
+        drawAutoDraftLabel(draft);
+      }
+    }
+
     if (state.drawSession) {
       drawPreview();
     }
 
-    const selectedImage = getSelectedImage();
-    if (selectedImage) {
-      drawImageSelection(selectedImage);
+    // Highlight every selected image. A single selection keeps its resize
+    // handles; a Cmd/Ctrl+click group shows outlines only (move-together).
+    const selectedImages = getSelectedImages();
+    const showImageHandles = selectedImages.length <= 1;
+    for (const selectedImage of selectedImages) {
+      drawImageSelection(selectedImage, showImageHandles);
     }
 
     const selectedAnnotation = getSelectedAnnotation();

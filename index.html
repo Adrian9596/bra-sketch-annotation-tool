@@ -91,6 +91,24 @@
     cursor:not-allowed;
     transform:none;
   }
+  /* Inline keyboard-shortcut hint shown inside a button (e.g. Fit F). Driven by
+     a data-key attribute set in the markup; currentColor makes the badge adapt
+     to the button's own text color (dark on light buttons, light on active/dark
+     ones) with no per-state rules. Pseudo-element, so it survives dynamic label
+     text updates (Hide/Show Panel, Learning On/Off). */
+  button[data-key]::after{
+    content:attr(data-key);
+    margin-left:6px;
+    font:600 9.5px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color:currentColor;
+    border:1px solid currentColor;
+    border-radius:4px;
+    padding:0 3px;
+    vertical-align:middle;
+    opacity:.5;
+    white-space:nowrap;
+  }
+  button[data-key]:hover::after{ opacity:.62; }
   .chip{
     display:flex;
     align-items:center;
@@ -1519,13 +1537,13 @@
       </div>
     </div>
     <div id="autoModeBar" class="group group-auto">
-      <button id="autoDetectBtn" class="primary-btn" type="button" title="Run local offline vision on the source sketch to estimate view, landmarks, and anchors">Detect</button>
+      <button id="autoDetectBtn" data-key="1" class="primary-btn" type="button" title="Run local offline vision on the source sketch to estimate view, landmarks, and anchors">Detect</button>
       <button id="autoResetAnchorsBtn" type="button" title="Re-seed anchors from the current detection (discards manual anchor edits)">Reset Anchors</button>
       <button id="autoManageAnchorsBtn" type="button" title="Manage anchor visibility — hide all / show all, hide a group, or isolate one anchor">Anchors</button>
-      <button id="autoGenerateBtn" class="primary-btn" type="button" title="Generate 16 POM drafts from the current anchor positions">Generate Drafts</button>
+      <button id="autoGenerateBtn" data-key="2" class="primary-btn" type="button" title="Generate 16 POM drafts from the current anchor positions">Generate Drafts</button>
       <button id="autoApproveBtn" class="recovery-only" type="button" title="Approve the selected draft line">Approve</button>
       <button id="autoReviewOnlyBtn" class="recovery-only" type="button" title="Mark the selected draft as REVIEW_ONLY (no line will be drawn)">Review-Only</button>
-      <button id="autoApplyBtn" class="primary-btn recovery-only" type="button" title="Atomically copy all approved drafts into the project">Apply Lines</button>
+      <button id="autoApplyBtn" data-key="3" class="primary-btn recovery-only" type="button" title="Atomically copy all approved drafts into the project">Apply Lines</button>
       <button id="autoDiscardBtn" class="recovery-only" type="button" title="Discard all current drafts without changing the project">Discard Drafts</button>
       <button id="autoResetBoardBtn" type="button" title="Reset the working board — delete all photos and lines so you can start a new bra sketch">Reset Board</button>
       <button id="autoLearnToggleBtn" class="manual-only" type="button" title="Apply learned anchor calibration from past TD corrections">Learning</button>
@@ -1549,7 +1567,7 @@
       <span id="visionEngineChip" class="auto-status-chip vision" data-engine="warming" title="The OpenCV vision engine compiles in the background after the page loads">vision warming…</span>
     </div>
     <div class="group group-add">
-      <button id="addImageBtn" class="primary-btn has-ico" type="button" title="Add a sketch image (A) — or paste with Ctrl/Cmd+V, or drag one onto the board">
+      <button id="addImageBtn" data-key="A" class="primary-btn has-ico" type="button" title="Add a sketch image (A) — or paste with Ctrl/Cmd+V, or drag one onto the board">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 14.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9" />
           <circle cx="8.5" cy="9" r="1.4" />
@@ -1559,25 +1577,25 @@
         Add Image
       </button>
       <input id="imageFileInput" type="file" accept="image/*" multiple hidden />
-      <button id="importPptxBtn" class="manual-only" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PPTX</button>
+      <button id="importPptxBtn" data-key="I" class="manual-only" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PPTX</button>
       <input id="pptxFileInput" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" hidden />
     </div>
 
     <div class="group manual-only">
       <div class="toolset" role="group" aria-label="Drawing tools">
-        <button id="toolSelect" class="tool-btn active has-ico" type="button" title="Select & move — click a line, label, or image to edit it (S)">
+        <button id="toolSelect" data-key="S" class="tool-btn active has-ico" type="button" title="Select & move — click a line, label, or image to edit it (S)">
           <svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.4 3.1l13 6.1c.74.35.6 1.43-.2 1.59l-5 1-2 5c-.3.78-1.4.7-1.6-.1L4.2 4.4c-.2-.83.6-1.55 1.2-1.3z"/></svg>
           Select
         </button>
-        <button id="toolStraight" class="tool-btn has-ico" type="button" title="Straight line — click the start point, then the end point (0)">
+        <button id="toolStraight" data-key="0" class="tool-btn has-ico" type="button" title="Straight line — click the start point, then the end point (0)">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.7" fill="currentColor" stroke="none"/></svg>
           Straight
         </button>
-        <button id="toolCurved" class="tool-btn has-ico" type="button" title="Curved line — click the start point, then the end point (C)">
+        <button id="toolCurved" data-key="C" class="tool-btn has-ico" type="button" title="Curved line — click the start point, then the end point (C)">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 17C8 7 16 7 20 11"/><circle cx="4" cy="17" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="11" r="1.7" fill="currentColor" stroke="none"/></svg>
           Curved
         </button>
-        <button id="toolEraser" class="tool-btn has-ico" type="button" title="Eraser – paint white over unwanted lines in the photo (X)">
+        <button id="toolEraser" data-key="X" class="tool-btn has-ico" type="button" title="Eraser – paint white over unwanted lines in the photo (X)">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 18.5l-3-3a2 2 0 0 1 0-2.8l7-7a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8l-6.8 6.8z"/><line x1="8.5" y1="18.5" x2="20" y2="18.5"/></svg>
           Eraser
         </button>
@@ -1634,14 +1652,14 @@
     </div>
 
     <div class="group manual-only">
-      <button id="undoBtn" type="button">Undo</button>
-      <button id="redoBtn" type="button">Redo</button>
-      <button id="copyLineBtn" type="button" title="Copy the selected line (⌘/Ctrl+C)">Copy</button>
-      <button id="pasteLineBtn" type="button" title="Paste the copied line (⌘/Ctrl+V)">Paste</button>
-      <button id="reflectLineBtn" type="button" title="Reflect the selected line across the sketch axis (M)">Reflect</button>
-      <button id="deleteBtn" type="button" title="Delete the selected line or image">Delete</button>
+      <button id="undoBtn" data-key="⌘Z" type="button">Undo</button>
+      <button id="redoBtn" data-key="⌘⇧Z" type="button">Redo</button>
+      <button id="copyLineBtn" data-key="⌘C" type="button" title="Copy the selected line (⌘/Ctrl+C)">Copy</button>
+      <button id="pasteLineBtn" data-key="⌘V" type="button" title="Paste the copied line (⌘/Ctrl+V)">Paste</button>
+      <button id="reflectLineBtn" data-key="M" type="button" title="Reflect the selected line across the sketch axis (M)">Reflect</button>
+      <button id="deleteBtn" data-key="⌫" type="button" title="Delete the selected line or image">Delete</button>
       <button id="clearBtn" type="button" title="Clear all annotations">Clear</button>
-      <button id="lockImageBtn" class="has-ico" type="button" title="Lock the selected image so it can't be moved, resized, or deleted accidentally">
+      <button id="lockImageBtn" data-key="L" class="has-ico" type="button" title="Lock the selected image so it can't be moved, resized, or deleted accidentally">
         <svg id="lockImageIco" class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="5" y="11" width="14" height="9" rx="2" />
           <path d="M8 11V8a4 4 0 0 1 8 0v3" />
@@ -1651,25 +1669,25 @@
     </div>
 
     <div class="group">
-      <button id="fitBtn" type="button">Fit</button>
-      <button id="togglePanelBtn" type="button" title="Hide the Measurements panel (H)">Hide Panel</button>
-      <button id="toggleLabelsBtn" class="manual-only" type="button" title="Hide the callout numbers on the board (N) — the measurements panel still shows them">Hide Numbers</button>
+      <button id="fitBtn" data-key="F" type="button">Fit</button>
+      <button id="togglePanelBtn" data-key="H" type="button" title="Hide the Measurements panel (H)">Hide Panel</button>
+      <button id="toggleLabelsBtn" data-key="N" class="manual-only" type="button" title="Hide the callout numbers on the board (N) — the measurements panel still shows them">Hide Numbers</button>
       <button id="learningToolbarBtn" class="learning-toolbar-btn manual-only" type="button" title="Turn learning on, then correct Auto lines and save evidence for reuse">Learning Off</button>
       <span id="learningToolbarChip" class="auto-status-chip manual-only" title="Recorded learning samples">0 samples</span>
       <button id="setScaleBtn" type="button" title="Calibrate: select a line whose real length you know, then set the scale">Set Scale</button>
       <button id="clearScaleBtn" type="button" title="Remove calibration">Clear Scale</button>
       <button id="sizeRunBtn" type="button" title="Grade the base spec into a full size run (S–5XL)">Size Run</button>
-      <button id="gradingBtn" type="button" title="View and edit the per-size grading rule (G) — saved with the project">Grading</button>
+      <button id="gradingBtn" data-key="G" type="button" title="View and edit the per-size grading rule (G) — saved with the project">Grading</button>
     </div>
 
     <div class="group">
-      <button id="saveProjectBtn" type="button" title="Save the whole board (images, lines, measurements) to a file you can reopen later">Save</button>
-      <button id="openProjectBtn" type="button" title="Open a previously saved project file">Open</button>
+      <button id="saveProjectBtn" data-key="⌘S" type="button" title="Save the whole board (images, lines, measurements) to a file you can reopen later">Save</button>
+      <button id="openProjectBtn" data-key="⌘O" type="button" title="Open a previously saved project file">Open</button>
       <input id="projectFileInput" type="file" accept=".json,application/json" hidden />
       <button id="libraryBtn" class="manual-only" type="button" title="Browse every saved project archived inside this tool (per-style history, available for review and editing)">Library</button>
-      <button id="copyImageBtn" class="export-btn manual-only" type="button" title="Copy the whole board (sketch + lines + labels) to the clipboard as a PNG image (Ctrl/Cmd+Shift+C)">Copy Image</button>
-      <button id="exportPdfBtn" class="export-btn manual-only" type="button">Export PDF</button>
-      <button id="exportExcelBtn" class="export-btn manual-only" type="button" title="Export the measurement spec (E) — POMs, size run, sketch, as an .xlsx">Export Excel</button>
+      <button id="copyImageBtn" data-key="⌘⇧C" class="export-btn manual-only" type="button" title="Copy the whole board (sketch + lines + labels) to the clipboard as a PNG image (Ctrl/Cmd+Shift+C)">Copy Image</button>
+      <button id="exportPdfBtn" data-key="P" class="export-btn manual-only" type="button">Export PDF</button>
+      <button id="exportExcelBtn" data-key="E" class="export-btn manual-only" type="button" title="Export the measurement spec (E) — POMs, size run, sketch, as an .xlsx">Export Excel</button>
     </div>
 
     <div class="group group-help manual-only">
@@ -1776,6 +1794,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=20260707-1"></script>
+<script src="app.js?v=76beb3116cf1"></script>
 </body>
 </html>

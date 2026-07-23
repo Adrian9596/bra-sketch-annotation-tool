@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SOURCE_PARTS } from './source-parts.mjs';
@@ -44,18 +45,64 @@ try {
 
 const appPath = path.join(appDir, 'app.js');
 
+// Cache-buster for the <script src="app.js?v=..."> tag in index.html. It is a
+// content hash of the bundle, so it changes whenever app.js changes and stays
+// stable when it doesn't. A STATIC ?v= (the old hard-coded string) meant every
+// rebuild shipped a fresh app.js under the same URL, so browsers and the GitHub
+// Pages CDN kept serving the previously cached (stale) app.js indefinitely —
+// users saw pre-fix behavior long after a fix landed. Hashing the query fixes
+// that: a changed bundle => a new URL => clients fetch it. index.html is not
+// part of the bundle, so rewriting its tag cannot feed back into the hash.
+const APP_CACHE_BUSTER = createHash('sha256').update(bundle).digest('hex').slice(0, 12);
+const indexPath = path.join(appDir, 'index.html');
+const APP_TAG_RE = /(<script src="app\.js\?v=)[^"]*(">)/;
+
+function readIndexHtml() {
+  return existsSync(indexPath) ? readFileSync(indexPath, 'utf8') : null;
+}
+
+function currentIndexCacheBuster(html) {
+  if (html == null) return null;
+  const m = html.match(/<script src="app\.js\?v=([^"]*)">/);
+  return m ? m[1] : null;
+}
+
 if (verifyOnly) {
   const current = existsSync(appPath) ? readFileSync(appPath, 'utf8') : null;
   if (current !== bundle) {
     console.error('app.js is stale — it does not match src/*. Run `npm run build`.');
     process.exit(1);
   }
-  console.log('app.js is up to date with src/*');
+  const html = readIndexHtml();
+  const buster = currentIndexCacheBuster(html);
+  if (buster !== APP_CACHE_BUSTER) {
+    console.error(
+      `index.html app.js cache-buster is stale (found "${buster}", expected "${APP_CACHE_BUSTER}"). Run \`npm run build\`.`
+    );
+    process.exit(1);
+  }
+  console.log('app.js is up to date with src/* (cache-buster ' + APP_CACHE_BUSTER + ')');
   process.exit(0);
 }
 
 writeFileSync(appPath, bundle);
 console.log(`built app.js from ${parts.length} source parts`);
+
+// Sync index.html's app.js cache-buster to the new bundle hash.
+const html = readIndexHtml();
+if (html != null) {
+  if (!APP_TAG_RE.test(html)) {
+    console.error('index.html has no <script src="app.js?v=..."> tag to update.');
+    process.exit(1);
+  }
+  const nextHtml = html.replace(APP_TAG_RE, `$1${APP_CACHE_BUSTER}$2`);
+  if (nextHtml !== html) {
+    writeFileSync(indexPath, nextHtml);
+    console.log(`updated index.html app.js cache-buster -> ${APP_CACHE_BUSTER}`);
+  } else {
+    console.log(`index.html app.js cache-buster already current (${APP_CACHE_BUSTER})`);
+  }
+}
 
 function readJson(relativePath) {
   return JSON.parse(readFileSync(path.join(appDir, relativePath), 'utf8'));

@@ -436,6 +436,11 @@
     showLabels: true,
     nextSequence: 1,
     selection: { kind: null, id: null },
+    // Cmd/Ctrl+click multi-selection of images. Always includes the primary
+    // `selection` when that is an image; empty otherwise. The primary stays the
+    // resize/spec anchor — this set only widens what a group drag / delete acts
+    // on. Session-only (not part of the project snapshot).
+    selectedImageIds: [],
 
     zoom: 1,
     panX: 0,
@@ -7853,6 +7858,31 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     }
   }
 
+  // Remove one image and purge everything tied to it (erase strokes, and in
+  // Auto Mode its anchors / drafts / detection or aux view — US-052). Returns
+  // true if an image was actually removed. Caller handles the lock check,
+  // selection reset, history commit, and re-render.
+  function deleteImageById(deletedId) {
+    const before = state.images.length;
+    state.images = state.images.filter(image => image.id !== deletedId);
+    if (state.images.length === before) return false;
+    state.eraseStrokes = state.eraseStrokes.filter(stroke => stroke.imageId !== deletedId);
+    const am = state.autoMode;
+    if (am) {
+      am.anchors = (am.anchors || []).filter(a => a.sourceImageId !== deletedId);
+      am.draftAnnotations = (am.draftAnnotations || []).filter(d => d.sourceImageId !== deletedId);
+      if (am.anchorSelectedId != null && !am.anchors.some(a => a.id === am.anchorSelectedId)) am.anchorSelectedId = null;
+      if (am.detection) {
+        if (am.detection.sourceImageId === deletedId) am.detection = null;
+        else if (Array.isArray(am.detection.auxViews)) {
+          am.detection.auxViews = am.detection.auxViews.filter(v => v.sourceImageId !== deletedId);
+        }
+      }
+      if (typeof ensureAutoModeStatus === 'function') ensureAutoModeStatus();
+    }
+    return true;
+  }
+
   function deleteSelected() {
     if (state.selection.kind == null) return;
 
@@ -7876,36 +7906,25 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
         if (label && !state.deletedPomKeys.includes(label)) state.deletedPomKeys.push(label);
       }
     } else if (state.selection.kind === 'image') {
-      const target = getImageById(state.selection.id);
-      if (target && target.locked) {
-        showToast('Image is locked. Click Unlock first.');
+      // Delete every selected photo (Cmd/Ctrl+click group), skipping locked
+      // ones. US-052: deleteImageById purges each photo's Auto Mode state.
+      const targets = getSelectedImageIds().map(getImageById).filter(Boolean);
+      const unlocked = targets.filter(im => !im.locked);
+      const lockedCount = targets.length - unlocked.length;
+      if (!unlocked.length) {
+        showToast(lockedCount ? 'Image is locked. Click Unlock first.' : 'Select an image first.');
         return;
       }
-      const before = state.images.length;
-      const deletedId = state.selection.id;
-      state.images = state.images.filter(image => image.id !== deletedId);
-      if (state.images.length === before) return;
-      state.eraseStrokes = state.eraseStrokes.filter(stroke => stroke.imageId !== deletedId);
-      // US-052: purge Auto Mode state tied to the removed photo so nothing
-      // orphans (anchors/drafts pointing at a gone image, or its aux view). If
-      // it was the detection SOURCE, clear the detection; if an aux view, drop
-      // just that view. Re-derive the status chip afterward.
-      const am = state.autoMode;
-      if (am) {
-        am.anchors = (am.anchors || []).filter(a => a.sourceImageId !== deletedId);
-        am.draftAnnotations = (am.draftAnnotations || []).filter(d => d.sourceImageId !== deletedId);
-        if (am.anchorSelectedId != null && !am.anchors.some(a => a.id === am.anchorSelectedId)) am.anchorSelectedId = null;
-        if (am.detection) {
-          if (am.detection.sourceImageId === deletedId) am.detection = null;
-          else if (Array.isArray(am.detection.auxViews)) {
-            am.detection.auxViews = am.detection.auxViews.filter(v => v.sourceImageId !== deletedId);
-          }
-        }
-        if (typeof ensureAutoModeStatus === 'function') ensureAutoModeStatus();
+      let deletedAny = false;
+      for (const im of unlocked) { if (deleteImageById(im.id)) deletedAny = true; }
+      if (!deletedAny) return;
+      if (lockedCount) {
+        showToast(lockedCount + ' locked photo' + (lockedCount > 1 ? 's' : '') + ' kept — unlock to delete.');
       }
     }
 
     state.selection = { kind: null, id: null };
+    state.selectedImageIds = [];
     pushHistoryIfChanged();
     updateUI();
     requestRender();
@@ -8080,6 +8099,10 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
 
 function setSelection(kind, id) {
     state.selection = kind && id != null ? { kind, id } : { kind: null, id: null };
+    // Keep the image multi-selection in lockstep: selecting one image (or
+    // anything else, or nothing) collapses the set. Cmd/Ctrl+click widens it
+    // through toggleImageInSelection, which sets the set itself.
+    state.selectedImageIds = kind === 'image' && id != null ? [id] : [];
     if (kind === 'annotation') {
       const ann = getAnnotationById(id);
       if (ann) {
@@ -8088,6 +8111,50 @@ function setSelection(kind, id) {
         state.arrowType = getArrowType(ann);
       }
     }
+    updateUI();
+    requestRender();
+  }
+
+  // The set of currently-selected image ids. Derived from state so a direct
+  // `state.selection = {...}` assignment elsewhere (which bypasses
+  // setSelection) can't leave a stale multi-selection: if the primary is not
+  // an image the set is empty, and the primary is always included. Only ids of
+  // images that still exist are returned.
+  function getSelectedImageIds() {
+    if (state.selection.kind !== 'image' || state.selection.id == null) return [];
+    const raw = Array.isArray(state.selectedImageIds) ? state.selectedImageIds : [];
+    const ids = raw.slice();
+    if (!ids.includes(state.selection.id)) ids.push(state.selection.id);
+    return ids.filter((id) => !!getImageById(id));
+  }
+
+  function getSelectedImages() {
+    return getSelectedImageIds().map((id) => getImageById(id)).filter(Boolean);
+  }
+
+  function isImageInSelection(id) {
+    return getSelectedImageIds().includes(id);
+  }
+
+  // Cmd/Ctrl+click: add the image to the multi-selection, or remove it if it
+  // was already selected. Manages state.selection + state.selectedImageIds
+  // directly (NOT via setSelection, which would collapse the set to one).
+  function toggleImageInSelection(id) {
+    if (!getImageById(id)) return;
+    const current = getSelectedImageIds();
+    const had = current.includes(id);
+    const next = had ? current.filter((x) => x !== id) : current.concat([id]);
+    if (next.length === 0) {
+      state.selectedImageIds = [];
+      state.selection = { kind: null, id: null };
+    } else {
+      // Primary anchor: the just-clicked image when adding; when removing the
+      // primary, fall back to the last still-selected image.
+      const primary = had ? next[next.length - 1] : id;
+      state.selectedImageIds = next;
+      state.selection = { kind: 'image', id: primary };
+    }
+    if (state.autoMode) state.autoMode.anchorSelectedId = null;
     updateUI();
     requestRender();
   }
@@ -8194,7 +8261,9 @@ function setSelection(kind, id) {
       // anchors and drafts with it — nothing desyncs. Anchors + drafts still win
       // the click; only bare image (or its resize corner) starts an image drag.
       const selImageAuto = getSelectedImage();
-      const imageHandleHitAuto = selImageAuto && !selImageAuto.locked
+      // Resize handles are only offered for a single selected image — a group
+      // selection is for moving together, not resizing.
+      const imageHandleHitAuto = selImageAuto && !selImageAuto.locked && getSelectedImageIds().length <= 1
         ? hitTestSelectedImageHandles(world, selImageAuto) : null;
       if (imageHandleHitAuto) {
         startImageResize(selImageAuto.id, imageHandleHitAuto.corner);
@@ -8203,7 +8272,17 @@ function setSelection(kind, id) {
       const imageHitAuto = hitTestImages(world);
       if (imageHitAuto) {
         state.autoMode.anchorSelectedId = null;
-        setSelection('image', imageHitAuto.id);
+        // Cmd/Ctrl+click toggles this photo in the multi-selection (no drag).
+        if (e.metaKey || e.ctrlKey) {
+          toggleImageInSelection(imageHitAuto.id);
+          return;
+        }
+        // A plain click on a photo that is already part of a multi-selection
+        // keeps the group so the drag moves them all; otherwise it selects
+        // just this one.
+        if (!(getSelectedImageIds().length > 1 && isImageInSelection(imageHitAuto.id))) {
+          setSelection('image', imageHitAuto.id);
+        }
         const hitImageAuto = getImageById(imageHitAuto.id);
         if (hitImageAuto && !hitImageAuto.locked) startImageDrag(imageHitAuto.id, world);
         updateUI();
@@ -8240,11 +8319,21 @@ function setSelection(kind, id) {
     }
 
     const selectedImage = getSelectedImage();
-    const imageHandleHit = selectedImage && !selectedImage.locked
+    const imageHandleHit = selectedImage && !selectedImage.locked && getSelectedImageIds().length <= 1
       ? hitTestSelectedImageHandles(world, selectedImage) : null;
     if (imageHandleHit) {
       startImageResize(selectedImage.id, imageHandleHit.corner);
       return;
+    }
+
+    // Cmd/Ctrl+click on a photo toggles it in the multi-selection before the
+    // annotation hit-test, so the modifier is dedicated to picking photos.
+    if ((e.metaKey || e.ctrlKey)) {
+      const modImageHit = hitTestImages(world);
+      if (modImageHit) {
+        toggleImageInSelection(modImageHit.id);
+        return;
+      }
     }
 
     const annotationHit = hitTestAnnotations(world);
@@ -8260,7 +8349,11 @@ function setSelection(kind, id) {
 
     const imageHit = hitTestImages(world);
     if (imageHit) {
-      setSelection('image', imageHit.id);
+      // Keep an existing multi-selection when clicking one of its members so the
+      // drag moves the whole group; otherwise select just this photo.
+      if (!(getSelectedImageIds().length > 1 && isImageInSelection(imageHit.id))) {
+        setSelection('image', imageHit.id);
+      }
       const hitImage = getImageById(imageHit.id);
       if (hitImage && !hitImage.locked) {
         startImageDrag(imageHit.id, world);
@@ -8344,13 +8437,14 @@ function setSelection(kind, id) {
     }
 
     if (interaction.type === 'drag-image') {
-      const image = getImageById(interaction.id);
-      if (!image) return;
+      const imageIds = interaction.imageIds || [interaction.id];
       const dx = world.x - interaction.prevWorld.x;
       const dy = world.y - interaction.prevWorld.y;
       if (dx || dy) {
-        image.x += dx;
-        image.y += dy;
+        for (const imgId of imageIds) {
+          const image = getImageById(imgId);
+          if (image) { image.x += dx; image.y += dy; }
+        }
         if (interaction.groupedAnnotationIds) {
           for (const annId of interaction.groupedAnnotationIds) {
             const ann = getAnnotationById(annId);
@@ -8617,6 +8711,22 @@ function onWheel(e) {
       return;
     }
 
+    // Save / Open the project (⌘/Ctrl+S, ⌘/Ctrl+O) — mirror the toolbar
+    // buttons; work in both modes and from a focused field (commit it first).
+    // preventDefault suppresses the browser's Save-page / Open-file dialogs.
+    if (isMeta && key === 's') {
+      e.preventDefault();
+      if (inField && typeof target.blur === 'function') target.blur();
+      el.saveProjectBtn.click();
+      return;
+    }
+    if (isMeta && key === 'o') {
+      e.preventDefault();
+      if (inField && typeof target.blur === 'function') target.blur();
+      el.openProjectBtn.click();
+      return;
+    }
+
     // Everything below is a canvas-level shortcut — ignore while typing.
     if (inField) return;
 
@@ -8657,6 +8767,19 @@ function onWheel(e) {
       if (ann) {
         e.preventDefault();
         cycleNudgePart(ann, e.shiftKey ? -1 : 1);
+        return;
+      }
+    }
+
+    // Auto-Mode step shortcuts mirror the "1 Detect · 2 Generate · 3 Review"
+    // flow chips: 1 = Detect, 2 = Generate Drafts, 3 = Apply Lines. Clicking the
+    // button (rather than calling the handler) respects its disabled + hidden
+    // (recovery-only) state, so a step can't fire before it's available.
+    if (!isMeta && state.appMode === 'auto' && (key === '1' || key === '2' || key === '3')) {
+      const btn = key === '1' ? el.autoDetectBtn : key === '2' ? el.autoGenerateBtn : el.autoApplyBtn;
+      if (btn && !btn.disabled && btn.offsetParent !== null) {
+        e.preventDefault();
+        btn.click();
         return;
       }
     }
@@ -8785,6 +8908,20 @@ function onWheel(e) {
       return;
     }
 
+    // P exports the PDF, I imports a PPTX — mirror the manual-only toolbar
+    // buttons (parity with E = Export Excel). Click the button so behavior
+    // (dialogs, disabled state) matches exactly.
+    if (!isMeta && key === 'p' && state.appMode !== 'auto') {
+      e.preventDefault();
+      el.exportPdfBtn.click();
+      return;
+    }
+    if (!isMeta && key === 'i' && state.appMode !== 'auto') {
+      e.preventDefault();
+      el.importPptxBtn.click();
+      return;
+    }
+
     if (!isMeta && key === 'n') {
       e.preventDefault();
       toggleLabels();
@@ -8884,9 +9021,26 @@ function startHandleDrag(id, part, world) {
 }
 
 function startImageDrag(id, world) {
-  const image = getImageById(id);
-  const groupedAnnotationIds = image ? getAnnotationsOnImage(image).map(ann => ann.id) : [];
-  beginTrackedInteraction('drag-image', { id, prevWorld: world, groupedAnnotationIds });
+  // Move every selected image together (Cmd/Ctrl+click multi-selection), or
+  // just the clicked one when nothing else is selected. Locked images never
+  // move. Each moving image carries the POM lines that sit on it; the combined
+  // set is de-duplicated so a line is never nudged twice.
+  const selected = getSelectedImageIds();
+  const movingIds = (selected.length > 1 ? selected : [id])
+    .filter((imgId) => { const im = getImageById(imgId); return im && !im.locked; });
+  if (!movingIds.includes(id)) movingIds.push(id);
+  const annIdSet = new Set();
+  for (const imgId of movingIds) {
+    const im = getImageById(imgId);
+    if (!im) continue;
+    for (const ann of getAnnotationsOnImage(im)) annIdSet.add(ann.id);
+  }
+  beginTrackedInteraction('drag-image', {
+    id,
+    prevWorld: world,
+    imageIds: movingIds,
+    groupedAnnotationIds: Array.from(annIdSet),
+  });
 }
 
 function startImageResize(id, corner) {
@@ -10225,10 +10379,25 @@ function getAnnotationsOnImage(image) {
   }
 
   function pickAutoSourceImage() {
-    // Use the currently selected image; otherwise the first image.
-    const selected = getSelectedImage();
-    if (selected) return selected;
-    return state.images[0] || null;
+    const ready = state.images.filter(
+      (im) => im && im.img && im.img.complete && (im.img.naturalWidth || im.img.width) > 0
+    );
+    // Single (or no) photo: the selected one, else the first. Unchanged — this
+    // is the common case and every headless test loads exactly one image.
+    if (ready.length <= 1) {
+      return getSelectedImage() || ready[0] || state.images[0] || null;
+    }
+    // Multiple photos on the board: the PRIMARY must be the front + back OUTER
+    // view — the photo with two garment panels side by side — while a separate
+    // front-inner cutaway is a single panel (TD rule: the 2-view photo is
+    // front+back, the other is front inner). Picking the selected image is
+    // wrong here because pasting/adding a photo auto-selects it, so loading the
+    // inner second would make IT primary and swap the roles. A 2-panel board is
+    // markedly wider relative to its height (aspect ~2) than a 1-panel cutaway
+    // (aspect ~1), so pick the widest-by-aspect photo as primary; the rest
+    // become auxiliary front-inner views regardless of load order / selection.
+    const aspect = (im) => (im.img.naturalWidth || im.img.width) / Math.max(1, im.img.naturalHeight || im.img.height);
+    return ready.slice().sort((a, b) => aspect(b) - aspect(a))[0];
   }
 
   // ---- src/auto/detect/junctions.js ----
@@ -11335,23 +11504,15 @@ function getAnnotationsOnImage(image) {
     // image. Recognition + labeling ONLY: measurement stays on the source image
     // and no POM moves to these views (ADR 0011).
     detection.auxViews = buildAuxViews(sourceImage);
-    maybePromptForViewRoles(detection);
-    state.autoMode.anchors = seedAnchorsFromDetection(detection, sourceImage);
-    // US-049: when a front-inner view was recognized (with its own seeded
-    // anchors), relocate the cup/neckline/armhole POM anchors (9/10/17/18) onto
-    // that view so they DISPLAY + MEASURE on the inner cutaff. POM 8 stays on
-    // front-outer (its cf-top/cradle-cf-top are shared with POM 5/6). Only
-    // these dedicated anchor kinds move, so no other POM is affected. The line
-    // geometry follows in generatePOMDraftsFromAnchors' inner pass.
-    const innerViewSeed = (detection.auxViews || [])
-      .find(v => v && v.viewRole === 'front_inner' && Array.isArray(v.anchors) && v.anchors.length);
-    if (innerViewSeed) {
-      const MOVED_ANCHOR_KINDS = ['inner-cup-top', 'inner-cup-bottom', 'inner-cup-left', 'inner-cup-right', '171', '172', '181', '182'];
-      const innerByKind = Object.create(null);
-      for (const an of innerViewSeed.anchors) innerByKind[an.kind] = an;
-      state.autoMode.anchors = state.autoMode.anchors.map(an =>
-        (MOVED_ANCHOR_KINDS.indexOf(an.kind) >= 0 && innerByKind[an.kind]) ? innerByKind[an.kind] : an);
-    }
+    // When view-role classification is uncertain — e.g. a 3-panel board where
+    // "back" vs "front_inner" is genuinely ambiguous from the sketch — let the
+    // TD confirm/correct the roles BEFORE anchors are seeded, so a corrected
+    // front/back/inner assignment places anchors on the right panels. Awaited so
+    // seeding uses the confirmed roles. In test/label modes it returns
+    // immediately (see maybePromptForViewRoles) and seeding proceeds with the
+    // auto roles, so headless suites are unaffected.
+    await maybePromptForViewRoles(detection, sourceImage);
+    seedAndRelocateAnchors(detection, sourceImage);
     recordAutoTelemetryEvent('anchor_seeded', {
       sourceImageId: sourceImage.id,
       count: state.autoMode.anchors.length,
@@ -11377,6 +11538,27 @@ function getAnnotationsOnImage(image) {
     showToast('Detected sketch (' + detection.durationMs + 'ms)' + traceInfo + '. Anchors seeded — drag any that look wrong, then Generate POM Drafts.');
   }
 
+  // Seed anchors from the committed detection, then apply the US-049 relocation
+  // that moves the cup / neckline / armhole POMs (9/10/17/18) onto a SEPARATE
+  // front-inner PHOTO's own seeded anchors when one was recognized as an aux
+  // view. (An in-image front-inner PANEL — a 3-view board in a single photo — is
+  // handled inside seedAnchorsFromDetection itself, which transfers those anchors
+  // from the front-outer box onto the inner box.) Extracted so it can re-run
+  // after the TD confirms/corrects view roles, re-placing anchors to follow the
+  // corrected front/back/inner assignment.
+  function seedAndRelocateAnchors(detection, sourceImage) {
+    state.autoMode.anchors = seedAnchorsFromDetection(detection, sourceImage);
+    const innerViewSeed = (detection.auxViews || [])
+      .find(v => v && v.viewRole === 'front_inner' && Array.isArray(v.anchors) && v.anchors.length);
+    if (innerViewSeed) {
+      const MOVED_ANCHOR_KINDS = ['inner-cup-top', 'inner-cup-bottom', 'inner-cup-left', 'inner-cup-right', '171', '172', '181', '182'];
+      const innerByKind = Object.create(null);
+      for (const an of innerViewSeed.anchors) innerByKind[an.kind] = an;
+      state.autoMode.anchors = state.autoMode.anchors.map(an =>
+        (MOVED_ANCHOR_KINDS.indexOf(an.kind) >= 0 && innerByKind[an.kind]) ? innerByKind[an.kind] : an);
+    }
+  }
+
   // US-039: recognize EXTRA board photos as auxiliary views. The main pipeline
   // detects/measures ONE source image; a TD may add a front-inner cutaway (or
   // other reference) as its OWN photo. Each such photo becomes one aux view: an
@@ -11397,7 +11579,11 @@ function getAnnotationsOnImage(image) {
       let box = { x: 0, y: 0, width: 1, height: 1 }; // fallback: whole photo
       let det = null;
       try {
-        det = detectSketchFromImage(im, { debug: false });
+        // singleView: an aux photo is ONE garment view (front-inner cutaway),
+        // so detect it without the panel split — otherwise its gore/shading
+        // alleys split it into 3 boxes and the cup/neckline/armhole anchors
+        // seed off one cup instead of the whole, centered garment.
+        det = detectSketchFromImage(im, { debug: false, singleView: true });
         // Union of every detected view box = the full drawn extent, so the
         // label hugs the whole sketch even when an extra photo has more than
         // one panel (or its cups split at the gore). detection.bbox alone is
@@ -11436,6 +11622,11 @@ function getAnnotationsOnImage(image) {
       if (viewRole === 'front_inner' && det && det.bbox) {
         try {
           det.sourceImageId = im.id;
+          // Mark the detection as a single-view (front-inner cutaway) so the
+          // anchor seeder drops the top-of-cup POMs (172/182/IC-top) to the
+          // strap→cup seam for this view — the front-outer strap-join fraction
+          // lands them up at the apex on a molded cutaway.
+          det.singleView = true;
           delete det._mask; delete det._maskW; delete det._maskH; delete det.debug;
           auxView.detection = det;
           auxView.anchors = seedAnchorsFromDetection(det, im);
@@ -11512,6 +11703,12 @@ function getAnnotationsOnImage(image) {
       }
     }
     syncDetectionRoleIndexes(detection);
+    // The TD may have moved the back role to a different panel than the auto
+    // pick. Back POM landmarks (POM 11/12/13/15) were detected on the auto back
+    // box, so re-run that detection on the confirmed back box before anchors are
+    // (re-)seeded. Cup/neckline/armhole (front-inner) anchors are box-relative
+    // and follow the corrected role without re-detection.
+    redetectBackLandmarks(detection);
     detection.viewRoleReviewRequired = false;
   }
 
@@ -11945,6 +12142,12 @@ function getAnnotationsOnImage(image) {
       cv: cvAnalysis.inkBackend || null,
       params: activeDetectionParams(options),
       debug: !!(options && options.debug),
+      // singleView: treat the whole photo as ONE garment view — skip the
+      // front/back/inner panel split. Used for auxiliary photos (e.g. a
+      // front-inner cutaway added as its own image), which are a single view;
+      // the split otherwise carves the cutaway's gore/shading alleys into 3
+      // boxes and collapses the "front" onto one cup.
+      singleView: !!(options && options.singleView),
     });
   }
 
@@ -11987,6 +12190,7 @@ function getAnnotationsOnImage(image) {
     // unchanged in this phase — it is availability, not forced consumption.
     const geometry = analyzeGeometry(seg, {
       detectionParams, mark, stageTimingsMs, contourEvidence: contours,
+      singleView: !!(opts && opts.singleView),
     });
     if (geometry.earlyReturn) return geometry.earlyReturn;
 
@@ -12302,12 +12506,23 @@ function getAnnotationsOnImage(image) {
 
     // ---- Stage: view-box grouping + role classification ----
     let viewBoxesPx = detectSketchViewBoxes(filtered.keptComponents, globalStats, w, h);
-    // If the component grouping returned a single wide bbox covering most of
-    // the canvas, that's usually two views merged by stray ink. Try to split
-    // it by finding the empty vertical alley in the middle.
-    if (viewBoxesPx.length === 1) {
-      const subdivided = splitMergedViewByVerticalValley(dark, w, h, viewBoxesPx[0]);
-      if (subdivided.length > 1) viewBoxesPx = subdivided;
+    if (ctx.singleView) {
+      // Auxiliary single-view photo (e.g. a front-inner cutaway): force ONE
+      // view spanning ALL ink and skip the panel split. The split + front/back/
+      // inner classifier is for multi-panel boards; on a lone cutaway the gore
+      // gap and cup shading read as vertical alleys and carve it into 3 boxes,
+      // so the "front" primary collapses onto a single cup and axis/apex/side
+      // land in the wrong tenth of the image. One whole-garment box keeps the
+      // symmetry axis centered and the cup/neckline/armhole landmarks correct.
+      viewBoxesPx = [statsToBounds(globalStats)];
+    } else {
+      // Component grouping keys off horizontal gaps, so unevenly-spaced panels
+      // can merge (a 3-panel board where two panels sit closer than the gap
+      // threshold collapses into one double-wide box). Split any over-wide box
+      // at its empty vertical alley so each garment panel gets its own view
+      // box; the single lone-box case (two views bridged by stray ink) is
+      // subsumed here.
+      viewBoxesPx = splitWideViewBoxes(viewBoxesPx, dark, w, h);
     }
     // Flexible view-role classification. Supports a two-view layout
     // (front_outer + back) and a three-view layout (front_outer + back +
@@ -13603,79 +13818,16 @@ function getAnnotationsOnImage(image) {
         .sort((a, b) => (b.view.count || 0) - (a.view.count || 0));
       if (candidates.length) backViewIndex = candidates[0].index;
     }
-    const backInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findBackCenterLandmarks(dark, w, h, viewBoxesPx[backViewIndex])
-      : null;
-    // Per-view feature pass for the back view. Gives the back view its OWN
-    // axis, chest/band rows, side seams, and ink endpoints so back-view
-    // anchors can snap to ink instead of view-box proportions. The legacy
-    // backInfo above is kept for the panel-top/panel-bottom signal it already
-    // produces — both feed seedAnchorsFromDetection.
-    const backFeatures = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? detectFeaturesInViewBox(dark, w, h, viewBoxesPx[backViewIndex])
-      : null;
-    // Back-panel top/bottom from contour-following at ~22% from the back-view
-    // left edge — replaces the hardcoded inView(b, 0.225, 0.439/1.005)
-    // (off-image) fallbacks for POM 13.
-    const backPanelInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findBackPanelEdges(dark, w, h, viewBoxesPx[backViewIndex])
-      : null;
-    // POM 13 back-panel height: strap-joining point → bottom band (vertical).
-    // Prefers the back chest row (panel top edge) and the solid band edge.
-    const backPanelHeightInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex] && backFeatures)
-      ? findBackPanelHeight(
-          dark, w, h, viewBoxesPx[backViewIndex],
-          backFeatures.bandY  != null ? Math.round(backFeatures.bandY  * h) : -1,
-          backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1
-        )
-      : null;
-    // Back-view strap-top: topmost ink in the back's left strap zone, just
-    // above the back chest row. Replaces the hardcoded inView(b, 0.187, 0.405)
-    // seed in the back-view seed block.
-    const backStrapTopInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findBackStrapTopFromInk(
-          dark, w, h, viewBoxesPx[backViewIndex],
-          backFeatures && backFeatures.chestY != null
-            ? Math.round(backFeatures.chestY * h)
-            : -1
-        )
-      : null;
-    // Back-view strap INNER edges (POM 15). Inner edge of each shoulder strap
-    // where it meets the back band — replaces the chestLeftX/chestRightX
-    // (panel OUTER corner) seed that placed the anchors on the wrong edge.
-    const backStrapInnerInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findBackStrapInnerEdges(
-          dark, w, h, viewBoxesPx[backViewIndex],
-          backFeatures && backFeatures.chestY != null
-            ? Math.round(backFeatures.chestY * h)
-            : -1,
-          backFeatures && backFeatures.axisX != null
-            ? Math.round(backFeatures.axisX * w)
-            : -1
-        )
-      : null;
-    // Back-view side-top: topmost ink at the left-edge column of the back
-    // panel. Fixes POM 11 — previously side-top Y came from bChestY (the
-    // strongest horizontal row in the back view's top 50%), which locks onto
-    // strap hardware rather than the true underarm seam top. Scanning the
-    // full height of the left-edge column finds the actual outline start.
-    const backSideTopInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findSideTopFromInk(
-          dark, w, h, viewBoxesPx[backViewIndex],
-          viewBoxesPx[backViewIndex].minX + 1,  // left-edge column
-          -1,                                    // search full back bbox height
-          -1                                     // left side
-        )
-      : null;
-    const backSideBottomInfo = (backSideTopInfo && backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findSideBottomFromInk(dark, w, h, viewBoxesPx[backViewIndex], backSideTopInfo.point)
-      : null;
-    // Preferred POM-11 source: the outer-silhouette seam (top=armpit, bottom=hem
-    // corner). Falls back to the top-ink + downward-follow pair above.
-    const backSideInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findBackSideSeam(dark, w, h, viewBoxesPx[backViewIndex],
-          backFeatures && backFeatures.bandY != null ? Math.round(backFeatures.bandY * h) : -1)
-      : null;
+    const backBox = (backViewIndex >= 0 && viewBoxesPx[backViewIndex]) ? viewBoxesPx[backViewIndex] : null;
+    // All back-view landmarks (center axis, panel edges/height, strap top/inner,
+    // side seam) come from detectBackLandmarks so the identical pass can re-run
+    // if the TD reassigns the back role in the view-role dialog — needed on a
+    // 3-panel board where "back" vs "front_inner" was ambiguous and the auto
+    // pick was wrong (see maybePromptForViewRoles / redetectBackLandmarks).
+    const {
+      backInfo, backFeatures, backPanelInfo, backPanelHeightInfo,
+      backStrapTopInfo, backStrapInnerInfo, backSideTopInfo, backSideBottomInfo, backSideInfo,
+    } = detectBackLandmarks(dark, w, h, backBox);
 
     _stageMark('backFeatures');
 
@@ -16482,13 +16634,132 @@ function getAnnotationsOnImage(image) {
   // looking for a low-density vertical alley in its middle and, if found,
   // split it into [leftSub, rightSub]. Returns [view] unchanged when no
   // confident alley is detected.
-  function splitMergedViewByVerticalValley(dark, w, h, view) {
+  // Compute every back-view landmark from a back view box (pixel-space
+  // {minX,minY,maxX,maxY}) against the ink mask. Extracted verbatim from
+  // detectLandmarks so the SAME pass can re-run when the TD reassigns the back
+  // role in the view-role dialog (redetectBackLandmarks). Returns null-valued
+  // fields when backBox is null.
+  function detectBackLandmarks(dark, w, h, backBox) {
+    if (!backBox) {
+      return {
+        backInfo: null, backFeatures: null, backPanelInfo: null, backPanelHeightInfo: null,
+        backStrapTopInfo: null, backStrapInnerInfo: null, backSideTopInfo: null,
+        backSideBottomInfo: null, backSideInfo: null,
+      };
+    }
+    const backInfo = findBackCenterLandmarks(dark, w, h, backBox);
+    // Per-view feature pass: the back view's OWN axis, chest/band rows, side
+    // seams, and ink endpoints so back anchors snap to ink, not box ratios.
+    const backFeatures = detectFeaturesInViewBox(dark, w, h, backBox);
+    // Back-panel top/bottom (POM 13) from contour-following near the left edge.
+    const backPanelInfo = findBackPanelEdges(dark, w, h, backBox);
+    // POM 13 back-panel height: strap-joining point → bottom band (vertical).
+    const backPanelHeightInfo = backFeatures
+      ? findBackPanelHeight(
+          dark, w, h, backBox,
+          backFeatures.bandY  != null ? Math.round(backFeatures.bandY  * h) : -1,
+          backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1
+        )
+      : null;
+    // Back-view strap-top: topmost ink in the back's left strap zone (POM 14 back).
+    const backStrapTopInfo = findBackStrapTopFromInk(
+      dark, w, h, backBox,
+      backFeatures && backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1
+    );
+    // Back-view strap INNER edges (POM 15) where each strap meets the back band.
+    const backStrapInnerInfo = findBackStrapInnerEdges(
+      dark, w, h, backBox,
+      backFeatures && backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1,
+      backFeatures && backFeatures.axisX  != null ? Math.round(backFeatures.axisX  * w) : -1
+    );
+    // Back-view side-top (POM 11): topmost ink at the left-edge column.
+    const backSideTopInfo = findSideTopFromInk(dark, w, h, backBox, backBox.minX + 1, -1, -1);
+    const backSideBottomInfo = backSideTopInfo
+      ? findSideBottomFromInk(dark, w, h, backBox, backSideTopInfo.point)
+      : null;
+    // Preferred POM-11 source: the outer-silhouette seam (top=armpit, bottom=hem).
+    const backSideInfo = findBackSideSeam(
+      dark, w, h, backBox,
+      backFeatures && backFeatures.bandY != null ? Math.round(backFeatures.bandY * h) : -1
+    );
+    return {
+      backInfo, backFeatures, backPanelInfo, backPanelHeightInfo,
+      backStrapTopInfo, backStrapInnerInfo, backSideTopInfo, backSideBottomInfo, backSideInfo,
+    };
+  }
+
+  // Re-run back-view landmark detection against the CURRENT detection.backViewIndex
+  // and overwrite the back-* fields, so a TD role correction (back moved to a
+  // different panel) re-places the back POMs (11/12/13/15) on the new panel. Uses
+  // the retained ink mask (detection.inkMask, dimensions inkMaskW/H). No-op when
+  // the mask or a back box is unavailable. Mirrors the field mapping in
+  // detectLandmarks' detection assembly.
+  function redetectBackLandmarks(detection) {
+    if (!detection || !detection.inkMask || !detection.inkMaskW || !detection.inkMaskH) return;
+    const views = detection.views || detection.viewBoxes || [];
+    const idx = detection.backViewIndex;
+    const vb = (Number.isFinite(idx) && idx >= 0) ? views[idx] : null;
+    if (!vb || !(vb.width > 0) || !(vb.height > 0)) return;
+    const mw = detection.inkMaskW;
+    const mh = detection.inkMaskH;
+    const backBox = {
+      minX: Math.max(0, Math.round(vb.x * mw)),
+      minY: Math.max(0, Math.round(vb.y * mh)),
+      maxX: Math.min(mw - 1, Math.round((vb.x + vb.width) * mw)),
+      maxY: Math.min(mh - 1, Math.round((vb.y + vb.height) * mh)),
+      count: 0,
+    };
+    const bl = detectBackLandmarks(detection.inkMask, mw, mh, backBox);
+    detection.back = bl.backInfo;
+    detection.backFeatures = bl.backFeatures;
+    detection.backPanel = bl.backPanelInfo;
+    detection.backPanelHeight = bl.backPanelHeightInfo;
+    detection.backStrapInner = bl.backStrapInnerInfo;
+    detection.backStrapTop = bl.backStrapTopInfo ? bl.backStrapTopInfo.point : null;
+    detection.backSideTop = bl.backSideTopInfo ? bl.backSideTopInfo.point : null;
+    detection.backSideBottom = bl.backSideBottomInfo ? bl.backSideBottomInfo.point : null;
+    detection.backSide = bl.backSideInfo;
+  }
+
+  // Split every view box wide enough to plausibly hold more than one panel at
+  // its internal vertical alley, recursing so a board whose panels merged in
+  // component-grouping separates into one box per panel. This generalizes the
+  // former lone-box-only special case: a box is split-eligible when it spans
+  // more than half the canvas (>0.50w). A single garment panel on a multi-panel
+  // board is never that wide — there would be no room for the others — so a box
+  // over that gate is a merge of >=2 panels (e.g. EvelynBliss's back+inner
+  // grouped into one 0.565w box). Correct 2-panel boards keep two sub-half
+  // boxes and are untouched, which is why golden is unaffected. The per-box
+  // sanity gates inside splitMergedViewByVerticalValley (empty-alley run length
+  // + >=20% ink share each side) additionally reject splitting a genuine single
+  // view (deep-V neckline, wide back panel).
+  function splitWideViewBoxes(boxes, dark, w, h) {
+    if (!boxes || boxes.length === 0) return boxes;
+    const out = [];
+    for (const box of boxes) {
+      const parts = splitMergedViewByVerticalValley(dark, w, h, box, 0.50);
+      if (parts.length > 1) {
+        // Recurse at the SAME 0.50 gate so a box holding 3+ merged panels keeps
+        // splitting while any resulting piece still spans more than half the
+        // canvas. The gate stays at 0.50 (never lower) because a lone wide
+        // single panel — demo1/demo2 group into one >0.50w box that the split
+        // separates into front+back — must not have its halves re-split; a
+        // lower gate over-splits those legitimate single panels (golden regress).
+        out.push(...splitWideViewBoxes(parts, dark, w, h));
+      } else {
+        out.push(box);
+      }
+    }
+    return out;
+  }
+
+  function splitMergedViewByVerticalValley(dark, w, h, view, minWidthRatio = 0.50) {
     const { minX, minY, maxX, maxY } = view;
     const bw = maxX - minX + 1;
     const bh = maxY - minY + 1;
     // Require a fairly wide bbox before we even try to split — narrow boxes
     // are almost certainly a single view that just happens to be off-center.
-    if (bw < w * 0.50 || bh < 16) return [view];
+    if (bw < w * minWidthRatio || bh < 16) return [view];
 
     // Column density restricted to the view's bbox.
     const colDark = new Uint32Array(bw);
@@ -16614,22 +16885,47 @@ function getAnnotationsOnImage(image) {
     };
 
     const used = new Set();
-    let backIndex = assignBest('back', 'backScore', used);
-    if (backIndex >= 0) used.add(backIndex);
-
+    let backIndex = -1;
     let frontInnerIndex = -1;
-    if (eligible.length >= 3) {
-      frontInnerIndex = assignBest('front_inner', 'frontInnerScore', used);
-      if (frontInnerIndex >= 0) used.add(frontInnerIndex);
-    }
+    let frontOuterIndex = -1;
 
-    let frontOuterIndex = assignBest('front_outer', 'frontOuterScore', used);
-    if (frontOuterIndex < 0) {
-      const fallback = eligible
-        .filter(item => !used.has(item.index))
-        .sort((a, b) => a.score.centroidX - b.score.centroidX)[0] || eligible[0];
-      frontOuterIndex = fallback.index;
-      roles[frontOuterIndex] = 'front_outer';
+    if (eligible.length >= 3) {
+      // Panel order on a technical board is a fixed TD convention, left to
+      // right: front_outer, back, front_inner. Position is a far more reliable
+      // signal than the visual scores — a symmetric racerback back and a
+      // molded-cup inner cutaway score too alike to tell apart — so assign the
+      // three roles by centroidX order. Take the three highest-ink eligible
+      // views first so a stray 4th blob can't shift the mapping; any extra
+      // panel stays 'unknown' and trips reviewRequired below.
+      const trio = eligible
+        .slice()
+        .sort((a, b) => (b.view.count || 0) - (a.view.count || 0))
+        .slice(0, 3)
+        .sort((a, b) => a.score.centroidX - b.score.centroidX);
+      frontOuterIndex = trio[0].index; roles[frontOuterIndex] = 'front_outer';
+      backIndex       = trio[1].index; roles[backIndex] = 'back';
+      frontInnerIndex = trio[2].index; roles[frontInnerIndex] = 'front_inner';
+      used.add(frontOuterIndex); used.add(backIndex); used.add(frontInnerIndex);
+      // Position is authoritative for the 3-view layout, so assign a confident
+      // role score — the review dialog is NOT forced on a clean 3-panel board
+      // (the TD can still nudge anchors if a board ever breaks the convention).
+      for (const idx of [frontOuterIndex, backIndex, frontInnerIndex]) {
+        if (scores[idx]) scores[idx].roleConfidence = 0.75;
+      }
+    } else {
+      // Two panels (the common front + back board): back by best backScore, the
+      // remaining view is front_outer. Unchanged from the long-standing path.
+      backIndex = assignBest('back', 'backScore', used);
+      if (backIndex >= 0) used.add(backIndex);
+
+      frontOuterIndex = assignBest('front_outer', 'frontOuterScore', used);
+      if (frontOuterIndex < 0) {
+        const fallback = eligible
+          .filter(item => !used.has(item.index))
+          .sort((a, b) => a.score.centroidX - b.score.centroidX)[0] || eligible[0];
+        frontOuterIndex = fallback.index;
+        roles[frontOuterIndex] = 'front_outer';
+      }
     }
 
     const roleConfidence = (index, metric) => {
@@ -16641,9 +16937,13 @@ function getAnnotationsOnImage(image) {
       const runnerUp = values.length ? values[0] : 0;
       return clamp01(0.45 + (scores[index][metric] - runnerUp) * 0.55);
     };
-    if (frontOuterIndex >= 0) scores[frontOuterIndex].roleConfidence = roleConfidence(frontOuterIndex, 'frontOuterScore');
-    if (backIndex >= 0) scores[backIndex].roleConfidence = roleConfidence(backIndex, 'backScore');
-    if (frontInnerIndex >= 0) scores[frontInnerIndex].roleConfidence = roleConfidence(frontInnerIndex, 'frontInnerScore');
+    // The ≤2-panel path derives confidence from the visual score margin. The
+    // 3-view path already set a fixed positional confidence above (position is
+    // authoritative there), so it is not recomputed from scores here.
+    if (eligible.length < 3) {
+      if (frontOuterIndex >= 0) scores[frontOuterIndex].roleConfidence = roleConfidence(frontOuterIndex, 'frontOuterScore');
+      if (backIndex >= 0) scores[backIndex].roleConfidence = roleConfidence(backIndex, 'backScore');
+    }
 
     const reviewRequired =
       eligible.length > 3 ||
@@ -16664,7 +16964,6 @@ function getAnnotationsOnImage(image) {
     const bh = (view.maxY - view.minY + 1);
     const cx = (view.minX + view.maxX) / 2;
     const ink = view.count || 1;
-    let innerInk = 0;
     let edgeInk = 0;
     let centerVerticalInk = 0;
     if (dark && w && h && bw > 0 && bh > 0) {
@@ -16678,15 +16977,13 @@ function getAnnotationsOnImage(image) {
           if (!dark[base + x]) continue;
           const inInner = x >= view.minX + insetX && x <= view.maxX - insetX
             && y >= view.minY + insetY && y <= view.maxY - insetY;
-          if (inInner) innerInk += 1;
-          else edgeInk += 1;
+          if (!inInner) edgeInk += 1;
           if (x >= centerLo && x <= centerHi) centerVerticalInk += 1;
         }
       }
     }
     const widthRatio = w > 0 ? bw / w : 0;
     const aspect = bh / Math.max(1, bw);
-    const innerRatio = innerInk / ink;
     const edgeRatio = edgeInk / ink;
     const centerVerticalRatio = centerVerticalInk / ink;
     const leftness = 1 - clamp01(cx / Math.max(1, w));
@@ -16712,23 +17009,15 @@ function getAnnotationsOnImage(image) {
       edgeRatio * 0.20 +
       clamp01(aspect / 1.45) * 0.16 +
       (1 - symmetry) * 0.10;
-    const frontInnerScore =
-      innerRatio * 0.38 +
-      symmetry * 0.18 +
-      (1 - edgeRatio) * 0.18 +
-      (1 - rightness * 0.45) * 0.10 +
-      (1 - clamp01(Math.abs(aspect - 1.0))) * 0.16;
     return {
       centroidX: w > 0 ? cx / w : 0,
       widthRatio,
       count: view.count || 0,
-      innerRatio,
       edgeRatio,
       centerVerticalRatio,
       symmetry,
       frontOuterScore,
       backScore,
-      frontInnerScore,
       roleConfidence: 0,
     };
   }
@@ -17414,6 +17703,15 @@ function getAnnotationsOnImage(image) {
         useIcRight = w.right;
         useIcBottomFromCup = { x: w.centerX, y: clamp01(cradle) };
       }
+      // Front-inner cutaway (singleView): the cup-model top runs up into the
+      // strap, so inner-cup-top seeds at the apex. The TD measures cup height
+      // from the strap→cup seam, so drop IC-top DOWN to that seam (never up),
+      // keeping its x. Front-outer views are unaffected (TD 2026-07-22).
+      if (detection.singleView && useIcTop
+          && detection.strapBottom && typeof detection.strapBottom.y === 'number'
+          && detection.strapBottom.y > useIcTop.y) {
+        useIcTop = { x: useIcTop.x, y: clamp01(detection.strapBottom.y) };
+      }
       // Side-top: underarm notch detected by walking up from the side-seam
       // column. Falls back to chest-line height on the side seam.
       const useSideTop = sideTopRightInk
@@ -17466,7 +17764,12 @@ function getAnnotationsOnImage(image) {
       // (demo5: apex 0.19 too high, strapBottom 0.42 too low, join ≈ 0.27).
       // Interpolate rather than snap. When frontStrapStart is detected it
       // already sits at the join, so it is used as-is.
-      const STRAP_JOIN_FRAC = 0.35;
+      // On a front-outer line sketch the join sits ~1/3 of the way from apex
+      // toward strapBottom (0.35). On a front-INNER molded cutaway (singleView)
+      // the apex sits much higher relative to the seam, so 0.35 leaves 172/182
+      // up at the apex; the TD wants them at the strap→cup seam itself, so bias
+      // almost all the way to strapBottom (TD 2026-07-22, Evelyn 2-photo case).
+      const STRAP_JOIN_FRAC = detection.singleView ? 0.9 : 0.35;
       const strapJoinY = (srcY) => (detection.strapBottom
         && typeof detection.strapBottom.y === 'number'
         && detection.strapBottom.y > srcY)
@@ -17577,57 +17880,42 @@ function getAnnotationsOnImage(image) {
       }
     }
 
-    if (frontInnerView && frontInnerView.width > 0 && frontInnerView.height > 0) {
+    if (frontInnerView && frontInnerView.width > 0 && frontInnerView.height > 0
+        && frontView && frontView.width > 0 && frontView.height > 0
+        && frontInnerView !== frontView) {
       const i = frontInnerView;
-      const innerBandY = i.y + i.height * 0.92;
+      const fv = frontView;
       const innerChestY = i.y + i.height * 0.22;
-      const innerCupMidY = i.y + i.height * 0.54;
-      // Front-inner view is the cup model's preferred source per rule.md
-      // ("Prefer front_inner view if it exists and the cup is clearly
-      // visible"). When a front_inner view exists buildCupModel classifies
-      // visibility as 'direct' and produces ink-derived endpoints — those track
-      // the actual cup and differ per sketch, so we MUST prefer them over the
-      // view-box ratios (which depend only on the view box and are constant
-      // across sketches). Precedence: cupModel > innerCupTopInk (kept as-is
-      // from the frontView branch — do not clobber) > view-box ratio fallback.
-      // Computed here rather than reused from the frontView branch because a
-      // sketch can have a front_inner view without a front_outer view, so that
-      // branch may not have run. The role override below tells the rest of the
-      // pipeline these anchors belong to the front_inner view regardless of
-      // which source produced their coordinates.
-      const innerCupPts = applyContourInnerSeam(innerCupFromCupModel(cupModel), cupModel);
-      if (innerCupPts) {
-        seeds = {
-          ...seeds,
-          'inner-cup-top':    innerCupPts.top,
-          'inner-cup-bottom': innerCupPts.bottom,
-          'inner-cup-left':   innerCupPts.left,
-          'inner-cup-right':  innerCupPts.right,
-        };
-      } else if (!innerCupTopInk) {
-        // No usable cup model and no ink heuristic — fall back to view-box
-        // ratios. The view box isolates the inner cup, so these still land on
-        // cup structure (a legitimate direct-view guess, not fabrication).
-        seeds = {
-          ...seeds,
-          'inner-cup-top':    inView(i, 0.50, 0.18),
-          'inner-cup-bottom': inView(i, 0.50, 0.82),
-          'inner-cup-left':   inView(i, 0.20, 0.53),
-          'inner-cup-right':  inView(i, 0.80, 0.53),
-        };
+      // A single photo that already contains a front-inner panel (a 3-view
+      // board: front-outer + back + front-inner) needs no second photo. The
+      // inner panel shows the SAME garment as the front-outer panel, so every
+      // cup / neckline / armhole POM measured on the front maps to the
+      // corresponding RELATIVE position on the inner panel. Transfer the
+      // front-outer-derived anchors (already seeded above, in front-box space —
+      // themselves cup-model / ink derived, so this carries the real detected
+      // shape, not view-box ratios) onto the inner box, then tag them to the
+      // front-inner view. ADR-0034: POM 9/10 (inner cup) AND 17/18
+      // (neckline/armhole) measure on the inner view; POM 8 stays on the
+      // front-outer view (center-front, anchors shared with POM 5/6) so it is
+      // deliberately NOT in this list. The separate-photo (aux-view) path is
+      // handled independently in runOfflineDetection and never reaches here.
+      const remap = (pt) => (pt ? {
+        x: clamp01(i.x + (pt.x - fv.x) / fv.width * i.width),
+        y: clamp01(i.y + (pt.y - fv.y) / fv.height * i.height),
+      } : pt);
+      const INNER_VIEW_KINDS = [
+        'inner-cup-top', 'inner-cup-bottom', 'inner-cup-left', 'inner-cup-right',
+        '171', '172', '181', '182',
+      ];
+      for (const kind of INNER_VIEW_KINDS) {
+        if (seeds[kind]) seeds[kind] = remap(seeds[kind]);
+        roleByKind[kind] = 'front_inner';
       }
-      // else: innerCupTopInk fired but the cupModel is hidden — keep the
-      // innerCupTopInk-derived seeds the frontView branch already set (rule.md
-      // legacy heuristic); do not overwrite them with view-box ratios.
-      roleByKind['inner-cup-top'] = 'front_inner';
-      roleByKind['inner-cup-bottom'] = 'front_inner';
-      roleByKind['inner-cup-left'] = 'front_inner';
-      roleByKind['inner-cup-right'] = 'front_inner';
       if (!detection.innerCupTop) {
         detection.innerCupTop = { x: i.x + i.width * 0.50, y: innerChestY };
       }
-      if (detection.cradleY == null) detection.cradleY = innerBandY;
-      if (detection.underbustY == null) detection.underbustY = innerCupMidY;
+      if (detection.cradleY == null) detection.cradleY = i.y + i.height * 0.92;
+      if (detection.underbustY == null) detection.underbustY = i.y + i.height * 0.54;
     }
 
     // Demote POM 9 / POM 10 to REVIEW_ONLY when no coherent cup model could
@@ -24068,8 +24356,15 @@ function makeExportFileName() {
 // state-aware tweaks (e.g. selection highlight, alpha) so the same
 // helpers serve hover, selected, and draft renderings.
 
-  function drawAnnotation(ann) {
+  function drawAnnotation(ann, withLabel = true) {
     drawLineCore(ann, 1);
+    if (withLabel) drawAnnotationLabel(ann);
+  }
+
+  // The callout number is drawn in a SEPARATE pass (after every line body and
+  // the anchor layer — see render()) so a later line or anchor never paints
+  // over a POM number. Keeps each number readable on a crowded 3-view board.
+  function drawAnnotationLabel(ann) {
     if (state.editingLabelId === ann.id) return;
     if (!labelsVisible()) return;
     drawLabel(ann.label, getLabelText(ann), state.selection.kind === 'annotation' && ann.id === state.selection.id, 1, getAnnotationColor(ann));
@@ -24321,7 +24616,7 @@ function makeExportFileName() {
 // draws the per-anchor pins; anchorLabelOffsetX/Y bias the pin label so
 // labels don't pile on top of the anchor or sketch features.
 
-  function drawAutoDraftAnnotation(ann) {
+  function drawAutoDraftAnnotation(ann, withLabel = true) {
     if (isReviewOnlyDraft(ann)) return;
     if (!ann.start || !ann.end) return;
     ctx.save();
@@ -24342,10 +24637,18 @@ function makeExportFileName() {
 
     drawLineCore(ann, ann.tdApproved ? 0.95 : 0.7);
 
-    if (labelsVisible() && ann.label) {
-      drawLabel(ann.label, getLabelText(ann), isSelected, 1, getAnnotationColor(ann));
-    }
+    if (withLabel) drawAutoDraftLabel(ann);
     ctx.restore();
+  }
+
+  // Draft POM number, drawn in the label pass (after all lines + anchors) so it
+  // is never covered by a later draft line or an anchor — see render().
+  function drawAutoDraftLabel(ann) {
+    if (isReviewOnlyDraft(ann)) return;
+    if (!ann.start || !ann.end) return;
+    if (!labelsVisible() || !ann.label) return;
+    const isSelected = state.selection.kind === 'draft' && state.selection.id === ann.id;
+    drawLabel(ann.label, getLabelText(ann), isSelected, 1, getAnnotationColor(ann));
   }
 
   function hitTestAutoDraftAnnotations(world) {
@@ -25018,7 +25321,7 @@ function makeExportFileName() {
     ctx.restore();
   }
 
-  function drawImageSelection(image) {
+  function drawImageSelection(image, showHandles = true) {
     ctx.save();
     ctx.lineWidth = 2 / state.zoom;
     // Use a muted outline when the image is locked so the user sees the
@@ -25027,7 +25330,9 @@ function makeExportFileName() {
     ctx.setLineDash([10 / state.zoom, 6 / state.zoom]);
     ctx.strokeRect(image.x, image.y, image.width, image.height);
     ctx.setLineDash([]);
-    if (!image.locked) {
+    // Resize handles only when a single image is selected. A multi-selection
+    // (Cmd/Ctrl+click) is a move-together group, so it shows outlines only.
+    if (!image.locked && showHandles) {
       for (const corner of getImageCorners(image)) {
         drawImageResizeHandle(corner);
       }
@@ -25265,7 +25570,7 @@ function requestRender() {
 
     for (const ann of state.annotations) {
       if (isAnnHidden(ann.id)) continue;
-      drawAnnotation(ann);
+      drawAnnotation(ann, false); // line body only — numbers drawn in the label pass below
     }
 
     // Auto Mode draft layer — rendered above project annotations so reviewers
@@ -25274,7 +25579,7 @@ function requestRender() {
     if (state.appMode === 'auto') {
       for (const draft of state.autoMode.draftAnnotations) {
         if (isDraftHidden(draft.id)) continue;
-        drawAutoDraftAnnotation(draft);
+        drawAutoDraftAnnotation(draft, false); // line body only — number drawn in the label pass below
       }
     }
 
@@ -25284,13 +25589,31 @@ function requestRender() {
       drawAnchorLoupe();
     }
 
+    // Label pass — POM numbers are drawn LAST, above every line body and the
+    // anchor layer, so a line or anchor never covers a callout number (this was
+    // the "line over the number" clutter on crowded 3-view boards). Draw order
+    // only; hit-testing is separate, so anchors and lines stay grabbable.
+    for (const ann of state.annotations) {
+      if (isAnnHidden(ann.id)) continue;
+      drawAnnotationLabel(ann);
+    }
+    if (state.appMode === 'auto') {
+      for (const draft of state.autoMode.draftAnnotations) {
+        if (isDraftHidden(draft.id)) continue;
+        drawAutoDraftLabel(draft);
+      }
+    }
+
     if (state.drawSession) {
       drawPreview();
     }
 
-    const selectedImage = getSelectedImage();
-    if (selectedImage) {
-      drawImageSelection(selectedImage);
+    // Highlight every selected image. A single selection keeps its resize
+    // handles; a Cmd/Ctrl+click group shows outlines only (move-together).
+    const selectedImages = getSelectedImages();
+    const showImageHandles = selectedImages.length <= 1;
+    for (const selectedImage of selectedImages) {
+      drawImageSelection(selectedImage, showImageHandles);
     }
 
     const selectedAnnotation = getSelectedAnnotation();

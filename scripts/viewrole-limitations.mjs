@@ -90,6 +90,23 @@ function drawBack(setDark, bx, top, boxW, boxH) {
   for (let y = top; y <= chestY; y += 1) setDark(Math.round(cx - halfBox * 0.5), y);
 }
 
+// A front-inner cutaway: two cup lobes + inner bust line + center closure, with
+// minimal outer frame (high interior ink, low edge ink) — the front_inner signal.
+function drawInner(setDark, bx, top, boxW, boxH) {
+  const cx = bx;
+  const halfBox = Math.round(boxW / 2);
+  const cupR = Math.min(halfBox, boxH * 0.18);
+  const cupY = top + boxH * 0.45;
+  for (let theta = 0; theta < Math.PI * 2; theta += 0.004) {
+    const xL = Math.round(cx - halfBox * 0.45 + Math.cos(theta) * cupR * 0.7);
+    const yL = Math.round(cupY + Math.sin(theta) * cupR);
+    const xR = Math.round(cx + halfBox * 0.45 + Math.cos(theta) * cupR * 0.7);
+    setDark(xL, yL); setDark(xR, yL);
+  }
+  for (let x = cx - halfBox * 0.7; x <= cx + halfBox * 0.7; x += 1) setDark(Math.round(x), Math.round(top + boxH * 0.62));
+  for (let y = cupY - cupR; y <= cupY + cupR; y += 1) setDark(Math.round(cx), y);
+}
+
 function pack(canvas, engine) {
   return {
     engine,
@@ -125,6 +142,29 @@ function buildAmbiguous(width, height) {
   drawFront(c.setDark, Math.round(width * 0.28), Math.round(height * 0.18), Math.round(width * 0.26), Math.round(height * 0.64));
   drawFront(c.setDark, Math.round(width * 0.72), Math.round(height * 0.18), Math.round(width * 0.26), Math.round(height * 0.64));
   return pack(c, 'viewrole-ambiguous');
+}
+
+// Three panels — front_outer (left) + back (mid) + front_inner (right) — well
+// separated, so component grouping already yields three boxes.
+function buildThreeView(width, height) {
+  const c = makeInkCanvas(width, height);
+  drawFront(c.setDark, Math.round(width * 0.18), Math.round(height * 0.18), Math.round(width * 0.20), Math.round(height * 0.64));
+  drawBack(c.setDark, Math.round(width * 0.50), Math.round(height * 0.15), Math.round(width * 0.20), Math.round(height * 0.70));
+  drawInner(c.setDark, Math.round(width * 0.82), Math.round(height * 0.18), Math.round(width * 0.20), Math.round(height * 0.64));
+  return pack(c, 'viewrole-three-view');
+}
+
+// EvelynBliss's real pattern: the front panel sits apart on the left, while the
+// back and front-inner panels sit close on the right and component-grouping
+// merges them into ONE over-wide (>0.50w) box. splitWideViewBoxes must split
+// that merged box so three view boxes are recovered — without this, the back
+// and inner anchors smear across the gap between the two merged panels.
+function buildThreeViewTight(width, height) {
+  const c = makeInkCanvas(width, height);
+  drawFront(c.setDark, Math.round(width * 0.16), Math.round(height * 0.18), Math.round(width * 0.20), Math.round(height * 0.64));
+  drawBack(c.setDark, Math.round(width * 0.52), Math.round(height * 0.15), Math.round(width * 0.22), Math.round(height * 0.70));
+  drawInner(c.setDark, Math.round(width * 0.82), Math.round(height * 0.18), Math.round(width * 0.22), Math.round(height * 0.64));
+  return pack(c, 'viewrole-three-view-tight');
 }
 
 function rolesSummary(detection) {
@@ -168,6 +208,38 @@ const cases = [
     knownLimitation: 'Two symmetric front-like blobs give near-equal role scores; the classifier flags viewRoleReviewRequired so the TD confirms roles by hand. Which blob wins "back" here is not a stable contract.',
     probe: (d) => `reviewRequired=${d.viewRoleReviewRequired}`,
     analysis: buildAmbiguous(900, 480),
+  },
+  {
+    id: 'three-view-positional-roles',
+    label: 'front|back|inner panels are labeled by left-to-right position',
+    // Robust (TD convention, ADR-0035): the panel order on a technical board is
+    // always front_outer, back, front_inner left to right, so the classifier
+    // assigns the three roles by centroidX order — no reliance on the fuzzy
+    // back-vs-inner visual score that used to swap them.
+    hardExpected: 'front_outer,back,front_inner',
+    probe: (d) => (d.views || []).map(v => v.viewRole).join(','),
+    analysis: buildThreeView(1350, 480),
+  },
+  {
+    id: 'three-view-trust-position-no-review',
+    label: 'a clean 3-panel board is not forced into the role-review dialog',
+    // Position is authoritative, so a cleanly-split 3-panel board gets a
+    // confident role assignment and does NOT raise viewRoleReviewRequired — the
+    // TD is not prompted (ADR-0035 "skip it — trust position").
+    hardExpected: 'no-review',
+    probe: (d) => (d.viewRoleReviewRequired ? 'review-required' : 'no-review'),
+    analysis: buildThreeView(1350, 480),
+  },
+  {
+    id: 'three-view-tight-split',
+    label: 'three tightly-spaced panels are split back into three views',
+    // Robust: even when narrow gaps merge two panels into one over-wide box in
+    // component grouping, splitWideViewBoxes must recover three view boxes so a
+    // single-photo 3-view board (EvelynBliss) does not smear anchors across the
+    // gap between panels.
+    hardExpected: 'three-views',
+    probe: (d) => ((d.views || []).length === 3 ? 'three-views' : `views=${(d.views||[]).length}`),
+    analysis: buildThreeViewTight(1350, 480),
   },
 ];
 

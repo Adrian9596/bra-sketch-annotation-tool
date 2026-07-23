@@ -136,6 +136,31 @@
     }
   }
 
+  // Remove one image and purge everything tied to it (erase strokes, and in
+  // Auto Mode its anchors / drafts / detection or aux view — US-052). Returns
+  // true if an image was actually removed. Caller handles the lock check,
+  // selection reset, history commit, and re-render.
+  function deleteImageById(deletedId) {
+    const before = state.images.length;
+    state.images = state.images.filter(image => image.id !== deletedId);
+    if (state.images.length === before) return false;
+    state.eraseStrokes = state.eraseStrokes.filter(stroke => stroke.imageId !== deletedId);
+    const am = state.autoMode;
+    if (am) {
+      am.anchors = (am.anchors || []).filter(a => a.sourceImageId !== deletedId);
+      am.draftAnnotations = (am.draftAnnotations || []).filter(d => d.sourceImageId !== deletedId);
+      if (am.anchorSelectedId != null && !am.anchors.some(a => a.id === am.anchorSelectedId)) am.anchorSelectedId = null;
+      if (am.detection) {
+        if (am.detection.sourceImageId === deletedId) am.detection = null;
+        else if (Array.isArray(am.detection.auxViews)) {
+          am.detection.auxViews = am.detection.auxViews.filter(v => v.sourceImageId !== deletedId);
+        }
+      }
+      if (typeof ensureAutoModeStatus === 'function') ensureAutoModeStatus();
+    }
+    return true;
+  }
+
   function deleteSelected() {
     if (state.selection.kind == null) return;
 
@@ -159,36 +184,25 @@
         if (label && !state.deletedPomKeys.includes(label)) state.deletedPomKeys.push(label);
       }
     } else if (state.selection.kind === 'image') {
-      const target = getImageById(state.selection.id);
-      if (target && target.locked) {
-        showToast('Image is locked. Click Unlock first.');
+      // Delete every selected photo (Cmd/Ctrl+click group), skipping locked
+      // ones. US-052: deleteImageById purges each photo's Auto Mode state.
+      const targets = getSelectedImageIds().map(getImageById).filter(Boolean);
+      const unlocked = targets.filter(im => !im.locked);
+      const lockedCount = targets.length - unlocked.length;
+      if (!unlocked.length) {
+        showToast(lockedCount ? 'Image is locked. Click Unlock first.' : 'Select an image first.');
         return;
       }
-      const before = state.images.length;
-      const deletedId = state.selection.id;
-      state.images = state.images.filter(image => image.id !== deletedId);
-      if (state.images.length === before) return;
-      state.eraseStrokes = state.eraseStrokes.filter(stroke => stroke.imageId !== deletedId);
-      // US-052: purge Auto Mode state tied to the removed photo so nothing
-      // orphans (anchors/drafts pointing at a gone image, or its aux view). If
-      // it was the detection SOURCE, clear the detection; if an aux view, drop
-      // just that view. Re-derive the status chip afterward.
-      const am = state.autoMode;
-      if (am) {
-        am.anchors = (am.anchors || []).filter(a => a.sourceImageId !== deletedId);
-        am.draftAnnotations = (am.draftAnnotations || []).filter(d => d.sourceImageId !== deletedId);
-        if (am.anchorSelectedId != null && !am.anchors.some(a => a.id === am.anchorSelectedId)) am.anchorSelectedId = null;
-        if (am.detection) {
-          if (am.detection.sourceImageId === deletedId) am.detection = null;
-          else if (Array.isArray(am.detection.auxViews)) {
-            am.detection.auxViews = am.detection.auxViews.filter(v => v.sourceImageId !== deletedId);
-          }
-        }
-        if (typeof ensureAutoModeStatus === 'function') ensureAutoModeStatus();
+      let deletedAny = false;
+      for (const im of unlocked) { if (deleteImageById(im.id)) deletedAny = true; }
+      if (!deletedAny) return;
+      if (lockedCount) {
+        showToast(lockedCount + ' locked photo' + (lockedCount > 1 ? 's' : '') + ' kept — unlock to delete.');
       }
     }
 
     state.selection = { kind: null, id: null };
+    state.selectedImageIds = [];
     pushHistoryIfChanged();
     updateUI();
     requestRender();

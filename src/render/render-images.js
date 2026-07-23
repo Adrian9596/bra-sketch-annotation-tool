@@ -102,7 +102,7 @@
     ctx.restore();
   }
 
-  function drawImageSelection(image) {
+  function drawImageSelection(image, showHandles = true) {
     ctx.save();
     ctx.lineWidth = 2 / state.zoom;
     // Use a muted outline when the image is locked so the user sees the
@@ -111,7 +111,9 @@
     ctx.setLineDash([10 / state.zoom, 6 / state.zoom]);
     ctx.strokeRect(image.x, image.y, image.width, image.height);
     ctx.setLineDash([]);
-    if (!image.locked) {
+    // Resize handles only when a single image is selected. A multi-selection
+    // (Cmd/Ctrl+click) is a move-together group, so it shows outlines only.
+    if (!image.locked && showHandles) {
       for (const corner of getImageCorners(image)) {
         drawImageResizeHandle(corner);
       }

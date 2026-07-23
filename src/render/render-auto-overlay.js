@@ -7,7 +7,7 @@
 // draws the per-anchor pins; anchorLabelOffsetX/Y bias the pin label so
 // labels don't pile on top of the anchor or sketch features.
 
-  function drawAutoDraftAnnotation(ann) {
+  function drawAutoDraftAnnotation(ann, withLabel = true) {
     if (isReviewOnlyDraft(ann)) return;
     if (!ann.start || !ann.end) return;
     ctx.save();
@@ -28,10 +28,18 @@
 
     drawLineCore(ann, ann.tdApproved ? 0.95 : 0.7);
 
-    if (labelsVisible() && ann.label) {
-      drawLabel(ann.label, getLabelText(ann), isSelected, 1, getAnnotationColor(ann));
-    }
+    if (withLabel) drawAutoDraftLabel(ann);
     ctx.restore();
+  }
+
+  // Draft POM number, drawn in the label pass (after all lines + anchors) so it
+  // is never covered by a later draft line or an anchor — see render().
+  function drawAutoDraftLabel(ann) {
+    if (isReviewOnlyDraft(ann)) return;
+    if (!ann.start || !ann.end) return;
+    if (!labelsVisible() || !ann.label) return;
+    const isSelected = state.selection.kind === 'draft' && state.selection.id === ann.id;
+    drawLabel(ann.label, getLabelText(ann), isSelected, 1, getAnnotationColor(ann));
   }
 
   function hitTestAutoDraftAnnotations(world) {

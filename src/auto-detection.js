@@ -114,23 +114,15 @@
     // image. Recognition + labeling ONLY: measurement stays on the source image
     // and no POM moves to these views (ADR 0011).
     detection.auxViews = buildAuxViews(sourceImage);
-    maybePromptForViewRoles(detection);
-    state.autoMode.anchors = seedAnchorsFromDetection(detection, sourceImage);
-    // US-049: when a front-inner view was recognized (with its own seeded
-    // anchors), relocate the cup/neckline/armhole POM anchors (9/10/17/18) onto
-    // that view so they DISPLAY + MEASURE on the inner cutaff. POM 8 stays on
-    // front-outer (its cf-top/cradle-cf-top are shared with POM 5/6). Only
-    // these dedicated anchor kinds move, so no other POM is affected. The line
-    // geometry follows in generatePOMDraftsFromAnchors' inner pass.
-    const innerViewSeed = (detection.auxViews || [])
-      .find(v => v && v.viewRole === 'front_inner' && Array.isArray(v.anchors) && v.anchors.length);
-    if (innerViewSeed) {
-      const MOVED_ANCHOR_KINDS = ['inner-cup-top', 'inner-cup-bottom', 'inner-cup-left', 'inner-cup-right', '171', '172', '181', '182'];
-      const innerByKind = Object.create(null);
-      for (const an of innerViewSeed.anchors) innerByKind[an.kind] = an;
-      state.autoMode.anchors = state.autoMode.anchors.map(an =>
-        (MOVED_ANCHOR_KINDS.indexOf(an.kind) >= 0 && innerByKind[an.kind]) ? innerByKind[an.kind] : an);
-    }
+    // When view-role classification is uncertain — e.g. a 3-panel board where
+    // "back" vs "front_inner" is genuinely ambiguous from the sketch — let the
+    // TD confirm/correct the roles BEFORE anchors are seeded, so a corrected
+    // front/back/inner assignment places anchors on the right panels. Awaited so
+    // seeding uses the confirmed roles. In test/label modes it returns
+    // immediately (see maybePromptForViewRoles) and seeding proceeds with the
+    // auto roles, so headless suites are unaffected.
+    await maybePromptForViewRoles(detection, sourceImage);
+    seedAndRelocateAnchors(detection, sourceImage);
     recordAutoTelemetryEvent('anchor_seeded', {
       sourceImageId: sourceImage.id,
       count: state.autoMode.anchors.length,
@@ -156,6 +148,27 @@
     showToast('Detected sketch (' + detection.durationMs + 'ms)' + traceInfo + '. Anchors seeded — drag any that look wrong, then Generate POM Drafts.');
   }
 
+  // Seed anchors from the committed detection, then apply the US-049 relocation
+  // that moves the cup / neckline / armhole POMs (9/10/17/18) onto a SEPARATE
+  // front-inner PHOTO's own seeded anchors when one was recognized as an aux
+  // view. (An in-image front-inner PANEL — a 3-view board in a single photo — is
+  // handled inside seedAnchorsFromDetection itself, which transfers those anchors
+  // from the front-outer box onto the inner box.) Extracted so it can re-run
+  // after the TD confirms/corrects view roles, re-placing anchors to follow the
+  // corrected front/back/inner assignment.
+  function seedAndRelocateAnchors(detection, sourceImage) {
+    state.autoMode.anchors = seedAnchorsFromDetection(detection, sourceImage);
+    const innerViewSeed = (detection.auxViews || [])
+      .find(v => v && v.viewRole === 'front_inner' && Array.isArray(v.anchors) && v.anchors.length);
+    if (innerViewSeed) {
+      const MOVED_ANCHOR_KINDS = ['inner-cup-top', 'inner-cup-bottom', 'inner-cup-left', 'inner-cup-right', '171', '172', '181', '182'];
+      const innerByKind = Object.create(null);
+      for (const an of innerViewSeed.anchors) innerByKind[an.kind] = an;
+      state.autoMode.anchors = state.autoMode.anchors.map(an =>
+        (MOVED_ANCHOR_KINDS.indexOf(an.kind) >= 0 && innerByKind[an.kind]) ? innerByKind[an.kind] : an);
+    }
+  }
+
   // US-039: recognize EXTRA board photos as auxiliary views. The main pipeline
   // detects/measures ONE source image; a TD may add a front-inner cutaway (or
   // other reference) as its OWN photo. Each such photo becomes one aux view: an
@@ -176,7 +189,11 @@
       let box = { x: 0, y: 0, width: 1, height: 1 }; // fallback: whole photo
       let det = null;
       try {
-        det = detectSketchFromImage(im, { debug: false });
+        // singleView: an aux photo is ONE garment view (front-inner cutaway),
+        // so detect it without the panel split — otherwise its gore/shading
+        // alleys split it into 3 boxes and the cup/neckline/armhole anchors
+        // seed off one cup instead of the whole, centered garment.
+        det = detectSketchFromImage(im, { debug: false, singleView: true });
         // Union of every detected view box = the full drawn extent, so the
         // label hugs the whole sketch even when an extra photo has more than
         // one panel (or its cups split at the gore). detection.bbox alone is
@@ -215,6 +232,11 @@
       if (viewRole === 'front_inner' && det && det.bbox) {
         try {
           det.sourceImageId = im.id;
+          // Mark the detection as a single-view (front-inner cutaway) so the
+          // anchor seeder drops the top-of-cup POMs (172/182/IC-top) to the
+          // strap→cup seam for this view — the front-outer strap-join fraction
+          // lands them up at the apex on a molded cutaway.
+          det.singleView = true;
           delete det._mask; delete det._maskW; delete det._maskH; delete det.debug;
           auxView.detection = det;
           auxView.anchors = seedAnchorsFromDetection(det, im);
@@ -291,6 +313,12 @@
       }
     }
     syncDetectionRoleIndexes(detection);
+    // The TD may have moved the back role to a different panel than the auto
+    // pick. Back POM landmarks (POM 11/12/13/15) were detected on the auto back
+    // box, so re-run that detection on the confirmed back box before anchors are
+    // (re-)seeded. Cup/neckline/armhole (front-inner) anchors are box-relative
+    // and follow the corrected role without re-detection.
+    redetectBackLandmarks(detection);
     detection.viewRoleReviewRequired = false;
   }
 
@@ -724,6 +752,12 @@
       cv: cvAnalysis.inkBackend || null,
       params: activeDetectionParams(options),
       debug: !!(options && options.debug),
+      // singleView: treat the whole photo as ONE garment view — skip the
+      // front/back/inner panel split. Used for auxiliary photos (e.g. a
+      // front-inner cutaway added as its own image), which are a single view;
+      // the split otherwise carves the cutaway's gore/shading alleys into 3
+      // boxes and collapses the "front" onto one cup.
+      singleView: !!(options && options.singleView),
     });
   }
 
@@ -766,6 +800,7 @@
     // unchanged in this phase — it is availability, not forced consumption.
     const geometry = analyzeGeometry(seg, {
       detectionParams, mark, stageTimingsMs, contourEvidence: contours,
+      singleView: !!(opts && opts.singleView),
     });
     if (geometry.earlyReturn) return geometry.earlyReturn;
 
@@ -1081,12 +1116,23 @@
 
     // ---- Stage: view-box grouping + role classification ----
     let viewBoxesPx = detectSketchViewBoxes(filtered.keptComponents, globalStats, w, h);
-    // If the component grouping returned a single wide bbox covering most of
-    // the canvas, that's usually two views merged by stray ink. Try to split
-    // it by finding the empty vertical alley in the middle.
-    if (viewBoxesPx.length === 1) {
-      const subdivided = splitMergedViewByVerticalValley(dark, w, h, viewBoxesPx[0]);
-      if (subdivided.length > 1) viewBoxesPx = subdivided;
+    if (ctx.singleView) {
+      // Auxiliary single-view photo (e.g. a front-inner cutaway): force ONE
+      // view spanning ALL ink and skip the panel split. The split + front/back/
+      // inner classifier is for multi-panel boards; on a lone cutaway the gore
+      // gap and cup shading read as vertical alleys and carve it into 3 boxes,
+      // so the "front" primary collapses onto a single cup and axis/apex/side
+      // land in the wrong tenth of the image. One whole-garment box keeps the
+      // symmetry axis centered and the cup/neckline/armhole landmarks correct.
+      viewBoxesPx = [statsToBounds(globalStats)];
+    } else {
+      // Component grouping keys off horizontal gaps, so unevenly-spaced panels
+      // can merge (a 3-panel board where two panels sit closer than the gap
+      // threshold collapses into one double-wide box). Split any over-wide box
+      // at its empty vertical alley so each garment panel gets its own view
+      // box; the single lone-box case (two views bridged by stray ink) is
+      // subsumed here.
+      viewBoxesPx = splitWideViewBoxes(viewBoxesPx, dark, w, h);
     }
     // Flexible view-role classification. Supports a two-view layout
     // (front_outer + back) and a three-view layout (front_outer + back +
@@ -2382,79 +2428,16 @@
         .sort((a, b) => (b.view.count || 0) - (a.view.count || 0));
       if (candidates.length) backViewIndex = candidates[0].index;
     }
-    const backInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findBackCenterLandmarks(dark, w, h, viewBoxesPx[backViewIndex])
-      : null;
-    // Per-view feature pass for the back view. Gives the back view its OWN
-    // axis, chest/band rows, side seams, and ink endpoints so back-view
-    // anchors can snap to ink instead of view-box proportions. The legacy
-    // backInfo above is kept for the panel-top/panel-bottom signal it already
-    // produces — both feed seedAnchorsFromDetection.
-    const backFeatures = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? detectFeaturesInViewBox(dark, w, h, viewBoxesPx[backViewIndex])
-      : null;
-    // Back-panel top/bottom from contour-following at ~22% from the back-view
-    // left edge — replaces the hardcoded inView(b, 0.225, 0.439/1.005)
-    // (off-image) fallbacks for POM 13.
-    const backPanelInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findBackPanelEdges(dark, w, h, viewBoxesPx[backViewIndex])
-      : null;
-    // POM 13 back-panel height: strap-joining point → bottom band (vertical).
-    // Prefers the back chest row (panel top edge) and the solid band edge.
-    const backPanelHeightInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex] && backFeatures)
-      ? findBackPanelHeight(
-          dark, w, h, viewBoxesPx[backViewIndex],
-          backFeatures.bandY  != null ? Math.round(backFeatures.bandY  * h) : -1,
-          backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1
-        )
-      : null;
-    // Back-view strap-top: topmost ink in the back's left strap zone, just
-    // above the back chest row. Replaces the hardcoded inView(b, 0.187, 0.405)
-    // seed in the back-view seed block.
-    const backStrapTopInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findBackStrapTopFromInk(
-          dark, w, h, viewBoxesPx[backViewIndex],
-          backFeatures && backFeatures.chestY != null
-            ? Math.round(backFeatures.chestY * h)
-            : -1
-        )
-      : null;
-    // Back-view strap INNER edges (POM 15). Inner edge of each shoulder strap
-    // where it meets the back band — replaces the chestLeftX/chestRightX
-    // (panel OUTER corner) seed that placed the anchors on the wrong edge.
-    const backStrapInnerInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findBackStrapInnerEdges(
-          dark, w, h, viewBoxesPx[backViewIndex],
-          backFeatures && backFeatures.chestY != null
-            ? Math.round(backFeatures.chestY * h)
-            : -1,
-          backFeatures && backFeatures.axisX != null
-            ? Math.round(backFeatures.axisX * w)
-            : -1
-        )
-      : null;
-    // Back-view side-top: topmost ink at the left-edge column of the back
-    // panel. Fixes POM 11 — previously side-top Y came from bChestY (the
-    // strongest horizontal row in the back view's top 50%), which locks onto
-    // strap hardware rather than the true underarm seam top. Scanning the
-    // full height of the left-edge column finds the actual outline start.
-    const backSideTopInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findSideTopFromInk(
-          dark, w, h, viewBoxesPx[backViewIndex],
-          viewBoxesPx[backViewIndex].minX + 1,  // left-edge column
-          -1,                                    // search full back bbox height
-          -1                                     // left side
-        )
-      : null;
-    const backSideBottomInfo = (backSideTopInfo && backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findSideBottomFromInk(dark, w, h, viewBoxesPx[backViewIndex], backSideTopInfo.point)
-      : null;
-    // Preferred POM-11 source: the outer-silhouette seam (top=armpit, bottom=hem
-    // corner). Falls back to the top-ink + downward-follow pair above.
-    const backSideInfo = (backViewIndex >= 0 && viewBoxesPx[backViewIndex])
-      ? findBackSideSeam(dark, w, h, viewBoxesPx[backViewIndex],
-          backFeatures && backFeatures.bandY != null ? Math.round(backFeatures.bandY * h) : -1)
-      : null;
+    const backBox = (backViewIndex >= 0 && viewBoxesPx[backViewIndex]) ? viewBoxesPx[backViewIndex] : null;
+    // All back-view landmarks (center axis, panel edges/height, strap top/inner,
+    // side seam) come from detectBackLandmarks so the identical pass can re-run
+    // if the TD reassigns the back role in the view-role dialog — needed on a
+    // 3-panel board where "back" vs "front_inner" was ambiguous and the auto
+    // pick was wrong (see maybePromptForViewRoles / redetectBackLandmarks).
+    const {
+      backInfo, backFeatures, backPanelInfo, backPanelHeightInfo,
+      backStrapTopInfo, backStrapInnerInfo, backSideTopInfo, backSideBottomInfo, backSideInfo,
+    } = detectBackLandmarks(dark, w, h, backBox);
 
     _stageMark('backFeatures');
 
@@ -5261,13 +5244,132 @@
   // looking for a low-density vertical alley in its middle and, if found,
   // split it into [leftSub, rightSub]. Returns [view] unchanged when no
   // confident alley is detected.
-  function splitMergedViewByVerticalValley(dark, w, h, view) {
+  // Compute every back-view landmark from a back view box (pixel-space
+  // {minX,minY,maxX,maxY}) against the ink mask. Extracted verbatim from
+  // detectLandmarks so the SAME pass can re-run when the TD reassigns the back
+  // role in the view-role dialog (redetectBackLandmarks). Returns null-valued
+  // fields when backBox is null.
+  function detectBackLandmarks(dark, w, h, backBox) {
+    if (!backBox) {
+      return {
+        backInfo: null, backFeatures: null, backPanelInfo: null, backPanelHeightInfo: null,
+        backStrapTopInfo: null, backStrapInnerInfo: null, backSideTopInfo: null,
+        backSideBottomInfo: null, backSideInfo: null,
+      };
+    }
+    const backInfo = findBackCenterLandmarks(dark, w, h, backBox);
+    // Per-view feature pass: the back view's OWN axis, chest/band rows, side
+    // seams, and ink endpoints so back anchors snap to ink, not box ratios.
+    const backFeatures = detectFeaturesInViewBox(dark, w, h, backBox);
+    // Back-panel top/bottom (POM 13) from contour-following near the left edge.
+    const backPanelInfo = findBackPanelEdges(dark, w, h, backBox);
+    // POM 13 back-panel height: strap-joining point → bottom band (vertical).
+    const backPanelHeightInfo = backFeatures
+      ? findBackPanelHeight(
+          dark, w, h, backBox,
+          backFeatures.bandY  != null ? Math.round(backFeatures.bandY  * h) : -1,
+          backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1
+        )
+      : null;
+    // Back-view strap-top: topmost ink in the back's left strap zone (POM 14 back).
+    const backStrapTopInfo = findBackStrapTopFromInk(
+      dark, w, h, backBox,
+      backFeatures && backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1
+    );
+    // Back-view strap INNER edges (POM 15) where each strap meets the back band.
+    const backStrapInnerInfo = findBackStrapInnerEdges(
+      dark, w, h, backBox,
+      backFeatures && backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1,
+      backFeatures && backFeatures.axisX  != null ? Math.round(backFeatures.axisX  * w) : -1
+    );
+    // Back-view side-top (POM 11): topmost ink at the left-edge column.
+    const backSideTopInfo = findSideTopFromInk(dark, w, h, backBox, backBox.minX + 1, -1, -1);
+    const backSideBottomInfo = backSideTopInfo
+      ? findSideBottomFromInk(dark, w, h, backBox, backSideTopInfo.point)
+      : null;
+    // Preferred POM-11 source: the outer-silhouette seam (top=armpit, bottom=hem).
+    const backSideInfo = findBackSideSeam(
+      dark, w, h, backBox,
+      backFeatures && backFeatures.bandY != null ? Math.round(backFeatures.bandY * h) : -1
+    );
+    return {
+      backInfo, backFeatures, backPanelInfo, backPanelHeightInfo,
+      backStrapTopInfo, backStrapInnerInfo, backSideTopInfo, backSideBottomInfo, backSideInfo,
+    };
+  }
+
+  // Re-run back-view landmark detection against the CURRENT detection.backViewIndex
+  // and overwrite the back-* fields, so a TD role correction (back moved to a
+  // different panel) re-places the back POMs (11/12/13/15) on the new panel. Uses
+  // the retained ink mask (detection.inkMask, dimensions inkMaskW/H). No-op when
+  // the mask or a back box is unavailable. Mirrors the field mapping in
+  // detectLandmarks' detection assembly.
+  function redetectBackLandmarks(detection) {
+    if (!detection || !detection.inkMask || !detection.inkMaskW || !detection.inkMaskH) return;
+    const views = detection.views || detection.viewBoxes || [];
+    const idx = detection.backViewIndex;
+    const vb = (Number.isFinite(idx) && idx >= 0) ? views[idx] : null;
+    if (!vb || !(vb.width > 0) || !(vb.height > 0)) return;
+    const mw = detection.inkMaskW;
+    const mh = detection.inkMaskH;
+    const backBox = {
+      minX: Math.max(0, Math.round(vb.x * mw)),
+      minY: Math.max(0, Math.round(vb.y * mh)),
+      maxX: Math.min(mw - 1, Math.round((vb.x + vb.width) * mw)),
+      maxY: Math.min(mh - 1, Math.round((vb.y + vb.height) * mh)),
+      count: 0,
+    };
+    const bl = detectBackLandmarks(detection.inkMask, mw, mh, backBox);
+    detection.back = bl.backInfo;
+    detection.backFeatures = bl.backFeatures;
+    detection.backPanel = bl.backPanelInfo;
+    detection.backPanelHeight = bl.backPanelHeightInfo;
+    detection.backStrapInner = bl.backStrapInnerInfo;
+    detection.backStrapTop = bl.backStrapTopInfo ? bl.backStrapTopInfo.point : null;
+    detection.backSideTop = bl.backSideTopInfo ? bl.backSideTopInfo.point : null;
+    detection.backSideBottom = bl.backSideBottomInfo ? bl.backSideBottomInfo.point : null;
+    detection.backSide = bl.backSideInfo;
+  }
+
+  // Split every view box wide enough to plausibly hold more than one panel at
+  // its internal vertical alley, recursing so a board whose panels merged in
+  // component-grouping separates into one box per panel. This generalizes the
+  // former lone-box-only special case: a box is split-eligible when it spans
+  // more than half the canvas (>0.50w). A single garment panel on a multi-panel
+  // board is never that wide — there would be no room for the others — so a box
+  // over that gate is a merge of >=2 panels (e.g. EvelynBliss's back+inner
+  // grouped into one 0.565w box). Correct 2-panel boards keep two sub-half
+  // boxes and are untouched, which is why golden is unaffected. The per-box
+  // sanity gates inside splitMergedViewByVerticalValley (empty-alley run length
+  // + >=20% ink share each side) additionally reject splitting a genuine single
+  // view (deep-V neckline, wide back panel).
+  function splitWideViewBoxes(boxes, dark, w, h) {
+    if (!boxes || boxes.length === 0) return boxes;
+    const out = [];
+    for (const box of boxes) {
+      const parts = splitMergedViewByVerticalValley(dark, w, h, box, 0.50);
+      if (parts.length > 1) {
+        // Recurse at the SAME 0.50 gate so a box holding 3+ merged panels keeps
+        // splitting while any resulting piece still spans more than half the
+        // canvas. The gate stays at 0.50 (never lower) because a lone wide
+        // single panel — demo1/demo2 group into one >0.50w box that the split
+        // separates into front+back — must not have its halves re-split; a
+        // lower gate over-splits those legitimate single panels (golden regress).
+        out.push(...splitWideViewBoxes(parts, dark, w, h));
+      } else {
+        out.push(box);
+      }
+    }
+    return out;
+  }
+
+  function splitMergedViewByVerticalValley(dark, w, h, view, minWidthRatio = 0.50) {
     const { minX, minY, maxX, maxY } = view;
     const bw = maxX - minX + 1;
     const bh = maxY - minY + 1;
     // Require a fairly wide bbox before we even try to split — narrow boxes
     // are almost certainly a single view that just happens to be off-center.
-    if (bw < w * 0.50 || bh < 16) return [view];
+    if (bw < w * minWidthRatio || bh < 16) return [view];
 
     // Column density restricted to the view's bbox.
     const colDark = new Uint32Array(bw);
@@ -5393,22 +5495,47 @@
     };
 
     const used = new Set();
-    let backIndex = assignBest('back', 'backScore', used);
-    if (backIndex >= 0) used.add(backIndex);
-
+    let backIndex = -1;
     let frontInnerIndex = -1;
-    if (eligible.length >= 3) {
-      frontInnerIndex = assignBest('front_inner', 'frontInnerScore', used);
-      if (frontInnerIndex >= 0) used.add(frontInnerIndex);
-    }
+    let frontOuterIndex = -1;
 
-    let frontOuterIndex = assignBest('front_outer', 'frontOuterScore', used);
-    if (frontOuterIndex < 0) {
-      const fallback = eligible
-        .filter(item => !used.has(item.index))
-        .sort((a, b) => a.score.centroidX - b.score.centroidX)[0] || eligible[0];
-      frontOuterIndex = fallback.index;
-      roles[frontOuterIndex] = 'front_outer';
+    if (eligible.length >= 3) {
+      // Panel order on a technical board is a fixed TD convention, left to
+      // right: front_outer, back, front_inner. Position is a far more reliable
+      // signal than the visual scores — a symmetric racerback back and a
+      // molded-cup inner cutaway score too alike to tell apart — so assign the
+      // three roles by centroidX order. Take the three highest-ink eligible
+      // views first so a stray 4th blob can't shift the mapping; any extra
+      // panel stays 'unknown' and trips reviewRequired below.
+      const trio = eligible
+        .slice()
+        .sort((a, b) => (b.view.count || 0) - (a.view.count || 0))
+        .slice(0, 3)
+        .sort((a, b) => a.score.centroidX - b.score.centroidX);
+      frontOuterIndex = trio[0].index; roles[frontOuterIndex] = 'front_outer';
+      backIndex       = trio[1].index; roles[backIndex] = 'back';
+      frontInnerIndex = trio[2].index; roles[frontInnerIndex] = 'front_inner';
+      used.add(frontOuterIndex); used.add(backIndex); used.add(frontInnerIndex);
+      // Position is authoritative for the 3-view layout, so assign a confident
+      // role score — the review dialog is NOT forced on a clean 3-panel board
+      // (the TD can still nudge anchors if a board ever breaks the convention).
+      for (const idx of [frontOuterIndex, backIndex, frontInnerIndex]) {
+        if (scores[idx]) scores[idx].roleConfidence = 0.75;
+      }
+    } else {
+      // Two panels (the common front + back board): back by best backScore, the
+      // remaining view is front_outer. Unchanged from the long-standing path.
+      backIndex = assignBest('back', 'backScore', used);
+      if (backIndex >= 0) used.add(backIndex);
+
+      frontOuterIndex = assignBest('front_outer', 'frontOuterScore', used);
+      if (frontOuterIndex < 0) {
+        const fallback = eligible
+          .filter(item => !used.has(item.index))
+          .sort((a, b) => a.score.centroidX - b.score.centroidX)[0] || eligible[0];
+        frontOuterIndex = fallback.index;
+        roles[frontOuterIndex] = 'front_outer';
+      }
     }
 
     const roleConfidence = (index, metric) => {
@@ -5420,9 +5547,13 @@
       const runnerUp = values.length ? values[0] : 0;
       return clamp01(0.45 + (scores[index][metric] - runnerUp) * 0.55);
     };
-    if (frontOuterIndex >= 0) scores[frontOuterIndex].roleConfidence = roleConfidence(frontOuterIndex, 'frontOuterScore');
-    if (backIndex >= 0) scores[backIndex].roleConfidence = roleConfidence(backIndex, 'backScore');
-    if (frontInnerIndex >= 0) scores[frontInnerIndex].roleConfidence = roleConfidence(frontInnerIndex, 'frontInnerScore');
+    // The ≤2-panel path derives confidence from the visual score margin. The
+    // 3-view path already set a fixed positional confidence above (position is
+    // authoritative there), so it is not recomputed from scores here.
+    if (eligible.length < 3) {
+      if (frontOuterIndex >= 0) scores[frontOuterIndex].roleConfidence = roleConfidence(frontOuterIndex, 'frontOuterScore');
+      if (backIndex >= 0) scores[backIndex].roleConfidence = roleConfidence(backIndex, 'backScore');
+    }
 
     const reviewRequired =
       eligible.length > 3 ||
@@ -5443,7 +5574,6 @@
     const bh = (view.maxY - view.minY + 1);
     const cx = (view.minX + view.maxX) / 2;
     const ink = view.count || 1;
-    let innerInk = 0;
     let edgeInk = 0;
     let centerVerticalInk = 0;
     if (dark && w && h && bw > 0 && bh > 0) {
@@ -5457,15 +5587,13 @@
           if (!dark[base + x]) continue;
           const inInner = x >= view.minX + insetX && x <= view.maxX - insetX
             && y >= view.minY + insetY && y <= view.maxY - insetY;
-          if (inInner) innerInk += 1;
-          else edgeInk += 1;
+          if (!inInner) edgeInk += 1;
           if (x >= centerLo && x <= centerHi) centerVerticalInk += 1;
         }
       }
     }
     const widthRatio = w > 0 ? bw / w : 0;
     const aspect = bh / Math.max(1, bw);
-    const innerRatio = innerInk / ink;
     const edgeRatio = edgeInk / ink;
     const centerVerticalRatio = centerVerticalInk / ink;
     const leftness = 1 - clamp01(cx / Math.max(1, w));
@@ -5491,23 +5619,15 @@
       edgeRatio * 0.20 +
       clamp01(aspect / 1.45) * 0.16 +
       (1 - symmetry) * 0.10;
-    const frontInnerScore =
-      innerRatio * 0.38 +
-      symmetry * 0.18 +
-      (1 - edgeRatio) * 0.18 +
-      (1 - rightness * 0.45) * 0.10 +
-      (1 - clamp01(Math.abs(aspect - 1.0))) * 0.16;
     return {
       centroidX: w > 0 ? cx / w : 0,
       widthRatio,
       count: view.count || 0,
-      innerRatio,
       edgeRatio,
       centerVerticalRatio,
       symmetry,
       frontOuterScore,
       backScore,
-      frontInnerScore,
       roleConfidence: 0,
     };
   }
