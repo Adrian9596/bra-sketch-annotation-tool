@@ -8,6 +8,21 @@
 // state-aware tweaks (e.g. selection highlight, alpha) so the same
 // helpers serve hover, selected, and draft renderings.
 
+  // Feature sizes (stroke width, arrowheads, callout font) are divided by
+  // state.zoom so they hold a CONSTANT on-screen pixel size at any zoom. During
+  // export, though, "zoom" is the render density: copy-image and export-pdf set
+  // state.zoom to the native-resolution scale, which US-056 pushed well above the
+  // old flat 2x. Dividing features by that big scale pins them to a few absolute
+  // device pixels — hairline lines and microscopic callout numbers on a ~2000px+
+  // board (visible the moment Excel shrinks the pasted PNG). featureZoom() lets an
+  // export path override the divisor with a fixed reference (state.exportFeatureZoom)
+  // so features stay a constant FRACTION of the board while the image still renders
+  // at native resolution. Screen rendering never sets the override, so it is a
+  // no-op there (returns state.zoom unchanged).
+  function featureZoom() {
+    return state.exportFeatureZoom || state.zoom;
+  }
+
   function drawAnnotation(ann, withLabel = true) {
     drawLineCore(ann, 1);
     if (withLabel) drawAnnotationLabel(ann);
@@ -40,8 +55,8 @@
     } else if (style === 'bartack') {
       drawBartackStitchLine(ann, color, lineWidth);
     } else {
-      ctx.lineWidth = lineWidth / state.zoom;
-      ctx.setLineDash(style === 'dashed' ? [10 / state.zoom, 7 / state.zoom] : []);
+      ctx.lineWidth = lineWidth / featureZoom();
+      ctx.setLineDash(style === 'dashed' ? [10 / featureZoom(), 7 / featureZoom()] : []);
       drawAnnotationPath(ann);
       ctx.stroke();
     }
@@ -70,7 +85,7 @@
   function drawArrowheadsForStraight(ann, color, lineWidth) {
     const arrowType = getArrowType(ann);
     if (arrowType === 'none') return;
-    const arrowSize = (10 + lineWidth * 0.55) / state.zoom;
+    const arrowSize = (10 + lineWidth * 0.55) / featureZoom();
     drawArrowhead(ann.end, Math.atan2(ann.end.y - ann.start.y, ann.end.x - ann.start.x), arrowSize, color);
     if (arrowType === 'double') {
       drawArrowhead(ann.start, Math.atan2(ann.start.y - ann.end.y, ann.start.x - ann.end.x), arrowSize, color);
@@ -80,7 +95,7 @@
   function drawArrowheadsForCurve(ann, color, lineWidth) {
     const arrowType = getArrowType(ann);
     if (arrowType === 'none') return;
-    const arrowSize = (10 + lineWidth * 0.55) / state.zoom;
+    const arrowSize = (10 + lineWidth * 0.55) / featureZoom();
     const endAngle = Math.atan2(ann.end.y - ann.control2.y, ann.end.x - ann.control2.x);
     drawArrowhead(ann.end, endAngle, arrowSize, color);
     if (arrowType === 'double') {
@@ -110,8 +125,8 @@
   }
 
   function drawLabel(pos, text, selected, alpha = 1, color = LINE_COLOR) {
-    const fontSize = 17 / state.zoom;
-    const halo = 3 / state.zoom;
+    const fontSize = 17 / featureZoom();
+    const halo = 3 / featureZoom();
     // White label fill is invisible on the white canvas — use a dark halo so
     // the callout number still reads when the line color is white.
     const isWhiteFill = String(color || '').toLowerCase() === '#ffffff';
@@ -123,8 +138,8 @@
     ctx.lineJoin = 'round';
     ctx.lineWidth = isWhiteFill ? halo * 1.4 : halo;
     ctx.shadowColor = 'rgba(17,24,39,.18)';
-    ctx.shadowBlur = 4 / state.zoom;
-    ctx.shadowOffsetY = 1 / state.zoom;
+    ctx.shadowBlur = 4 / featureZoom();
+    ctx.shadowOffsetY = 1 / featureZoom();
     ctx.strokeStyle = isWhiteFill ? '#111827' : '#ffffff';
     ctx.strokeText(String(text), pos.x, pos.y);
     ctx.fillStyle = color;

@@ -238,6 +238,14 @@
       return;
     }
     lineClipboard = anns.map(clone);
+    // Claim the OS clipboard (best-effort) so a photo copied EARLIER no
+    // longer shadows this line copy on paste: onPasteEvent pastes an OS
+    // image when present, otherwise the internal line clipboard — writing
+    // this marker text replaces any stale image, so "last copy wins".
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      const marker = anns.length > 1 ? '[Bra Auto Measure] ' + anns.length + ' POM lines copied' : '[Bra Auto Measure] POM line copied';
+      navigator.clipboard.writeText(marker).catch(() => {});
+    }
     updateUI();
     showToast(anns.length > 1 ? anns.length + ' lines copied.' : 'Line copied.');
   }

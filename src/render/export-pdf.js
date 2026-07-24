@@ -107,6 +107,11 @@ function createExportCanvas(bounds) {
   const oldPanY = state.panY;
   ctx = exportCtx;
   state.zoom = exportZoom;
+  // US-056 doubled the page density (150 -> 300 DPI), which doubled exportZoom and
+  // so halved the on-page size of the POM lines/labels (they divide by state.zoom).
+  // Size features against half the zoom to restore the pre-300-DPI proportions
+  // while the image keeps rendering at the higher resolution. See featureZoom().
+  state.exportFeatureZoom = exportZoom / 2;
   state.panX = exportPanX;
   state.panY = exportPanY;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -121,6 +126,7 @@ function createExportCanvas(bounds) {
   ctx.restore();
   ctx = oldCtx;
   state.zoom = oldZoom;
+  state.exportFeatureZoom = null;
   state.panX = oldPanX;
   state.panY = oldPanY;
   requestRender();

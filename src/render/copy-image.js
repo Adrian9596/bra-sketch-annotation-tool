@@ -73,6 +73,13 @@
     const oldPanY = state.panY;
     ctx = copyCtx;
     state.zoom = scale;
+    // Keep line/label features a fixed fraction of the board regardless of the
+    // native-resolution export scale (US-056 drove `scale` well above the old
+    // flat 2x, which shrank the POM lines/numbers to hairlines once pasted into
+    // Excel). Reference 2 reproduces the pre-US-056 export proportions; min(scale,2)
+    // means a lines-only board (scale===2) is byte-identical and a huge board
+    // capped below 2x is never made smaller than before.
+    state.exportFeatureZoom = Math.min(scale, 2);
     state.panX = -bounds.x * scale;
     state.panY = -bounds.y * scale;
     try {
@@ -89,6 +96,7 @@
     } finally {
       ctx = oldCtx;
       state.zoom = oldZoom;
+      state.exportFeatureZoom = null;
       state.panX = oldPanX;
       state.panY = oldPanY;
     }

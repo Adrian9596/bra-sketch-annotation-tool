@@ -7965,6 +7965,14 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       return;
     }
     lineClipboard = anns.map(clone);
+    // Claim the OS clipboard (best-effort) so a photo copied EARLIER no
+    // longer shadows this line copy on paste: onPasteEvent pastes an OS
+    // image when present, otherwise the internal line clipboard — writing
+    // this marker text replaces any stale image, so "last copy wins".
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      const marker = anns.length > 1 ? '[Bra Auto Measure] ' + anns.length + ' POM lines copied' : '[Bra Auto Measure] POM line copied';
+      navigator.clipboard.writeText(marker).catch(() => {});
+    }
     updateUI();
     showToast(anns.length > 1 ? anns.length + ' lines copied.' : 'Line copied.');
   }
@@ -8996,17 +9004,13 @@ function onWheel(e) {
       return;
     }
 
-    // Copy/paste/reflect for the selected line. Cmd/Ctrl-V intercept also
-    // suppresses the paste event for image data — acceptable since the
-    // user just explicitly asked to paste a line.
+    // Copy for the selected line. Cmd/Ctrl-V is NOT intercepted here: the
+    // native paste event (onPasteEvent) decides between an OS-clipboard
+    // image and the internal line clipboard, so copying a photo after
+    // copying lines still pastes the photo.
     if (isMeta && key === 'c' && state.selection.kind === 'annotation' && state.appMode !== 'auto') {
       e.preventDefault();
       copySelectedAnnotation();
-      return;
-    }
-    if (isMeta && key === 'v' && hasLineClipboard() && state.appMode !== 'auto') {
-      e.preventDefault();
-      pasteLineFromClipboard();
       return;
     }
     if (!isMeta && key === 'm' && state.selection.kind === 'annotation' && state.appMode !== 'auto') {
@@ -10263,17 +10267,28 @@ function getAnnotationsOnImage(image) {
   async function onPasteEvent(e) {
     const items = Array.from(e.clipboardData?.items || []);
     const imageItems = items.filter(item => item.type && item.type.startsWith('image/'));
-    if (!imageItems.length) return;
+    if (imageItems.length) {
+      e.preventDefault();
+      const dataURLs = [];
+      for (const imageItem of imageItems) {
+        const blob = imageItem.getAsFile();
+        if (!blob) continue;
+        dataURLs.push(await blobToDataURL(blob));
+      }
+      if (dataURLs.length) {
+        await addImagesFromDataURLs(dataURLs);
+      }
+      return;
+    }
+    // No image on the OS clipboard — fall back to the internal line
+    // clipboard. copySelectedAnnotation claims the OS clipboard with a text
+    // marker, so whichever was copied LAST wins here, like a real clipboard.
+    // Never hijack a paste aimed at a text field.
+    const target = e.target;
+    const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+    if (inField || state.appMode === 'auto' || !hasLineClipboard()) return;
     e.preventDefault();
-    const dataURLs = [];
-    for (const imageItem of imageItems) {
-      const blob = imageItem.getAsFile();
-      if (!blob) continue;
-      dataURLs.push(await blobToDataURL(blob));
-    }
-    if (dataURLs.length) {
-      await addImagesFromDataURLs(dataURLs);
-    }
+    pasteLineFromClipboard();
   }
 
   async function addImagesFromDataURLs(dataURLs) {
@@ -23325,6 +23340,11 @@ function createExportCanvas(bounds) {
   const oldPanY = state.panY;
   ctx = exportCtx;
   state.zoom = exportZoom;
+  // US-056 doubled the page density (150 -> 300 DPI), which doubled exportZoom and
+  // so halved the on-page size of the POM lines/labels (they divide by state.zoom).
+  // Size features against half the zoom to restore the pre-300-DPI proportions
+  // while the image keeps rendering at the higher resolution. See featureZoom().
+  state.exportFeatureZoom = exportZoom / 2;
   state.panX = exportPanX;
   state.panY = exportPanY;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -23339,6 +23359,7 @@ function createExportCanvas(bounds) {
   ctx.restore();
   ctx = oldCtx;
   state.zoom = oldZoom;
+  state.exportFeatureZoom = null;
   state.panX = oldPanX;
   state.panY = oldPanY;
   requestRender();
@@ -23501,6 +23522,13 @@ function makeExportFileName() {
     const oldPanY = state.panY;
     ctx = copyCtx;
     state.zoom = scale;
+    // Keep line/label features a fixed fraction of the board regardless of the
+    // native-resolution export scale (US-056 drove `scale` well above the old
+    // flat 2x, which shrank the POM lines/numbers to hairlines once pasted into
+    // Excel). Reference 2 reproduces the pre-US-056 export proportions; min(scale,2)
+    // means a lines-only board (scale===2) is byte-identical and a huge board
+    // capped below 2x is never made smaller than before.
+    state.exportFeatureZoom = Math.min(scale, 2);
     state.panX = -bounds.x * scale;
     state.panY = -bounds.y * scale;
     try {
@@ -23517,6 +23545,7 @@ function makeExportFileName() {
     } finally {
       ctx = oldCtx;
       state.zoom = oldZoom;
+      state.exportFeatureZoom = null;
       state.panX = oldPanX;
       state.panY = oldPanY;
     }
@@ -24595,6 +24624,21 @@ function makeExportFileName() {
 // state-aware tweaks (e.g. selection highlight, alpha) so the same
 // helpers serve hover, selected, and draft renderings.
 
+  // Feature sizes (stroke width, arrowheads, callout font) are divided by
+  // state.zoom so they hold a CONSTANT on-screen pixel size at any zoom. During
+  // export, though, "zoom" is the render density: copy-image and export-pdf set
+  // state.zoom to the native-resolution scale, which US-056 pushed well above the
+  // old flat 2x. Dividing features by that big scale pins them to a few absolute
+  // device pixels — hairline lines and microscopic callout numbers on a ~2000px+
+  // board (visible the moment Excel shrinks the pasted PNG). featureZoom() lets an
+  // export path override the divisor with a fixed reference (state.exportFeatureZoom)
+  // so features stay a constant FRACTION of the board while the image still renders
+  // at native resolution. Screen rendering never sets the override, so it is a
+  // no-op there (returns state.zoom unchanged).
+  function featureZoom() {
+    return state.exportFeatureZoom || state.zoom;
+  }
+
   function drawAnnotation(ann, withLabel = true) {
     drawLineCore(ann, 1);
     if (withLabel) drawAnnotationLabel(ann);
@@ -24627,8 +24671,8 @@ function makeExportFileName() {
     } else if (style === 'bartack') {
       drawBartackStitchLine(ann, color, lineWidth);
     } else {
-      ctx.lineWidth = lineWidth / state.zoom;
-      ctx.setLineDash(style === 'dashed' ? [10 / state.zoom, 7 / state.zoom] : []);
+      ctx.lineWidth = lineWidth / featureZoom();
+      ctx.setLineDash(style === 'dashed' ? [10 / featureZoom(), 7 / featureZoom()] : []);
       drawAnnotationPath(ann);
       ctx.stroke();
     }
@@ -24657,7 +24701,7 @@ function makeExportFileName() {
   function drawArrowheadsForStraight(ann, color, lineWidth) {
     const arrowType = getArrowType(ann);
     if (arrowType === 'none') return;
-    const arrowSize = (10 + lineWidth * 0.55) / state.zoom;
+    const arrowSize = (10 + lineWidth * 0.55) / featureZoom();
     drawArrowhead(ann.end, Math.atan2(ann.end.y - ann.start.y, ann.end.x - ann.start.x), arrowSize, color);
     if (arrowType === 'double') {
       drawArrowhead(ann.start, Math.atan2(ann.start.y - ann.end.y, ann.start.x - ann.end.x), arrowSize, color);
@@ -24667,7 +24711,7 @@ function makeExportFileName() {
   function drawArrowheadsForCurve(ann, color, lineWidth) {
     const arrowType = getArrowType(ann);
     if (arrowType === 'none') return;
-    const arrowSize = (10 + lineWidth * 0.55) / state.zoom;
+    const arrowSize = (10 + lineWidth * 0.55) / featureZoom();
     const endAngle = Math.atan2(ann.end.y - ann.control2.y, ann.end.x - ann.control2.x);
     drawArrowhead(ann.end, endAngle, arrowSize, color);
     if (arrowType === 'double') {
@@ -24697,8 +24741,8 @@ function makeExportFileName() {
   }
 
   function drawLabel(pos, text, selected, alpha = 1, color = LINE_COLOR) {
-    const fontSize = 17 / state.zoom;
-    const halo = 3 / state.zoom;
+    const fontSize = 17 / featureZoom();
+    const halo = 3 / featureZoom();
     // White label fill is invisible on the white canvas — use a dark halo so
     // the callout number still reads when the line color is white.
     const isWhiteFill = String(color || '').toLowerCase() === '#ffffff';
@@ -24710,8 +24754,8 @@ function makeExportFileName() {
     ctx.lineJoin = 'round';
     ctx.lineWidth = isWhiteFill ? halo * 1.4 : halo;
     ctx.shadowColor = 'rgba(17,24,39,.18)';
-    ctx.shadowBlur = 4 / state.zoom;
-    ctx.shadowOffsetY = 1 / state.zoom;
+    ctx.shadowBlur = 4 / featureZoom();
+    ctx.shadowOffsetY = 1 / featureZoom();
     ctx.strokeStyle = isWhiteFill ? '#111827' : '#ffffff';
     ctx.strokeText(String(text), pos.x, pos.y);
     ctx.fillStyle = color;

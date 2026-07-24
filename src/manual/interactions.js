@@ -885,17 +885,13 @@ function onWheel(e) {
       return;
     }
 
-    // Copy/paste/reflect for the selected line. Cmd/Ctrl-V intercept also
-    // suppresses the paste event for image data — acceptable since the
-    // user just explicitly asked to paste a line.
+    // Copy for the selected line. Cmd/Ctrl-V is NOT intercepted here: the
+    // native paste event (onPasteEvent) decides between an OS-clipboard
+    // image and the internal line clipboard, so copying a photo after
+    // copying lines still pastes the photo.
     if (isMeta && key === 'c' && state.selection.kind === 'annotation' && state.appMode !== 'auto') {
       e.preventDefault();
       copySelectedAnnotation();
-      return;
-    }
-    if (isMeta && key === 'v' && hasLineClipboard() && state.appMode !== 'auto') {
-      e.preventDefault();
-      pasteLineFromClipboard();
       return;
     }
     if (!isMeta && key === 'm' && state.selection.kind === 'annotation' && state.appMode !== 'auto') {

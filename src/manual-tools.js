@@ -342,17 +342,28 @@
   async function onPasteEvent(e) {
     const items = Array.from(e.clipboardData?.items || []);
     const imageItems = items.filter(item => item.type && item.type.startsWith('image/'));
-    if (!imageItems.length) return;
+    if (imageItems.length) {
+      e.preventDefault();
+      const dataURLs = [];
+      for (const imageItem of imageItems) {
+        const blob = imageItem.getAsFile();
+        if (!blob) continue;
+        dataURLs.push(await blobToDataURL(blob));
+      }
+      if (dataURLs.length) {
+        await addImagesFromDataURLs(dataURLs);
+      }
+      return;
+    }
+    // No image on the OS clipboard — fall back to the internal line
+    // clipboard. copySelectedAnnotation claims the OS clipboard with a text
+    // marker, so whichever was copied LAST wins here, like a real clipboard.
+    // Never hijack a paste aimed at a text field.
+    const target = e.target;
+    const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+    if (inField || state.appMode === 'auto' || !hasLineClipboard()) return;
     e.preventDefault();
-    const dataURLs = [];
-    for (const imageItem of imageItems) {
-      const blob = imageItem.getAsFile();
-      if (!blob) continue;
-      dataURLs.push(await blobToDataURL(blob));
-    }
-    if (dataURLs.length) {
-      await addImagesFromDataURLs(dataURLs);
-    }
+    pasteLineFromClipboard();
   }
 
   async function addImagesFromDataURLs(dataURLs) {
