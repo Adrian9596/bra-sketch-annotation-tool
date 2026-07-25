@@ -8309,6 +8309,39 @@ function setSelection(kind, id) {
     requestRender();
   }
 
+  // Cmd/Ctrl+A — select everything on the board. The selection model is
+  // single-kind (photos OR lines), so "all" resolves to the kind that acts on
+  // the whole board: all PHOTOS by default — dragging any selected photo moves
+  // the group WITH the POM lines sitting on each photo — or all LINES when a
+  // line is already the primary selection (so line group ops: copy, reflect,
+  // delete, nudge). Hidden lines and Auto Mode line ops stay excluded.
+  function selectAllOnBoard() {
+    const selectAllLines = () => {
+      const ids = state.annotations.filter(a => !isAnnHidden(a.id)).map(a => a.id);
+      if (!ids.length) return false;
+      state.selectedAnnotationIds = ids;
+      setPrimaryAnnotation(ids[ids.length - 1]);
+      updateUI();
+      requestRender();
+      showToast(ids.length > 1 ? ids.length + ' lines selected.' : '1 line selected.');
+      return true;
+    };
+    if (state.appMode !== 'auto' && state.selection.kind === 'annotation' && selectAllLines()) return;
+    const imgIds = state.images.map(im => im.id);
+    if (imgIds.length) {
+      state.selectedImageIds = imgIds;
+      state.selection = { kind: 'image', id: imgIds[imgIds.length - 1] };
+      if (state.autoMode) state.autoMode.anchorSelectedId = null;
+      updateUI();
+      requestRender();
+      showToast(imgIds.length > 1
+        ? imgIds.length + ' photos selected — drag one to move all; lines move with their photo.'
+        : '1 photo selected — drag to move it; its lines move with it.');
+      return;
+    }
+    if (state.appMode !== 'auto') selectAllLines();
+  }
+
   function clearSelection() {
     setSelection(null, null);
   }
@@ -8993,6 +9026,15 @@ function onWheel(e) {
       state.spacePan = true;
       document.body.classList.add('space-pan');
       e.preventDefault();
+    }
+
+    // Cmd/Ctrl+A — select all photos (drag moves them with their lines), or
+    // all lines when a line is already selected. Fields keep native
+    // select-all via the inField return above.
+    if (isMeta && key === 'a') {
+      e.preventDefault();
+      selectAllOnBoard();
+      return;
     }
 
     // Cmd/Ctrl+Shift+C — copy the whole board as a PNG image. Checked
