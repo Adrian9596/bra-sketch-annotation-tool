@@ -23252,6 +23252,11 @@ function getAnnotationsOnImage(image) {
         if (!bounds) return null;
         return renderBoardRegionToCanvas(bounds).toDataURL('image/png');
       },
+      // Canvas view transform. Needed to drive REAL pointer events from world
+      // coordinates in a test (screenX = worldX * zoom + panX + canvasRect.left),
+      // which is the only way to exercise selection, drag and resize the way a TD
+      // does. Without it a UI test has to guess pixel positions.
+      getView: () => ({ zoom: state.zoom, panX: state.panX, panY: state.panY }),
       getAcceptanceStats: () => clone(getAutoAcceptanceStats()),
       clearAcceptanceStats: () => clearAutoAcceptanceStats(),
       getTelemetryLog: () => clone(getAutoTelemetryLog()),
