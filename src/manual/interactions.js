@@ -325,8 +325,9 @@ function setSelection(kind, id) {
       // anchors and drafts with it — nothing desyncs. Anchors + drafts still win
       // the click; only bare image (or its resize corner) starts an image drag.
       const selImageAuto = getSelectedImage();
-      // Resize handles are only offered for a single selected image — a group
-      // selection is for moving together, not resizing.
+      // A 2+ image group resizes from ONE set of handles on its bounding box; a
+      // single selection keeps its own corner handles.
+      if (startGroupResizeIfHandleHit(world)) return;
       const imageHandleHitAuto = selImageAuto && !selImageAuto.locked && getSelectedImageIds().length <= 1
         ? hitTestSelectedImageHandles(world, selImageAuto) : null;
       if (imageHandleHitAuto) {
@@ -386,6 +387,7 @@ function setSelection(kind, id) {
     }
 
     const selectedImage = getSelectedImage();
+    if (startGroupResizeIfHandleHit(world)) return;
     const imageHandleHit = selectedImage && !selectedImage.locked && getSelectedImageIds().length <= 1
       ? hitTestSelectedImageHandles(world, selectedImage) : null;
     if (imageHandleHit) {
@@ -565,6 +567,14 @@ function setSelection(kind, id) {
       const image = getImageById(interaction.id);
       if (!image) return;
       resizeImageFromCorner(image, interaction.corner, interaction.anchor, interaction.aspect, world);
+      interaction.changed = true;
+      interaction.prevWorld = world;
+      requestRender();
+      return;
+    }
+
+    if (interaction.type === 'drag-images-resize') {
+      resizeImagesFromCorner(interaction, world);
       interaction.changed = true;
       interaction.prevWorld = world;
       requestRender();
@@ -1189,6 +1199,59 @@ function startImageResize(id, corner) {
     anchor: getOppositeImageCorner(image, corner),
     aspect: image.width / Math.max(1, image.height),
   });
+}
+
+// Group resize: 2+ selected photos scale together about the opposite corner of the
+// GROUP's bounding box, so their relative sizes and spacing are preserved. Returns
+// true when it claimed the click. A locked image in the selection blocks it (same
+// rule as single-image resize). Anchors/drafts/erase strokes are stored normalized
+// to their own image, so they follow each photo without extra work.
+function startGroupResizeIfHandleHit(world) {
+  const images = getSelectedImages();
+  if (!images || images.length <= 1) return false;
+  if (images.some(im => im.locked)) return false;
+  const box = getImagesGroupBox(images);
+  if (!box) return false;
+  const hit = hitTestSelectedImageHandles(world, box);
+  if (!hit) return false;
+  beginTrackedInteraction('drag-images-resize', {
+    corner: hit.corner,
+    anchor: getOppositeImageCorner(box, hit.corner),
+    box,
+    // Snapshot every member up front: scaling must be computed from the ORIGINAL
+    // geometry each frame, or repeated relative scaling compounds and drifts.
+    start: images.map(im => ({ id: im.id, x: im.x, y: im.y, width: im.width, height: im.height })),
+  });
+  return true;
+}
+
+// Uniform scale factor from the group's anchor corner to the cursor. Driven by the
+// dominant axis so a diagonal drag feels like the single-image resize, and floored
+// so no member can collapse below the 48px minimum used for one image.
+function resizeImagesFromCorner(interaction, world) {
+  const { anchor, box, start } = interaction;
+  if (!anchor || !box || !Array.isArray(start) || !start.length) return;
+  const spanX = Math.abs(box.x + (box.x + box.width) - 2 * anchor.x) || box.width;
+  const spanY = Math.abs(box.y + (box.y + box.height) - 2 * anchor.y) || box.height;
+  const rawW = Math.abs(world.x - anchor.x);
+  const rawH = Math.abs(world.y - anchor.y);
+  const sx = spanX > 0 ? rawW / spanX : 1;
+  const sy = spanY > 0 ? rawH / spanY : 1;
+  let scale = Math.max(sx, sy);
+  if (!Number.isFinite(scale) || scale <= 0) return;
+  const MIN_IMAGE_SIZE = 48;
+  const smallest = start.reduce((m, s) => Math.min(m, s.width, s.height), Infinity);
+  if (Number.isFinite(smallest) && smallest > 0) {
+    scale = Math.max(scale, MIN_IMAGE_SIZE / smallest);
+  }
+  for (const s of start) {
+    const image = getImageById(s.id);
+    if (!image) continue;
+    image.x = anchor.x + (s.x - anchor.x) * scale;
+    image.y = anchor.y + (s.y - anchor.y) * scale;
+    image.width = s.width * scale;
+    image.height = s.height * scale;
+  }
 }
 
   // ---- Eraser ----

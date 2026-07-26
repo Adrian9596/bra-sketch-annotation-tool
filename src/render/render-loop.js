@@ -161,6 +161,16 @@ function requestRender() {
     for (const selectedImage of selectedImages) {
       drawImageSelection(selectedImage, showImageHandles);
     }
+    // A group of 2+ images gets ONE set of resize handles on its bounding box, so
+    // dragging a corner scales the whole group about the opposite corner (photos
+    // keep their relative sizes and spacing). Per-image handles stay off — they
+    // would fight each other and give no group-relative anchor.
+    if (selectedImages.length > 1) {
+      const groupBox = getImagesGroupBox(selectedImages);
+      if (groupBox && !selectedImages.some(im => im.locked)) {
+        drawImageSelection(groupBox, true);
+      }
+    }
 
     // Line selection: a single selection shows full endpoint/handle helpers; a
     // multi-selection (Shift+click / marquee) shows a lighter per-line outline

@@ -43,6 +43,10 @@ if (!images.length) fail('No demo/*.jpg fixtures found.');
 const EPS_SAME_COL = 0.005;
 const EPS_SAME_ROW = 0.005;
 const EPS_CENTER_Y = 0.08;
+// Max allowed height difference between the two POM 10 endpoints (invariant A3).
+// They intentionally sit at their own heights now; this bounds the slant so the
+// width line can never degenerate into a diagonal across the cup.
+const EPS_ROW_SLANT = 0.09;
 const EPS_AXIS_PAD = 0.005;
 const EPS_SIDE_PAD = 0.003;
 
@@ -85,11 +89,17 @@ const ASSERTIONS = [
     },
   },
   {
-    id: 'A3', name: 'POM 10 endpoints share row',
+    // Was "endpoints share row" (|Δy| < 0.005). POM 10 now spans the cup's true
+    // horizontal extremes with EACH ENDPOINT AT ITS OWN HEIGHT — the gore contact
+    // sits lower than the side-seam end, which is how a TD measures cup width — so
+    // a strictly shared row is no longer the contract. What must still hold is that
+    // the two endpoints read as ONE width measurement rather than a diagonal: the
+    // slant stays bounded.
+    id: 'A3', name: 'POM 10 endpoint slant bounded',
     require: has10,
     test: (c) => {
       const dy = Math.abs(c.anchors['inner-cup-left'].y - c.anchors['inner-cup-right'].y);
-      return { ok: dy < EPS_SAME_ROW, msg: `|Δy|=${dy.toFixed(4)} (need < ${EPS_SAME_ROW})` };
+      return { ok: dy < EPS_ROW_SLANT, msg: `|Δy|=${dy.toFixed(4)} (need < ${EPS_ROW_SLANT})` };
     },
   },
   {
@@ -118,10 +128,14 @@ const ASSERTIONS = [
   {
     id: 'A6', name: 'POM 10 row near POM 9 mid-y',
     require: (c) => has9(c) && has10(c),
+    // The endpoints no longer share a row (see A3), so "the row" is their MEAN
+    // height — the level the width measurement represents. Using left.y alone
+    // would arbitrarily judge the measurement by whichever end happens to sit
+    // lower (the gore contact).
     test: (c) => {
       const mid = (c.anchors['inner-cup-top'].y + c.anchors['inner-cup-bottom'].y) / 2;
-      const ly = c.anchors['inner-cup-left'].y;
-      const d = Math.abs(ly - mid);
+      const row = (c.anchors['inner-cup-left'].y + c.anchors['inner-cup-right'].y) / 2;
+      const d = Math.abs(row - mid);
       return { ok: d < EPS_CENTER_Y, msg: `|row − mid|=${d.toFixed(4)} (need < ${EPS_CENTER_Y})` };
     },
   },

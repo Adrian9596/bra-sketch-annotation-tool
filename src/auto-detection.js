@@ -113,7 +113,7 @@
     // as auxiliary views — e.g. a front-inner cutaway the TD added as its own
     // image. Recognition + labeling ONLY: measurement stays on the source image
     // and no POM moves to these views (ADR 0011).
-    detection.auxViews = buildAuxViews(sourceImage);
+    detection.auxViews = await buildAuxViews(sourceImage);
     // When view-role classification is uncertain — e.g. a 3-panel board where
     // "back" vs "front_inner" is genuinely ambiguous from the sketch — let the
     // TD confirm/correct the roles BEFORE anchors are seeded, so a corrected
@@ -178,7 +178,7 @@
   // cutaway is a bonus, never a precondition). The primary image already holds
   // front_outer + back, so the first extra photo defaults to the front-inner
   // view; further extras stay 'unknown' for the TD to interpret.
-  function buildAuxViews(sourceImage) {
+  async function buildAuxViews(sourceImage) {
     if (!sourceImage) return [];
     const others = state.images.filter(
       (im) => im && im.id !== sourceImage.id && im.img && im.img.complete
@@ -237,7 +237,17 @@
           // strap→cup seam for this view — the front-outer strap-join fraction
           // lands them up at the apex on a molded cutaway.
           det.singleView = true;
+          // Trace this photo's contours BEFORE the mask is dropped. The primary
+          // pipeline traces only the SOURCE image, but seedAnchorsFromDetection's
+          // cup-width extremes (ADR 0036) require detection.contours — without
+          // them it silently fell back to the pre-ADR-0036 shared-row placement,
+          // so a 2-image board (primary + separate front-inner cutaway) kept the
+          // old narrow POM 10 while a single 3-view photo got the new one.
+          await applyPotraceContoursToDetection(det);
           delete det._mask; delete det._maskW; delete det._maskH; delete det.debug;
+          // Keep the promise in the comment above buildAuxViews: the persisted aux
+          // detection carries no heavy raster payload.
+          delete det.inkMask; delete det.inkMaskW; delete det.inkMaskH;
           auxView.detection = det;
           auxView.anchors = seedAnchorsFromDetection(det, im);
         } catch (err) {

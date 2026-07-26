@@ -592,6 +592,16 @@
         await new Promise((resolve) => setTimeout(resolve, 80));
         const sourceImage = state.images[state.images.length - 1] || null;
         if (!sourceImage) throw new Error('No image was added.');
+        // opts.auxDataURLs: add EXTRA board photos (e.g. a separate front-inner
+        // cutaway) before detection, so a suite can exercise the real 2-image board
+        // a TD uses. Until this existed every suite ran a single image, which is why
+        // the aux-view path could regress with all suites green (ADR 0036 follow-up).
+        // The primary image stays the detection source; extras become aux views.
+        const auxDataURLs = (opts && Array.isArray(opts.auxDataURLs)) ? opts.auxDataURLs : [];
+        if (auxDataURLs.length) {
+          await addImagesFromDataURLs(auxDataURLs);
+          await new Promise((resolve) => setTimeout(resolve, 80));
+        }
         state.selection = { kind: 'image', id: sourceImage.id };
         await runOfflineDetection();
         generatePOMDraftsFromAnchors({ keepDraftsForReview: true, suppressReplacePrompt: true });

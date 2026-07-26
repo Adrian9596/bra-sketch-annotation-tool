@@ -88,13 +88,13 @@
       "kind": "inner-cup-left",
       "name": "IC L",
       "group": "inner-cup",
-      "hint": "Cup width, gore-side edge at mid-height, front (outer) view — POM 10 start."
+      "hint": "Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."
     },
     {
       "kind": "inner-cup-right",
       "name": "IC R",
       "group": "inner-cup",
-      "hint": "Cup width, armhole-side edge at mid-height, front (outer) view — POM 10 end."
+      "hint": "Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."
     },
     {
       "kind": "side-top",
