@@ -28,7 +28,12 @@ function workbook(sheetName = 'Measurement Spec', headers = ['POM','Description 
     `<row r="2">${cell('A2', 'TestStyle - 11.Jul.26')}</row>`,
     `<row r="3">${headers.map((h, i) => cell(`${String.fromCharCode(65 + i)}3`, h)).join('')}</row>`,
     `<row r="4">${cell('A4', 5)}${cell('B4', 'Center front height')}${cell('C4', '前中高度')}${cell('D4', '± 1/8')}${cell('E4', 7.5, '7+0.5')}</row>`,
+    // POM 17/18 are core concepts since ADR 0032, but both numbers were
+    // custom-POM slots before it. Row 5 is such a stale custom row (the number
+    // matches the neckline concept, the term does not) and must stay pending;
+    // row 6 carries the canonical armhole term and must map.
     `<row r="5">${cell('A5', 17)}${cell('B5', 'Wing seam length')}${cell('C5', '')}${cell('D5', '')}${cell('E5', 4)}</row>`,
+    `<row r="6">${cell('A6', 18)}${cell('B6', 'Armhole curve length')}${cell('C6', '袖窿弧长')}${cell('D6', '')}${cell('E6', 9.25)}</row>`,
   ].join('');
   return zipStore({
     'xl/workbook.xml': `<workbook><sheets><sheet name="${sheetName}" r:id="rId1"/></sheets></workbook>`,
@@ -39,6 +44,7 @@ function workbook(sheetName = 'Measurement Spec', headers = ['POM','Description 
 }
 
 function projectFixture(overrides = {}) {
+  const { state: stateOverrides, ...rest } = overrides;
   return {
     format: 'bra-sketch-project', version: 1, savedAt: '2026-07-11T00:00:00.000Z',
     state: {
@@ -48,8 +54,9 @@ function projectFixture(overrides = {}) {
       pomSpecs: { '5': { sizeL: '7 1/2', sizeL2: '7.75', tol: '1/8', en: 'Center front height', zh: '前中高度' } },
       gradeRules: { version: 2, steps: { '5': { step: 0.25 } }, alpha: {}, depth: {}, depthOffsets: {} },
       customPoms: [],
+      ...(stateOverrides || {}),
     },
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -66,7 +73,10 @@ try {
   check(JSON.stringify(imported) === JSON.stringify(importedAgain), 'pending workbook output is byte-deterministic');
   check(imported.status === 'pending' && imported.identity.resolution === 'pending_td_confirmation', 'style identity is not fabricated or approved');
   check(imported.records.find(r => r.raw_pom_number === '5')?.concept_id === 'center_front_height', 'core POM maps only under exact current contract');
-  check(imported.records.find(r => r.raw_pom_number === '17')?.concept_id === null, 'custom POM 17 is not confused with reserved library POM 17');
+  check(imported.records.find(r => r.raw_pom_number === '17')?.concept_id === null, 'a stale custom POM 17 row is not confused with the core neckline concept');
+  check(imported.records.find(r => r.raw_pom_number === '17')?.mapping_status === 'pending_term_mapping' && imported.issues.includes('unresolved_or_custom_pom_number'), 'an unconfirmed POM 17 row stays pending and is reported');
+  const armhole = imported.records.find(r => r.raw_pom_number === '18');
+  check(armhole?.concept_id === 'armhole_curve_length' && armhole?.pom_number === 18 && armhole?.mapping_status === 'mapped_contract', 'POM 18 maps to the core armhole concept when the canonical term confirms it');
   check(imported.records.find(r => r.raw_pom_number === '5')?.source_formula === '7+0.5', 'formula and cached value provenance retained');
   check(imported.records.find(r => r.raw_pom_number === '5')?.tolerance_value_in === 0.125, 'inch fraction tolerance parsed');
   check(imported.image_artifacts.length === 1 && imported.image_artifacts[0].role === 'annotated_export', 'embedded workbook image is fingerprinted as a distinct export artifact');
@@ -106,6 +116,18 @@ try {
   check(projectPending.pom_values.find(item => item.size_code === 'L')?.value_in === 7.5, 'mixed-fraction Size L value is extracted in inches');
   check(projectPending.geometry[0]?.proposed_start_landmark === 'cf-top' && projectPending.geometry[0]?.view === 'front_outer', 'pending geometry preserves view and landmark references');
   check(projectPending.contract_versions.anchor === null && projectPending.issues.includes('anchor_version_not_recorded_in_project'), 'missing contract provenance is explicit and not fabricated');
+
+  // A saved project declares its custom POMs, so that list — not the term — is
+  // the authoritative signal for 17/18. Same key, opposite result.
+  const necklineSpec = { '17': { sizeL: '6.5', en: 'Neckline length', zh: '领口长' } };
+  const corePom17 = path.join(dir, 'project-core-17.json');
+  writeFileSync(corePom17, JSON.stringify(projectFixture({ state: { pomSpecs: necklineSpec } })));
+  const core17 = importSavedProject(corePom17).pom_values.find(item => item.pom_key === '17');
+  check(core17?.concept_id === 'neckline_length' && core17?.pom_number === 17, 'a core POM 17 in a saved project maps to the neckline concept');
+  const customPom17 = path.join(dir, 'project-custom-17.json');
+  writeFileSync(customPom17, JSON.stringify(projectFixture({ state: { pomSpecs: necklineSpec, customPoms: [{ pom: 17, en: 'Wing seam length', zh: '' }] } })));
+  const custom17 = importSavedProject(customPom17).pom_values.find(item => item.pom_key === '17');
+  check(custom17?.concept_id === null && custom17?.pom_number === null, 'a POM 17 declared as a custom POM does not map to the core neckline concept');
 
   const decision = { schema_version: 'identity-decisions.v1', decisions: [{ decision_id: 'identity-001', source_fingerprint: projectPending.source.fingerprint, style_id: 'STYLE-001', style_version: 'vA 1.0', reviewed_by: 'TD-1', reviewed_at: '2026-07-11T01:00:00.000Z' }] };
   const projectResolved = importSavedProject(projectFile, decision);

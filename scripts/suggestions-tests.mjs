@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Verifies the Tier-0 library-value suggestion layer end to end:
-//   A. auto_mode_rules/sizeL-suggestions.json has the expected shape (16 POMs;
-//      1..14 carry a corpus median, 15/16 are "no data").
+//   A. auto_mode_rules/sizeL-suggestions.json has the expected shape (18 POMs;
+//      1..14 carry a corpus median, 15-18 are "no data").
 //   B. the committed JSON is up to date with the corpus generator — but only
 //      when the sibling "Measurements 2" corpus is present (skips cleanly
 //      otherwise, mirroring how accuracy-tests skips with no ground truth).

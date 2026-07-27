@@ -3,7 +3,7 @@
 //
 // renderSpecPanel rebuilds the table on the right side of the board. It
 // renders the Auto Mode draft review section (if drafts are present),
-// then walks the 16 POM template slots in order — using a drawn
+// then walks the 18 POM template slots in order — using a drawn
 // annotation when the label matches, or a read-only template row when
 // nothing has been drawn yet — pairing primary/secondary POMs into one
 // row where the schema defines a pair. Every row exposes editable Size L
@@ -266,7 +266,7 @@
       el.specBody.appendChild(buildVisibilityControlRow());
     }
 
-    // Auto Mode: render the 16-row draft review section first.
+    // Auto Mode: render the 18-row draft review section first.
     const draftPomKeys = new Set();
     // Construction summary renders whenever a detection exists — the TD
     // lands in Manual mode after Apply (ADR 0008) and still needs to see
@@ -285,7 +285,7 @@
       }
     }
 
-    // Panel is now pre-populated with the 16 POM template rows, so the
+    // Panel is now pre-populated with the 18 POM template rows, so the
     // "No measurements yet" placeholder is redundant.
     el.specEmpty.style.display = 'none';
 
@@ -314,8 +314,8 @@
       }
     }
 
-    // Registered custom POMs (17+, US-011) render template-style rows right
-    // after the 16 — with or without a drawn line — so a TD can spec them
+    // Registered custom POMs (19+, US-011) render template-style rows right
+    // after the core 18 — with or without a drawn line — so a TD can spec them
     // before drawing. A row with a line behaves exactly like a template POM.
     const customKeys = (state.customPoms || []).map(p => String(p.pom))
       .sort((a, b) => Number(a) - Number(b));
@@ -331,7 +331,7 @@
       }
     }
 
-    // Any additional user-labeled annotations that fall outside 1..16
+    // Any additional user-labeled annotations that fall outside 1..18
     // (unregistered custom labels, renamed labels) render after the template
     // block in POM-numerical order.
     const extras = anns
@@ -375,7 +375,7 @@
   // Full-width "+ Add POM" row (US-011 S4): creates the next free number
   // (17, 18, …) with a TD-entered English name (中文 optional). The new POM
   // gets a template-style row with full Size L / L2 / TOL / grading / export
-  // parity; the 16-POM rule JSON is never touched (ADR 0018).
+  // parity; the 18-POM rule JSON is never touched (ADR 0018).
   function buildAddPomRow() {
     const tr = document.createElement('tr');
     tr.className = 'add-pom-row';
@@ -1212,7 +1212,7 @@
   // facts the detector already knows — detected views, the front-closure
   // placket signature (ADR 0023 junction tier), the cup model, and how many
   // anchors are flagged for review — so the TD sees what the tool recognized
-  // before reading the 16 draft rows. Display-only in this slice; confirming
+  // before reading the 18 draft rows. Display-only in this slice; confirming
   // these as library style-feature evidence (LIBRARY_CONSTRUCTION_TAXONOMY.md
   // Tier A) is a later slice. Absence of the placket signature is reported as
   // "not found", never as a claim about the back closure.

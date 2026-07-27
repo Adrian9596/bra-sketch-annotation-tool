@@ -21,7 +21,7 @@
     for (const row of fixture.annotations) {
       const pomKey = String(row.pom);
       if (!pomTemplate[pomKey]) {
-        errors.push(`Row references POM ${pomKey} which is not in POM_TEMPLATE 1–16.`);
+        errors.push(`Row references POM ${pomKey} which is not in POM_TEMPLATE 1–18.`);
         continue;
       }
       const list = seenPoms.get(pomKey) || [];
@@ -29,8 +29,8 @@
       seenPoms.set(pomKey, list);
     }
 
-    // Exactly one row per POM 1–16
-    for (let n = 1; n <= 16; n += 1) {
+    // Exactly one row per POM 1–18 (core range widened by ADR 0032)
+    for (let n = 1; n <= 18; n += 1) {
       const key = String(n);
       const rows = seenPoms.get(key) || [];
       if (rows.length === 0) errors.push(`Missing POM ${key}.`);

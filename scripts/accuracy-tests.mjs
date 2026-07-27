@@ -79,12 +79,44 @@ const args = parseArgs(process.argv.slice(2));
 const chromePath = args.chrome || process.env.CHROME_PATH || DEFAULT_CHROME;
 if (!existsSync(chromePath)) fail(`Chrome not found at ${chromePath}. Pass --chrome=/path or set CHROME_PATH.`);
 
-const images = readdirSync(path.join(appDir, 'demo'))
+// Images to score: every top-level demo fixture, PLUS any image a ground-truth
+// file points at through `imagePath`. The directory scan is deliberately not
+// recursive, so boards that live in a subfolder (e.g. "demo/2 photo case/")
+// were previously invisible to this suite no matter how well they were
+// labelled — the ground truth simply never ran. Letting a GT file name its own
+// image is what makes those boards scorable (backlog #11).
+const demoImages = readdirSync(path.join(appDir, 'demo'))
   .filter(f => /\.(jpe?g|png|webp)$/i.test(f))
-  .filter(f => !args.only || f.includes(args.only))
-  .sort()
   .map(f => `demo/${f}`);
+const gtDeclaredImages = readdirSync(gtDir)
+  .filter(f => f.endsWith('.json'))
+  .map(f => {
+    try { return JSON.parse(readFileSync(path.join(gtDir, f), 'utf8')).imagePath; }
+    catch (_) { return null; }
+  })
+  .filter(p => typeof p === 'string' && p);
+const images = [...new Set([...demoImages, ...gtDeclaredImages])]
+  .filter(f => existsSync(path.join(appDir, f)))
+  .filter(f => !args.only || f.includes(args.only))
+  .sort();
 if (!images.length) fail('No demo/*.jpg fixtures found.');
+
+// A ground-truth file may declare a MULTI-PHOTO board. The board a TD actually
+// assembles is often two photos — the primary carrying front-outer + back, an
+// aux carrying the front-inner cutaway — and detection only reproduces it when
+// both are loaded. Scoring the primary alone measured a board the TD never has,
+// and let the aux-view path regress with every suite green; that blind spot is
+// exactly why debug-api's runAutoOnDataUrl grew an auxDataURLs option. Returns
+// [] for the ordinary single-image fixture, so those are unchanged.
+function boardAuxFor(image) {
+  const gtFile = gtPathFor(image);
+  if (!existsSync(gtFile)) return [];
+  try {
+    const board = JSON.parse(readFileSync(gtFile, 'utf8')).board;
+    const aux = board && board.aux;
+    return Array.isArray(aux) ? aux.filter(p => typeof p === 'string' && existsSync(path.join(appDir, p))) : [];
+  } catch (_) { return []; }
+}
 
 let server, chrome, userDataDir;
 const captures = {};
@@ -170,7 +202,7 @@ async function captureOnce(cdp, targetUrl, image) {
     console.error(`  (re-navigating for ${image}: served app.js is stale — attempt ${attempt})`);
     await sleep(400 * attempt);
   }
-  return withTimeout(evaluate(cdp, captureExpr(image)), 30000, image);
+  return withTimeout(evaluate(cdp, captureExpr(image, boardAuxFor(image))), 30000, image);
 }
 
 const perImage = [];
@@ -400,15 +432,23 @@ function pctile(a, q) {
 function pct(n, total) { return total ? `${Math.round((100 * n) / total)}%` : 'n/a'; }
 
 // ---- in-page capture ------------------------------------------------------
-function captureExpr(imagePath) {
+function captureExpr(imagePath, auxPaths) {
   return `
     (async () => {
       const debug = window.__braAutoModeDebug;
-      const res = await fetch(${JSON.stringify(imagePath)} + '?accuracy=' + Date.now(), { cache: 'no-store' });
-      if (!res.ok) throw new Error('fetch ' + res.status);
-      const blob = await res.blob();
-      const dataURL = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result || '')); r.onerror = () => no(new Error('read')); r.readAsDataURL(blob); });
-      const result = await debug.runAutoOnDataUrl(dataURL);
+      const toDataURL = async (p) => {
+        const res = await fetch(p + '?accuracy=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) throw new Error('fetch ' + p + ' ' + res.status);
+        const blob = await res.blob();
+        return await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result || '')); r.onerror = () => no(new Error('read')); r.readAsDataURL(blob); });
+      };
+      const dataURL = await toDataURL(${JSON.stringify(imagePath)});
+      // Extra board photos, when the ground truth declares a multi-photo board.
+      // The primary stays the detection source; each extra becomes an aux view.
+      const auxPaths = ${JSON.stringify(auxPaths || [])};
+      const auxDataURLs = [];
+      for (const p of auxPaths) auxDataURLs.push(await toDataURL(p));
+      const result = await debug.runAutoOnDataUrl(dataURL, auxDataURLs.length ? { auxDataURLs } : undefined);
       const anchors = {};
       for (const a of (result.anchors || [])) {
         anchors[a.kind] = {

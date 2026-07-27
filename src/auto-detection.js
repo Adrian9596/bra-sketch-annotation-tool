@@ -1464,6 +1464,17 @@
 
     // ---- Stage: apex + strap landmarks ----
     const bounds = { minX, minY, maxX, maxY };
+
+    // POM 6 / POM 7 bottom anchors follow the drawn hem at their OWN column
+    // instead of the single flat bandY row (US-061). Normalized result, with
+    // the flat row as the fallback when that column carries no ink — so a
+    // straight-hem sketch is byte-identical to before.
+    const hemNormAtColumn = (colPx, flatY) => {
+      const row = hemRowAtColumn(dark, w, h, colPx, bandY * h, bboxH);
+      return row == null ? flatY : row / h;
+    };
+    // The CF column's hem — POM 6's (and, unavoidably, POM 5's) bottom.
+    const cfBottomHemY = hemNormAtColumn(axisPx, bandY);
     const apexLeftCandidate = findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, -1);
     const apexRightCandidate = findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, +1);
     const apexPair = validateCupApexPair(apexLeftCandidate, apexRightCandidate, bounds, w, h);
@@ -2366,7 +2377,15 @@
         cradleCupSegmentCount = segmentCount;
         cradleCupEdgePenalty = winner.edgePenalty;
         cradleCupTop = { x: winner.x / w, y: cradleRow / h };
-        cradleCupBottom = { x: winner.x / w, y: bandRow / h };
+        // POM 7's bottom is a BAND ANCHOR: it must land on the garment's drawn
+        // bottom edge, not on bandRow (the band ZONE used only to bound the
+        // cup/cradle searches above — US-060). It follows the hem at its OWN
+        // column so an arched or scalloped edge is tracked rather than averaged
+        // (US-061); bandY is the fallback when that column shows no ink.
+        cradleCupBottom = {
+          x: winner.x / w,
+          y: hemNormAtColumn(winner.x, bandY),
+        };
         cradleCupTier = winner.tier || 'seam';
       }
     }
@@ -2392,7 +2411,8 @@
             && arc.bottomY >= cradleY - 0.05
             && arc.bottomY < bandY - 0.01) {
           cradleCupTop = { x: arc.bottomX, y: arc.bottomY };
-          cradleCupBottom = { x: arc.bottomX, y: bandY };
+          // Hem-following bottom, same rule as the seam/strong tier (US-061).
+          cradleCupBottom = { x: arc.bottomX, y: hemNormAtColumn(arc.bottomX * w, bandY) };
           cradleCupSide = side;
           cradleCupTier = 'arc';
           cradleCupReject = null;
@@ -2533,6 +2553,9 @@
       cradleCfTopJunction,
       cradleCupTop,
       cradleCupBottom,
+      // Hem row at the CF column, for POM 6's bottom anchor (US-061). Equals
+      // bandY on a straight hem; rises above it on an arched / scalloped one.
+      cfBottomHemY,
       cradleCupSide,
       cradleCupTier,
       cradleCupTopInkRatio: Number(cradleCupTopInkRatio.toFixed(4)),
@@ -3472,6 +3495,30 @@
       }
     }
     return -1;
+  }
+
+  // Lowest inked row in a thin column band — the garment's drawn hem AT ONE x.
+  //
+  // bandY is a single horizontal row, which is right for a straight hem and
+  // wrong for a scalloped or arched one. Measured on Evelyn vA 3.0 (1830x711):
+  // the picot hem sits at 662px out at the sides and rises to 632px at centre
+  // front, a 30px arch, while bandY is a flat 659px — so the CF bottom anchor
+  // ends up 27px BELOW the artwork, floating in white space.
+  //
+  // Used ONLY by the POM 6 / POM 7 bottom anchors (US-061). band-left and
+  // band-right deliberately keep the flat row so POM 1 stays a level span.
+  //
+  // Scans UP from just below the band row and returns the first inked row.
+  // Returns null when the window holds no ink, so the caller keeps bandY and
+  // straight-hem sketches stay byte-identical.
+  function hemRowAtColumn(dark, w, h, colPx, bandRowPx, bboxH) {
+    if (!Number.isFinite(colPx) || !Number.isFinite(bandRowPx) || !(bboxH > 0)) return null;
+    const halfBand = Math.max(1, Math.round(bboxH * 0.006));
+    const fromY = Math.min(h - 1, Math.round(bandRowPx + bboxH * 0.06));
+    const toY = Math.max(0, Math.round(bandRowPx - bboxH * 0.12));
+    if (fromY < toY) return null;
+    const hit = findVerticalInkBound(dark, w, Math.round(colPx), halfBand, fromY, toY, -1);
+    return hit >= 0 ? hit : null;
   }
 
   // Potrace vector tracer — wraps the singleton Potrace API (potrace.js) into

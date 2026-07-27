@@ -460,7 +460,7 @@
   // =============================================================
   // Phase 2 + Phase 3: Manual Mode silently teaches Auto Mode.
   //
-  // Trigger: TD labels a manual line with a recognised POM number 1–16.
+  // Trigger: TD labels a manual line with a recognised POM number 1–18.
   // The tool runs a shadow detection on that image (cached per-image),
   // resolves the POM number to a *measurement meaning* (fixed for POMs
   // 1, 3, 5; confirmed once by the TD for POMs 6+), then records the
@@ -488,13 +488,13 @@
   // Realistic ceiling for a POM number parsed from a label. The regex below
   // already caps at two digits; this bound keeps incidental 2-digit numbers
   // in a label (e.g. "12 cm") from being read as a POM, while still letting
-  // out-of-template POMs (17, 18, …) through. Tunable.
+  // custom POMs (19, 20, …) through. Tunable.
   const POM_LABEL_MAX = 40;
 
   // Pull "1" out of labels like "1", "POM 1", "1A", "Underbust (1)".
-  // Accepts any POM in the 1–POM_LABEL_MAX range. POMs above the fixed 1–16
-  // template are not dropped here — they resolve to a style-scoped meaning via
-  // the confirmation popover instead of being silently ignored.
+  // Accepts any POM in the 1–POM_LABEL_MAX range. POMs above the fixed 1–18
+  // core template are not dropped here — they resolve to a style-scoped meaning
+  // via the confirmation popover instead of being silently ignored.
   function parsePomNumberFromLabel(text) {
     if (!text) return null;
     const m = /(?:^|[^\d])(\d{1,2})(?:$|[^\d])/.exec(' ' + String(text) + ' ');

@@ -186,7 +186,7 @@
       }
     }
 
-    for (let n = 1; n <= 16; n += 1) {
+    for (let n = 1; n <= 18; n += 1) {
       if (!ids.has(String(n))) throw new Error('Auto Mode POM template is missing id "' + n + '".');
     }
   }

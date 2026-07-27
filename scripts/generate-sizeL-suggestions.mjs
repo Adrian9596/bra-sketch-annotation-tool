@@ -4,9 +4,10 @@
 //
 // This is the Tier-0 "library value" source for the measurement-suggestion
 // engine (docs/decisions/0009-measurement-suggestion-engine.md). Each of the
-// 16 POMs gets a corpus-derived median (+ range, tolerance, sketch-reliability,
+// 18 POMs gets a corpus-derived median (+ range, tolerance, sketch-reliability,
 // sample count, confidence). POMs with no corpus rows (15 back-straps distance,
-// 16 front apex) are emitted as "no data" so the panel shows a blank cell.
+// 16 front apex, 17 neckline length, 18 armhole curve) are emitted as "no data"
+// so the panel shows a blank cell.
 //
 // PROVENANCE RULE (Measurements 2/KNOWLEDGE_BASE_PLAN.md): these statistics are
 // DERIVED and must be regenerated from the corpus — never hand-edited. The

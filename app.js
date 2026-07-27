@@ -193,7 +193,7 @@
       }
     }
 
-    for (let n = 1; n <= 16; n += 1) {
+    for (let n = 1; n <= 18; n += 1) {
       if (!ids.has(String(n))) throw new Error('Auto Mode POM template is missing id "' + n + '".');
     }
   }
@@ -394,7 +394,7 @@
   }
 
   // Custom POM registry lookup (US-011 S4). Custom POMs (17+) live in
-  // state.customPoms — never in the 16-POM rule JSON (ADR 0018).
+  // state.customPoms — never in the 18-POM rule JSON (ADR 0018).
   function customPomEntry(pomKey) {
     const key = String(pomKey == null ? '' : pomKey).trim();
     if (!key) return null;
@@ -502,7 +502,7 @@
 
     // TD-defined POMs beyond the standard 16 (US-011, ADR 0018). Array of
     // { pom: '17', en, zh, tol }. Numbering continues from 17 per project.
-    // Lives in project state — the 16-POM rule JSON is never touched.
+    // Lives in project state — the 18-POM rule JSON is never touched.
     // Persisted with the project and captured in history.
     customPoms: [],
 
@@ -3818,7 +3818,7 @@
 
   // ---- src/ui/dialogs/grading-dialog.js ----
 // Grading dialog (US-011 S3): view and edit the grade rule inside the tool.
-// One row per POM (the 16 + any custom POMs), one column per size. Cells show
+// One row per POM (the 18 + any custom POMs), one column per size. Cells show
 // the EFFECTIVE per-size delta — per-size TD override, else constant-step
 // override (Size Run dialog), else the built-in SPEC_* tables — and edits
 // write per-size overrides into gradeRules v2 (stored in inches). The L
@@ -4469,7 +4469,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
 //
 // renderSpecPanel rebuilds the table on the right side of the board. It
 // renders the Auto Mode draft review section (if drafts are present),
-// then walks the 16 POM template slots in order — using a drawn
+// then walks the 18 POM template slots in order — using a drawn
 // annotation when the label matches, or a read-only template row when
 // nothing has been drawn yet — pairing primary/secondary POMs into one
 // row where the schema defines a pair. Every row exposes editable Size L
@@ -4732,7 +4732,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       el.specBody.appendChild(buildVisibilityControlRow());
     }
 
-    // Auto Mode: render the 16-row draft review section first.
+    // Auto Mode: render the 18-row draft review section first.
     const draftPomKeys = new Set();
     // Construction summary renders whenever a detection exists — the TD
     // lands in Manual mode after Apply (ADR 0008) and still needs to see
@@ -4751,7 +4751,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       }
     }
 
-    // Panel is now pre-populated with the 16 POM template rows, so the
+    // Panel is now pre-populated with the 18 POM template rows, so the
     // "No measurements yet" placeholder is redundant.
     el.specEmpty.style.display = 'none';
 
@@ -4780,8 +4780,8 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       }
     }
 
-    // Registered custom POMs (17+, US-011) render template-style rows right
-    // after the 16 — with or without a drawn line — so a TD can spec them
+    // Registered custom POMs (19+, US-011) render template-style rows right
+    // after the core 18 — with or without a drawn line — so a TD can spec them
     // before drawing. A row with a line behaves exactly like a template POM.
     const customKeys = (state.customPoms || []).map(p => String(p.pom))
       .sort((a, b) => Number(a) - Number(b));
@@ -4797,7 +4797,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       }
     }
 
-    // Any additional user-labeled annotations that fall outside 1..16
+    // Any additional user-labeled annotations that fall outside 1..18
     // (unregistered custom labels, renamed labels) render after the template
     // block in POM-numerical order.
     const extras = anns
@@ -4841,7 +4841,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   // Full-width "+ Add POM" row (US-011 S4): creates the next free number
   // (17, 18, …) with a TD-entered English name (中文 optional). The new POM
   // gets a template-style row with full Size L / L2 / TOL / grading / export
-  // parity; the 16-POM rule JSON is never touched (ADR 0018).
+  // parity; the 18-POM rule JSON is never touched (ADR 0018).
   function buildAddPomRow() {
     const tr = document.createElement('tr');
     tr.className = 'add-pom-row';
@@ -5678,7 +5678,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   // facts the detector already knows — detected views, the front-closure
   // placket signature (ADR 0023 junction tier), the cup model, and how many
   // anchors are flagged for review — so the TD sees what the tool recognized
-  // before reading the 16 draft rows. Display-only in this slice; confirming
+  // before reading the 18 draft rows. Display-only in this slice; confirming
   // these as library style-feature evidence (LIBRARY_CONSTRUCTION_TAXONOMY.md
   // Tier A) is a later slice. Absence of the placket signature is reported as
   // "not found", never as a claim about the back closure.
@@ -13190,6 +13190,17 @@ function getAnnotationsOnImage(image) {
 
     // ---- Stage: apex + strap landmarks ----
     const bounds = { minX, minY, maxX, maxY };
+
+    // POM 6 / POM 7 bottom anchors follow the drawn hem at their OWN column
+    // instead of the single flat bandY row (US-061). Normalized result, with
+    // the flat row as the fallback when that column carries no ink — so a
+    // straight-hem sketch is byte-identical to before.
+    const hemNormAtColumn = (colPx, flatY) => {
+      const row = hemRowAtColumn(dark, w, h, colPx, bandY * h, bboxH);
+      return row == null ? flatY : row / h;
+    };
+    // The CF column's hem — POM 6's (and, unavoidably, POM 5's) bottom.
+    const cfBottomHemY = hemNormAtColumn(axisPx, bandY);
     const apexLeftCandidate = findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, -1);
     const apexRightCandidate = findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, +1);
     const apexPair = validateCupApexPair(apexLeftCandidate, apexRightCandidate, bounds, w, h);
@@ -14092,7 +14103,15 @@ function getAnnotationsOnImage(image) {
         cradleCupSegmentCount = segmentCount;
         cradleCupEdgePenalty = winner.edgePenalty;
         cradleCupTop = { x: winner.x / w, y: cradleRow / h };
-        cradleCupBottom = { x: winner.x / w, y: bandRow / h };
+        // POM 7's bottom is a BAND ANCHOR: it must land on the garment's drawn
+        // bottom edge, not on bandRow (the band ZONE used only to bound the
+        // cup/cradle searches above — US-060). It follows the hem at its OWN
+        // column so an arched or scalloped edge is tracked rather than averaged
+        // (US-061); bandY is the fallback when that column shows no ink.
+        cradleCupBottom = {
+          x: winner.x / w,
+          y: hemNormAtColumn(winner.x, bandY),
+        };
         cradleCupTier = winner.tier || 'seam';
       }
     }
@@ -14118,7 +14137,8 @@ function getAnnotationsOnImage(image) {
             && arc.bottomY >= cradleY - 0.05
             && arc.bottomY < bandY - 0.01) {
           cradleCupTop = { x: arc.bottomX, y: arc.bottomY };
-          cradleCupBottom = { x: arc.bottomX, y: bandY };
+          // Hem-following bottom, same rule as the seam/strong tier (US-061).
+          cradleCupBottom = { x: arc.bottomX, y: hemNormAtColumn(arc.bottomX * w, bandY) };
           cradleCupSide = side;
           cradleCupTier = 'arc';
           cradleCupReject = null;
@@ -14259,6 +14279,9 @@ function getAnnotationsOnImage(image) {
       cradleCfTopJunction,
       cradleCupTop,
       cradleCupBottom,
+      // Hem row at the CF column, for POM 6's bottom anchor (US-061). Equals
+      // bandY on a straight hem; rises above it on an arched / scalloped one.
+      cfBottomHemY,
       cradleCupSide,
       cradleCupTier,
       cradleCupTopInkRatio: Number(cradleCupTopInkRatio.toFixed(4)),
@@ -15198,6 +15221,30 @@ function getAnnotationsOnImage(image) {
       }
     }
     return -1;
+  }
+
+  // Lowest inked row in a thin column band — the garment's drawn hem AT ONE x.
+  //
+  // bandY is a single horizontal row, which is right for a straight hem and
+  // wrong for a scalloped or arched one. Measured on Evelyn vA 3.0 (1830x711):
+  // the picot hem sits at 662px out at the sides and rises to 632px at centre
+  // front, a 30px arch, while bandY is a flat 659px — so the CF bottom anchor
+  // ends up 27px BELOW the artwork, floating in white space.
+  //
+  // Used ONLY by the POM 6 / POM 7 bottom anchors (US-061). band-left and
+  // band-right deliberately keep the flat row so POM 1 stays a level span.
+  //
+  // Scans UP from just below the band row and returns the first inked row.
+  // Returns null when the window holds no ink, so the caller keeps bandY and
+  // straight-hem sketches stay byte-identical.
+  function hemRowAtColumn(dark, w, h, colPx, bandRowPx, bboxH) {
+    if (!Number.isFinite(colPx) || !Number.isFinite(bandRowPx) || !(bboxH > 0)) return null;
+    const halfBand = Math.max(1, Math.round(bboxH * 0.006));
+    const fromY = Math.min(h - 1, Math.round(bandRowPx + bboxH * 0.06));
+    const toY = Math.max(0, Math.round(bandRowPx - bboxH * 0.12));
+    if (fromY < toY) return null;
+    const hit = findVerticalInkBound(dark, w, Math.round(colPx), halfBand, fromY, toY, -1);
+    return hit >= 0 ? hit : null;
   }
 
   // Potrace vector tracer — wraps the singleton Potrace API (potrace.js) into
@@ -17475,7 +17522,7 @@ function getAnnotationsOnImage(image) {
   //
   // Anchors live between detection and POM generation. Detect Sketch seeds
   // them with rough positions; the TD drags any wrong ones; the POM
-  // generator then reads anchor positions to lay down 16 draft lines.
+  // generator then reads anchor positions to lay down 18 draft lines.
   // Anchors x/y are normalized [0, 1] in the source image's pixel space, so
   // they travel with the image (pan / zoom / resize / save).
 
@@ -17519,6 +17566,12 @@ function getAnnotationsOnImage(image) {
     const halfW = bb.width / 2;
     const ax    = detection.axisX;
     const band  = detection.bandY;
+    // POM 6's bottom (shared with POM 5) sits on the hem at the CF column when
+    // detection resolved one, else on the flat band row (US-061). Older saved
+    // detections have no cfBottomHemY, so they keep the flat row.
+    const cfBottomY = Number.isFinite(detection.cfBottomHemY)
+      ? detection.cfBottomHemY
+      : band;
     // Chest fallback: 30% down from bbox top if detection didn't surface one.
     const chest = detection.chestY != null
       ? detection.chestY
@@ -17739,7 +17792,11 @@ function getAnnotationsOnImage(image) {
 
     let seeds = {
       'cf-top':         { x: ax, y: clamp01(top + bb.height * 0.04) },
-      'cf-bottom':      { x: ax, y: clamp01(band) },
+      // POM 6's bottom follows the hem at the CF column, not the flat band row
+      // (US-061). detection.cfBottomHemY equals bandY on a straight hem, so
+      // this is a no-op there; on an arched hem it keeps the anchor on the
+      // artwork instead of floating below it.
+      'cf-bottom':      { x: ax, y: clamp01(cfBottomY) },
       // cradle-cf-top: seeded from direct CF-seam detection when present;
       // else from the contour crest tier (US-015 / ADR 0023, review-flagged);
       // else from the POM 7 cradle seam projected to the CF axis (the
@@ -18379,8 +18436,10 @@ function getAnnotationsOnImage(image) {
       // CF-bottom: bandY is the highest-confidence horizontal signal in the
       // pipeline. Prefer (axisX, bandY) over the view-box fraction so POMs 5
       // and 6 land on the actual band ink.
+      // Hem-following bottom at the CF column (US-061); cfBottomY falls back to
+      // the flat band row when detection resolved no hem there.
       const useCfBottom = (detection.bandY != null && detection.axisX != null)
-        ? { x: clamp01(detection.axisX), y: clamp01(detection.bandY) }
+        ? { x: clamp01(detection.axisX), y: clamp01(cfBottomY) }
         : inView(f, 0.505, 0.985);
       // Inner-cup-bottom: cradleY is the clean horizontal contour between
       // chest and band. When the cupModel is usable, its bottomPoint already
@@ -19940,8 +19999,8 @@ function getAnnotationsOnImage(image) {
 
     // P5: a straight row whose endpoints coincide (zero measurable length)
     // can't satisfy its forced horizontal/vertical shape check and would make
-    // validateAutoFixture return 'fail', aborting ALL 16 POMs and discarding
-    // the 15 good ones. Demote just that degenerate row to REVIEW_ONLY so the
+    // validateAutoFixture return 'fail', aborting ALL 18 POMs and discarding
+    // the 17 good ones. Demote just that degenerate row to REVIEW_ONLY so the
     // rest still ship; the null-geometry pass below then clears its coords.
     for (const row of rows) {
       if (row.drawability === 'REVIEW_ONLY' || row.type === 'curved') continue;
@@ -20225,7 +20284,7 @@ function getAnnotationsOnImage(image) {
     for (const row of fixture.annotations) {
       const pomKey = String(row.pom);
       if (!pomTemplate[pomKey]) {
-        errors.push(`Row references POM ${pomKey} which is not in POM_TEMPLATE 1–16.`);
+        errors.push(`Row references POM ${pomKey} which is not in POM_TEMPLATE 1–18.`);
         continue;
       }
       const list = seenPoms.get(pomKey) || [];
@@ -20233,8 +20292,8 @@ function getAnnotationsOnImage(image) {
       seenPoms.set(pomKey, list);
     }
 
-    // Exactly one row per POM 1–16
-    for (let n = 1; n <= 16; n += 1) {
+    // Exactly one row per POM 1–18 (core range widened by ADR 0032)
+    for (let n = 1; n <= 18; n += 1) {
       const key = String(n);
       const rows = seenPoms.get(key) || [];
       if (rows.length === 0) errors.push(`Missing POM ${key}.`);
@@ -20542,7 +20601,7 @@ function getAnnotationsOnImage(image) {
       usedPomKeys.add(key);
     }
 
-    // Duplicate-only conflict path: collapse the 16 repeated messages into a
+    // Duplicate-only conflict path: collapse the 18 repeated messages into a
     // single line, and offer to clear the existing auto-applied rows so the
     // user can recover instead of hitting Discard Drafts and starting over.
     if (duplicates.length && !geometryErrors.length) {
@@ -21365,7 +21424,7 @@ function getAnnotationsOnImage(image) {
   // =============================================================
   // Phase 2 + Phase 3: Manual Mode silently teaches Auto Mode.
   //
-  // Trigger: TD labels a manual line with a recognised POM number 1–16.
+  // Trigger: TD labels a manual line with a recognised POM number 1–18.
   // The tool runs a shadow detection on that image (cached per-image),
   // resolves the POM number to a *measurement meaning* (fixed for POMs
   // 1, 3, 5; confirmed once by the TD for POMs 6+), then records the
@@ -21393,13 +21452,13 @@ function getAnnotationsOnImage(image) {
   // Realistic ceiling for a POM number parsed from a label. The regex below
   // already caps at two digits; this bound keeps incidental 2-digit numbers
   // in a label (e.g. "12 cm") from being read as a POM, while still letting
-  // out-of-template POMs (17, 18, …) through. Tunable.
+  // custom POMs (19, 20, …) through. Tunable.
   const POM_LABEL_MAX = 40;
 
   // Pull "1" out of labels like "1", "POM 1", "1A", "Underbust (1)".
-  // Accepts any POM in the 1–POM_LABEL_MAX range. POMs above the fixed 1–16
-  // template are not dropped here — they resolve to a style-scoped meaning via
-  // the confirmation popover instead of being silently ignored.
+  // Accepts any POM in the 1–POM_LABEL_MAX range. POMs above the fixed 1–18
+  // core template are not dropped here — they resolve to a style-scoped meaning
+  // via the confirmation popover instead of being silently ignored.
   function parsePomNumberFromLabel(text) {
     if (!text) return null;
     const m = /(?:^|[^\d])(\d{1,2})(?:$|[^\d])/.exec(' ' + String(text) + ' ');

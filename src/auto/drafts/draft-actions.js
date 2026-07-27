@@ -124,7 +124,7 @@
       usedPomKeys.add(key);
     }
 
-    // Duplicate-only conflict path: collapse the 16 repeated messages into a
+    // Duplicate-only conflict path: collapse the 18 repeated messages into a
     // single line, and offer to clear the existing auto-applied rows so the
     // user can recover instead of hitting Discard Drafts and starting over.
     if (duplicates.length && !geometryErrors.length) {

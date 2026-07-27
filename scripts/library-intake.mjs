@@ -125,9 +125,63 @@ function parseMeasurement(text) {
   const value = Number(s);
   return Number.isFinite(value) ? value : null;
 }
+// POM numbers 1..NUMBER_ONLY_MAPPING_THROUGH have been bound to the same core
+// concept since the contract's inception, so a source row's number alone
+// identifies the concept. Numbers ABOVE it are different: they were custom-POM
+// territory until ADR 0032 promoted 17/18 into the core range (the custom floor
+// was 16), and the legacy corpus really does reuse them for other measurements
+// — 17 appears as "Strap width", "Back panel height", "Shoulder strap length",
+// "Hook and eye width"; 18 as "Strap width", "Shoulder strap length". So above
+// the boundary the number is only a hint: the row must also carry evidence that
+// it means the core concept, or it stays pending for TD term mapping rather
+// than silently entering the library as a neckline/armhole value.
+//
+// This literal is a frozen historical fact about source data, not a moving
+// bound — widening the core range again needs no edit here, and the new number
+// gets term confirmation by default (fail-closed).
+const NUMBER_ONLY_MAPPING_THROUGH = 16;
+
+function contractReference() {
+  return JSON.parse(readFileSync(path.join(APP, 'library/pom-definitions/contract-reference.json'), 'utf8'));
+}
+// The core range is owned by the governed contract, not by this importer:
+// ADR 0032 widened it 16 -> 18 and this file was missed. Deriving it means the
+// next widening lands here automatically.
+function coreRangeOf(doc) {
+  const first = Number(doc?.numbering_policy?.core_range?.first); const last = Number(doc?.numbering_policy?.core_range?.last);
+  if (!Number.isInteger(first) || !Number.isInteger(last) || first < 1 || last < first) throw new Error('unsupported_numbering_policy_core_range');
+  return { first, last };
+}
 function registry() {
-  const doc = JSON.parse(readFileSync(path.join(APP, 'library/pom-definitions/contract-reference.json'), 'utf8'));
-  return new Map(doc.concepts.filter(c => c.pom_number <= 16).map(c => [c.pom_number, c]));
+  const doc = contractReference(); const { first, last } = coreRangeOf(doc);
+  return new Map(doc.concepts.filter(c => c.pom_number >= first && c.pom_number <= last).map(c => [c.pom_number, c]));
+}
+
+// Terms are matched against the governed vocabulary only — the canonical
+// English name plus TD-approved aliases, exactly like the legacy importer.
+// A TD who labels the row differently adds an approved alias; nothing is
+// resolved by fuzzy match here (see library/README.md safety boundaries).
+const termConfirms = (concept, term) => {
+  const normalized = norm(term);
+  return normalized ? [concept.canonical_name_en, ...(concept.aliases_approved || [])].filter(Boolean).map(norm).includes(normalized) : false;
+};
+
+// Resolve a source row's POM number to a core concept. `concepts` is a registry
+// map, so it already bounds the number to the contract's core range. Above
+// NUMBER_ONLY_MAPPING_THROUGH the caller must supply whichever disambiguating
+// evidence its source actually carries:
+//   - `declaredCustom` — authoritative, and preferred when present: a saved
+//     project lists its custom POMs, so absence from that list confirms the
+//     core concept even when the row carries no usable description.
+//   - `term` — the row's description. A workbook has no custom-POM list, so
+//     the term is the only signal available.
+function coreConceptFor(rawNumber, concepts, evidence = {}) {
+  const number = Number(rawNumber);
+  if (!Number.isInteger(number)) return null;
+  const concept = concepts.get(number) || null;
+  if (!concept || number <= NUMBER_ONLY_MAPPING_THROUGH) return concept;
+  if ('declaredCustom' in evidence) return evidence.declaredCustom ? null : concept;
+  return termConfirms(concept, evidence.term) ? concept : null;
 }
 
 export function importCurrentWorkbook(file) {
@@ -136,7 +190,7 @@ export function importCurrentWorkbook(file) {
   const headers = headerStatus(sheet).headers; const concepts = registry(); const records = []; const issues = new Set();
   const rows = [...sheet.cells.keys()].map(r => Number(r.match(/\d+$/)?.[0])).filter(n => n >= 4); const last = Math.max(3, ...rows);
   for (let row = 4; row <= last; row++) {
-    const rawPom = sheet.cells.get(`A${row}`)?.value || null; const term = sheet.cells.get(`B${row}`)?.value || null; const n = Number(rawPom); const concept = Number.isInteger(n) && n >= 1 && n <= 16 ? concepts.get(n) : null;
+    const rawPom = sheet.cells.get(`A${row}`)?.value || null; const term = sheet.cells.get(`B${row}`)?.value || null; const concept = coreConceptFor(rawPom, concepts, { term });
     if (!concept) issues.add('unresolved_or_custom_pom_number');
     const tolText = sheet.cells.get(`D${row}`)?.value || null; const tol = parseTolerance(tolText); if (tolText && tol == null) issues.add('unparseable_tolerance');
     headers.slice(4).forEach((size, i) => {
@@ -210,9 +264,8 @@ function decodeDataUrl(value) {
   } catch { return null; }
 }
 
-function pomConcept(pomKey) {
-  const number = Number(pomKey);
-  return Number.isInteger(number) && number >= 1 && number <= 16 ? registry().get(number) || null : null;
+function pomConcept(pomKey, declaredCustom) {
+  return coreConceptFor(pomKey, registry(), { declaredCustom });
 }
 
 export function importSavedProject(file, identityDecisions = null) {
@@ -237,7 +290,7 @@ export function importSavedProject(file, identityDecisions = null) {
   const pomValues = [];
   for (const key of Object.keys(state.pomSpecs || {}).sort((a, b) => Number(a) - Number(b) || a.localeCompare(b))) {
     const spec = state.pomSpecs[key]; if (!spec || typeof spec !== 'object') continue;
-    const concept = pomConcept(key); const customPom = custom.get(key); const tolText = spec.tol == null ? null : String(spec.tol); const tol = parseTolerance(tolText);
+    const customPom = custom.get(key); const concept = pomConcept(key, Boolean(customPom)); const tolText = spec.tol == null ? null : String(spec.tol); const tol = parseTolerance(tolText);
     if (tolText && tol == null) issues.add('unparseable_tolerance');
     for (const [field, sizeCode] of [['sizeL', 'L'], ['sizeL2', 'L2']]) {
       if (spec[field] == null || String(spec[field]).trim() === '') continue;

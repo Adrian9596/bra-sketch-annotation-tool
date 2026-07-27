@@ -1,5 +1,5 @@
 // Grading dialog (US-011 S3): view and edit the grade rule inside the tool.
-// One row per POM (the 16 + any custom POMs), one column per size. Cells show
+// One row per POM (the 18 + any custom POMs), one column per size. Cells show
 // the EFFECTIVE per-size delta — per-size TD override, else constant-step
 // override (Size Run dialog), else the built-in SPEC_* tables — and edits
 // write per-size overrides into gradeRules v2 (stored in inches). The L

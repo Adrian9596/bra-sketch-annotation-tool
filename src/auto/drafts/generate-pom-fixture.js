@@ -785,8 +785,8 @@
 
     // P5: a straight row whose endpoints coincide (zero measurable length)
     // can't satisfy its forced horizontal/vertical shape check and would make
-    // validateAutoFixture return 'fail', aborting ALL 16 POMs and discarding
-    // the 15 good ones. Demote just that degenerate row to REVIEW_ONLY so the
+    // validateAutoFixture return 'fail', aborting ALL 18 POMs and discarding
+    // the 17 good ones. Demote just that degenerate row to REVIEW_ONLY so the
     // rest still ship; the null-geometry pass below then clears its coords.
     for (const row of rows) {
       if (row.drawability === 'REVIEW_ONLY' || row.type === 'curved') continue;

@@ -184,7 +184,7 @@
   }
 
   // Custom POM registry lookup (US-011 S4). Custom POMs (17+) live in
-  // state.customPoms — never in the 16-POM rule JSON (ADR 0018).
+  // state.customPoms — never in the 18-POM rule JSON (ADR 0018).
   function customPomEntry(pomKey) {
     const key = String(pomKey == null ? '' : pomKey).trim();
     if (!key) return null;
@@ -292,7 +292,7 @@
 
     // TD-defined POMs beyond the standard 16 (US-011, ADR 0018). Array of
     // { pom: '17', en, zh, tol }. Numbering continues from 17 per project.
-    // Lives in project state — the 16-POM rule JSON is never touched.
+    // Lives in project state — the 18-POM rule JSON is never touched.
     // Persisted with the project and captured in history.
     customPoms: [],
 

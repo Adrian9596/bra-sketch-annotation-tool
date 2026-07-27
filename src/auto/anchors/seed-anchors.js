@@ -11,7 +11,7 @@
   //
   // Anchors live between detection and POM generation. Detect Sketch seeds
   // them with rough positions; the TD drags any wrong ones; the POM
-  // generator then reads anchor positions to lay down 16 draft lines.
+  // generator then reads anchor positions to lay down 18 draft lines.
   // Anchors x/y are normalized [0, 1] in the source image's pixel space, so
   // they travel with the image (pan / zoom / resize / save).
 
@@ -55,6 +55,12 @@
     const halfW = bb.width / 2;
     const ax    = detection.axisX;
     const band  = detection.bandY;
+    // POM 6's bottom (shared with POM 5) sits on the hem at the CF column when
+    // detection resolved one, else on the flat band row (US-061). Older saved
+    // detections have no cfBottomHemY, so they keep the flat row.
+    const cfBottomY = Number.isFinite(detection.cfBottomHemY)
+      ? detection.cfBottomHemY
+      : band;
     // Chest fallback: 30% down from bbox top if detection didn't surface one.
     const chest = detection.chestY != null
       ? detection.chestY
@@ -275,7 +281,11 @@
 
     let seeds = {
       'cf-top':         { x: ax, y: clamp01(top + bb.height * 0.04) },
-      'cf-bottom':      { x: ax, y: clamp01(band) },
+      // POM 6's bottom follows the hem at the CF column, not the flat band row
+      // (US-061). detection.cfBottomHemY equals bandY on a straight hem, so
+      // this is a no-op there; on an arched hem it keeps the anchor on the
+      // artwork instead of floating below it.
+      'cf-bottom':      { x: ax, y: clamp01(cfBottomY) },
       // cradle-cf-top: seeded from direct CF-seam detection when present;
       // else from the contour crest tier (US-015 / ADR 0023, review-flagged);
       // else from the POM 7 cradle seam projected to the CF axis (the
@@ -915,8 +925,10 @@
       // CF-bottom: bandY is the highest-confidence horizontal signal in the
       // pipeline. Prefer (axisX, bandY) over the view-box fraction so POMs 5
       // and 6 land on the actual band ink.
+      // Hem-following bottom at the CF column (US-061); cfBottomY falls back to
+      // the flat band row when detection resolved no hem there.
       const useCfBottom = (detection.bandY != null && detection.axisX != null)
-        ? { x: clamp01(detection.axisX), y: clamp01(detection.bandY) }
+        ? { x: clamp01(detection.axisX), y: clamp01(cfBottomY) }
         : inView(f, 0.505, 0.985);
       // Inner-cup-bottom: cradleY is the clean horizontal contour between
       // chest and band. When the cupModel is usable, its bottomPoint already

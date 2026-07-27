@@ -200,7 +200,7 @@ function validateRuleContract(pomTemplate, anchorSchema) {
       }
     }
   }
-  for (let n = 1; n <= 16; n += 1) {
+  for (let n = 1; n <= 18; n += 1) {
     if (!ids.has(String(n))) out.push(`POM contract: missing POM id "${n}".`);
   }
   return out;

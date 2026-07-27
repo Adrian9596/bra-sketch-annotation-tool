@@ -348,7 +348,9 @@ function makeValidationFixture() {
   const rows = [];
   const point = (x, y) => ({ x, y });
   const template = windowStub.BraMeasurementRules.POM_TEMPLATE;
-  for (let n = 1; n <= 16; n += 1) {
+  // 1..18: the fixture must cover the full core range or validateAutoFixture's
+  // per-POM presence check (ADR 0032) reports the missing rows as failures.
+  for (let n = 1; n <= 18; n += 1) {
     const pom = String(n);
     const row = {
       fixtureId: 'test-' + pom,
