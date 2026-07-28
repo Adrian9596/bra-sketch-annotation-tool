@@ -2397,7 +2397,30 @@
     // Commits at tier 'arc': seeded low-confidence + reviewRequired, ignored
     // by the cupModel side-picker and bottom (only 'strong'/'seam' feed it).
     // The right cup is preferred to match the TD labeling convention (demo3).
+    //
+    // A cup-bottom / underwire arc is a DIP: it descends from the gore, bottoms
+    // out near cup centre, and rises again toward the side seam. A curve whose
+    // lowest point sits hard against the CF axis is not a cup base at all — on
+    // a scoop-neck sketch it is the NECKLINE, which by construction reaches its
+    // lowest point at centre front. findCupBottomFromInk only insets its search
+    // band 20% off the axis, so such a curve is still descending when the
+    // window clips it and then "wins" at the band's own inner wall.
+    //
+    // Measured deepest-point clearance across the demo corpus, as a fraction of
+    // the CF -> side-seam half-width: committed seam/strong tiers land at
+    // 52-84%, legitimate arcs at 40% (demo4) to 71% (demo1), while the neckline
+    // mis-lock on "EvelynBliss vA 1.0" lands at 26% — where cradleY resolves to
+    // the chest row (chestY is null there), so the search window never reaches
+    // the real cradle seam ~0.15 further down. A 1/3 floor separates those with
+    // margin on both sides. It is deliberately a FRACTION, not an absolute
+    // normalized distance: the same garment feature then scores the same on a
+    // 3-view board as on a lone sketch.
+    //
+    // Scoped to the arc tier on purpose — it is the last-resort, review-flagged
+    // tier (ADR 0022); the seam tiers carry their own validation.
+    const ARC_MIN_CF_CLEARANCE = 1 / 3;
     if (!cradleCupTop && cradleY != null && bandY != null) {
+      let arcClearanceReject = null;
       for (const side of [+1, -1]) {
         const apexPoint = side < 0 ? apexLeft : apexRight;
         if (!apexPoint) continue;
@@ -2405,19 +2428,41 @@
           ? (Number.isFinite(sideLeftX) ? Math.round(sideLeftX * w) : minX + Math.round(bboxW * 0.05))
           : (Number.isFinite(sideRightX) ? Math.round(sideRightX * w) : maxX - Math.round(bboxW * 0.05));
         const arc = findCupBottomFromInk(dark, w, h, bounds, axisPx, arcSideColPx, apexPoint.y, cradleY, side);
+        const arcHalfSpanPx = Math.abs(arcSideColPx - axisPx);
+        const arcCfClearance = (arc && arc.bottomX != null && arcHalfSpanPx > 0)
+          ? Math.abs(arc.bottomX * w - axisPx) / arcHalfSpanPx
+          : 0;
         if (arc && arc.bottomX != null
             && arc.support >= 0.30
             && arc.bottomY > apexPoint.y + 0.08
             && arc.bottomY >= cradleY - 0.05
-            && arc.bottomY < bandY - 0.01) {
+            && arc.bottomY < bandY - 0.01
+            && arcCfClearance >= ARC_MIN_CF_CLEARANCE) {
           cradleCupTop = { x: arc.bottomX, y: arc.bottomY };
           // Hem-following bottom, same rule as the seam/strong tier (US-061).
           cradleCupBottom = { x: arc.bottomX, y: hemNormAtColumn(arc.bottomX * w, bandY) };
           cradleCupSide = side;
           cradleCupTier = 'arc';
           cradleCupReject = null;
+          arcClearanceReject = null;
           break;
         }
+        if (arc && arc.bottomX != null
+            && arcCfClearance < ARC_MIN_CF_CLEARANCE
+            && !arcClearanceReject) {
+          arcClearanceReject = 'traced cup-bottom arc rejected: bottoms out '
+            + Math.round(arcCfClearance * 100) + '% of the way from CF to the side seam, '
+            + 'inside the ' + Math.round(ARC_MIN_CF_CLEARANCE * 100)
+            + '% cup-base floor (reads as the neckline curve, not a cup bottom)';
+        }
+      }
+      // Keep the seam-tier reason — it says why we reached the fallback at all —
+      // and append why the fallback also declined, so missingReason tells the
+      // whole story instead of only the last stage that ran.
+      if (!cradleCupTop && arcClearanceReject) {
+        cradleCupReject = cradleCupReject
+          ? (cradleCupReject + '; ' + arcClearanceReject)
+          : arcClearanceReject;
       }
     }
 
