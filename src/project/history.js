@@ -30,6 +30,10 @@
       gradeRules: clone(state.gradeRules || {}),
       customPoms: clone(state.customPoms || []),
       deletedPomKeys: clone(state.deletedPomKeys || []),
+      mainPage: state.mainPage ? clone(state.mainPage) : null,
+      construction: state.construction ? clone(state.construction) : null,
+      bom: state.bom ? clone(state.bom) : null,
+      preview: state.preview ? clone(state.preview) : null,
     };
   }
 
@@ -85,6 +89,14 @@
     state.gradeRules = migrateGradeRulesV2(snapshot.gradeRules, snapshot.depthRules);
     state.customPoms = clone(snapshot.customPoms || []);
     state.deletedPomKeys = clone(snapshot.deletedPomKeys || []);
+    state.mainPage = snapshot.mainPage ? clone(snapshot.mainPage) : null;
+    if (typeof renderMainPage === 'function') renderMainPage();
+    state.construction = snapshot.construction ? clone(snapshot.construction) : null;
+    if (typeof renderConstruction === 'function') renderConstruction();
+    state.bom = snapshot.bom ? clone(snapshot.bom) : null;
+    if (typeof renderBom === 'function') renderBom();
+    state.preview = snapshot.preview ? clone(snapshot.preview) : null;
+    if (state.activePage === 'preview' && typeof renderPreviewPage === 'function') renderPreviewPage();
     state.editingLabelId = null;
     state.drawSession = null;
     state.eraseSession = null;

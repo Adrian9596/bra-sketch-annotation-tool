@@ -40,13 +40,32 @@
         customPoms: clone(state.customPoms || []),
         deletedPomKeys: clone(state.deletedPomKeys || []),
         sizeSelection: state.sizeSelection ? clone(state.sizeSelection) : null,
+        // US-068: MAIN PAGE sheet. Additive — files saved before US-068 have
+        // no key and seed a default on open. US-080: the serializer injects
+        // the version-sketch bytes, which live outside state.mainPage.
+        mainPage: (typeof mpSerializeForProject === 'function')
+          ? mpSerializeForProject()
+          : (state.mainPage ? clone(state.mainPage) : null),
+        // US-070: Construction annotation page. Additive — files saved
+        // before US-070 have no key and seed a default on open.
+        construction: (typeof ccSerializeForProject === 'function')
+          ? ccSerializeForProject()
+          : (state.construction ? clone(state.construction) : null),
+        // US-072: BOM page. Additive — files saved before US-072 have no
+        // key and seed a default (empty BOM) on open.
+        bom: (typeof bmSerializeForProject === 'function')
+          ? bmSerializeForProject()
+          : (state.bom ? clone(state.bom) : null),
+        // US-079: Preview & Export page-inclusion checkboxes. Additive —
+        // files saved before US-079 have no key and default to all enabled.
+        preview: state.preview ? clone(state.preview) : null,
       },
     };
   }
 
   function saveProject() {
-    if (!state.annotations.length && !state.images.length) {
-      showToast('Nothing to save yet. Paste an image or draw a line first.');
+    if (typeof hasUnsavedWork === 'function' ? !hasUnsavedWork() : (!state.annotations.length && !state.images.length)) {
+      showToast('Nothing to save yet. Add or edit Board/BOM work first.');
       return;
     }
     if (state.appMode === 'auto' && state.autoMode.draftAnnotations.length > 0) {
@@ -149,7 +168,7 @@
       return;
     }
 
-    if ((state.annotations.length || state.images.length) &&
+    if ((typeof hasUnsavedWork === 'function' ? hasUnsavedWork() : (state.annotations.length || state.images.length)) &&
         !window.confirm('Open this project? Your current board will be replaced. Save it first if you want to keep it.')) {
       return;
     }
@@ -241,6 +260,30 @@
       state.deletedPomKeys = Array.isArray(s.deletedPomKeys) ? clone(s.deletedPomKeys) : [];
       state.sizeSelection = (s.sizeSelection && typeof s.sizeSelection === 'object')
         ? clone(s.sizeSelection) : null;
+      // US-080: mpLoadProjectState pulls the sketch bytes out into the module
+      // map and leaves state.mainPage byte-free, the way BOM images load.
+      if (typeof mpLoadProjectState === 'function') mpLoadProjectState(s.mainPage);
+      else {
+        state.mainPage = (s.mainPage && typeof s.mainPage === 'object')
+          ? clone(s.mainPage) : null;
+        if (typeof ensureMainPage === 'function') ensureMainPage();
+      }
+      if (typeof renderMainPage === 'function') renderMainPage();
+      if (typeof ccLoadProjectState === 'function') await ccLoadProjectState(s.construction, s.images);
+      else {
+        state.construction = (s.construction && typeof s.construction === 'object')
+          ? clone(s.construction) : null;
+        if (typeof ensureConstruction === 'function') ensureConstruction(s.images);
+      }
+      if (typeof renderConstruction === 'function') renderConstruction();
+      if (typeof bmLoadProjectState === 'function') await bmLoadProjectState(s.bom);
+      else {
+        state.bom = (s.bom && typeof s.bom === 'object') ? clone(s.bom) : null;
+        if (typeof ensureBom === 'function') ensureBom();
+      }
+      if (typeof renderBom === 'function') renderBom();
+      state.preview = (s.preview && typeof s.preview === 'object') ? clone(s.preview) : null;
+      if (typeof ensurePreviewPage === 'function') ensurePreviewPage();
 
       // Images are in place now, so the Auto status chip can resolve
       // ready/idle correctly for the reopened board.

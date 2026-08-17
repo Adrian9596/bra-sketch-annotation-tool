@@ -20,6 +20,8 @@
     "measure-demos": "node test/tools/measure-demos.mjs",
     "mode-b-readiness": "node test/tools/measure-demos.mjs --readiness",
     "corroborate-demos": "node test/tools/measure-demos.mjs --corroborate",
+    "classify-demos": "node test/tools/measure-demos.mjs --classify",
+    "diagnose-demos": "node test/tools/measure-demos.mjs --diagnose",
     "retrieval-demos": "node test/tools/retrieval-demos.mjs",
     "learning-demo": "node test/tools/learning-demo.mjs",
     "build-anchor-bundle": "node test/tools/build-anchor-bundle.mjs",
@@ -42,7 +44,11 @@
     "measurement-prep-report": "node scripts/measurement-preparation-report.mjs",
     "measurement-prep-check": "node scripts/measurement-preparation-report.mjs --check",
     "construction-measurement-test": "node test/run-tests.mjs",
-    "construction-measurement-browser-test": "node test/browser-smoke.mjs"
+    "construction-measurement-browser-test": "node test/browser-smoke.mjs",
+    "mainpage-check": "node scripts/mainpage-check.mjs",
+    "construction-check": "node scripts/construction-check.mjs",
+    "bom-check": "node scripts/bom-check.mjs",
+    "preview-check": "node scripts/preview-check.mjs"
   },
   "devDependencies": {
     "@slidev/cli": "^52.16.0",

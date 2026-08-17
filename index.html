@@ -41,12 +41,23 @@
     box-shadow:var(--soft-shadow);
   }
   .toolbar{
+    grid-row:1;
     display:flex;
     align-items:center;
     gap:6px;
     padding:7px 8px;
     flex-wrap:wrap;
   }
+  /* Board and MAIN PAGE are peer pages (US-069, ADR 0038), each toggled by
+     page-nav.js via .page-hidden. Every row-3 occupant needs an explicit
+     grid-row so CSS Grid auto-placement doesn't push the sibling into a new
+     implicit row 4 when both exist in the DOM at once. */
+  .board-toolbar-groups{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+  .page-hidden{ display:none !important; }
   .group{
     display:flex;
     align-items:center;
@@ -145,6 +156,7 @@
   }
   body.tool-eraser canvas{ cursor:crosshair; }
   .statusbar{
+    grid-row:2;
     display:grid;
     grid-template-columns:1fr auto;
     gap:14px;
@@ -163,6 +175,7 @@
   .status-item strong{ font-weight:700; }
   .muted{ color:var(--muted); }
   .workspace{
+    grid-row:3;
     min-height:0;
     display:flex;
   }
@@ -1525,11 +1538,1074 @@
      the Manual/Auto toggle, the automatic post-Apply handoff, or by
      reopening a saved project that contains applied lines. */
   body.app-auto .manual-only{ display:none !important; }
+
+  /* ===== MAIN PAGE sheet (US-068, ADR 0037; page-ified US-069, ADR 0038) =====
+     A page of the tech pack, a peer of the Board — not a modal — so it gets a
+     grid row of its own (see .toolbar's comment on row-3 occupants) and its
+     own print rules. Rebuilt on this tool's primitives — see src/ui/main-page.js. */
+  .mp-page{
+    grid-row:3;
+    min-height:0;
+    overflow:auto;
+    background:#eceef2;
+    padding:16px;
+  }
+  .mp-sheet{
+    max-width:1180px;
+    margin:0 auto;
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:10px;
+    box-shadow:var(--shadow);
+    padding:16px 18px 22px;
+  }
+  .mp-sheethead{
+    display:grid;
+    grid-template-columns:1fr auto 1fr;
+    align-items:center;
+    gap:10px;
+    border-bottom:2px solid var(--text);
+    padding-bottom:8px;
+    margin-bottom:12px;
+  }
+  .mp-shl{ font-size:12.5px; color:var(--muted); }
+  .mp-shm{ font-size:17px; font-weight:700; letter-spacing:.06em; text-align:center; }
+  .mp-shr{ text-align:right; display:flex; gap:6px; justify-content:flex-end; align-items:center; }
+  .mp-draft{
+    display:inline-block;
+    font-size:11px;
+    font-weight:600;
+    color:#8a5300;
+    background:#fff5e0;
+    border:1px solid #f0d9a8;
+    border-radius:6px;
+    padding:3px 8px;
+  }
+  .mp-sheetbar{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:12px;
+  }
+  .mp-sbhint{ font-size:11.5px; color:var(--muted); }
+  .mp-cols{ display:flex; gap:14px; align-items:flex-start; }
+  .mp-col{ min-width:0; }
+  .mp-col-fields{ flex:0 0 30%; }
+  .mp-col-version{ flex:0 0 34%; }
+
+  table.mp-kv, table.mp-cwx{
+    width:100%;
+    border-collapse:collapse;
+    font-size:12px;
+  }
+  table.mp-kv th, table.mp-kv td,
+  table.mp-cwx th, table.mp-cwx td{
+    border:1px solid var(--border);
+    padding:4px 6px;
+    vertical-align:top;
+    text-align:left;
+  }
+  table.mp-kv th, table.mp-cwx th{
+    background:#f7f8fa;
+    font-weight:600;
+    width:44%;
+  }
+  table.mp-cwx th{ width:26%; }
+  table.mp-kv td[contenteditable]:focus,
+  table.mp-kv th[contenteditable]:focus,
+  table.mp-cwx td[contenteditable]:focus,
+  .mp-note[contenteditable]:focus{
+    outline:2px solid var(--select);
+    outline-offset:-2px;
+  }
+  /* Brand and the creation date are derived, not typed. */
+  .mp-fixed{ background:#fafbfc; color:var(--text); }
+  .mp-sheet td.act{ width:24px; padding:2px; text-align:center; }
+  .mp-sheet td.act button{
+    border:1px solid var(--border);
+    background:#fff;
+    border-radius:5px;
+    width:20px;
+    height:20px;
+    line-height:1;
+    font-size:11px;
+    color:var(--muted);
+    cursor:pointer;
+    padding:0;
+  }
+  .mp-sheet td.act button:hover{ background:#f1f2f5; color:var(--text); }
+  button.mp-dd::after{ content:"\25BE"; }
+
+  .mp-vpanel{
+    border:1px solid var(--border);
+    border-radius:8px;
+    overflow:hidden;
+  }
+  .mp-vhead{
+    background:#f7f8fa;
+    border-bottom:1px solid var(--border);
+    padding:6px 8px;
+    font-size:12.5px;
+    font-weight:700;
+    letter-spacing:.04em;
+  }
+  /* US-080: two TD-supplied technical flats per version, FRONT then BACK. */
+  .mp-sketchrow{
+    min-height:120px;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+    padding:8px;
+    border-bottom:1px solid var(--border);
+  }
+  .mp-sketch{
+    position:relative;
+    border:1px dashed var(--border);
+    border-radius:6px;
+    background:#fff;
+    min-height:104px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:4px;
+    cursor:pointer;
+    overflow:hidden;
+  }
+  .mp-sketch.mp-sk-filled{ border-style:solid; }
+  .mp-sketch:hover{ border-color:var(--select); }
+  .mp-sk-img{ max-width:100%; max-height:200px; object-fit:contain; display:block; }
+  .mp-sk-empty{ font-size:11.5px; color:var(--muted); text-align:center; }
+  .mp-sk-tag{
+    position:absolute;
+    left:4px;
+    bottom:3px;
+    font-size:9px;
+    font-weight:700;
+    letter-spacing:.08em;
+    color:var(--muted);
+    background:rgba(255,255,255,.85);
+    padding:0 3px;
+    border-radius:3px;
+  }
+  .mp-sk-x{
+    position:absolute;
+    top:3px;
+    right:3px;
+    width:18px;
+    height:18px;
+    line-height:1;
+    padding:0;
+    font-size:11px;
+    border:1px solid var(--border);
+    border-radius:5px;
+    background:#fff;
+    color:var(--muted);
+    cursor:pointer;
+  }
+  .mp-sk-x:hover{ background:#f1f2f5; color:var(--text); }
+  .mp-sketch-menu{ width:250px; padding:8px; }
+  .mp-sk-hint{ font-size:11px; color:var(--muted); line-height:1.4; margin-bottom:6px; }
+  .mp-sk-actions{ display:flex; gap:6px; }
+  .mp-sk-actions button{
+    flex:1;
+    border:1px solid var(--border);
+    background:#fff;
+    border-radius:6px;
+    padding:5px 6px;
+    font-size:11.5px;
+    cursor:pointer;
+  }
+  .mp-sk-actions button:hover{ background:#f1f2f5; }
+
+  /* Style No Breakdown — three sub-cells under their own captions. */
+  .mp-bdhead, .mp-bdcell{ padding:0 !important; }
+  .mp-bdhead{ display:grid; grid-template-columns:repeat(3,1fr); }
+  /* The row's height comes from the wrapped label in the th, so the sub-cell
+     track has to stretch or its dividers stop short of the row border. */
+  .mp-bdcell{ display:grid; grid-template-columns:repeat(3,1fr); align-content:stretch; grid-auto-rows:minmax(19px,1fr); }
+  .mp-bdhead span{
+    padding:2px 5px;
+    font-size:10px;
+    color:var(--muted);
+    text-align:center;
+    border-left:1px solid var(--border);
+  }
+  .mp-bdhead span:first-child{ border-left:none; }
+  .mp-bd-sub{
+    padding:4px 5px;
+    min-height:19px;
+    border-left:1px solid var(--border);
+  }
+  .mp-bd-sub:first-child{ border-left:none; }
+  .mp-bd-sub:focus{ outline:2px solid var(--select); outline-offset:-2px; }
+  .mp-bd-headrow th.mp-bd-blank{ background:#fff; border-bottom:none; }
+  .mp-bd-headrow td.mp-bdhead{ border-bottom:none; }
+  .mp-note{
+    margin-top:10px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:8px 10px;
+    font-size:11.5px;
+    line-height:1.5;
+    color:var(--muted);
+    min-height:60px;
+  }
+  /* Empty on a fresh sheet, so it has to say what it is for — a bare box
+     reads as a rendering fault. An empty note must not print. */
+  .mp-note:empty::before{
+    content:"Where these measurements came from — sample, photo teardown, approved pack, designer call.";
+    color:#9aa1ac;
+  }
+  @media print{ .mp-note:empty{ display:none; } }
+  .mp-note-label{
+    font-size:10.5px;
+    font-weight:700;
+    letter-spacing:.08em;
+    color:var(--muted);
+    text-transform:uppercase;
+    margin-bottom:4px;
+  }
+
+  /* Colour picker, hung off the "Add colour" button. */
+  .color-add-wrap{ position:relative; display:inline-block; }
+  .color-menu{
+    display:none;
+    position:absolute;
+    top:calc(100% + 4px);
+    left:0;
+    z-index:5;
+    width:340px;
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    padding:6px;
+  }
+  .color-add-wrap.open .color-menu{ display:block; }
+  .color-menu .cm-q, .mp-menu .mm-q{
+    width:100%;
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:5px 8px;
+    font-size:12px;
+    font-family:inherit;
+  }
+  .color-menu .cm-list, .mp-menu .mm-list{
+    max-height:260px;
+    overflow:auto;
+    margin-top:5px;
+  }
+  .color-menu .cm-list button, .mp-menu .mm-list button{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    width:100%;
+    border:0;
+    background:transparent;
+    border-radius:6px;
+    padding:4px 6px;
+    font-size:12px;
+    font-family:inherit;
+    text-align:left;
+    color:var(--text);
+    cursor:pointer;
+  }
+  .color-menu .cm-list button:hover, .mp-menu .mm-list button:hover{ background:#f1f2f5; }
+  .color-menu .cm-on, .mp-menu .mm-on{ font-weight:600; }
+  .color-menu .cm-foot, .mp-menu .mm-foot, .color-menu .cm-empty{
+    font-size:11px;
+    color:var(--muted);
+    padding:5px 6px 2px;
+    border-top:1px solid var(--hairline);
+    margin-top:4px;
+  }
+  .color-menu .cm-empty{ border-top:0; margin-top:0; }
+  .mp-chip{
+    flex:0 0 auto;
+    width:13px;
+    height:13px;
+    border-radius:3px;
+    border:1px solid var(--chip-border);
+    background:var(--chip, transparent);
+  }
+  .cm-name, .mm-name{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* The field picker is parked on <body> so the scrolling sheet cannot clip it. */
+  .mp-menu{
+    display:none;
+    position:fixed;
+    z-index:70;
+    width:300px;
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    padding:6px;
+  }
+  .mp-menu.open{ display:block; }
+
+  /* Printing the sheet prints ONLY the sheet: the board, toolbar and every
+     screen-only control drop out so the page matches the tech pack's. */
+  @media print{
+    body.mainpage-open{ overflow:visible; }
+    /* .mp-page is now nested inside .app (US-069), so .app itself must stay
+       visible and unboxed for print — its OTHER child, #boardToolbarGroups /
+       .statusbar / .workspace, is already display:none via .page-hidden,
+       applied the moment the TD switched tabs on screen. */
+    body.mainpage-open .app{
+      display:block;
+      height:auto;
+      padding:0;
+    }
+    body.mainpage-open .mp-page{
+      overflow:visible;
+      padding:0;
+      background:#fff;
+    }
+    body.mainpage-open .mp-sheet{
+      max-width:none;
+      border:0;
+      border-radius:0;
+      box-shadow:none;
+      padding:0;
+    }
+    body.mainpage-open .mp-screen-only{ display:none !important; }
+    body.mainpage-open .mp-menu{ display:none !important; }
+  }
+
+  /* ===== Construction annotation page (US-070, ADR 0039) =====
+     A third peer page of the tech pack, alongside Board and MAIN PAGE — same
+     row-3 grid slot as .mp-page (see .toolbar's comment on row-3 occupants).
+     Rebuilt on this tool's primitives from the sibling "Bra construction"
+     project — see src/ui/construction.js. */
+  .cc-page{
+    grid-row:3;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    background:#eceef2;
+    border-radius:12px;
+    overflow:hidden;
+  }
+  .cc-toolbar{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:8px 10px;
+    background:#fff;
+    border-bottom:1px solid var(--hairline);
+  }
+  .cc-toolbar button{
+    font:inherit;
+    padding:6px 10px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:#fff;
+    cursor:pointer;
+  }
+  #ccAddNoteBtn.cc-armed{
+    background:var(--select);
+    color:#fff;
+    border-color:var(--select);
+  }
+  /* Lace / Solid are two independent note sheets over the same board sketch
+     (mirrors the reference tech-pack tool's #sheet-con-lace / #sheet-con) —
+     switching tabs swaps which notes render/hit-test, it does not swap images. */
+  .cc-variant-tabs{ display:flex; gap:4px; }
+  .cc-variant-btn{
+    font:inherit;
+    padding:6px 10px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:#fff;
+    cursor:pointer;
+  }
+  .cc-variant-btn[aria-pressed="true"]{
+    background:var(--select);
+    color:#fff;
+    border-color:var(--select);
+  }
+  .cc-hint{ font-size:12px; color:var(--muted); }
+  .cc-body{
+    flex:1;
+    min-height:0;
+    display:flex;
+  }
+  .cc-canvas{
+    flex:1;
+    min-width:0;
+    display:block;
+    background:#f7f8fa;
+    cursor:crosshair;
+  }
+  .cc-side{
+    width:280px;
+    flex:none;
+    border-left:1px solid var(--hairline);
+    background:#fff;
+    padding:12px;
+    overflow:auto;
+  }
+  .cc-side-empty{ font-size:12.5px; color:var(--muted); }
+  .cc-side-title{ font-weight:600; margin-bottom:6px; }
+  #ccNoteZone{
+    width:100%;
+    font:inherit;
+    padding:6px 8px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    margin-bottom:8px;
+  }
+  #ccNoteText{
+    width:100%;
+    min-height:64px;
+    font:inherit;
+    padding:6px 8px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    resize:vertical;
+    margin-bottom:8px;
+  }
+  #ccPhraseSearch{
+    width:100%;
+    font:inherit;
+    padding:6px 8px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    margin-bottom:6px;
+  }
+  .cc-phrase-list{
+    max-height:220px;
+    overflow:auto;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    margin-bottom:10px;
+  }
+  .cc-phrase-list button{
+    text-align:left;
+    font-size:12.5px;
+    padding:5px 8px;
+    border-radius:6px;
+    border:1px solid var(--chip-border);
+    background:var(--chip);
+    cursor:pointer;
+  }
+  .cc-phrase-empty{ font-size:12px; color:var(--muted); }
+  .cc-side-row{ display:flex; gap:8px; }
+  .cc-side-row button{
+    flex:1;
+    font:inherit;
+    padding:6px 10px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:#fff;
+    cursor:pointer;
+  }
+  /* Second+ leader line on a note (US-071): armed like #ccAddNoteBtn, and
+     removed one at a time by double-clicking its arrowhead on the canvas —
+     ported convention from the reference tool's .anc double-click-to-delete. */
+  #ccAddArrowBtn.cc-armed{
+    background:var(--select);
+    color:#fff;
+    border-color:var(--select);
+  }
+  #ccDeleteNoteBtn{
+    color:#8a1f1f;
+    border-color:#e8c2c2;
+    background:#fff5f5;
+  }
+  /* Construction table (US-076, ADR 0042): a live, editable mirror of the
+     notes visible on the current Lace/Solid tab, below the canvas+side row.
+     .cc-page is already a column flexbox, so this sits below .cc-body as a
+     bounded, independently-scrolling strip rather than competing with the
+     canvas for height. */
+  #ccTableToggleBtn[aria-pressed="false"]{ opacity:.6; }
+  .cc-table-wrap{
+    flex:0 0 auto;
+    max-height:34vh;
+    overflow:auto;
+    border-top:1px solid var(--hairline);
+    background:#fff;
+  }
+  .cc-table-wrap.cc-table-collapsed{ display:none; }
+  .cc-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  .cc-table thead th{
+    position:sticky;
+    top:0;
+    background:#f3f4f7;
+    text-align:left;
+    padding:6px 8px;
+    border-bottom:1px solid var(--hairline);
+    font-weight:600;
+  }
+  .cc-table tbody tr{ border-bottom:1px solid var(--hairline); cursor:pointer; }
+  .cc-table tbody tr.cc-row-selected{ background:#eef4ff; }
+  .cc-table td{ padding:4px 8px; vertical-align:top; }
+  .cc-tbl-seq{ width:32px; text-align:center; color:var(--muted); cursor:default; }
+  .cc-tbl-zone select{ font:inherit; padding:3px 4px; border:1px solid var(--border); border-radius:6px; }
+  .cc-tbl-note{ width:100%; }
+  .cc-tbl-note textarea{
+    width:100%;
+    min-height:30px;
+    font:inherit;
+    padding:4px 6px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    resize:vertical;
+  }
+  .cc-tbl-del{ width:28px; text-align:center; }
+  .cc-tbl-del button{ border:none; background:none; color:#8a1f1f; cursor:pointer; font-size:14px; line-height:1; }
+  .cc-table-empty{ padding:14px; font-size:12.5px; color:var(--muted); }
+
+  /* US-078 / ADR 0045: one continuous Construction sheet. The wide
+     Outer/Inner Working Board stays above its row-owned Construction Table,
+     matching BOM's sheet-first reading order. */
+  .cc-combined-view{
+    flex:1;
+    min-height:0;
+    overflow:auto;
+    padding:12px;
+    box-sizing:border-box;
+  }
+  .cc-sheet{
+    width:min(100%, 1600px);
+    min-width:1180px;
+    margin:0 auto;
+    padding:20px 24px 28px;
+    box-sizing:border-box;
+    background:#fff;
+    box-shadow:0 1px 5px rgba(0,0,0,.18);
+  }
+  .cc-sheet-head{
+    display:grid;
+    grid-template-columns:1fr auto 1fr;
+    align-items:end;
+    gap:12px;
+    padding-bottom:8px;
+    border-bottom:2px solid #111;
+    font-size:12px;
+    letter-spacing:.04em;
+  }
+  .cc-sheet-head strong{ font-size:16px; letter-spacing:.08em; }
+  .cc-sheet-head > :last-child{ text-align:right; color:var(--muted); }
+  .cc-section-title{
+    margin-top:14px;
+    padding:7px 10px;
+    background:#d9d9d9;
+    border:1px solid #999;
+    border-bottom:0;
+    font-size:12px;
+    font-weight:700;
+    letter-spacing:.04em;
+  }
+  .cc-board-toolbar{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:6px;
+    padding:7px 8px;
+    border:1px solid #999;
+    border-bottom:0;
+    background:#f7f7f7;
+  }
+  .cc-board-toolbar button,
+  .cc-view-target{
+    font:inherit;
+    padding:5px 8px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    background:#fff;
+    cursor:pointer;
+  }
+  .cc-board-toolbar button:disabled{ opacity:.45; cursor:not-allowed; }
+  .cc-toolbar-sep{ width:1px; height:22px; background:#cdd1d8; margin:0 2px; }
+  .cc-view-target-label{ font-size:11.5px; color:var(--muted); }
+  .cc-view-target[aria-pressed="true"],
+  .cc-tool-btn.cc-tool-active{
+    color:#fff;
+    background:var(--select);
+    border-color:var(--select);
+  }
+  .cc-tool-hint{ flex:1 1 260px; font-size:11.5px; color:var(--muted); }
+  .cc-working-canvas{
+    display:block;
+    width:100%;
+    height:540px;
+    border:1px solid #999;
+    background:#eef0f4;
+    box-sizing:border-box;
+  }
+  .cc-working-canvas.cc-tool-select{ cursor:default; }
+  .cc-working-canvas.cc-tool-callout,
+  .cc-working-canvas.cc-tool-leader{ cursor:crosshair; }
+  .cc-table-section .cc-table-wrap{
+    display:block;
+    max-height:none;
+    overflow:visible;
+    border:1px solid #999;
+    background:#fff;
+  }
+  .cc-table-section .cc-table{ table-layout:fixed; font-size:12px; }
+  .cc-table-section .cc-table thead th{
+    position:static;
+    border:1px solid #999;
+    background:#f2f2f2;
+    text-transform:uppercase;
+  }
+  .cc-table-section .cc-table td{ border:1px solid #aaa; vertical-align:middle; }
+  .cc-table-section .cc-view-band th{
+    padding:6px 8px;
+    border:1px solid #999;
+    background:#e5e7eb;
+    text-align:left;
+    font-size:11.5px;
+    letter-spacing:.05em;
+  }
+  .cc-table-section .cc-row-selected{ background:#eef4ff; }
+  .cc-tbl-view{ width:92px; }
+  .cc-tbl-area{ width:150px; }
+  .cc-tbl-callout{ width:68px; text-align:center; }
+  .cc-table-section select{
+    width:100%;
+    font:inherit;
+    padding:4px 5px;
+    border:1px solid var(--border);
+    border-radius:5px;
+    background:#fff;
+  }
+  .cc-detail-wrap{ display:flex; align-items:stretch; gap:4px; }
+  .cc-tbl-detail textarea{
+    width:100%;
+    min-height:30px;
+    padding:5px 7px;
+    border:1px solid var(--border);
+    border-radius:5px;
+    resize:vertical;
+    font:inherit;
+  }
+  .cc-detail-wrap button,
+  .cc-tbl-callout button{
+    flex:none;
+    min-width:28px;
+    border:1px solid var(--border);
+    border-radius:5px;
+    background:#fff;
+    cursor:pointer;
+  }
+  .cc-add-row td{ padding:5px 8px !important; background:#fafafa; }
+  .cc-add-row button{ border:0; background:transparent; color:#1c5fa8; cursor:pointer; font:inherit; }
+  .cc-phrase-menu{
+    position:fixed;
+    z-index:5000;
+    width:370px;
+    max-height:320px;
+    padding:8px;
+    border:1px solid var(--border);
+    border-radius:9px;
+    background:#fff;
+    box-shadow:0 10px 30px rgba(0,0,0,.2);
+  }
+  .cc-phrase-menu #ccPhraseSearch{ margin-bottom:7px; }
+  .cc-phrase-menu .cc-phrase-list{ max-height:255px; margin-bottom:0; }
+  @media print{
+    .cc-screen-only{ display:none !important; }
+    .cc-tbl-del{ display:none !important; }
+    .cc-combined-view{ overflow:visible; padding:0; }
+    .cc-sheet{ min-width:0; width:100%; box-shadow:none; padding:0; }
+    .cc-working-canvas{ height:520px; }
+    .cc-table-wrap{ max-height:none; overflow:visible; }
+  }
+
+  @media print{
+    body.construction-open .app{
+      display:block;
+      height:auto;
+      padding:0;
+    }
+    body.construction-open .cc-page{
+      overflow:visible;
+      border-radius:0;
+    }
+    body.construction-open > .app > .cc-toolbar,
+    body.construction-open .cc-page > .cc-toolbar,
+    body.construction-open .cc-side{
+      display:none !important;
+    }
+  }
+
+  /* ===== BOM page (US-072, ADR 0041) =====
+     Fourth peer page of the tech pack. Reuses Construction's generic
+     .cc-toolbar/.cc-variant-tabs/.cc-hint/.cc-body/.cc-canvas/.cc-side/
+     .cc-side-* classes verbatim (view-agnostic chrome) and adds bm-* classes
+     only for what's actually new: the editable table and the material
+     suggestion panel. See src/ui/bom.js. */
+  .bm-combined-view{
+    flex:1;
+    min-height:0;
+    overflow:auto;
+    padding:12px;
+    box-sizing:border-box;
+  }
+  .bm-combined-sheet{
+    width:min(100%, 1600px);
+    min-width:1450px;
+  }
+  .bm-table-view{
+    display:block;
+    overflow:visible;
+  }
+  .bm-sections{
+    min-width:0;
+    overflow:visible;
+    padding:0;
+  }
+  /* Factory-sheet table framing, matching the reference pack's table.grid/
+     td.secband look: 1px #999 cell borders, #f2f2f2 repeated header rows,
+     #d9d9d9 section bands, 12px type on a white sheet. */
+  .bm-sheet{
+    background:#fff;
+    padding:22px 26px;
+    margin:0 auto;
+    width:min(100%, 1600px);
+    min-width:1450px;
+    box-sizing:border-box;
+    box-shadow:0 1px 5px rgba(0,0,0,.18);
+  }
+  @media print{ .bm-sheet{ box-shadow:none; padding:0; } }
+  /* Reference .sheethead: meta line + sheet name over a 2px black rule. */
+  .bm-sheet-head{
+    display:flex;
+    align-items:baseline;
+    gap:14px;
+    border-bottom:2px solid #000;
+    padding:0 0 6px;
+    margin:0 0 8px;
+  }
+  .bm-shl{ font-weight:700; font-size:15px; }
+  .bm-shm{ flex:1; text-align:right; font-size:13px; color:#444; }
+  .bm-band{
+    background:#ececec; border:1px solid #999; font-weight:700;
+    text-align:center; padding:5px 8px; margin:8px 0 0;
+  }
+  .bm-band-big{ font-size:15px; padding:7px 8px; }
+  /* Bilingual header string under the EN label (reference span.cn). */
+  .bm-cn{ display:block; font-weight:400; font-size:10px; color:#555; }
+  /* Both print sheets exist in the DOM at all times; only print shows them. */
+  .bm-print-sheets{ display:none; }
+  .bm-table{
+    width:100%;
+    border-collapse:collapse;
+    table-layout:fixed;
+    background:#fff;
+    font-size:12px;
+  }
+  .bm-table th, .bm-table td{
+    border:1px solid #999;
+    padding:4px 6px;
+    text-align:left;
+    vertical-align:top;
+    overflow-wrap:anywhere;
+  }
+  .bm-table col.bm-col-num{ width:38px; }
+  .bm-table col.bm-col-description{ width:145px; }
+  .bm-table col.bm-col-composition{ width:116px; }
+  .bm-table col.bm-col-supplier{ width:112px; }
+  .bm-table col.bm-col-article{ width:128px; }
+  .bm-table col.bm-col-width{ width:78px; }
+  .bm-table col.bm-col-size{ width:110px; }
+  .bm-table col.bm-col-area{ width:150px; }
+  .bm-table col.bm-col-photo{ width:220px; }
+  .bm-table col.bm-col-colorway{ width:100px; }
+  .bm-table col.bm-col-actions{ width:118px; }
+  .bm-table tr.bm-hdr th{ background:#f2f2f2; font-weight:700; white-space:normal; line-height:1.15; }
+  .bm-table td.bm-secband{
+    background:#d9d9d9;
+    border:1px solid #888;
+    font-weight:700;
+    padding:4px 10px;
+  }
+  .bm-table td[contenteditable]{ min-width:70px; cursor:text; }
+  .bm-table td span[data-cell]{ display:block; min-width:70px; min-height:1em; cursor:text; outline:none; }
+  .bm-table td span[data-cell]:focus{ background:#f2f6ff; }
+  /* ▾ suggestion button overlaid inside the cell (reference .bom-dd) — a
+     sibling of the editable span, never inside it. */
+  .bm-table td.bm-sugg{ position:relative; padding-right:18px; }
+  .bm-dd{
+    position:absolute; top:2px; right:2px; width:14px; height:14px; line-height:1;
+    padding:0; font-size:9px; color:#666; border:1px solid #c9c9d0; background:#fff;
+    border-radius:3px; cursor:pointer;
+  }
+  .bm-dd::after{ content:'▾'; }
+  .bm-dd:hover{ background:#eef4ff; border-color:#8fb6ea; }
+  .bm-dd-menu{
+    position:fixed; z-index:300; width:300px; padding:7px;
+    border:1px solid #c9c9d0; border-radius:7px; background:#fff;
+    box-shadow:0 5px 18px rgba(0,0,0,.18);
+  }
+  .bm-dd-menu[hidden]{ display:none; }
+  .bm-dd-menu .bm-dd-q{
+    width:100%; box-sizing:border-box; border:1px solid #c9c9d0; border-radius:5px;
+    padding:4px 7px; font-size:12px; font-family:inherit; margin:0 0 6px;
+  }
+  .bm-dd-menu .bm-dd-list{ max-height:260px; overflow:auto; display:grid; grid-template-columns:1fr; gap:3px; }
+  .bm-dd-menu .bm-dd-list button{
+    display:flex; justify-content:space-between; align-items:baseline; gap:8px; min-width:0;
+    text-align:left; border:1px solid #d3d3da; background:#fbfbfc; border-radius:4px;
+    padding:3px 8px; font-size:12px; font-family:inherit; cursor:pointer;
+  }
+  .bm-dd-menu .bm-dd-list button:hover{ background:#eef4ff; border-color:#8fb6ea; }
+  .bm-dd-tag{ color:#888; font-size:10px; white-space:nowrap; }
+  .bm-dd-empty{ font-size:11px; color:#a33; padding:4px 2px; }
+  /* MATERIAL IMAGES cell (reference .photo-trigger) */
+  .bm-photo-cell{ text-align:center; }
+  .bm-photo-trigger{
+    position:relative; width:44px; height:44px; border:1px dashed #c9c9d0; border-radius:6px;
+    background:#fafafa; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
+    font-size:15px; color:#888; padding:0;
+  }
+  .bm-photo-trigger:hover{ border-color:#8fb6ea; background:#eef4ff; }
+  .bm-photo-trigger img{ width:100%; height:100%; object-fit:cover; border-radius:5px; }
+  .bm-photo-menu{ width:220px; }
+  .bm-photo-hint{ font-size:11px; color:#666; margin:0 0 6px; line-height:1.3; }
+  .bm-photo-actions{ display:flex; gap:6px; }
+  .bm-photo-actions button{
+    flex:1; border:1px solid #c9c9d0; border-radius:5px; background:#fff;
+    padding:4px 6px; font-size:11px; font-family:inherit; cursor:pointer;
+  }
+  .bm-photo-actions button:hover{ background:#f5f5f7; }
+  /* Add Note zone menu (reference .zone-menu) */
+  .cc-zone-menu{
+    position:fixed; z-index:300; display:flex; flex-wrap:wrap; gap:6px;
+    width:max-content; max-width:420px; padding:5px;
+    background:#fff; border:1px solid #b9b9c2; border-radius:6px;
+    box-shadow:0 6px 16px rgba(0,0,0,.16);
+  }
+  .cc-zone-menu[hidden]{ display:none; }
+  .cc-zone-menu button{
+    border:1px solid #d3d3da; background:#fbfbfc; border-radius:4px;
+    padding:3px 8px; font-size:11px; font-family:inherit; cursor:pointer; white-space:nowrap;
+  }
+  .cc-zone-menu button:hover{ background:#eef4ff; border-color:#8fb6ea; }
+  .cc-color-label{
+    display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#444;
+  }
+  .cc-color-label input[type=color]{
+    width:26px; height:22px; padding:1px; border:1px solid #c9c9d0; border-radius:5px;
+    background:#fff; cursor:pointer;
+  }
+  #ccNoteRedBtn.cc-red-on{ background:#cc0000; border-color:#cc0000; color:#fff; }
+  .bm-table td.act, .bm-table th.act{ border:none; background:none; text-align:center; white-space:normal; width:118px; }
+  .bm-table td.bm-num, .bm-table th.bm-num{ text-align:center; white-space:nowrap; }
+  .bm-table select{ font:inherit; font-size:11px; max-width:58px; }
+  .bm-table td.act button{ font:inherit; font-size:11px; margin-right:3px; }
+  .bm-table tr.bm-row-selected td{ background:#eaf1ff; }
+  .bm-table tr.bm-addrow-tr td{ border:none; padding:2px 0; }
+  .bm-addrow{
+    border:1px dashed #999;
+    background:#fafafa;
+    border-radius:4px;
+    padding:2px 10px;
+    font-size:11px;
+    cursor:pointer;
+  }
+  .bm-addrow:hover{ background:#f0f0f0; }
+  .bm-table [data-bom-rm]{
+    border:1px solid var(--chip-border);
+    background:var(--chip);
+    border-radius:6px;
+    cursor:pointer;
+    padding:2px 7px;
+  }
+  .bm-mat-side{
+    width:280px;
+    flex:none;
+    border-left:1px solid var(--hairline);
+    background:#fff;
+    padding:12px;
+    overflow:auto;
+  }
+  #bomMatSearch{
+    width:100%;
+    font:inherit;
+    padding:6px 8px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    margin:6px 0;
+  }
+  .bm-mat-list{
+    max-height:calc(100% - 60px);
+    overflow:auto;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+  }
+  .bm-mat-list button{
+    text-align:left;
+    font-size:12.5px;
+    padding:6px 8px;
+    border-radius:6px;
+    border:1px solid var(--chip-border);
+    background:var(--chip);
+    cursor:pointer;
+    display:flex;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .bm-mat-section{ color:var(--muted); font-size:11px; }
+  .bm-mat-empty{ font-size:12px; color:var(--muted); }
+  .bm-matkey-view{
+    height:520px;
+    min-height:420px;
+    display:flex;
+    flex-direction:column;
+    border:1px solid #999;
+    margin:8px 0;
+    overflow:hidden;
+  }
+  #bomMatkeyCanvas.bm-drag-over{ outline:3px solid #3f8ae0; outline-offset:-3px; }
+  .bm-print-matkey{
+    position:relative; width:100%; aspect-ratio:1900/820; overflow:hidden;
+    background:#fff; border:1px solid #ccc; box-sizing:border-box;
+  }
+  .bm-print-matkey > img{ position:absolute; object-fit:contain; }
+  .bm-print-matkey > svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .bm-print-matkey line{ stroke:#cc0066; stroke-width:3; }
+  .bm-print-matkey circle{ fill:#cc0066; }
+  .bm-print-label{
+    position:absolute; z-index:2; color:#cc0066; font-size:12px; font-weight:700;
+    white-space:nowrap; background:rgba(255,255,255,.8); padding:1px 3px;
+  }
+  #bomMkRowSelect{
+    width:100%;
+    font:inherit;
+    padding:6px 8px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    margin-bottom:8px;
+  }
+  .bm-tool-btn.bm-tool-active{
+    background:var(--select);
+    color:#fff;
+    border-color:var(--select);
+  }
+  .bm-tool-btn:disabled{ opacity:.45; cursor:not-allowed; }
+  .bm-tool-sep{ width:1px; align-self:stretch; background:var(--border); margin:1px 2px; }
+  #bomMatkeyCanvas.bm-tool-callout,
+  #bomMatkeyCanvas.bm-tool-leader{ cursor:crosshair; }
+  #bomMatkeyCanvas.bm-tool-select{ cursor:default; }
+  #bomDeleteCalloutBtn{
+    color:#8a1f1f;
+    border-color:#e8c2c2;
+    background:#fff5f5;
+  }
+
+  /* ---- Preview & Export page (US-079, ADR 0046) ------------------------- */
+  .pv-title{ font-size:14px; white-space:nowrap; }
+  /* .cc-toolbar button (higher specificity) paints buttons white, which left
+     .primary-btn's white text invisible — restate the accent colors here. */
+  .cc-toolbar button.pv-export-btn{
+    margin-left:auto;
+    white-space:nowrap;
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#fff;
+    font-weight:600;
+  }
+  .cc-toolbar button.pv-export-btn:disabled{ opacity:.5; cursor:not-allowed; }
+  .pv-sheets{
+    flex:1;
+    min-height:0;
+    overflow:auto;
+    padding:18px 16px 30px;
+  }
+  .pv-sheet{ width:max-content; max-width:none; margin:0 auto 30px; }
+  .pv-sheet-head{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin:0 0 6px;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+    user-select:none;
+  }
+  .pv-sheet-head input{ width:15px; height:15px; }
+  .pv-orient{ color:#7a8190; font-weight:400; font-size:11px; }
+  .pv-off .pv-paper{ opacity:.35; filter:grayscale(.6); }
+  .pv-off .pv-sheet-name{ color:#9aa0ab; text-decoration:line-through; }
+  .pv-paper{
+    background:#fff;
+    box-shadow:0 2px 12px rgba(0,0,0,.22);
+    padding:28px;
+    box-sizing:border-box;
+    overflow:hidden;
+    margin:0 auto;
+  }
+  .pv-portrait{ width:794px; min-height:1123px; }
+  .pv-landscape{ width:1123px; min-height:794px; }
+  .pv-canvas{ display:block; width:100%; }
+  .pv-board{
+    display:block;
+    max-width:100%;
+    height:auto;
+    margin:10px 0 14px;
+    border:1px solid #ddd;
+  }
+  .pv-spec{ width:100%; border-collapse:collapse; font-size:11px; background:#fff; }
+  .pv-spec th, .pv-spec td{ border:1px solid #999; padding:3px 5px; text-align:left; vertical-align:top; }
+  .pv-spec th{ background:#f2f2f2; white-space:nowrap; }
+  .pv-spec td.pv-num{ text-align:center; white-space:nowrap; }
+  .pv-empty{ color:#7a8190; font-size:12px; padding:40px 10px; text-align:center; }
+  /* The BOM factory sheet keeps its reference min-width inside the paper —
+     pvFitPaper's transform scales it to the page. Neutralize the standalone
+     sheet chrome: the paper itself is the sheet. */
+  .pv-paper .bm-sheet{ box-shadow:none; padding:0; min-width:1450px; }
+  /* An empty Material Key renders as a full-height placeholder box on the
+     print path; on a preview sheet it would waste half the page — hide it. */
+  .pv-paper .bm-print-matkey-empty{ display:none; }
+  .pv-paper .mp-sheet{ box-shadow:none; border:none; border-radius:0; padding:0; max-width:none; }
+
+  @media print{
+    body.bom-open .app{
+      display:block;
+      height:auto;
+      padding:0;
+    }
+    body.bom-open .cc-page{
+      overflow:visible;
+      border-radius:0;
+    }
+    body.bom-open .cc-toolbar,
+    body.bom-open .bm-combined-view,
+    body.bom-open .bm-table td.act,
+    body.bom-open .bm-table th.act,
+    body.bom-open .bm-table tr.bm-addrow-tr,
+    .bm-dd,
+    .bm-dd-menu,
+    .cc-zone-menu{
+      display:none !important;
+    }
+    /* An empty photo slot prints blank, not as a dashed editor affordance;
+       a filled one prints its image. */
+    body.bom-open .bm-photo-trigger{ border:none; background:none; color:transparent; }
+    /* What prints (US-073) is the reference's pair of factory sheets —
+       BOM-SOLID then BOM-LACE from #bomPrintSheets — whatever sub-view or
+       variant tab is open on screen. The interactive table stays screen-only. */
+    body.bom-open .bm-print-sheets{
+      display:block !important;
+    }
+    .bm-print-sheet{ page-break-after:always; }
+    .bm-print-sheet:last-child{ page-break-after:auto; }
+    .bm-print-matkey{ border:none; }
+  }
 </style>
 </head>
 <body class="app-auto">
 <div class="app">
   <div class="toolbar">
+    <div id="pageTabBar" class="group group-pages segmented-control mp-screen-only" role="tablist" aria-label="Tech pack pages"></div>
+    <div id="boardToolbarGroups" class="board-toolbar-groups">
     <div class="group group-mode">
       <div class="segmented-control mode-switch" role="group" aria-label="App mode">
         <button id="modeManualBtn" class="active" type="button" title="Manual Mode — full drawing toolset">Manual</button>
@@ -1699,6 +2775,7 @@
         </svg>
       </button>
     </div>
+    </div>
   </div>
 
   <div class="statusbar">
@@ -1780,6 +2857,175 @@
       </div>
     </aside>
   </div>
+
+  <!-- US-068 / ADR 0037: the tech pack MAIN PAGE sheet, rebuilt on this tool's
+       primitives so a style can be finished in one place. Style metadata only —
+       no anchor, no POM, no view, so detection never reads it. Sketch images
+       on the sheet are deliberately out of scope for now; the .mp-sketchrow
+       slots are here so they can drop in later without a relayout. Nested
+       inside .app (US-069, ADR 0038) as a peer page of the Board, sharing
+       grid row 3 — see .mp-page's CSS. -->
+  <div id="mainPageOverlay" class="mp-page page-hidden" aria-label="MAIN PAGE sheet">
+  <div class="mp-sheet" id="sheet-main">
+    <div class="mp-sheethead">
+      <div class="mp-shl">Bra Auto Measure</div>
+      <div class="mp-shm">MAIN PAGE</div>
+      <div class="mp-shr">
+        <span class="mp-draft">DRAFT &middot; all measurements TBC</span>
+        <button id="mainPagePrintBtn" class="mp-screen-only" type="button" title="Print just this sheet">Print</button>
+      </div>
+    </div>
+
+    <div class="mp-sheetbar mp-screen-only">
+      <span class="color-add-wrap">
+        <button id="mainPageAddColorBtn" type="button">&#65291; Add colour</button>
+        <span class="color-menu" role="menu"></span>
+      </span>
+      <span class="mp-sbhint">Every cell is editable — click to type. Use &#9662; for suggestions; anything you type off the list is remembered with this project.</span>
+    </div>
+
+    <div class="mp-cols">
+      <div class="mp-col mp-col-fields">
+        <table class="mp-kv" id="mp-fields"></table>
+        <div class="mp-note-label" style="margin-top:10px;">Provenance</div>
+        <div class="mp-note" id="mp-provenance" contenteditable spellcheck="false"></div>
+      </div>
+      <div class="mp-col mp-col-version">
+        <div class="mp-vpanel">
+          <div class="mp-vhead">Lace Version</div>
+          <div class="mp-sketchrow" data-mp-variant="lace"></div>
+          <table class="mp-cwx"></table>
+        </div>
+      </div>
+      <div class="mp-col mp-col-version">
+        <div class="mp-vpanel">
+          <div class="mp-vhead">Solid Version</div>
+          <div class="mp-sketchrow" data-mp-variant="solid"></div>
+          <table class="mp-cwx"></table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="constructionPage" class="cc-page page-hidden" aria-label="Construction annotation page">
+  <div class="cc-toolbar">
+    <div class="cc-variant-tabs" role="tablist" aria-label="Construction sheet">
+      <button type="button" data-cc-sheet="solid" class="cc-variant-btn" role="tab" aria-pressed="true">Construction Solid</button>
+      <button type="button" data-cc-sheet="lace" class="cc-variant-btn" role="tab" aria-pressed="false">Construction Lace</button>
+    </div>
+    <span class="cc-hint">Each sheet keeps its Outer/Inner annotation Working Board directly above one synchronized Construction Table.</span>
+  </div>
+  <div class="cc-combined-view">
+    <div class="cc-sheet">
+      <div class="cc-sheet-head">
+        <span class="cc-sheet-brand">Bra Auto Measure</span>
+        <strong id="ccSheetTitle">CONSTRUCTION · SOLID</strong>
+        <span>WORKING SHEET</span>
+      </div>
+      <section class="cc-working-board" aria-label="Construction Annotation Working Board">
+        <div class="cc-section-title">CONSTRUCTION ANNOTATION · WORKING BOARD</div>
+        <div class="cc-board-toolbar cc-screen-only">
+          <button type="button" id="ccAddImageBtn">&#128228; Add Images</button>
+          <button type="button" id="ccPasteImageBtn">&#128203; Paste Image</button>
+          <button type="button" id="ccDeleteImageBtn">Delete Image</button>
+          <button type="button" id="ccImageZoomOutBtn" title="Make the selected image smaller">&minus;</button>
+          <button type="button" id="ccImageZoomInBtn" title="Make the selected image larger">&plus;</button>
+          <span class="cc-toolbar-sep"></span>
+          <span class="cc-view-target-label">Active panel</span>
+          <button type="button" data-cc-active-view="outer" class="cc-view-target" aria-pressed="true">Outer</button>
+          <button type="button" data-cc-active-view="inner" class="cc-view-target" aria-pressed="false">Inner</button>
+          <span class="cc-toolbar-sep"></span>
+          <button type="button" id="ccSelectToolBtn" class="cc-tool-btn cc-tool-active" aria-pressed="true">&#8598; Select</button>
+          <button type="button" id="ccAddCalloutBtn" class="cc-tool-btn" aria-pressed="false">&#65291; Add Callouts</button>
+          <button type="button" id="ccAddLeaderBtn" class="cc-tool-btn" aria-pressed="false">&#65291; Add Leaders</button>
+          <button type="button" id="ccDeleteCalloutBtn">Delete Callout</button>
+          <span id="ccToolHint" class="cc-tool-hint"></span>
+        </div>
+        <input id="ccImageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+        <canvas id="constructionCanvas" class="cc-working-canvas"></canvas>
+      </section>
+      <section class="cc-table-section" aria-label="Construction Table">
+        <div class="cc-section-title">CONSTRUCTION TABLE</div>
+        <div class="cc-table-wrap" id="ccTableWrap">
+          <table class="cc-table">
+            <thead>
+              <tr><th class="cc-tbl-seq">#</th><th class="cc-tbl-view">View</th><th class="cc-tbl-area">Area</th><th class="cc-tbl-detail">Construction Detail</th><th class="cc-tbl-callout">Callout</th><th class="cc-tbl-del"></th></tr>
+            </thead>
+            <tbody id="ccTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div id="ccPhraseMenu" class="cc-phrase-menu cc-screen-only" hidden>
+    <input type="search" id="ccPhraseSearch" spellcheck="false" placeholder="Search construction phrases&hellip;">
+    <div class="cc-phrase-list" id="ccPhraseList"></div>
+  </div>
+</div>
+
+<div id="bomPage" class="cc-page page-hidden" aria-label="BOM page">
+  <div class="cc-toolbar">
+    <div class="cc-variant-tabs" role="tablist" aria-label="BOM variant">
+      <button type="button" data-bom-variant="solid" class="cc-variant-btn" role="tab" aria-pressed="true">BOM Solid</button>
+      <button type="button" data-bom-variant="lace" class="cc-variant-btn" role="tab" aria-pressed="false">BOM Lace</button>
+    </div>
+    <span class="cc-hint">Each BOM keeps its Material Key directly above its editable FABRIC/TRIM table.</span>
+  </div>
+  <div id="bomCombinedView" class="bm-combined-view">
+    <div class="bm-sheet bm-combined-sheet">
+      <div id="bomSheetHead"></div>
+      <div id="bomMatkeyView" class="bm-matkey-view">
+        <div class="cc-toolbar">
+          <button type="button" id="bomAddImageBtn">&#128228; Add Images</button>
+          <button type="button" id="bomPasteImageBtn">&#128203; Paste Image</button>
+          <button type="button" id="bomDeleteImageBtn">Delete Image</button>
+          <button type="button" id="bomImageZoomOutBtn" title="Make the selected image smaller">&minus;</button>
+          <button type="button" id="bomImageZoomInBtn" title="Make the selected image larger">&plus;</button>
+          <button type="button" id="bomFitImagesBtn">Fit Images</button>
+          <span class="bm-tool-sep" aria-hidden="true"></span>
+          <button type="button" id="bomSelectToolBtn" class="bm-tool-btn bm-tool-active" aria-pressed="true">&#8598; Select</button>
+          <button type="button" id="bomAddCalloutBtn" class="bm-tool-btn" aria-pressed="false">&#65291; Add Callouts</button>
+          <button type="button" id="bomAddArrowBtn" class="bm-tool-btn" aria-pressed="false" disabled>&#65291; Add Leaders</button>
+          <span class="cc-hint" id="bomToolHint">Select a callout label, leader, or target to adjust it.</span>
+          <input type="file" id="bomImageFileInput" accept="image/*" multiple hidden>
+        </div>
+        <div class="cc-body">
+          <canvas id="bomMatkeyCanvas" class="cc-canvas"></canvas>
+          <div class="cc-side" id="bomMkSidePanel">
+            <div class="cc-side-empty" id="bomMkSideEmpty">Place a callout (or click an existing one) to edit it here.</div>
+            <div class="cc-side-note" id="bomMkSideCallout" hidden>
+              <div class="cc-side-title">Callout <span id="bomMkSideSeq"></span></div>
+              <select id="bomMkRowSelect" aria-label="Linked BOM row"></select>
+              <div class="cc-side-row">
+                <button type="button" id="bomDeleteCalloutBtn">Delete callout</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="bomTableView" class="bm-table-view">
+        <div id="bomSections" class="bm-sections"></div>
+      </div>
+    </div>
+  </div>
+  <!-- Print-only (US-073): BOM-SOLID + BOM-LACE factory sheets, re-rendered
+       alongside the screen table by bmRenderPrintSheets(). Never interactive. -->
+  <div id="bomPrintSheets" class="bm-print-sheets" aria-hidden="true"></div>
+</div>
+
+<!-- US-079/ADR 0046: fifth tech-pack tab. The whole tech pack as A4 sheets
+     in contract order, each with an include checkbox; Export Tech Pack
+     writes the enabled sheets as one multi-sheet .xlsx. See
+     src/ui/preview-page.js. -->
+<div id="previewPage" class="cc-page pv-page page-hidden" aria-label="Preview and Export page">
+  <div class="cc-toolbar">
+    <strong class="pv-title">Preview &amp; Export</strong>
+    <span class="cc-hint">Tick the sheets to include, review them top to bottom, then export the tech pack as one Excel workbook.</span>
+    <button type="button" id="pvExportXlsxBtn" class="primary-btn pv-export-btn">&#11015; Export Tech Pack (.xlsx)</button>
+  </div>
+  <div id="pvSheets" class="pv-sheets"></div>
+</div>
 </div>
 
 <script src="vendor/opencv_free_api.js?v=free-opencv-20260617-1"></script>
@@ -1794,6 +3040,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=e7a803949ad8"></script>
+<script src="app.js?v=985f783d16ed"></script>
 </body>
 </html>

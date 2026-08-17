@@ -13,6 +13,7 @@ import { getFreePort, startStaticServer } from './static-server.mjs';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(scriptDir, '..');
 const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
 let server, chrome, userDataDir;
 const cleanupTasks = [];
@@ -120,7 +121,56 @@ async function main() {
   const postRestoreRaw = await session3.eval(`window.__braAutoModeDebug.autosave.peek()`);
   assert(!postRestoreRaw, 'autosave record was not cleared after restore');
 
+  // Step 6 — a project with no Board image/line but with BOM-owned work is
+  // saveable and autosaveable. This is the data-loss boundary for TDs who
+  // start from the factory table rather than the measurement Board.
+  await session3.eval(`(async () => {
+    const api = window.__braAutoModeDebug;
+    await api.loadProject({
+      format: 'bra-sketch-project', version: 1, savedAt: new Date().toISOString(),
+      state: {
+        annotations: [], images: [], eraseStrokes: [], brushSize: 24, showLabels: true,
+        calibration: { unitsPerPx: null, unit: 'cm' }, nextSequence: 1, idCounter: 10,
+        drawStyle: 'solid', drawColor: 'red', arrowType: 'double', lineWidth: 2.5,
+        zoom: 1, panX: 0, panY: 0, styleId: '', pomSpecs: {},
+        bom: {
+          schemaVersion: 2, seedId: 'rsl-vdraft-1.0',
+          rows: [{ id: 7, section: 'FABRIC', scope: 'BOTH', groupId: null,
+            cells: { description: 'BOM-only edited material', composition: '', supplier: '', article: '', width: '', size: '', areaOfUse: '' },
+            cwOverride: {} }],
+          callouts: [],
+          images: { solid: [{ id: 8, dataURL: '${TINY_PNG}', x: 0, y: 0, width: 300, height: 300, aspect: 1, locked: false }], lace: [] }
+        }
+      }
+    });
+    api.autosave.flush();
+  })()`);
+  const bomSavedRaw = await session3.eval(`window.__braAutoModeDebug.autosave.peek()`);
+  assert(!!bomSavedRaw, 'BOM-only work did not produce an autosave record');
+  const bomSaved = JSON.parse(bomSavedRaw);
+  assert(bomSaved.snapshot.state.images.length === 0, 'BOM-only fixture unexpectedly populated Board images');
+  assert(bomSaved.snapshot.state.bom.images.solid.length === 1, 'autosave lost the Solid Material Key image');
+  assert(!!bomSaved.snapshot.state.bom.images.solid[0].dataURL, 'autosave lost the BOM bitmap bytes');
+
+  await session3.eval(`window.location.reload()`);
+  await sleep(400);
   await session3.close();
+  const session4 = await openCdpSession(cdpPort);
+  await session4.waitFor(`!!document.getElementById('autosaveRestoreBanner')`, 8000);
+  await session4.eval(`Array.from(document.querySelectorAll('#autosaveRestoreBanner button')).find(b => /Restore/i.test(b.textContent)).click()`);
+  await session4.waitFor(`window.__braAutoModeDebug.exportProject().state.bom.images.solid.length === 1`, 6000);
+  const bomRestored = await session4.eval(`(() => {
+    const p = window.__braAutoModeDebug.exportProject();
+    return { board: p.state.images.length, rows: p.state.bom.rows.length,
+      description: p.state.bom.rows[0].cells.description,
+      images: p.state.bom.images.solid.length,
+      bitmap: !!p.state.bom.images.solid[0].dataURL };
+  })()`);
+  assert(bomRestored.board === 0, 'BOM autosave restore populated Board images');
+  assert(bomRestored.rows === 1 && bomRestored.description === 'BOM-only edited material', 'BOM autosave restore lost table edits');
+  assert(bomRestored.images === 1 && bomRestored.bitmap, 'BOM autosave restore lost Material Key image data');
+
+  await session4.close();
   console.log('PASS  autosave-check');
 }
 

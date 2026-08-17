@@ -512,6 +512,44 @@
     // not board content).
     sizeSelection: null,
 
+    // US-068 / ADR 0037: tech pack MAIN PAGE sheet — style metadata (13
+    // fields), off-list values the TD typed (fieldExtra), colorways, and the
+    // Color Master List copy this project was saved against. Style metadata
+    // only: no anchor, no POM, no view, so detection never reads it. Seeded
+    // lazily by ensureMainPage() in src/ui/main-page.js, which owns the field
+    // roster and the colour data — null here so state.js does not carry 47
+    // colour rows. Persisted with the project and captured in history so
+    // undo/redo covers MAIN PAGE edits.
+    mainPage: null,
+
+    // US-078 / ADR 0045: two Construction sheets (Solid/Lace), each with
+    // independently-owned Outer/Inner working-view images, editable operation
+    // rows, and row-owned multi-leader callouts. Image bytes live outside
+    // history and are injected only for project save/autosave. No anchor or
+    // POM consumes this metadata, so detection remains isolated.
+    construction: null,
+
+    // US-072 / ADR 0041: BOM page — editable material table rows
+    // { id, section:'FABRIC'|'TRIM', scope:'BOTH'|'SOLID'|'LACE', cells:{...},
+    // cwOverride:{} }, variant-owned Material Key image metadata under
+    // images.solid/images.lace, plus callouts { id, rowId, imageId, variant,
+    // targets:[{nx,ny},...], textPos:{nx,ny} }. BOM image bytes live outside
+    // history state and are materialized only for project save/autosave.
+    // mod-bom module on this tool's own primitives; no anchor, no POM, so
+    // detection never reads it. Seeded lazily by ensureBom() in
+    // src/ui/bom.js — a first-time BOM materializes as the reference
+    // sheet's exact 12-row BOM (BM_SEED_ROWS, US-074), guarded by
+    // bom.seedId so an emptied table stays empty. Null here so state.js
+    // does not carry row/callout data by default. Persisted with the
+    // project and captured in history so undo/redo covers BOM edits.
+    bom: null,
+
+    // src/ui/preview-page.js — Preview & Export page-inclusion checkboxes
+    // ({ enabledPages: { <sheetKey>: boolean } }, US-079/ADR 0046). Null here;
+    // initPreviewPage materializes the all-enabled default before seedHistory.
+    // Persisted with the project and captured in history.
+    preview: null,
+
     // Review-time per-POM visibility toggles. When an annotation / draft id
     // is in these lists it is skipped by the canvas renderer and hit-test
     // so the TD can isolate one POM line to sanity-check the detection.
@@ -576,6 +614,11 @@
     // and the readiness chip never stalls silently on the first Detect.
     warmupVisionEngine();
     bindUI();
+    initMainPage();
+    initConstruction();
+    initBom();
+    initPreviewPage();
+    initPageNav();
     // Auto-only build: boot straight into Auto Mode (sets body class,
     // status chip, and locks manual editing paths).
     setAppMode('auto');
@@ -6097,6 +6140,7876 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     });
   }
 
+  // ---- src/ui/main-page.js ----
+// MAIN PAGE sheet: style metadata fields + colorways (US-068, ADR 0037).
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Rebuilt on this tool's primitives from the tech pack's mod-main module —
+// the Pack.* runtime does not exist here (ADR 0037). The data is carried
+// across verbatim: the 13-row field roster, the suggestion rosters mined
+// from 52 historical packs, and the 47-entry Color Master List.
+//
+// Style metadata only: no anchor, no POM, no view, so detection never reads
+// it. state.mainPage is seeded lazily by ensureMainPage() so state.js does
+// not carry 47 colour rows.
+
+  /* House colour master list — the 47 entries of Color_Master_List.xlsx,
+     verbatim (Pantone code + TCX + name + CP suffix exactly as recorded), so
+     what prints on the colorway row is the name the factory list already
+     uses. */
+  const MP_COLOR_MASTER = [
+    'Default White', 'Default Black', '11-0110 TCX Buttercream (SonaShape Beige) CP',
+    '11-0601 TCX Bright White CP', '11-1408 TCX Light Pink CP', '12-0811 TCX Dawn',
+    '12-1007 TCX Pastel Rose Tan (SonaShape Almond)', '12-1110 TCX Nude Pink CP',
+    '12-1304 TCX Light Pink CP', '12-4302 TCX Light Blue CP', '13-1010 TCX Light Beige CP',
+    '13-1408 TCX Chintz Rose', '13-4200 TCX Omphadoles', '13-4202 TCX Light Blue CP',
+    '13-5907 TCX Light Green CP', '14-0217 TCX Sage', '14-1212 TCX Nude Tan CP',
+    '14-1712 TCX Dusty Rose', '14-1904 TCX Pink', '14-3206 TCX Light Purple CP',
+    '14-3812 TCX Lilac Mist', '14-3926 TCX Lavender CP', '14-4202 TCX Light Blue CP',
+    '14-4306 TCX Coral Blue CP', '15-1515 TCX Dusty Pink CP', '15-3207 TCX Mauve Mist',
+    '16-3205 TCX Mauve Purple CP', '16-4121 TCX Blissful Blue', '16-5304 TCX Light Teal CP',
+    '17-1230 TCX Moccha Mouse', '17-1328 TCX Tanzine', '18-1229 TCX Coffee CP',
+    '18-3025 TCX Purple CP', '18-3211 TCX Dusty Purple CP', '18-4016 TCX Dark Gray CP',
+    '19-1555 TCX Burgundy', '19-2524 TCX Magenta Purple CP', '19-3832 TCX French Navy',
+    '19-3911 TCX Black Beauty CP', '19-4029 TCX Navy Blue CP', 'Moona Purple', 'Nude Beige',
+    'Taupe (Zenalift Brown)', 'Zenchic Beige', 'Zenchic Blue', 'Zenchic Pink', 'Zenchic White',
+  ];
+
+  /* The master list carries no hex, and a Pantone TCX reference must not be
+     guessed, so the chip is only a rough on-screen cue read off the colour
+     words in the name. Names with no recognisable shade word (Dawn,
+     Omphadoles, Tanzine) get a blank chip rather than an invented one. Never
+     treat these as Pantone values. */
+  const MP_SHADE_WORDS = [
+    ['bright white', '#fdfdfd'], ['black beauty', '#15151a'], ['pastel rose tan', '#e3bfae'],
+    ['light pink', '#f2c6cd'], ['nude pink', '#e8c0b4'], ['dusty pink', '#d69ba2'],
+    ['dusty rose', '#c08a8c'], ['chintz rose', '#c98b8b'], ['light beige', '#e8dcc6'],
+    ['nude beige', '#e0c9ae'], ['nude tan', '#d9b391'], ['light blue', '#bdd4e7'],
+    ['coral blue', '#a8c3cf'], ['blissful blue', '#4a6f9c'], ['navy blue', '#1d2b4a'],
+    ['french navy', '#22304f'], ['light green', '#c9dcbe'], ['light teal', '#a9cdcb'],
+    ['light purple', '#cbb8dc'], ['dusty purple', '#8d7594'], ['mauve purple', '#8c6b81'],
+    ['magenta purple', '#7c2f5a'], ['mauve mist', '#b99aa8'], ['lilac mist', '#cbbdd8'],
+    ['dark gray', '#4a4a4f'], ['moccha mouse', '#8a7263'], ['buttercream', '#f4e9c8'],
+    ['lavender', '#c3b3d9'], ['burgundy', '#6b1f2e'], ['coffee', '#5a4034'],
+    ['taupe', '#8f8071'], ['sage', '#9aa887'], ['magenta', '#a02360'], ['purple', '#6a4a8c'],
+    ['navy', '#1d2b4a'], ['beige', '#ddc9ab'], ['nude', '#d8ad8a'], ['tan', '#c99b73'],
+    ['pink', '#e9b7bd'], ['rose', '#c98b8b'], ['teal', '#3f8f8b'], ['blue', '#3269a8'],
+    ['green', '#557c57'], ['gray', '#8c8c8c'], ['grey', '#8c8c8c'], ['white', '#ffffff'],
+    ['black', '#111111'], ['brown', '#70483c'], ['red', '#b82025'],
+  ];
+
+  // Whole words only — a substring match reads "tan" inside "Tanzine".
+  const MP_SHADE_RE = MP_SHADE_WORDS.map(([w, hex]) =>
+    [new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b'), hex]);
+
+  function mpShadeOf(name) {
+    const s = String(name || '').toLowerCase();
+    const hit = MP_SHADE_RE.find(([re]) => re.test(s));
+    return hit ? hit[1] : '';
+  }
+
+  /* Bumped when the master list changes, so a project saved against an older
+     library picks the new list up on open instead of keeping a stale one. */
+  const MP_COLOR_LIB_ID = 'color-master-list-47';
+
+  /* The shipped field roster, verbatim from the tech pack's own default
+     mainpage island. Labels are editable, hence the bind-once-by-regex rule
+     below. "Block Reference" is a row here (US-080/ADR 0047) — the layout FD
+     works from prints it, so ADR 0037's "strip it like the source module
+     does" no longer holds. */
+  const MP_DEFAULT_FIELDS = [
+    { label: 'Brand - 品牌', value: 'Crossian' },
+    { label: 'Fashion Designer', value: 'TBC' },
+    { label: 'Tech Pack Designer', value: 'TBC' },
+    { label: 'Technical Designer', value: 'TBC' },
+    { label: 'Product Type - 品类', value: 'Bra' },
+    { label: 'Style No Breakdown - 风格号码分解', value: '' },
+    { label: 'Base Size - 基础尺码', value: 'TBC' },
+    { label: 'Size Range - 尺寸范围', value: 'TBC' },
+    { label: 'Style No - 风格号码', value: 'TBC' },
+    { label: 'Garment Description - 文胸分类', value: 'TBC' },
+    { label: 'Range Name - 产品名', value: 'TBC' },
+    { label: 'Season/Year - 季节/年', value: 'TBC' },
+    { label: 'Tech Pack Creation date', value: '' },
+    { label: 'Block Reference - 原版品', value: 'TBC' },
+  ];
+
+  /* US-080/ADR 0047: the breakdown row is not one value. The factory layout
+     splits it under three headers, and `parts` is what a TD types into;
+     `value` is kept in sync as the composite so every existing reader (the
+     preview sheet, the workbook, anything later) keeps working off `value`
+     alone. */
+  const MP_BREAKDOWN_PARTS = [
+    { key: 'prefix', head: 'style prefix' },
+    { key: 'category', head: 'category #:' },
+    { key: 'rangeNo', head: 'range no:' },
+  ];
+  const MP_BREAKDOWN_SEP = ' · ';
+
+  /* Version sketches (US-080/ADR 0047). Two fixed slots per version, in the
+     order the factory layout prints them. TD-supplied: the tool never adopts
+     a Board photo (those carry POM lines) or a Construction image (annotated)
+     on its own. */
+  const MP_SKETCH_VARIANTS = ['lace', 'solid'];
+  const MP_SKETCH_SLOTS = [
+    { key: 'front', label: 'FRONT' },
+    { key: 'back', label: 'BACK' },
+  ];
+
+  /* Bytes deliberately live outside state.mainPage, like BOM board images:
+     history clones state.mainPage on every field edit, and four
+     full-resolution flats cloned 120 deep is a different order of memory.
+     Every import mints a NEW id and nothing is ever evicted, so undo across a
+     replaced slot still finds the previous image's bytes here. */
+  const mpSketchDataById = new Map();
+  let mpSketchSeq = 0;
+
+  /* ---- Field suggestion rosters -------------------------------------------
+     Lists live HERE, in code, not copied into the saved project the way
+     colorLibrary is. colorLibrary has to be copied because each entry carries
+     a derived hex; these carry nothing, so changing a roster means shipping a
+     new build and every project opened in it sees the change at once — with
+     no colorLibId-style migration guard and no way for a project to sit on a
+     stale list. What a TD types that is NOT on a list is remembered per
+     project in state.mainPage.fieldExtra: the rosters were inferred from 52
+     historical packs and are known to be incomplete, so a list must never be
+     a wall. */
+  const MP_RANGE_NAMES = ['SofieLift', 'TrulySofty', 'Airnix', 'AmoraFit', 'CherishShape',
+    'FormaLift', 'VeraComfort', 'JuliaLace', 'BiancaBra', 'AuraZip', 'MilaEase',
+    'FeliciaBra', 'KiraForm'];
+  const MP_ALPHA_SIZES = ['S', 'M', 'M2', 'L', 'L2', 'XL', '2XL', '3XL', '4XL', '5XL', '5XL2'];
+
+  /* The 3 size-column sets found in the "Size Chart & Grading Rule-2026"
+     sheet of the historical grading workbook, each tied to a different
+     size-chart revision. shortLabel is derived (not hand-typed twice) so it
+     can never drift from the sizes array it describes. Picking one here only
+     writes the field — it does not reflow this tool's size run, which is
+     owned by the Grading dialog (ADR 0037 non-goal). */
+  const MP_SIZE_RANGE_PRESETS = [
+    { id: 'sc2d-3a',
+      sizes: ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', 'M2', 'L2', '2XL2', '3XL2', '4XL2', '5XL2', 'L3', '2XL3', '3XL3', '4XL3'] },
+    { id: '22jun2026',
+      sizes: ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', 'M2', 'L2', 'XL2', '2XL2', '3XL2', '4XL2', '5XL2'] },
+    { id: 'sc1b',
+      sizes: ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '6XL', 'M2', 'L2', '2XL2', '3XL2', '4XL2', '5XL2', '6XL2'] },
+  ];
+  MP_SIZE_RANGE_PRESETS.forEach(p => { p.shortLabel = 'S–' + p.sizes[p.sizes.length - 1]; });
+
+  /* Season and Style No are composed from what the project already knows, so
+     the drift the historical scan found (bare year with no season, "1. 0",
+     vA/VA, missing V) cannot be reintroduced by hand. */
+  function mpSeasonOpts() {
+    const y = new Date().getFullYear() % 100;
+    return [0, 1, -1].flatMap(d => ['SS', 'AW']
+      .map(s => s + String(((y + d) % 100 + 100) % 100).padStart(2, '0')));
+  }
+  function mpStyleNoOpts() {
+    const nm = String(state.styleId || '').trim().replace(/\s+/g, '');
+    return nm ? ['VA', 'VB'].map(v => nm + v + '-1.0') : [];
+  }
+
+  /* Bound to rows ONCE, by regex, never per render: the labels are
+     contenteditable, so re-matching every render would unbind a row the
+     moment someone retypes its label. Order matters — 'Style No Breakdown'
+     must claim its row before the looser /Style No/.
+
+     Breakdown suggests RANGE NAMES ONLY. In the source, offering the
+     composite strings the old packs used ("Airnix · VB · 1.0") pushed that
+     whole string into the style name and corrupted every sheet header — the
+     roster stays narrow here for the same reason. */
+  const MP_FIELD_SPEC = [
+    // Writes the `style prefix` sub-cell, never the whole composite.
+    { key: 'breakdown', re: /Style No Breakdown/i, part: 'prefix', values: () => MP_RANGE_NAMES },
+    { key: 'fashionDes', re: /Fashion Designer/i, values: ['Diep Ngoc Do', 'Linh Tung Nguyen', 'Dung Phuong Vu', 'Linh Phuong Le Trinh', 'Phong Dong Nguyen', 'Tam Thien Duc Nguyen'] },
+    { key: 'tpDes', re: /Tech Pack Designer/i, values: ['Linh Khanh Nguyen', 'Khanh Linh Nguyen', 'Nguyễn Thị Hồng Hạnh', 'Phong Dong Nguyen', 'Vy Truc Ngoc Vang'] },
+    { key: 'techDes', re: /Technical Designer/i, values: ['Tuyen Van Bui', 'Nishani Kadupitige', 'Selly Pham', 'Nga Hang Thi Hoang'] },
+    { key: 'productType', re: /Product Type/i, values: ['Bra'] },
+    { key: 'baseSize', re: /Base Size/i, values: MP_ALPHA_SIZES },
+    { key: 'sizeRange', re: /Size Range/i, values: () => MP_SIZE_RANGE_PRESETS.map(p => p.shortLabel) },
+    { key: 'styleNo', re: /Style No/i, values: mpStyleNoOpts },
+    { key: 'garmentDesc', re: /Garment Description/i, values: ['Front Closure Bra', 'Back Closure Bra', '2-in-1 Bra', 'Front Closure Comfort Bra', 'Breathable Side Opening Bra', 'Front Zip Closure Bra'] },
+    { key: 'rangeName', re: /Range Name/i, extras: 'breakdown', values: () => MP_RANGE_NAMES },
+    { key: 'season', re: /Season/i, values: mpSeasonOpts },
+  ];
+
+  // Parallel to state.mainPage.fields; null where a row has no spec.
+  let mpFieldSpec = [];
+  let mpSpecRowCount = -1;
+  let mpColorWrap = null;
+  let mpColorMenu = null;
+  let mpFldMenu = null;   // the one shared field picker, parked on <body>
+  let mpFldOpen = null;   // {i, sp, btn} while a picker is open
+  let mpFldFlat = [];     // options currently listed, indexed by data-mp-opt
+
+  function mpIsoToday() {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+
+  function mpDefaultColorLibrary() {
+    return MP_COLOR_MASTER.map(n => ({ name: n, hex: mpShadeOf(n) }));
+  }
+
+  /* Composite kept in sync from the parts, never typed directly. Empty parts
+     drop out, so a breakdown with only a prefix reads "LiftyBliss" and not
+     "LiftyBliss ·  · ". */
+  function mpBreakdownValue(parts) {
+    return MP_BREAKDOWN_PARTS
+      .map(p => String((parts || {})[p.key] || '').trim())
+      .filter(Boolean)
+      .join(MP_BREAKDOWN_SEP);
+  }
+
+  function mpSyncBreakdown(field) {
+    if (!field) return;
+    field.value = mpBreakdownValue(field.parts);
+  }
+
+  /* A project saved before US-080 has one free-text breakdown value. It
+     becomes the prefix — the historical packs put the range name there — and
+     the placeholder 'TBC' is dropped rather than carried into a sub-cell. */
+  function mpEnsureBreakdown(mp) {
+    const i = mp.fields.findIndex(f => /Style No Breakdown/i.test((f && f.label) || ''));
+    if (i === -1) return;
+    const f = mp.fields[i];
+    if (!f.parts || typeof f.parts !== 'object') {
+      const legacy = String(f.value || '').trim();
+      f.parts = {
+        prefix: /^tbc$/i.test(legacy) ? '' : legacy,
+        category: '',
+        rangeNo: '',
+      };
+    }
+    MP_BREAKDOWN_PARTS.forEach(p => {
+      if (typeof f.parts[p.key] !== 'string') f.parts[p.key] = '';
+    });
+    mpSyncBreakdown(f);
+  }
+
+  // Seeds state.mainPage in place and migrates a project saved against an
+  // older colour library. Safe to call repeatedly.
+  function ensureMainPage() {
+    const mp = state.mainPage && typeof state.mainPage === 'object'
+      ? state.mainPage
+      : (state.mainPage = {});
+    if (!Array.isArray(mp.fields) || !mp.fields.length) {
+      mp.fields = MP_DEFAULT_FIELDS.map(f => ({ ...f }));
+    }
+    /* Appended, not inserted by index: labels are editable, so a project can
+       carry a reordered or renamed roster and there is no position to trust
+       beyond "not present yet". */
+    if (!mp.fields.some(f => /^Block Reference\b/i.test(String((f && f.label) || '').trim()))) {
+      mp.fields.push({ ...MP_DEFAULT_FIELDS[MP_DEFAULT_FIELDS.length - 1] });
+    }
+    mpEnsureBreakdown(mp);
+    if (!mp.sketches || typeof mp.sketches !== 'object') mp.sketches = {};
+    MP_SKETCH_VARIANTS.forEach(v => {
+      const slots = Array.isArray(mp.sketches[v]) ? mp.sketches[v] : [];
+      mp.sketches[v] = MP_SKETCH_SLOTS.map((_, i) => {
+        const s = slots[i];
+        return s && typeof s === 'object' && s.id
+          ? { id: String(s.id), aspect: Math.max(0.01, Number(s.aspect) || 1) }
+          : null;
+      });
+    });
+    const brand = mp.fields.find(f => /^\s*Brand\b/i.test(f.label || ''));
+    if (brand) brand.value = 'Crossian';
+    const created = mp.fields.find(f => /Tech Pack Creation date/i.test(f.label || ''));
+    if (created && !/^\d{4}-\d{2}-\d{2}$/.test(String(created.value || '').trim())) {
+      created.value = mpIsoToday();
+    }
+    if (!mp.fieldExtra || typeof mp.fieldExtra !== 'object') mp.fieldExtra = {};
+    if (!Array.isArray(mp.colorways) || !mp.colorways.length) {
+      mp.colorways = [
+        { col: 'COL 1', value: 'Default White', hex: mpShadeOf('Default White') },
+        { col: 'COL 2', value: 'Default Black', hex: mpShadeOf('Default Black') },
+      ];
+    }
+    if (mp.colorLibId !== MP_COLOR_LIB_ID || !Array.isArray(mp.colorLibrary)) {
+      mp.colorLibrary = mpDefaultColorLibrary();
+      mp.colorLibId = MP_COLOR_LIB_ID;
+    }
+    if (typeof mp.provenance !== 'string') mp.provenance = '';
+    mpResolveSpecs();
+    return mp;
+  }
+
+  function mpResolveSpecs() {
+    const f = (state.mainPage && state.mainPage.fields) || [];
+    const taken = new Set();
+    mpFieldSpec = f.map(() => null);
+    MP_FIELD_SPEC.forEach(sp => {
+      const i = f.findIndex((row, idx) => !taken.has(idx) && sp.re.test((row && row.label) || ''));
+      if (i === -1) return;
+      taken.add(i);
+      mpFieldSpec[i] = sp;
+    });
+    mpSpecRowCount = f.length;
+  }
+
+  function mpFieldsEl() { return document.getElementById('mp-fields'); }
+  function mpCwTables() { return Array.from(document.querySelectorAll('table.mp-cwx')); }
+
+  /* ---- Version sketches -------------------------------------------------- */
+
+  function mpSketchVariant(variant) {
+    return String(variant || '').toLowerCase() === 'lace' ? 'lace' : 'solid';
+  }
+
+  function mpSketchSlot(variant, i) {
+    const mp = state.mainPage;
+    if (!mp || !mp.sketches) return null;
+    const slots = mp.sketches[mpSketchVariant(variant)] || [];
+    return slots[i] || null;
+  }
+
+  function mpSketchDataURL(variant, i) {
+    const slot = mpSketchSlot(variant, i);
+    return (slot && mpSketchDataById.get(slot.id)) || '';
+  }
+
+  // Injects the bytes back for save; the runtime state stays byte-free.
+  function mpSerializeForProject() {
+    const out = state.mainPage ? clone(state.mainPage) : null;
+    if (!out || !out.sketches) return out;
+    MP_SKETCH_VARIANTS.forEach(v => {
+      out.sketches[v] = (out.sketches[v] || []).map(slot => (slot && slot.id
+        ? { ...slot, dataURL: mpSketchDataById.get(slot.id) || null }
+        : null));
+    });
+    return out;
+  }
+
+  // The mirror of the above, on open: bytes into the map, state left clean.
+  function mpLoadProjectState(rawMainPage) {
+    state.mainPage = rawMainPage && typeof rawMainPage === 'object' ? clone(rawMainPage) : null;
+    mpSketchDataById.clear();
+    const raw = (rawMainPage && rawMainPage.sketches) || {};
+    MP_SKETCH_VARIANTS.forEach(v => {
+      (raw[v] || []).forEach(slot => {
+        if (slot && slot.id && slot.dataURL) mpSketchDataById.set(String(slot.id), slot.dataURL);
+      });
+    });
+    return ensureMainPage();   // drops the injected dataURLs from state again
+  }
+
+  async function mpSetSketch(variant, i, dataURL) {
+    const mp = ensureMainPage();
+    const key = mpSketchVariant(variant);
+    if (!dataURL) {
+      mp.sketches[key][i] = null;
+    } else {
+      /* aspect is measured once here, not at render time: the preview sheet
+         and the workbook both need it before an <img> exists. */
+      let aspect = 1;
+      try {
+        const img = await loadImageFromDataURL(dataURL);
+        aspect = Math.max(0.01, (img.naturalWidth || 1) / (img.naturalHeight || 1));
+      } catch (err) { /* unreadable image still gets a slot, at 1:1 */ }
+      const id = 'mp-sk-' + key + '-' + i + '-' + (++mpSketchSeq);
+      mpSketchDataById.set(id, dataURL);
+      mp.sketches[key][i] = { id, aspect };
+    }
+    mpCloseSketchMenu();
+    mpRenderSketches();
+    // The Preview & Export sheet shows the same slots; repaint it if that is
+    // the page in view (same rule restoreSnapshot follows).
+    if (state.activePage === 'preview' && typeof renderPreviewPage === 'function') renderPreviewPage();
+    pushHistoryIfChanged();
+  }
+
+  /* One builder for the page and the Preview & Export sheet, so the two can
+     never disagree about what a version panel shows (ADR 0046 rule 5).
+     `editable` adds the screen-only clear button and the empty-slot prompt. */
+  function mpSketchRowHtml(variant, editable) {
+    const key = mpSketchVariant(variant);
+    return MP_SKETCH_SLOTS.map((slot, i) => {
+      const dataURL = mpSketchDataURL(key, i);
+      const ref = key + ':' + i;
+      const body = dataURL
+        ? '<img class="mp-sk-img" src="' + escapeHtml(dataURL) + '" alt="' + slot.label + ' sketch">'
+        : '<span class="mp-sk-empty">' + (editable ? '＋ ' : '') + slot.label + '</span>';
+      return '<div class="mp-sketch' + (dataURL ? ' mp-sk-filled' : '') + '"'
+        + (editable ? ' data-mp-sk="' + ref + '" title="Upload or paste the '
+          + slot.label.toLowerCase() + ' technical flat"' : '')
+        + '>' + body
+        + '<span class="mp-sk-tag">' + slot.label + '</span>'
+        + (editable && dataURL
+          ? '<button type="button" class="mp-sk-x mp-screen-only" data-mp-sk-clear="' + ref
+            + '" title="Remove this sketch">×</button>'
+          : '')
+        + '</div>';
+    }).join('');
+  }
+
+  function mpRenderSketches() {
+    Array.from(document.querySelectorAll('#mainPageOverlay .mp-sketchrow')).forEach(row => {
+      row.innerHTML = mpSketchRowHtml(row.dataset.mpVariant, true);
+    });
+  }
+
+  function renderMainPage() {
+    if (!state.mainPage) return;
+    mpRenderFields();
+    mpRenderCw();
+    mpRenderSketches();
+    const prov = document.getElementById('mp-provenance');
+    if (prov && prov !== document.activeElement) prov.textContent = state.mainPage.provenance || '';
+  }
+
+  function mpRenderFields() {
+    const host = mpFieldsEl();
+    if (!host) return;
+    const fields = (state.mainPage && state.mainPage.fields) || [];
+    if (fields.length !== mpSpecRowCount) mpResolveSpecs();
+    host.innerHTML = fields.map((f, i) => {
+      const isBrand = /^\s*Brand\b/i.test(f.label || '');
+      const isDate = /Tech Pack Creation date/i.test(f.label || '');
+      const isBreakdown = !!(mpFieldSpec[i] && mpFieldSpec[i].part && f.parts);
+      const fixed = isBrand ? 'mp-fixed mp-brand-value' : (isDate ? 'mp-fixed mp-date-value' : '');
+      const valueMarkup = isBrand ? '<strong>' + escapeHtml(f.value) + '</strong>' : escapeHtml(f.value);
+      /* The sub-headers ride in their own row above the value, exactly as the
+         factory layout prints them — they are captions, not data, so they are
+         not editable and carry no data-i. */
+      const headRow = isBreakdown
+        ? '<tr class="mp-bd-headrow"><th class="mp-bd-blank"></th>'
+          + '<td class="mp-bdhead">'
+          + MP_BREAKDOWN_PARTS.map(p => '<span>' + escapeHtml(p.head) + '</span>').join('')
+          + '</td><td class="act mp-screen-only mp-act"></td></tr>'
+        : '';
+      const valueCell = isBreakdown
+        ? '<td class="mp-bdcell">'
+          + MP_BREAKDOWN_PARTS.map(p => '<span class="mp-bd-sub" contenteditable spellcheck="false"'
+            + ' data-i="' + i + '" data-f="part" data-part="' + p.key + '">'
+            + escapeHtml(String(f.parts[p.key] || '')) + '</span>').join('')
+          + '</td>'
+        : '<td' + (fixed ? ' class="' + fixed + '" aria-readonly="true"' : ' contenteditable spellcheck="false"')
+          + ' data-i="' + i + '" data-f="value">' + valueMarkup + '</td>';
+      return headRow
+        + '<tr><th contenteditable spellcheck="false" data-i="' + i + '" data-f="label">'
+        + escapeHtml(f.label) + '</th>'
+        + valueCell
+        /* The trigger gets its own cell and never goes inside the value td:
+           the input listener below stores the value cell's whole textContent,
+           so a button living in it would be typed into the field. */
+        + '<td class="act mp-screen-only mp-act">'
+        + (mpFieldSpec[i]
+          ? '<button type="button" class="mp-dd" data-mp-dd="' + i + '" tabindex="-1"'
+            + ' title="Suggestions — you can still type straight into the cell"></button>'
+          : '')
+        + '</td></tr>';
+    }).join('');
+  }
+
+  function mpRenderCw() {
+    const rows = (state.mainPage && state.mainPage.colorways) || [];
+    mpCwTables().forEach(t => {
+      t.innerHTML = rows.map((c, i) =>
+        '<tr><th>' + escapeHtml(c.col || ('COL ' + (i + 1))) + '</th>'
+        + '<td contenteditable spellcheck="false" data-cw="' + i + '">' + escapeHtml(c.value) + '</td>'
+        + '<td class="act mp-screen-only"><button type="button" data-rm="' + i + '" title="Remove this colorway">×</button></td></tr>').join('');
+    });
+    mpRenderColorMenu();   // keeps the "already used" marks in the picker honest
+  }
+
+  /* Every token of the query has to appear somewhere in the entry, so
+     "14-38 lilac" and "lilac 14-38" both find 14-3812 TCX Lilac Mist. */
+  function mpColorMatches(name, query) {
+    const s = String(name).toLowerCase();
+    return query.every(t => s.includes(t));
+  }
+
+  function mpRenderColorMenu() {
+    if (!mpColorMenu) return;
+    const box = mpColorMenu.querySelector('.cm-list');
+    const foot = mpColorMenu.querySelector('.cm-foot');
+    const raw = (mpColorMenu.querySelector('.cm-q').value || '').trim();
+    const query = raw.toLowerCase().split(/\s+/).filter(Boolean);
+    const lib = (state.mainPage && state.mainPage.colorLibrary) || [];
+    const used = new Set(((state.mainPage && state.mainPage.colorways) || [])
+      .map(c => String(c.value || '').toLowerCase()));
+    const hits = lib.map((c, i) => ({ c, i })).filter(h => mpColorMatches(h.c.name, query));
+    box.innerHTML = hits.map(({ c, i }) =>
+      '<button type="button" data-color-choice="' + i + '"'
+      + (used.has(String(c.name).toLowerCase()) ? ' class="cm-on" title="Already in the colorway list"' : '') + '>'
+      + '<span class="mp-chip" style="--chip:' + escapeHtml(c.hex || 'transparent') + '"></span>'
+      + '<span class="cm-name">' + escapeHtml(c.name || 'TBC') + '</span></button>').join('')
+      // anything not on the house list can still be added by hand
+      || (raw
+        ? '<button type="button" class="cm-new" data-color-free>'
+          + '<span class="mp-chip" style="--chip:transparent"></span>'
+          + '<span class="cm-name">＋ Add “' + escapeHtml(raw) + '” (off the master list)</span></button>'
+        : '<div class="cm-empty">No colour matches</div>');
+    foot.textContent = raw
+      ? hits.length + '/' + lib.length + ' colours match · Enter picks the first'
+      : lib.length + ' colours in the Color Master List · type to search';
+  }
+
+  function mpAddColor(choice) {
+    const mp = ensureMainPage();
+    const picked = choice || { name: 'TBC', hex: '' };
+    mp.colorways.push({
+      col: 'COL ' + (mp.colorways.length + 1),
+      value: picked.name || 'TBC',
+      hex: picked.hex || '',
+    });
+    if (mpColorWrap) mpColorWrap.classList.remove('open');
+    if (mpColorMenu) mpColorMenu.querySelector('.cm-q').value = '';
+    mpRenderCw();
+    pushHistoryIfChanged();
+    showToast('Added ' + mp.colorways[mp.colorways.length - 1].col + ': ' + (picked.name || 'TBC'));
+  }
+
+  /* US-072/ADR 0041: BOM table columns now read state.mainPage.colorways
+     directly (col/value), so removing a colorway does change what BOM
+     shows — but col labels are renumbered below, and a BOM row's
+     cwOverride is keyed by col label, not by a stable colorway id, so an
+     override keyed 'COL 2' stays orphaned under the old label if a
+     colorway ahead of it is removed. Accepted limitation: no remap pass
+     exists, same as this function never remapped anything before BOM
+     existed. */
+  function mpRemoveColor(i) {
+    const mp = ensureMainPage();
+    if (!mp.colorways[i]) return;
+    mp.colorways.splice(i, 1);
+    mp.colorways.forEach((c, j) => { c.col = 'COL ' + (j + 1); });
+    mpRenderCw();
+    pushHistoryIfChanged();
+  }
+
+  /* ---- Field picker ------------------------------------------------------ */
+
+  function mpCurrentValue(i) {
+    const f = (state.mainPage && state.mainPage.fields) || [];
+    const row = f[i] || {};
+    const part = mpFieldSpec[i] && mpFieldSpec[i].part;
+    if (part) return String((row.parts || {})[part] || '');
+    return String(row.value || '');
+  }
+
+  /* Diacritic-folded, so "nguyen thi hong hanh" finds "Nguyễn Thị Hồng Hạnh".
+     Every token must appear somewhere, as in mpColorMatches(), so word order
+     and the Vietnamese habit of reordering name parts both stop mattering. */
+  function mpFold(s) {
+    return String(s).toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').replace(/\u0111/g, 'd');
+  }
+
+  function mpOptionsFor(sp) {
+    const base = (typeof sp.values === 'function' ? sp.values() : (sp.values || [])).map(String);
+    const key = sp.extras || sp.key;
+    const seen = new Set(base.map(v => v.toLowerCase()));
+    const extra = ((state.mainPage.fieldExtra || {})[key] || [])
+      .filter(v => !seen.has(String(v).toLowerCase()));
+    return base.concat(extra);
+  }
+
+  function mpRememberExtra(sp, v) {
+    const key = sp.extras || sp.key;
+    const store = state.mainPage.fieldExtra || (state.mainPage.fieldExtra = {});
+    const list = store[key] || (store[key] = []);
+    if (v && !list.some(x => String(x).toLowerCase() === v.toLowerCase())) list.push(v);
+  }
+
+  function mpRenderFldMenu() {
+    if (!mpFldOpen || !mpFldMenu) return;
+    const box = mpFldMenu.querySelector('.mm-list');
+    const foot = mpFldMenu.querySelector('.mm-foot');
+    const raw = (mpFldMenu.querySelector('.mm-q').value || '').trim();
+    const q = mpFold(raw).split(/\s+/).filter(Boolean);
+    const cur = mpCurrentValue(mpFldOpen.i).toLowerCase();
+    mpFldFlat = mpOptionsFor(mpFldOpen.sp).filter(v => q.every(t => mpFold(v).includes(t)));
+    // Indices only in the attribute; the raw query is read back off .mm-q at
+    // click time, never round-tripped through markup.
+    let html = mpFldFlat.map((v, n) =>
+      '<button type="button" data-mp-opt="' + n + '"' + (cur === v.toLowerCase() ? ' class="mm-on"' : '') + '>'
+      + '<span class="mm-name">' + escapeHtml(v) + '</span></button>').join('');
+    /* Looser than the colour menu, which only offers the free row when
+       nothing matched: these rosters are known-incomplete, so typing "Selly"
+       must still be able to mean a NEW Selly instead of being swallowed by
+       "Selly Pham". */
+    if (raw && !mpFldFlat.some(v => v.toLowerCase() === raw.toLowerCase())) {
+      html += '<button type="button" data-mp-free><span class="mm-name">＋ Add “'
+        + escapeHtml(raw) + '” (off the list)</span></button>';
+    }
+    html += '<button type="button" data-mp-clear><span class="mm-name">－ Leave blank</span></button>';
+    box.innerHTML = html;
+    foot.textContent = raw
+      ? mpFldFlat.length + ' match · Enter picks the first'
+      : mpFldFlat.length + ' suggestions · type to filter, or type a new value';
+  }
+
+  function mpOpenFldMenu(i, btn) {
+    const sp = mpFieldSpec[i];
+    if (!sp || !mpFldMenu) return;
+    // Only one picker at a time: the overlay's click handler returns early on
+    // a trigger hit, so it never reaches the close-the-colour-menu branch.
+    if (mpColorWrap) mpColorWrap.classList.remove('open');
+    mpFldOpen = { i, sp, btn };
+    mpFldMenu.querySelector('.mm-q').value = '';
+    mpRenderFldMenu();
+    const r = btn.getBoundingClientRect();     // fixed positioning — no scroll maths
+    const width = 300;
+    mpFldMenu.style.left = Math.max(6, Math.min(r.right - width, window.innerWidth - width - 6)) + 'px';
+    mpFldMenu.classList.add('open');
+    const h = mpFldMenu.offsetHeight;
+    const below = window.innerHeight - r.bottom;
+    mpFldMenu.style.top = (below > h + 8 || r.top < h + 8 ? r.bottom + 4 : r.top - h - 4) + 'px';
+    mpFldMenu.querySelector('.mm-q').focus();
+  }
+
+  function mpCloseFldMenu(refocus) {
+    if (!mpFldMenu) return;
+    mpFldMenu.classList.remove('open');
+    const b = mpFldOpen && mpFldOpen.btn;
+    mpFldOpen = null;
+    if (refocus && b && document.contains(b)) b.focus();
+  }
+
+  function mpApplyFld(v) {
+    if (!mpFldOpen) return;
+    const i = mpFldOpen.i;
+    const row = (state.mainPage.fields || [])[i] || {};
+    const part = mpFldOpen.sp && mpFldOpen.sp.part;
+    const label = (row.label || '') + (part ? ' · ' + part : '');
+    if (part) {
+      row.parts = row.parts || {};
+      row.parts[part] = v;
+      mpSyncBreakdown(row);
+    } else {
+      row.value = v;
+    }
+    mpRenderFields();
+    pushHistoryIfChanged();
+    mpCloseFldMenu(true);
+    showToast(label + ': ' + (v || '(blank)') + ' · Ctrl/Cmd+Z to undo');
+  }
+
+  /* ---- Sketch slot menu (forked from the BOM material-photo trigger) ------
+     Upload or paste only: offline, no catalog, no auto-adoption. */
+
+  let mpSketchOpen = null;   // 'lace:0' while a slot menu is open
+
+  function mpSketchMenuEl() {
+    let menu = document.getElementById('mpSketchMenu');
+    if (menu) return menu;
+    menu = document.createElement('div');
+    menu.id = 'mpSketchMenu';
+    menu.className = 'mp-menu mp-sketch-menu';
+    menu.hidden = true;
+    menu.innerHTML = '<div class="mp-sk-hint">Technical flat for this version — prints on the MAIN PAGE sheet.</div>'
+      + '<div class="mp-sk-actions">'
+      + '<button type="button" data-mp-sk-upload title="Or Cmd/Ctrl+V to paste a copied image">Upload&hellip; / Paste</button>'
+      + '<button type="button" data-mp-sk-remove>Remove</button></div>';
+    document.body.appendChild(menu);
+    const filePick = document.createElement('input');
+    filePick.type = 'file';
+    filePick.accept = 'image/*';
+    filePick.hidden = true;
+    menu.appendChild(filePick);
+    const applyFile = (f, ref) => {
+      if (!f || !ref || !/^image\//i.test(f.type)) return;
+      const [variant, i] = ref.split(':');
+      const rd = new FileReader();
+      rd.onload = () => mpSetSketch(variant, +i, rd.result);
+      rd.readAsDataURL(f);
+    };
+    filePick.addEventListener('change', () => {
+      const f = filePick.files && filePick.files[0];
+      const ref = mpSketchOpen;
+      filePick.value = '';
+      applyFile(f, ref);
+    });
+    menu.addEventListener('click', e => {
+      if (!mpSketchOpen) return;
+      if (e.target.closest('[data-mp-sk-upload]')) { filePick.click(); return; }
+      if (e.target.closest('[data-mp-sk-remove]')) {
+        const [variant, i] = mpSketchOpen.split(':');
+        mpSetSketch(variant, +i, null);
+      }
+    });
+    /* stopPropagation keeps the app's document-level paste router from also
+       adopting the image as a Board sketch. */
+    menu.addEventListener('paste', e => {
+      if (!mpSketchOpen || !e.clipboardData) return;
+      const it = Array.from(e.clipboardData.items)
+        .find(x => x.kind === 'file' && /^image\//i.test(x.type));
+      if (!it) return;
+      const f = it.getAsFile();
+      if (!f) return;
+      e.preventDefault();
+      e.stopPropagation();
+      applyFile(f, mpSketchOpen);
+    });
+    menu.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { mpCloseSketchMenu(); return; }
+      if (e.key !== 'Tab') e.stopPropagation();
+    });
+    return menu;
+  }
+
+  function mpOpenSketchMenu(ref, box) {
+    mpCloseFldMenu();
+    if (mpColorWrap) mpColorWrap.classList.remove('open');
+    mpSketchOpen = ref;
+    const menu = mpSketchMenuEl();
+    menu.hidden = false;
+    menu.tabIndex = -1;   // focusable, so the paste event targets the menu
+    const r = box.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 260)) + 'px';
+    menu.style.top = Math.min(r.bottom + 4, window.innerHeight - 110) + 'px';
+    menu.focus();
+  }
+
+  function mpCloseSketchMenu() {
+    const menu = document.getElementById('mpSketchMenu');
+    if (menu) menu.hidden = true;
+    mpSketchOpen = null;
+  }
+
+  /* ---- Wiring ------------------------------------------------------------ */
+  // Sheet open/close now belongs to page-nav.js's setActivePage('mainpage' |
+  // 'board') — the MAIN PAGE sheet is a peer page of the Board, not a modal
+  // this file owns the visibility of.
+
+  function initMainPage() {
+    ensureMainPage();
+
+    const overlay = document.getElementById('mainPageOverlay');
+    if (!overlay) return;
+
+    const printBtn = document.getElementById('mainPagePrintBtn');
+    if (printBtn) printBtn.addEventListener('click', () => window.print());
+
+    // Colour picker, hung off the "Add colour" button in the sheet bar.
+    const addBtn = document.getElementById('mainPageAddColorBtn');
+    if (addBtn) {
+      mpColorWrap = addBtn.closest('.color-add-wrap');
+      mpColorMenu = mpColorWrap && mpColorWrap.querySelector('.color-menu');
+      if (mpColorMenu) {
+        mpColorMenu.innerHTML = '<input type="search" class="cm-q" spellcheck="false" '
+          + 'placeholder="Search colour — name or Pantone code (e.g. 14-38, dusty pink)">'
+          + '<div class="cm-list"></div><div class="cm-foot"></div>';
+        const q = mpColorMenu.querySelector('.cm-q');
+        q.addEventListener('input', mpRenderColorMenu);
+        /* The board's global keydown handler treats plain keys as tool
+           shortcuts; a search input is not contenteditable, so without this a
+           Backspace typed to fix a typo would reach the board. */
+        q.addEventListener('keydown', e => {
+          if (e.key !== 'Tab') e.stopPropagation();
+          if (e.key === 'Escape') { mpColorWrap.classList.remove('open'); addBtn.focus(); return; }
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          const first = mpColorMenu.querySelector('.cm-list button');
+          if (first) first.click();
+        });
+      }
+      addBtn.addEventListener('click', () => {
+        if (!mpColorWrap) return;
+        mpCloseFldMenu();
+        const open = mpColorWrap.classList.toggle('open');
+        if (open && mpColorMenu) {
+          const q = mpColorMenu.querySelector('.cm-q');
+          q.value = '';
+          mpRenderColorMenu();
+          q.focus();
+        }
+      });
+    }
+
+    /* Parked on <body>, not inside the sheet, so it is never clipped by the
+       scrolling sheet column. */
+    mpFldMenu = document.createElement('div');
+    mpFldMenu.id = 'mp-menu';
+    mpFldMenu.className = 'mp-menu';
+    mpFldMenu.setAttribute('role', 'menu');
+    mpFldMenu.innerHTML =
+      '<input type="search" class="mm-q" spellcheck="false" placeholder="Type to filter — or type a new value and press Enter">'
+      + '<div class="mm-list"></div><div class="mm-foot"></div>';
+    document.body.appendChild(mpFldMenu);
+    mpFldMenu.addEventListener('keydown', e => { if (e.key !== 'Tab') e.stopPropagation(); });
+    mpFldMenu.querySelector('.mm-q').addEventListener('input', mpRenderFldMenu);
+    mpFldMenu.querySelector('.mm-q').addEventListener('keydown', e => {
+      if (e.key === 'Escape') { mpCloseFldMenu(true); return; }
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const first = mpFldMenu.querySelector('.mm-list button');
+      if (first) first.click();
+    });
+    /* mousedown-preventDefault so the click never moves focus off the value
+       cell before the option is applied. */
+    mpFldMenu.addEventListener('mousedown', e => {
+      if (e.target.closest('.mm-list button')) e.preventDefault();
+    });
+    mpFldMenu.addEventListener('click', e => {
+      if (!mpFldOpen) return;
+      const opt = e.target.closest('[data-mp-opt]');
+      if (opt) { mpApplyFld(mpFldFlat[+opt.dataset.mpOpt]); return; }
+      if (e.target.closest('[data-mp-free]')) {
+        const raw = mpFldMenu.querySelector('.mm-q').value.trim();
+        if (!raw) return;
+        mpRememberExtra(mpFldOpen.sp, raw);
+        mpApplyFld(raw);
+        return;
+      }
+      if (e.target.closest('[data-mp-clear]')) mpApplyFld('');
+    });
+    window.addEventListener('resize', () => { if (mpFldOpen) mpCloseFldMenu(); });
+
+    /* Delegated on the overlay, which survives every re-render — a listener
+       on a cell or button would die on the next render. */
+    overlay.addEventListener('input', e => {
+      const cell = e.target.closest('#mp-fields [data-i]');
+      if (cell) {
+        const row = state.mainPage.fields[+cell.dataset.i];
+        if (cell.dataset.f === 'part') {
+          row.parts = row.parts || {};
+          row.parts[cell.dataset.part] = cell.textContent.trim();
+          mpSyncBreakdown(row);   // composite is derived, never typed
+        } else {
+          row[cell.dataset.f] = cell.textContent.trim();
+        }
+        return;
+      }
+      const cw = e.target.closest('table.mp-cwx [data-cw]');
+      if (cw) {
+        const idx = +cw.dataset.cw;
+        state.mainPage.colorways[idx].value = cw.textContent.trim();
+        // Both version panels show the same colorway list; mirror the edit
+        // into the table the TD is not typing in.
+        mpCwTables().forEach(t => {
+          if (t.contains(cw)) return;
+          const other = t.querySelector('[data-cw="' + idx + '"]');
+          if (other) other.textContent = cw.textContent;
+        });
+        return;
+      }
+      if (e.target.id === 'mp-provenance') state.mainPage.provenance = e.target.textContent;
+    });
+    /* One history entry per field, not per keystroke: mutate on input, push
+       on blur. pushHistoryIfChanged dedups by fingerprint, so a focus/blur
+       with no edit is a no-op. */
+    overlay.addEventListener('focusout', e => {
+      if (e.target.closest('[contenteditable]')) pushHistoryIfChanged();
+    });
+    overlay.addEventListener('click', e => {
+      const dd = e.target.closest('[data-mp-dd]');
+      if (dd) {
+        if (mpFldOpen && mpFldOpen.btn === dd) mpCloseFldMenu();
+        else mpOpenFldMenu(+dd.dataset.mpDd, dd);
+        return;
+      }
+      const rm = e.target.closest('table.mp-cwx [data-rm]');
+      if (rm) { mpRemoveColor(+rm.dataset.rm); return; }
+      // The clear button sits inside the slot box, so it has to win first.
+      const skClear = e.target.closest('[data-mp-sk-clear]');
+      if (skClear) {
+        const [variant, i] = skClear.dataset.mpSkClear.split(':');
+        mpSetSketch(variant, +i, null);
+        return;
+      }
+      const sk = e.target.closest('[data-mp-sk]');
+      if (sk) {
+        if (mpSketchOpen === sk.dataset.mpSk) mpCloseSketchMenu();
+        else mpOpenSketchMenu(sk.dataset.mpSk, sk);
+        return;
+      }
+      if (mpSketchOpen && !e.target.closest('#mpSketchMenu')) mpCloseSketchMenu();
+      const choice = e.target.closest('[data-color-choice]');
+      if (choice) { mpAddColor(state.mainPage.colorLibrary[+choice.dataset.colorChoice]); return; }
+      if (e.target.closest('[data-color-free]')) {
+        const raw = mpColorMenu ? mpColorMenu.querySelector('.cm-q').value.trim() : '';
+        if (raw) mpAddColor({ name: raw, hex: mpShadeOf(raw) });
+        return;
+      }
+      if (mpColorWrap && !e.target.closest('.color-add-wrap')) mpColorWrap.classList.remove('open');
+      if (mpFldOpen && !e.target.closest('#mp-menu,[data-mp-dd]')) mpCloseFldMenu();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape' || state.activePage !== 'mainpage') return;
+      if (mpSketchOpen) { mpCloseSketchMenu(); return; }
+      if (mpFldOpen) { mpCloseFldMenu(true); return; }
+      if (mpColorWrap && mpColorWrap.classList.contains('open')) {
+        mpColorWrap.classList.remove('open');
+        return;
+      }
+      setActivePage('board');
+    }, true);
+
+    renderMainPage();
+  }
+
+  // ---- src/ui/construction-phrase-data.js ----
+// Ported from the sibling "Bra construction" project (construction.html) per ADR 0039.
+// Verbatim data — do not hand-edit without checking the source stays in sync.
+
+const CONSTRUCTION_TERM_LIBRARY = [
+    // Cup & pad
+    { en: 'Molded foam cup' },
+    { en: 'Molded foam cup – 2 piece' },
+    { en: 'Cover foam (molded shell)' },
+    { en: 'Set-in cup' },
+    { en: 'Cookie – tear drop' },
+    { en: 'Cookie (insert pad)' },
+    { en: 'Outer cup panel' },
+    { en: 'Inner / liner cup' },
+    { en: 'Top cup panel' },
+    { en: 'Bottom cup panel' },
+    { en: 'Sling' },
+    { en: 'Undercup' },
+    { en: 'Front apex' },
+    { en: 'Back apex' },
+    { en: 'Adjustable panel' },
+    { en: 'Cushion pad' },
+    // Cup layer stacks
+    { en: 'Cup: allover lace + cover foam + molded foam' },
+    { en: 'Cup: galloon lace + shell + molded foam' },
+    { en: 'Cup: shell + molded foam (2-layer)' },
+    { en: 'Cup: power mesh + cover foam + molded foam' },
+    // Body & band
+    { en: 'Cradle' },
+    { en: 'Center gore (CF bridge)' },
+    { en: 'Underband (UB)', aliases: ['UB'] },
+    { en: 'Bottom band' },
+    { en: 'Back panel – upper' },
+    { en: 'Back panel – lower' },
+    { en: 'Side panel' },
+    { en: 'Center Front (CF)', aliases: ['CF'] },
+    { en: 'Center Back (CB)', aliases: ['CB'] },
+    { en: 'Neckline' },
+    { en: 'Armhole (A/H)', aliases: ['A/H'] },
+    // Closures
+    { en: 'Guard placket' },
+    { en: 'Zipper guard' },
+    { en: 'Zipper garage' },
+    { en: 'Hook and eye (H&E)', aliases: ['H&E'] },
+    { en: 'H&E 4 rows × 4 columns' },
+    { en: 'H&E 5 rows × 4 columns' },
+    { en: 'H&E 2 rows × 2 columns' },
+    { en: 'Open-end zipper' },
+    { en: 'Invisible zipper #4' },
+    { en: 'Zipper puller' },
+    { en: 'Snap button – female 9mm' },
+    { en: 'Snap button – male 9mm' },
+    { en: 'Velcro patch' },
+    // Straps
+    { en: 'Shoulder strap' },
+    { en: 'Front strap – 2-layer laminated' },
+    { en: 'Back strap (elastic)' },
+    { en: 'Folded elastic strap' },
+    { en: 'Strap elastic with slider' },
+    { en: 'Adjustable velcro strap' },
+    // Fabrics
+    { en: 'Shell fabric' },
+    { en: 'Allover lace' },
+    { en: 'Galloon lace' },
+    { en: 'Power mesh' },
+    { en: 'Non-stretch mesh' },
+    { en: 'Microfiber mesh' },
+    { en: 'Jacquard mesh' },
+    { en: 'Satin fabric' },
+    { en: 'Thin foam' },
+    // Elastics & tapes
+    { en: 'UB plush elastic – 1.5cm' },
+    { en: 'UB plush elastic – 2cm' },
+    { en: 'V-fold elastic' },
+    { en: 'Strap elastic – 2cm' },
+    { en: 'Strap elastic – 2.5cm' },
+    { en: 'Floating elastic tape' },
+    { en: 'Rigid tape – 2cm' },
+    { en: 'Cotton tape (strap loop)' },
+    { en: 'Stretch tape (ready-made)' },
+    { en: 'Binding tape – 8mm' },
+    { en: 'Wireless casing – 1cm' },
+    { en: 'Bonding tape' },
+    // Hardware
+    { en: '8-shaped ring – 2cm' },
+    { en: '8-shaped ring – 2.5cm' },
+    { en: 'Slider' },
+    { en: 'Swan hook' },
+    { en: 'Stabilizer – 6mm' },
+    // Stitches & seams
+    { en: 'Overlock (O/L)', aliases: ['O/L'] },
+    { en: 'Coverstitch' },
+    { en: 'Zigzag stitch (ZZ)', aliases: ['ZZ'] },
+    { en: '2R zigzag' },
+    { en: 'Lockstitch (1NDL / 2NDL)', aliases: ['1NDL', '2NDL', '2NDLS'] },
+    { en: 'Flatlock 3NST', aliases: ['3N5T'] },
+    { en: 'Topstitch' },
+    { en: 'Bartack' },
+    { en: 'Double-bartack' },
+    { en: 'ZZ bartack' },
+    { en: 'Spot tack' },
+    { en: 'Flat seam' },
+    // Edge finishes
+    { en: 'Bagout (clean finish)' },
+    { en: 'Inner binding' },
+    { en: 'V-fold binding – 8mm' },
+    { en: 'V-fold binding – 6mm' },
+    { en: 'Self-fold bonded' },
+    { en: 'Free-cut / clean-cut edge' },
+    { en: 'Side seam – natural placement' },
+    { en: 'Side seam – shifted to front' },
+    // Forming & bonding
+    { en: 'Lamination (2-layer)' },
+    { en: 'Molded panel' },
+    { en: 'Dot glue bonding' },
+    { en: 'Brush glue' },
+    { en: 'Heat-press bonding' },
+    { en: 'Darted panel' },
+    { en: '2-in-1 construction' },
+  ];
+
+const CONSTRUCTION_STARTER_PHRASES = [
+    {
+      id: 'strap-ring-slider',
+      category: 'Strap',
+      text: 'Adjustable strap with ring and slider',
+      aliases: ['adj', 'adjustable', 'strap', 'ring', 'slider', 'strap slider'],
+      favorite: true,
+    },
+    {
+      id: 'cup-clean-neckline',
+      category: 'Cup',
+      text: 'Molded foam cup with clean neckline edge',
+      aliases: ['cup', 'molded', 'foam cup', 'clean neckline', 'neckline edge'],
+      favorite: true,
+    },
+    {
+      id: 'lace-back-overlock',
+      category: 'Lace',
+      text: 'Back lace panel joined with overlock seam',
+      aliases: ['back lace', 'lace panel', 'overlock', 'over lock', 'ol', 'back panel'],
+      favorite: true,
+    },
+    {
+      id: 'underband-lace-cradle-zigzag',
+      category: 'Underband',
+      text: 'Lace cradle joined to underband with zigzag stitch',
+      aliases: ['lace cradle', 'underband', 'under band', 'ub', 'zigzag', 'zig zag', 'zz', 'cradle'],
+      favorite: true,
+    },
+    {
+      id: 'neckline-clean-edge',
+      category: 'Seam',
+      text: 'Clean neckline edge',
+      aliases: ['clean', 'neckline', 'neck edge', 'edge finish'],
+      favorite: true,
+    },
+    {
+      id: 'underband-zigzag',
+      category: 'Underband',
+      text: 'Zigzag stitch at underband',
+      aliases: ['zigzag', 'zig zag', 'zz', 'underband', 'under band', 'ub stitch'],
+      favorite: true,
+    },
+    {
+      id: 'lace-panel-overlock',
+      category: 'Lace',
+      text: 'Overlock seam at lace panel',
+      aliases: ['overlock', 'over lock', 'ol', 'lace', 'lace seam'],
+      favorite: true,
+    },
+    {
+      id: 'bartack-reinforcement',
+      category: 'Seam',
+      text: 'Bartack reinforcement',
+      aliases: ['bartack', 'bar tack', 'reinforcement', 'tack'],
+      favorite: true,
+    },
+    {
+      id: 'elastic-fold-over-edge',
+      category: 'Elastic',
+      text: 'Fold-over elastic edge',
+      aliases: ['fold over', 'fold-over', 'foe', 'elastic edge', 'elastic'],
+      favorite: true,
+    },
+    {
+      id: 'closure-hook-eye',
+      category: 'Closure',
+      text: 'Hook-and-eye closure',
+      aliases: ['hook', 'eye', 'hook eye', 'hook-and-eye', 'h&e', 'h and e', 'closure'],
+      favorite: true,
+    },
+    {
+      id: 'wing-power-mesh',
+      category: 'Wing',
+      text: 'Power mesh wing panel',
+      aliases: ['wing', 'power mesh', 'back wing', 'mesh wing'],
+      favorite: false,
+    },
+    {
+      id: 'label-care',
+      category: 'Label',
+      text: 'Care label at inner wing',
+      aliases: ['label', 'care label', 'inner wing', 'brand label'],
+      favorite: false,
+    },
+    {
+      id: 'closure-front-zipper',
+      category: 'Closure',
+      text: 'Front zipper with inner zipper guard',
+      aliases: ['zipper', 'front closure', 'zip guard', 'zipper guard'],
+      favorite: false,
+    },
+    {
+      id: 'strap-bartack',
+      category: 'Strap',
+      text: 'Strap attached with double bartack',
+      aliases: ['strap bartack', 'double bartack', 'strap attach'],
+      favorite: false,
+    },
+    {
+      id: 'cup-lace-overlay',
+      category: 'Cup',
+      text: 'Lace overlay on molded foam cup',
+      aliases: ['lace overlay', 'cup lace', 'foam cup lace', 'overlay cup'],
+      favorite: false,
+    },
+    {
+      id: 'seam-topstitch',
+      category: 'Seam',
+      text: 'Topstitch along seam allowance',
+      aliases: ['topstitch', 'seam allowance', 'stitch seam'],
+      favorite: false,
+    },
+  ];
+
+const CONSTRUCTION_GENERATED_PHRASES = [
+    {
+        "category": "Strap",
+        "text": "2R Bartack attach front strap w/ back elastic strap",
+        "aliases": [
+            "strap",
+            "elastic",
+            "bartack",
+            "front",
+            "back",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Adjustable back strap with 8 - shaped ring & slider",
+        "aliases": [
+            "strap",
+            "ring",
+            "hardware",
+            "slider",
+            "back",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Adjustable elastic straps with 8 shape ring - 2cm to 2.5cm",
+        "aliases": [
+            "strap",
+            "ring",
+            "hardware",
+            "elastic",
+            "2cm",
+            "5cm",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Adjustable strap with velcro & 8 - shaped ring",
+        "aliases": [
+            "strap",
+            "ring",
+            "hardware",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Adjustable strap with velcro & 8 - shaped ring Double - bartack",
+        "aliases": [
+            "strap",
+            "ring",
+            "hardware",
+            "bartack",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Distance from center of 1st snap to strap joint: 1 cm 1 cm",
+        "aliases": [
+            "strap",
+            "snap",
+            "snap button",
+            "hardware",
+            "1cm",
+            "1 cm",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Double layer shell fabric laminated at front strap. Attached to velcro by V - fold (5mm folded width contrast color) - 1NDL top stitch Strap width: 2cm for all sizes",
+        "aliases": [
+            "strap",
+            "shell fabric",
+            "fabric",
+            "1ndl",
+            "topstitch",
+            "laminated",
+            "lamination",
+            "folded width",
+            "width",
+            "5mm",
+            "2cm",
+            "front",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Double layer shell fabric laminated at front strap. Attached to velcro by V - fold (5mm folded width) 1NDL top stitch Strap width: 2cm for all sizes",
+        "aliases": [
+            "strap",
+            "shell fabric",
+            "fabric",
+            "1ndl",
+            "topstitch",
+            "laminated",
+            "lamination",
+            "folded width",
+            "width",
+            "5mm",
+            "2cm",
+            "front",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf; KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Elastic strap attached to back panel by double - bartack Double - layered cup panel Outer: Molded shell cup (One - piece) Inner: Molded foam cup (Two - piece)",
+        "aliases": [
+            "strap",
+            "cup",
+            "back panel",
+            "back",
+            "elastic",
+            "molded foam",
+            "foam cup",
+            "bartack",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Folded elastic strap attached to back panel by double - bartack",
+        "aliases": [
+            "strap",
+            "back panel",
+            "back",
+            "elastic",
+            "bartack",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Front & back strap attached together by clean finish",
+        "aliases": [
+            "strap",
+            "front",
+            "back",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Front apex self fold with zigzag stitch to create loop",
+        "aliases": [
+            "strap",
+            "zigzag",
+            "zz",
+            "front",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Front strap continue from front to back",
+        "aliases": [
+            "strap",
+            "front",
+            "back",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "front UB outer, Back panel, outer strap zipper guard",
+        "aliases": [
+            "strap",
+            "ub",
+            "underband",
+            "back panel",
+            "back",
+            "zipper",
+            "closure",
+            "front",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Inner foam cup & shell cup bagout at upper edgeclean finish. (This edge floating) Front apex self fold with zigzag stitch to create loop Two - piece molded foam cup attached together at CF by stabilizer",
+        "aliases": [
+            "strap",
+            "cup",
+            "cf",
+            "center front",
+            "molded foam",
+            "foam cup",
+            "zigzag",
+            "zz",
+            "bagout",
+            "clean finish",
+            "front",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Loop elastic strap construction with swan hook & 8 - shaped ring adjuster Number of loops: 15 loops for all sizes Strap width: XS - XL= 2cm 2XL - above = 2.5cm",
+        "aliases": [
+            "strap",
+            "hook - and - eye",
+            "h & e",
+            "closure",
+            "ring",
+            "hardware",
+            "swan hook",
+            "elastic",
+            "width",
+            "2cm",
+            "5cm",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Loops on front strap",
+        "aliases": [
+            "strap",
+            "front",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Nylon coated swan hook (front strap)",
+        "aliases": [
+            "strap",
+            "hook - and - eye",
+            "h & e",
+            "closure",
+            "swan hook",
+            "hardware",
+            "front",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Shoulder strap in 2 layers: Outer: Shell fabric Liner: Power mesh 8 shape ring at the end of the strap (Inner width XS - XL: 2.5cm 2XL and above: 3cm",
+        "aliases": [
+            "strap",
+            "ring",
+            "hardware",
+            "power mesh",
+            "mesh",
+            "shell fabric",
+            "fabric",
+            "width",
+            "5cm",
+            "3cm",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Shoulder Strap panel length",
+        "aliases": [
+            "strap",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Side panel continue to strap",
+        "aliases": [
+            "strap",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Snap button (female side) attached to strap elastic - 1NDL topstitch Diameter: 1 cm all sizes Number of snap (female): 2",
+        "aliases": [
+            "strap",
+            "snap",
+            "snap button",
+            "hardware",
+            "elastic",
+            "1ndl",
+            "topstitch",
+            "1cm",
+            "1 cm",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Strap construction: Rigid tape (as overlaid on top strap elastic with bartack to create loops 6 loops. 1cm/loops Hook at 2nd loop",
+        "aliases": [
+            "strap",
+            "hook - and - eye",
+            "h & e",
+            "closure",
+            "elastic",
+            "tape",
+            "bartack",
+            "1cm",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Strap elastic with slider attached to cushion pad - edgestitch vertical bartack at cushion pad end Width: 2 cm all sizes 8 - shaped ring attached at back apex - self - folded and bartack to create loop",
+        "aliases": [
+            "strap",
+            "ring",
+            "hardware",
+            "slider",
+            "elastic",
+            "cushion pad",
+            "pad",
+            "bartack",
+            "width",
+            "2cm",
+            "2 cm",
+            "back",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Strap panel attached to cup panel by double bartack",
+        "aliases": [
+            "strap",
+            "cup",
+            "bartack",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Strap Width at Shoulder seam",
+        "aliases": [
+            "strap",
+            "width",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Straps (cushion pad and strap elastic) attached inner front cup panel at front apex - O/L, bartack at front apex Strap width: 3.5 cm all sizes",
+        "aliases": [
+            "strap",
+            "cup",
+            "elastic",
+            "cushion pad",
+            "pad",
+            "bartack",
+            "overlock",
+            "o/l",
+            "ol",
+            "width",
+            "5cm",
+            "5 cm",
+            "front",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "Two layers at cushion pad - laminated 1st layer: Shell fabric 2nd layer: Thin foam",
+        "aliases": [
+            "strap",
+            "shell fabric",
+            "fabric",
+            "cushion pad",
+            "pad",
+            "laminated",
+            "lamination",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "V - fold binding w/ Coverstitch along strap edges",
+        "aliases": [
+            "strap",
+            "binding",
+            "binding tape",
+            "coverstitch",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Strap",
+        "text": "V - fold elastic all around cushion pad - coverstitch Folded width: 6 mm all sizes",
+        "aliases": [
+            "strap",
+            "elastic",
+            "cushion pad",
+            "pad",
+            "coverstitch",
+            "folded width",
+            "width",
+            "6mm",
+            "6 mm",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Clean finish - middle shell with cup at neckline",
+        "aliases": [
+            "cup",
+            "neckline",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Cup construction: Outer - molded shell fabric Liner - set in cup attached to mesh by flat seam",
+        "aliases": [
+            "cup",
+            "shell fabric",
+            "fabric",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Cup construction: Outer layer: Darted galloon lace with ZZ on top lowest scallop Middle layer: Molded shell Liner: Molded foam cup/2 pieces",
+        "aliases": [
+            "cup",
+            "lace",
+            "galloon lace",
+            "molded foam",
+            "foam cup",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Cup construction: Outer layer: Molded shell Liner: Molded foam cup/2 pieces",
+        "aliases": [
+            "cup",
+            "molded foam",
+            "foam cup",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Cup in single layer molded shell fabric Overlaid on inner set in foam cup",
+        "aliases": [
+            "cup",
+            "shell fabric",
+            "fabric",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Cup in single layer of molded shell fabric overlaid on molded foam cup",
+        "aliases": [
+            "cup",
+            "shell fabric",
+            "fabric",
+            "molded foam",
+            "foam cup",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Cup Panel height at Center Front",
+        "aliases": [
+            "cup",
+            "center front",
+            "cf",
+            "front",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Double layer at cup panel: 1st: Molded shell fabric 2nd: Molded foam cup Double layered UB panel: Outer: Shell Fabric (Synthetic) Inner: Power Mesh",
+        "aliases": [
+            "cup",
+            "ub",
+            "underband",
+            "power mesh",
+            "mesh",
+            "shell fabric",
+            "fabric",
+            "molded foam",
+            "foam cup",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Foam cup +shell at front neckline bagout - clean finish",
+        "aliases": [
+            "cup",
+            "neckline",
+            "bagout",
+            "clean finish",
+            "front",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Foam cups joined together with stabilizer (2NDLS lockstitch) at inner CF",
+        "aliases": [
+            "cup",
+            "cf",
+            "center front",
+            "2ndls",
+            "lockstitch",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "front cup middle",
+        "aliases": [
+            "cup",
+            "front",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Front Neckline cup panel bagout - clean finish",
+        "aliases": [
+            "cup",
+            "neckline",
+            "bagout",
+            "clean finish",
+            "front",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Full panel power mesh at inner UB, attached to foam cup by flatlock 3N5T",
+        "aliases": [
+            "cup",
+            "ub",
+            "underband",
+            "power mesh",
+            "mesh",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf; KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Inner binding at under cup seam + side seam 2NDLS lockstitch",
+        "aliases": [
+            "cup",
+            "side seam",
+            "binding",
+            "binding tape",
+            "2ndls",
+            "lockstitch",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Inner binding by stabilizer to join 2 piece cup Inner cup binding with 2NDLS lockstitch",
+        "aliases": [
+            "cup",
+            "binding",
+            "binding tape",
+            "2ndls",
+            "lockstitch",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Inner binding tape at under cup and side seam - 2NDLS stitch Width: 1 cm all sizes",
+        "aliases": [
+            "cup",
+            "side seam",
+            "binding",
+            "binding tape",
+            "tape",
+            "2ndls",
+            "lockstitch",
+            "width",
+            "1cm",
+            "1 cm",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Inner cup binding at Under cup seam + inner side seam - 2NDLS lockstitch",
+        "aliases": [
+            "cup",
+            "side seam",
+            "binding",
+            "binding tape",
+            "2ndls",
+            "lockstitch",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Inner cup binding with 2NDLS lockstitch",
+        "aliases": [
+            "cup",
+            "binding",
+            "binding tape",
+            "2ndls",
+            "lockstitch",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Inner foam cup & shell cup attached to inner power mesh by flatlock 3N5T Inner neckline piece attached together at CF by O/LClean finish",
+        "aliases": [
+            "cup",
+            "neckline",
+            "cf",
+            "center front",
+            "power mesh",
+            "mesh",
+            "overlock",
+            "o/l",
+            "ol",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Lace trim overlaid on cup seam attach by zigzag stitch",
+        "aliases": [
+            "cup",
+            "lace",
+            "zigzag",
+            "zz",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Molded fixed cup - 2 piece",
+        "aliases": [
+            "cup",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Molded foam cup",
+        "aliases": [
+            "cup",
+            "molded foam",
+            "foam cup",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "natural placement Satin piping at front side panel and top cup (width - 4mm at outer Encased elastic at UB continue view) from front to back (3cm - for all Front Back",
+        "aliases": [
+            "cup",
+            "lace",
+            "ub",
+            "underband",
+            "elastic",
+            "width",
+            "4mm",
+            "3cm",
+            "front",
+            "back",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Neckline in single layer of microfiber with small elastic in 6mm along neckline edge attach by zigzag stitch Neckline panel attach with cup panel by inner binding along neckline foam",
+        "aliases": [
+            "cup",
+            "neckline",
+            "elastic",
+            "binding",
+            "binding tape",
+            "zigzag",
+            "zz",
+            "6mm",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "OL attach singel - layer of power mesh with shell, ZZ attach OL seam to inner molded foam cup Shell fabric Foam cup",
+        "aliases": [
+            "cup",
+            "power mesh",
+            "mesh",
+            "shell fabric",
+            "fabric",
+            "molded foam",
+            "foam cup",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Outer Cup height",
+        "aliases": [
+            "cup",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Outer cup width",
+        "aliases": [
+            "cup",
+            "width",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Outer front cup",
+        "aliases": [
+            "cup",
+            "front",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Outer shell 2 - Alloverlace Outer cup",
+        "aliases": [
+            "cup",
+            "lace",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Ready made soft tape along foam cup and neckline attach by 2NDLS",
+        "aliases": [
+            "cup",
+            "neckline",
+            "tape",
+            "2ndls",
+            "lockstitch",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Ready made soft tape along under cup and neckline attach by 2 needle stitch",
+        "aliases": [
+            "cup",
+            "neckline",
+            "tape",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Set in cup Power mesh liner end at foam cup attach with foam cup by flat seam",
+        "aliases": [
+            "cup",
+            "power mesh",
+            "mesh",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Shell cup attached with foam cup by 1NDL - lockstitch at armhole, then outer lace will O/L & bagout - clean finish",
+        "aliases": [
+            "cup",
+            "lace",
+            "armhole",
+            "a/h",
+            "overlock",
+            "o/l",
+            "ol",
+            "1ndl",
+            "topstitch",
+            "bagout",
+            "clean finish",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Shell cup attached with foam cup by 1NDL - lockstitch at armhole, then outer mesh will O/L & bagout - clean finish",
+        "aliases": [
+            "cup",
+            "armhole",
+            "a/h",
+            "overlock",
+            "o/l",
+            "ol",
+            "1ndl",
+            "topstitch",
+            "bagout",
+            "clean finish",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Single - layered molded power mesh front cup panel Clean finished at molded foam cup neckline and armhole O/L and bagout",
+        "aliases": [
+            "cup",
+            "neckline",
+            "armhole",
+            "a/h",
+            "power mesh",
+            "mesh",
+            "molded foam",
+            "foam cup",
+            "overlock",
+            "o/l",
+            "ol",
+            "bagout",
+            "clean finish",
+            "front",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Spot tacks attach lace to cup panel",
+        "aliases": [
+            "cup",
+            "lace",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Stabilizer at CF inner cup attach by 2NDLS stitch",
+        "aliases": [
+            "cup",
+            "cf",
+            "center front",
+            "2ndls",
+            "lockstitch",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Stabilizer attached to inner molded cup at CF with 2NDLS stabilizer width = 6mm all sizes",
+        "aliases": [
+            "cup",
+            "cf",
+            "center front",
+            "2ndls",
+            "lockstitch",
+            "width",
+            "6mm",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Three layer at cup panel: 1st: Molded galloon lace 2nd: Molded shell fabric 3rd: Molded foam cup",
+        "aliases": [
+            "cup",
+            "lace",
+            "galloon lace",
+            "shell fabric",
+            "fabric",
+            "molded foam",
+            "foam cup",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Three layer at front cup: 1st: Molded allover lace 2nd: One panel molded shell (cover foam) 3rd: Molded foam cup Non - stretch mesh at outer front keyhole, attached to outer shell UB by O/L - 1NDL top stitch",
+        "aliases": [
+            "cup",
+            "lace",
+            "ub",
+            "underband",
+            "molded foam",
+            "foam cup",
+            "overlock",
+            "o/l",
+            "ol",
+            "1ndl",
+            "topstitch",
+            "front",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Three layer at front cup: 1st: Molded power mesh 2nd: One panel molded contrast fabric (cover foam cup) 3rd: Set - in molded foam cup",
+        "aliases": [
+            "cup",
+            "power mesh",
+            "mesh",
+            "molded foam",
+            "foam cup",
+            "front",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Three layer at front cup: 1st: Molded power mesh 2nd: One panel molded shell (cover foam) 3rd: Molded foam cup Non - stretch mesh at outer front keyhole, attached to outer shell UB by O/L - 1NDL top stitch",
+        "aliases": [
+            "cup",
+            "ub",
+            "underband",
+            "power mesh",
+            "mesh",
+            "molded foam",
+            "foam cup",
+            "overlock",
+            "o/l",
+            "ol",
+            "1ndl",
+            "topstitch",
+            "front",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Three layer at front cup: 1st: Molded power mesh 2nd: One panel molded Shell fabric (cover foam cup) 3rd: Set - in molded foam cup",
+        "aliases": [
+            "cup",
+            "power mesh",
+            "mesh",
+            "shell fabric",
+            "fabric",
+            "molded foam",
+            "foam cup",
+            "front",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Three layers at sling (only attached to CF under cup and side seam) 1st layer: Molded allover lace 2nd layer: Molded shell fabric (synthetic) 3rd layer: Molded foam cup",
+        "aliases": [
+            "cup",
+            "sling",
+            "lace",
+            "side seam",
+            "cf",
+            "center front",
+            "shell fabric",
+            "fabric",
+            "molded foam",
+            "foam cup",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Top cup panel in 1 layer jacquard mesh attach to shell/cup bottom piece with piping between by O/L and top stitch",
+        "aliases": [
+            "cup",
+            "overlock",
+            "o/l",
+            "ol",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Two - piece molded foam cup",
+        "aliases": [
+            "cup",
+            "molded foam",
+            "foam cup",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf; TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Two - piece molded foam cup attached together at CF by stabilizer - 2NDLS lock stitch",
+        "aliases": [
+            "cup",
+            "cf",
+            "center front",
+            "molded foam",
+            "foam cup",
+            "2ndls",
+            "lockstitch",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Two - pieces molded foam cup",
+        "aliases": [
+            "cup",
+            "molded foam",
+            "foam cup",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Two layers at sling (only attached to CF under cup and side seam) 1st layer: Molded shell fabric (synthetic) 2nd layer: Molded foam cup",
+        "aliases": [
+            "cup",
+            "sling",
+            "side seam",
+            "cf",
+            "center front",
+            "shell fabric",
+            "fabric",
+            "molded foam",
+            "foam cup",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "under cup outer binding",
+        "aliases": [
+            "cup",
+            "binding",
+            "binding tape",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "V - fold binding w/ Coverstitch along neckline & A/H of cup panel",
+        "aliases": [
+            "cup",
+            "neckline",
+            "binding",
+            "binding tape",
+            "coverstitch",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "V - fold elastic at front & back neckline front & back armhole of inner front cup panel - coverstitch Folded width: 1 cm all sizes",
+        "aliases": [
+            "cup",
+            "neckline",
+            "armhole",
+            "a/h",
+            "elastic",
+            "coverstitch",
+            "folded width",
+            "width",
+            "1cm",
+            "1 cm",
+            "front",
+            "back",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Cup",
+        "text": "Wireless Casing 1 cm all sizes Glue Brush glue Glue Outer cup",
+        "aliases": [
+            "cup",
+            "1cm",
+            "1 cm",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Sling",
+        "text": "Double - layered at outer sling: Outer: Galloon lace Liner: Power mesh",
+        "aliases": [
+            "sling",
+            "lace",
+            "galloon lace",
+            "power mesh",
+            "mesh",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Sling",
+        "text": "Double - layered at outer sling: Outer: Shell fabric Liner: Power mesh",
+        "aliases": [
+            "sling",
+            "power mesh",
+            "mesh",
+            "shell fabric",
+            "fabric",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Sling",
+        "text": "Sling edges finished by inner mobilon tape (6mm) - zigzag stitch",
+        "aliases": [
+            "sling",
+            "tape",
+            "zigzag",
+            "zz",
+            "6mm",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Sling",
+        "text": "Sling: One layer of molded shell fabric free cut at AH and neckline edge",
+        "aliases": [
+            "sling",
+            "neckline",
+            "shell fabric",
+            "fabric",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Sling",
+        "text": "Snap button (male side) with folded rigid tape to cover sling apex - 1NDL topstitch all around rigid tape Diameter: 1 cm all sizes Number of snap (male): 1",
+        "aliases": [
+            "sling",
+            "snap",
+            "snap button",
+            "hardware",
+            "tape",
+            "1ndl",
+            "topstitch",
+            "1cm",
+            "1 cm",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "Allover lace layer attached to outer shell UB by outer binding - 2NDLS lock stitch",
+        "aliases": [
+            "lace",
+            "ub",
+            "underband",
+            "binding",
+            "binding tape",
+            "2ndls",
+            "lockstitch",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "Back panel in 1 layer shell with lace panel on top attached by ZZ",
+        "aliases": [
+            "lace",
+            "back panel",
+            "back",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "Contrast fabric (Under lace)",
+        "aliases": [
+            "lace",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "Inner plush elastic at back hem placed on bonding area",
+        "aliases": [
+            "lace",
+            "elastic",
+            "back",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "Loop elastic attached to left lace with double bartacks; elastic passes through an 8 - shaped ring on right side & looped onto itself with a swan hook",
+        "aliases": [
+            "lace",
+            "hook - and - eye",
+            "h & e",
+            "closure",
+            "ring",
+            "hardware",
+            "swan hook",
+            "elastic",
+            "bartack",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "Outer lace layer attached together at CF by O/L. Topstitch + bartack on WL side",
+        "aliases": [
+            "lace",
+            "cf",
+            "center front",
+            "bartack",
+            "overlock",
+            "o/l",
+            "ol",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "Shell fabric and lace are approved",
+        "aliases": [
+            "lace",
+            "shell fabric",
+            "fabric",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "side seam at natural placement",
+        "aliases": [
+            "lace",
+            "side seam",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "side seam at natural placement Finished with inner binding",
+        "aliases": [
+            "lace",
+            "side seam",
+            "binding",
+            "binding tape",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf; KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "side seam at natural placement Inner binding side seam",
+        "aliases": [
+            "lace",
+            "side seam",
+            "binding",
+            "binding tape",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "Side seam shifted to front Two layers at top back panel: Outer: Allover lace Liner: Power mesh",
+        "aliases": [
+            "lace",
+            "side seam",
+            "back panel",
+            "back",
+            "power mesh",
+            "mesh",
+            "front",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "Side Seam: Natural Placement Cradle hem: 1cm self - fold bonded",
+        "aliases": [
+            "lace",
+            "side seam",
+            "1cm",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Lace",
+        "text": "Technical Detail Sheet - Lace version Outer Construction",
+        "aliases": [
+            "lace",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "1cm shell self fold at inner UB",
+        "aliases": [
+            "underband",
+            "ub",
+            "1cm",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "Bartack at UB binding end",
+        "aliases": [
+            "underband",
+            "ub",
+            "binding",
+            "binding tape",
+            "bartack",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "Double - layered at front UB: Outer: Shell fabric Liner: Power mesh",
+        "aliases": [
+            "underband",
+            "ub",
+            "power mesh",
+            "mesh",
+            "shell fabric",
+            "fabric",
+            "front",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "Double layered UB panel: Outer: Shell Fabric (Synthetic) Inner: Power Mesh Center gore O/L + bagout 1NDL topstitch at inner mesh",
+        "aliases": [
+            "underband",
+            "ub",
+            "power mesh",
+            "mesh",
+            "shell fabric",
+            "fabric",
+            "overlock",
+            "o/l",
+            "ol",
+            "1ndl",
+            "topstitch",
+            "bagout",
+            "clean finish",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "Inner binding to attach Plush elastic along front and back UB zipper and zipper guard Inner left side seam opening hem attach by zigzag stitch open end zipper with laminated zipper XS - XL 1.5cm guard 2XL and above - 2cm",
+        "aliases": [
+            "underband",
+            "ub",
+            "side seam",
+            "zipper",
+            "closure",
+            "elastic",
+            "binding",
+            "binding tape",
+            "zigzag",
+            "zz",
+            "laminated",
+            "lamination",
+            "5cm",
+            "2cm",
+            "front",
+            "back",
+            "open end",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "Inner plush elastic at Front + Back UB, attached with zigzag stitch XS - XL: 1.5cm 2XL - above: 2cm",
+        "aliases": [
+            "underband",
+            "ub",
+            "elastic",
+            "zigzag",
+            "zz",
+            "5cm",
+            "2cm",
+            "front",
+            "back",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf; KiraForm/KiraForm-vB-1.0.pdf; KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "Inner plush elastic at UB Elastic height: 1.5cm for all sizes",
+        "aliases": [
+            "underband",
+            "ub",
+            "elastic",
+            "5cm",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "Laser - cut holes on outer front shell UB Power mesh panel attached to outer shell UB by inner binding - 2NDLS lock stitch",
+        "aliases": [
+            "underband",
+            "ub",
+            "binding",
+            "binding tape",
+            "power mesh",
+            "mesh",
+            "2ndls",
+            "lockstitch",
+            "front",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "Please increase the back underband to 2 cm, in line with the default sample, for better support, while reducing the center back side to 2 cm only",
+        "aliases": [
+            "underband",
+            "ub",
+            "2cm",
+            "2 cm",
+            "back",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "Plush elastic along front and back UB hem attach by zigzag stitch Elastic in 1.5 cm for XS - XL 2XL and above: 2cm",
+        "aliases": [
+            "underband",
+            "ub",
+            "elastic",
+            "zigzag",
+            "zz",
+            "5cm",
+            "5 cm",
+            "2cm",
+            "front",
+            "back",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "Power mesh layer attached to outer shell UB by outer binding - 2NDLS lock stitch",
+        "aliases": [
+            "underband",
+            "ub",
+            "binding",
+            "binding tape",
+            "power mesh",
+            "mesh",
+            "2ndls",
+            "lockstitch",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "Sample fitted and below are the comments accordingly Overall fit is good. The front underband is loose. Please reduce the front underband length by 1\" in total The shape should be maintained as per the default sample (Image 2)",
+        "aliases": [
+            "underband",
+            "ub",
+            "front",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "UB has double layer of shell fabric self folded bonding together by dot glue, at CF of UB there is a heat press artwork (same technic as Armourlift but in diferrent shape)",
+        "aliases": [
+            "underband",
+            "ub",
+            "cf",
+            "center front",
+            "shell fabric",
+            "fabric",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "UB plush elastic",
+        "aliases": [
+            "underband",
+            "ub",
+            "elastic",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf; SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Underband",
+        "text": "UB plush elastic at front & back - zigzag stitch Width: XS - XL: 1.5 cm 2XL and above: 2 cm",
+        "aliases": [
+            "underband",
+            "ub",
+            "elastic",
+            "zigzag",
+            "zz",
+            "width",
+            "5cm",
+            "5 cm",
+            "2cm",
+            "2 cm",
+            "front",
+            "back",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Neckline",
+        "text": "1cm inner plush elastic with ZZ stitch at AH and back neckline",
+        "aliases": [
+            "neckline",
+            "elastic",
+            "1cm",
+            "back",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Neckline",
+        "text": "Center front neckline drop*",
+        "aliases": [
+            "neckline",
+            "center front",
+            "cf",
+            "front",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Neckline",
+        "text": "Inner elastic (1cm) at armhole & neckline - zigzag stitch",
+        "aliases": [
+            "neckline",
+            "armhole",
+            "a/h",
+            "elastic",
+            "zigzag",
+            "zz",
+            "1cm",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Neckline",
+        "text": "Inner plush elastic at armhole & back neckline - zigzag stitch 6mm width for all sizes",
+        "aliases": [
+            "neckline",
+            "armhole",
+            "a/h",
+            "elastic",
+            "zigzag",
+            "zz",
+            "width",
+            "6mm",
+            "back",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Neckline",
+        "text": "Neckline & armholes finish",
+        "aliases": [
+            "neckline",
+            "armhole",
+            "a/h",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Neckline",
+        "text": "V - fold binding at front neckline armhole, back neckline - coverstitch 8mm folded width for all sizes",
+        "aliases": [
+            "neckline",
+            "armhole",
+            "a/h",
+            "binding",
+            "binding tape",
+            "coverstitch",
+            "folded width",
+            "width",
+            "8mm",
+            "front",
+            "back",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf; KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Neckline",
+        "text": "V - fold binding at front neckline armhole, back neckline - coverstitch 8mm folded width for all sizes V - fold binding in contrast color",
+        "aliases": [
+            "neckline",
+            "armhole",
+            "a/h",
+            "binding",
+            "binding tape",
+            "coverstitch",
+            "folded width",
+            "width",
+            "8mm",
+            "front",
+            "back",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Neckline",
+        "text": "V - fold binding attach by zz stitch (8mm fold width) along neckline and A/H",
+        "aliases": [
+            "neckline",
+            "binding",
+            "binding tape",
+            "width",
+            "8mm",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Neckline",
+        "text": "V - fold binding w/ Coverstitch along neckline & A/H of adjustable panel; continues to A/H of cradle and back panel",
+        "aliases": [
+            "neckline",
+            "back panel",
+            "back",
+            "binding",
+            "binding tape",
+            "coverstitch",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Armhole",
+        "text": "Inner elastic (1cm) at armholezigzag stitch",
+        "aliases": [
+            "armhole",
+            "a/h",
+            "elastic",
+            "zigzag",
+            "zz",
+            "1cm",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Side Seam",
+        "text": "Binding side seam move to the front",
+        "aliases": [
+            "side seam",
+            "binding",
+            "binding tape",
+            "front",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Side Seam",
+        "text": "Eyes side attach with side seam binding",
+        "aliases": [
+            "side seam",
+            "binding",
+            "binding tape",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Side Seam",
+        "text": "Inner right side seam have H & E opening 1 column, 3 rows (6cm height customize H & E)",
+        "aliases": [
+            "side seam",
+            "6cm",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Side Seam",
+        "text": "LEFT side seam OPENING",
+        "aliases": [
+            "side seam",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Side Seam",
+        "text": "One side of the zipper tape attach with side seam binding",
+        "aliases": [
+            "side seam",
+            "zipper",
+            "closure",
+            "binding",
+            "binding tape",
+            "tape",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Side Seam",
+        "text": "RIGHT side seam OPENING Loops side attach with front panel",
+        "aliases": [
+            "side seam",
+            "front panel",
+            "front",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Side Seam",
+        "text": "Side seam length",
+        "aliases": [
+            "side seam",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Side Seam",
+        "text": "Side seam shifted to",
+        "aliases": [
+            "side seam",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf; TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Side Seam",
+        "text": "Side seam shifted to front",
+        "aliases": [
+            "side seam",
+            "front",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Side Seam",
+        "text": "Side seam shifted to front Double - layered power mesh top back panel",
+        "aliases": [
+            "side seam",
+            "back panel",
+            "back",
+            "power mesh",
+            "mesh",
+            "front",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "(with zipper guard)",
+        "aliases": [
+            "closure",
+            "zipper",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "(without zipper guard for easier visualization)",
+        "aliases": [
+            "closure",
+            "zipper",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "1/2 Bottom band (closest hook) - relax",
+        "aliases": [
+            "closure",
+            "hook - and - eye",
+            "h & e",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Another side of zipper tape attach by binding and bartack at top and bottom end 6cm",
+        "aliases": [
+            "closure",
+            "zipper",
+            "binding",
+            "binding tape",
+            "tape",
+            "bartack",
+            "6cm",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Back closure with H & E 4 rows, 4 columns for S - XL 5 rows, 4 columns for 2XL - above",
+        "aliases": [
+            "closure",
+            "back closure",
+            "back",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Back closure with H & E: 4 rows, 4 columns for all sizes",
+        "aliases": [
+            "closure",
+            "back closure",
+            "back",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf; KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Binding tape at front closure - 2NDLS stitch, self - folded with bartacks at 2 ends Width: 8 mm all sizes",
+        "aliases": [
+            "closure",
+            "front closure",
+            "cf",
+            "binding",
+            "binding tape",
+            "tape",
+            "bartack",
+            "2ndls",
+            "lockstitch",
+            "width",
+            "8mm",
+            "8 mm",
+            "front",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Center Back Height (Hook - and - eye)",
+        "aliases": [
+            "closure",
+            "hook - and - eye",
+            "h & e",
+            "back",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Double - layered shell fabric guard placket (no garage) - laminated Width: 3 cm all sizes",
+        "aliases": [
+            "closure",
+            "placket",
+            "shell fabric",
+            "fabric",
+            "laminated",
+            "lamination",
+            "width",
+            "3cm",
+            "3 cm",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Front closure with H & E 2 rows, 2 columns for all sizes",
+        "aliases": [
+            "closure",
+            "front closure",
+            "cf",
+            "front",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Front closure with invisible open end zipper (#4) with puller",
+        "aliases": [
+            "closure",
+            "front closure",
+            "cf",
+            "zipper",
+            "front",
+            "open end",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "H & E closure 4 rows, 4 columns for all sizes",
+        "aliases": [
+            "closure",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Hook and eye",
+        "aliases": [
+            "closure",
+            "hook - and - eye",
+            "h & e",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Inner elastic loop with swan hook - 1cm",
+        "aliases": [
+            "closure",
+            "hook - and - eye",
+            "h & e",
+            "swan hook",
+            "hardware",
+            "elastic",
+            "1cm",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Laminated fabric as zipper guard",
+        "aliases": [
+            "closure",
+            "zipper",
+            "laminated",
+            "lamination",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Nylon coated swan hook (placket inner loop)",
+        "aliases": [
+            "closure",
+            "hook - and - eye",
+            "h & e",
+            "swan hook",
+            "hardware",
+            "placket",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Open end zipper at the CF with zipper guard on the inside, continued out as a zipper garage (laminated) at the top & bottom",
+        "aliases": [
+            "closure",
+            "cf",
+            "center front",
+            "zipper",
+            "laminated",
+            "lamination",
+            "open end",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Self - fold w/ bartack create loop to hold swan hook Rigid tape w/ bartacks create 3 loops for swan hook",
+        "aliases": [
+            "closure",
+            "hook - and - eye",
+            "h & e",
+            "swan hook",
+            "hardware",
+            "tape",
+            "bartack",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Single layered shell fabric at back panel Back closure with H & E 5 rows, 4 column for all sizes",
+        "aliases": [
+            "closure",
+            "back panel",
+            "back",
+            "back closure",
+            "shell fabric",
+            "fabric",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Zipper guard - double layered fabric laminated continued as zipper garage at the top & bottom",
+        "aliases": [
+            "closure",
+            "zipper",
+            "laminated",
+            "lamination",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Closure",
+        "text": "Zipper guard on the inside, continued out as a zipper garage at the top & bottom edges",
+        "aliases": [
+            "closure",
+            "zipper",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Elastic",
+        "text": "5 loops for all sizes, 1cm each loop Elastic width: 2cm full sizes",
+        "aliases": [
+            "elastic",
+            "width",
+            "1cm",
+            "2cm",
+            "feliciabra"
+        ],
+        "source": "FeliciaBra/FeliciaBra-vB-3.0.pdf"
+    },
+    {
+        "category": "Elastic",
+        "text": "Bar tacks BIGGER SIZE: add loops and elastic",
+        "aliases": [
+            "elastic",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Elastic",
+        "text": "Chanel plush tape (inside)",
+        "aliases": [
+            "elastic",
+            "tape",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Elastic",
+        "text": "Fusing (inside) V - fold elastic",
+        "aliases": [
+            "elastic",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Elastic",
+        "text": "H & E Chanel plush tape",
+        "aliases": [
+            "elastic",
+            "tape",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Elastic",
+        "text": "Inner elastic loop",
+        "aliases": [
+            "elastic",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Elastic",
+        "text": "Inner plush elastic at back panel attached by ZZ - 1.5cm to 2cm",
+        "aliases": [
+            "elastic",
+            "back panel",
+            "back",
+            "5cm",
+            "2cm",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Elastic",
+        "text": "Light weight elastic inner loops",
+        "aliases": [
+            "elastic",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Elastic",
+        "text": "Opening for elastic tape insertion, elastic continues H & E edge (inner view) Shell fabric lap bonded 1cm on inner side",
+        "aliases": [
+            "elastic",
+            "tape",
+            "shell fabric",
+            "fabric",
+            "1cm",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Elastic",
+        "text": "V - fold elastic",
+        "aliases": [
+            "elastic",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf; SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Binding",
+        "text": "2NDLS stitch at outer binding will sew through inner mesh",
+        "aliases": [
+            "binding",
+            "binding tape",
+            "2ndls",
+            "lockstitch",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf"
+    },
+    {
+        "category": "Binding",
+        "text": "CB panel in single layer of power mesh Under: 2 shell fabric tape crossed in 2 layers laminated free edge cut 2.5cm width",
+        "aliases": [
+            "binding",
+            "tape",
+            "power mesh",
+            "mesh",
+            "shell fabric",
+            "fabric",
+            "laminated",
+            "lamination",
+            "width",
+            "5cm",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Binding",
+        "text": "Double bartack V fold bindingcover stitch",
+        "aliases": [
+            "binding",
+            "binding tape",
+            "bartack",
+            "coverstitch",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Binding",
+        "text": "Inner binding only attached to outer shell layer (Not visible at inner view)",
+        "aliases": [
+            "binding",
+            "binding tape",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Binding",
+        "text": "Inner binding tape",
+        "aliases": [
+            "binding",
+            "binding tape",
+            "tape",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Binding",
+        "text": "Inner binding to attach 2 back panel and shell fabric tape",
+        "aliases": [
+            "binding",
+            "back panel",
+            "back",
+            "binding tape",
+            "tape",
+            "shell fabric",
+            "fabric",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Binding",
+        "text": "Inner binding with stretch tape & 2NDLS",
+        "aliases": [
+            "binding",
+            "binding tape",
+            "tape",
+            "2ndls",
+            "lockstitch",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Binding",
+        "text": "Ready - made soft stretch tape",
+        "aliases": [
+            "binding",
+            "tape",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Binding",
+        "text": "Rigid tape at inner apex point",
+        "aliases": [
+            "binding",
+            "tape",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Binding",
+        "text": "Rigid tape attached at inner apex of adjustable panel",
+        "aliases": [
+            "binding",
+            "tape",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Binding",
+        "text": "Underbust: inner binding w/ stretch tape & 2NDLS",
+        "aliases": [
+            "binding",
+            "binding tape",
+            "tape",
+            "2ndls",
+            "lockstitch",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Binding",
+        "text": "V - fold binding - ZZ stitch 8mm (folded width)",
+        "aliases": [
+            "binding",
+            "binding tape",
+            "folded width",
+            "width",
+            "8mm",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Back Panel",
+        "text": "Back panel heig",
+        "aliases": [
+            "back panel",
+            "back",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Back Panel",
+        "text": "Back panel height at Center",
+        "aliases": [
+            "back panel",
+            "back",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Back Panel",
+        "text": "Back panel height at the attachment*",
+        "aliases": [
+            "back panel",
+            "back",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Back Panel",
+        "text": "Back panel in 1 layer shell",
+        "aliases": [
+            "back panel",
+            "back",
+            "veralifting"
+        ],
+        "source": "Veralifting/VeraLifting vB 1.0 Sketch.pdf"
+    },
+    {
+        "category": "Back Panel",
+        "text": "Back panel in single layer of shell fabric",
+        "aliases": [
+            "back panel",
+            "back",
+            "shell fabric",
+            "fabric",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm v.A 1.0.pdf"
+    },
+    {
+        "category": "Back Panel",
+        "text": "Single - layered shell fabric bottom back panel",
+        "aliases": [
+            "back panel",
+            "back",
+            "shell fabric",
+            "fabric",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Back Panel",
+        "text": "Single layer shell fabric at back panel",
+        "aliases": [
+            "back panel",
+            "back",
+            "shell fabric",
+            "fabric",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf; KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Back Panel",
+        "text": "Single layer shell fabric with dart at outer front + back panel",
+        "aliases": [
+            "back panel",
+            "back",
+            "shell fabric",
+            "fabric",
+            "front",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Back Panel",
+        "text": "Single layered shell fabric at back panels",
+        "aliases": [
+            "back panel",
+            "back",
+            "shell fabric",
+            "fabric",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Back Panel",
+        "text": "Top back panels joined with bottom back panel - O/L, bagout",
+        "aliases": [
+            "back panel",
+            "back",
+            "overlock",
+            "o/l",
+            "ol",
+            "bagout",
+            "clean finish",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Back Panel",
+        "text": "Upper back panel: 2 layers of Power mesh",
+        "aliases": [
+            "back panel",
+            "back",
+            "power mesh",
+            "mesh",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Stitching",
+        "text": "Center gore O/L + bagout 1NDL topstitch at inner mesh",
+        "aliases": [
+            "stitching",
+            "overlock",
+            "o/l",
+            "ol",
+            "1ndl",
+            "topstitch",
+            "bagout",
+            "clean finish",
+            "trulysofty"
+        ],
+        "source": "TrulySofty/TrulySofty-vB-1.0.pdf"
+    },
+    {
+        "category": "Stitching",
+        "text": "Cradle in 2 layers: Outer in 2 panels: side panel in shell fabric attach with CF microfiber mesh panel by O/L then top stitch on shell panel Liner: Full 1 panel of microfiber mesh",
+        "aliases": [
+            "stitching",
+            "cf",
+            "center front",
+            "shell fabric",
+            "fabric",
+            "overlock",
+            "o/l",
+            "ol",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Stitching",
+        "text": "Cradle in 2 layers: Outer: Full 1 panel of microfiber mesh Liner: in 2 panels: side panel in shell fabric attach with CF p.m panel by O/L then top stitch on shell panel",
+        "aliases": [
+            "stitching",
+            "cf",
+            "center front",
+            "shell fabric",
+            "fabric",
+            "overlock",
+            "o/l",
+            "ol",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Stitching",
+        "text": "Outer mesh attached together at CF by O/L. Topstitch on WL side",
+        "aliases": [
+            "stitching",
+            "cf",
+            "center front",
+            "overlock",
+            "o/l",
+            "ol",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-1.0.pdf; KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Stitching",
+        "text": "Single layer of shell fabric attach with p.m panel by O/L then zigzag stitch on shell panel",
+        "aliases": [
+            "stitching",
+            "shell fabric",
+            "fabric",
+            "zigzag",
+            "zz",
+            "overlock",
+            "o/l",
+            "ol",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Stitching",
+        "text": "sizes) by coverstitch",
+        "aliases": [
+            "stitching",
+            "coverstitch",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Hardware",
+        "text": "1 male snap button on adjustable panel Size: 9mm all sizes",
+        "aliases": [
+            "hardware",
+            "snap",
+            "snap button",
+            "9mm",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Hardware",
+        "text": "5 cm Distance from center between snaps: 1.5 cm",
+        "aliases": [
+            "hardware",
+            "snap",
+            "snap button",
+            "5cm",
+            "5 cm",
+            "amorafit"
+        ],
+        "source": "AmoraFit/AmoraFit VA 1.0.pdf"
+    },
+    {
+        "category": "Hardware",
+        "text": "Nylon coated 8 - shaped ring",
+        "aliases": [
+            "hardware",
+            "ring",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Fabric Layers",
+        "text": "Double layered shell laminated at front side panel",
+        "aliases": [
+            "fabric layers",
+            "laminated",
+            "lamination",
+            "front",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift vB 2.0.pdf"
+    },
+    {
+        "category": "Fabric Layers",
+        "text": "Power mesh ZZ",
+        "aliases": [
+            "fabric layers",
+            "power mesh",
+            "mesh",
+            "veralifting"
+        ],
+        "source": "Veralifting/Veralifting vA 1.0 sketch 5.12.2026.pdf"
+    },
+    {
+        "category": "Fabric Layers",
+        "text": "Shell fabric (Synthetic)",
+        "aliases": [
+            "fabric layers",
+            "shell fabric",
+            "fabric",
+            "kiraform"
+        ],
+        "source": "KiraForm/KiraForm-vB-2.0 (1).pdf"
+    },
+    {
+        "category": "Fabric Layers",
+        "text": "Shell fabric - Contrast",
+        "aliases": [
+            "fabric layers",
+            "shell fabric",
+            "fabric",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Fabric Layers",
+        "text": "Shell fabric - Solid",
+        "aliases": [
+            "fabric layers",
+            "shell fabric",
+            "fabric",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Measurement",
+        "text": "0cm(inner width)",
+        "aliases": [
+            "measurement",
+            "width",
+            "0cm",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Measurement",
+        "text": "16 mm (full width)",
+        "aliases": [
+            "measurement",
+            "width",
+            "16mm",
+            "16 mm",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Measurement",
+        "text": "1cm(inner width)",
+        "aliases": [
+            "measurement",
+            "width",
+            "1cm",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Measurement",
+        "text": "4 rows + 4 columns All size",
+        "aliases": [
+            "measurement",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Measurement",
+        "text": "5cm(inner width)",
+        "aliases": [
+            "measurement",
+            "width",
+            "5cm",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Measurement",
+        "text": "H & E at CB 5 rows, 4 columns for all sizes",
+        "aliases": [
+            "measurement",
+            "cassielift"
+        ],
+        "source": "CassieLift/CassieLift v.A 2.0.pdf"
+    },
+    {
+        "category": "Measurement",
+        "text": "Width 2.5cm All sizes",
+        "aliases": [
+            "measurement",
+            "width",
+            "5cm",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Other",
+        "text": "Bottom panel height at Center Front",
+        "aliases": [
+            "other",
+            "center front",
+            "cf",
+            "front",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Other",
+        "text": "Center Front Height",
+        "aliases": [
+            "other",
+            "center front",
+            "cf",
+            "front",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf; SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Other",
+        "text": "Cradle Height at Center Front*",
+        "aliases": [
+            "other",
+            "center front",
+            "cf",
+            "front",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Other",
+        "text": "Measurement Spec 3597_ Measurement Spec_21.Apr.2026_ Size set",
+        "aliases": [
+            "other",
+            "measurement",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    },
+    {
+        "category": "Other",
+        "text": "Measurement Spec SofieLift 3.0 - 15.May.26 Description - English POM Bottom band relax 1/2",
+        "aliases": [
+            "other",
+            "measurement",
+            "sofielift",
+            "sofylift"
+        ],
+        "source": "SofyLift/Copy of SofieLift 3.0 (initially SofyLift v.B 4.0) - 12.5.2026.xlsx.pdf"
+    },
+    {
+        "category": "Other",
+        "text": "Please make the 1st proto sample in size S and L so that it meets the measurement chart S L",
+        "aliases": [
+            "other",
+            "measurement",
+            "mesh",
+            "bounce"
+        ],
+        "source": "3597 Mesh Bounce-Control Bra/3597. (ATD) Full coverage Mesh Bounce-control Bra - Google Sheets.pdf"
+    }
+];
+
+  // ---- src/ui/construction.js ----
+// Construction working sheets (US-078, ADR 0045).
+// Source part for app.js. Run `npm run build` after editing.
+//
+// state.construction is:
+// {
+//   schemaVersion:2, seedId,
+//   rows:[{id,sheet:'solid'|'lace',view:'outer'|'inner',area,detail}],
+//   images:{solid:{outer:[],inner:[]},lace:{outer:[],inner:[]}},
+//   callouts:[{id,rowId,sheet,view,imageId,targets:[{nx,ny}],textPos:{nx,ny}}]
+// }
+//
+// One row owns at most one callout. Callout number/area/detail are derived
+// live from the row; only label and target geometry is independently edited.
+// Image bytes live outside history state and are injected only for save/
+// autosave, matching BOM's image ownership model.
+
+  const CC_SCHEMA_VERSION = 2;
+  const CC_SEED_ID = 'construction-working-sheets-v1';
+  const CC_SHEETS = ['solid', 'lace'];
+  const CC_VIEWS = ['outer', 'inner'];
+  const CC_SEED_AREAS = ['CUP', 'SLING', 'CRADLE', 'SIDE_SEAM', 'BACK_CLOSURE', 'FRONT_CLOSURE'];
+  const CC_AREAS = [
+    'CUP', 'SLING', 'CRADLE', 'SIDE_SEAM', 'BACK_CLOSURE', 'FRONT_CLOSURE',
+    'NECKLINE', 'ARMHOLE', 'UNDERBAND', 'STRAP', 'BACK',
+  ];
+  const CC_AREA_LABELS = {
+    CUP: 'Cup', SLING: 'Sling', CRADLE: 'Cradle', SIDE_SEAM: 'Side seam',
+    BACK_CLOSURE: 'Back closure', FRONT_CLOSURE: 'Front closure',
+    NECKLINE: 'Neckline', ARMHOLE: 'Armhole', UNDERBAND: 'Underband',
+    STRAP: 'Strap', BACK: 'Back',
+  };
+  const CC_PIN_RADIUS = 9;
+  const CC_ANCHOR_RADIUS = 4;
+  const CC_HIT_RADIUS = 11;
+  const CC_ARROW_SIZE = 7;
+  const CC_TEXT_WIDTH = 175;
+  const CC_LINE_HEIGHT = 16;
+  const CC_CALLOUT_COLOR = '#1c6dd0';
+
+  let ccSheet = 'solid';
+  let ccActiveView = 'outer';
+  let ccSelectedRowId = null;
+  let ccSelectedCalloutId = null;
+  let ccSelectedImageId = null;
+  let ccTool = 'select';
+  let ccDrag = null;
+  let ccPanelLayouts = {};
+  let ccBoxCache = {};
+  let ccPhraseRowId = null;
+  let ccPhraseHits = [];
+  const ccImageDataById = new Map();
+  const ccImageElementById = new Map();
+
+  const CONSTRUCTION_PHRASES = (function () {
+    const seen = new Set();
+    const out = [];
+    function add(text, extra) {
+      const clean = String(text || '').trim();
+      const key = clean.toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(Object.assign({ text: clean }, extra || {}));
+    }
+    CONSTRUCTION_STARTER_PHRASES.forEach(p => add(p.text, { favorite: !!p.favorite }));
+    CONSTRUCTION_TERM_LIBRARY.forEach(t => add(t.en));
+    CONSTRUCTION_GENERATED_PHRASES.forEach(p => add(p.text));
+    return out;
+  })();
+
+  function ccSheetKey(value) {
+    return String(value || ccSheet).toLowerCase() === 'lace' ? 'lace' : 'solid';
+  }
+
+  function ccViewKey(value) {
+    return String(value || ccActiveView).toLowerCase() === 'inner' ? 'inner' : 'outer';
+  }
+
+  function ccEmptyImages() {
+    return { solid: { outer: [], inner: [] }, lace: { outer: [], inner: [] } };
+  }
+
+  function ccStripImageForState(image) {
+    return {
+      id: image.id,
+      x: Number(image.x) || 0,
+      y: Number(image.y) || 0,
+      width: Math.max(1, Number(image.width) || 1),
+      height: Math.max(1, Number(image.height) || 1),
+      aspect: Math.max(0.01, Number(image.aspect) || ((Number(image.width) || 1) / (Number(image.height) || 1))),
+      locked: !!image.locked,
+    };
+  }
+
+  function ccNormalizeArea(value) {
+    const raw = String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+    if (CC_AREAS.includes(raw)) return raw;
+    if (raw === 'SIDE' || raw === 'SIDE_WING') return 'SIDE_SEAM';
+    if (raw === 'CLOSURE' || raw === 'HOOK_EYE') return 'BACK_CLOSURE';
+    return 'CUP';
+  }
+
+  function ccInferLegacyArea(note) {
+    const explicit = ccNormalizeArea(note && note.zone);
+    if (note && CC_AREAS.includes(String(note.zone || '').toUpperCase())) return explicit;
+    const text = String((note && note.note) || '').toLowerCase();
+    if (/front closure/.test(text)) return 'FRONT_CLOSURE';
+    if (/back closure|hook|eye/.test(text)) return 'BACK_CLOSURE';
+    if (/side seam/.test(text)) return 'SIDE_SEAM';
+    if (/sling/.test(text)) return 'SLING';
+    if (/underband|bottom band|\bub\b/.test(text)) return 'UNDERBAND';
+    if (/cradle|gore/.test(text)) return 'CRADLE';
+    if (/armhole|underarm|a\/h|wing/.test(text)) return 'ARMHOLE';
+    if (/neckline|yoke/.test(text)) return 'NECKLINE';
+    if (/strap|ring|slider/.test(text)) return 'STRAP';
+    if (/back/.test(text)) return 'BACK';
+    return 'CUP';
+  }
+
+  function ccHasModelContent(cc) {
+    if (!cc || typeof cc !== 'object') return false;
+    if (Array.isArray(cc.notes) && cc.notes.length) return true;
+    if (Array.isArray(cc.rows) && cc.rows.length) return true;
+    if (Array.isArray(cc.callouts) && cc.callouts.length) return true;
+    const images = cc.images || {};
+    return CC_SHEETS.some(sheet => CC_VIEWS.some(view =>
+      images[sheet] && Array.isArray(images[sheet][view]) && images[sheet][view].length));
+  }
+
+  function ccLegacyView(note, boardMeta) {
+    const role = String((boardMeta && (boardMeta.viewRole || boardMeta.role)) || note.viewRole || '').toLowerCase();
+    return role.includes('inner') ? 'inner' : 'outer';
+  }
+
+  function ccMigrateLegacyModel(legacy, rawBoardImages) {
+    const model = {
+      schemaVersion: CC_SCHEMA_VERSION,
+      seedId: 'legacy-migrated',
+      rows: [],
+      images: ccEmptyImages(),
+      callouts: [],
+    };
+    const boardMetas = Array.isArray(rawBoardImages) ? rawBoardImages : [];
+    const copied = new Map();
+    (legacy.notes || []).forEach(note => {
+      const sheet = ccSheetKey(note.variant);
+      const boardMeta = boardMetas.find(image => image && image.id === note.imageId)
+        || (state.images || []).find(image => image && image.id === note.imageId)
+        || null;
+      const view = ccLegacyView(note, boardMeta || {});
+      const copyKey = sheet + ':' + view + ':' + note.imageId;
+      let imageId = copied.get(copyKey);
+      if (imageId == null) {
+        imageId = state.idCounter++;
+        copied.set(copyKey, imageId);
+        const width = Math.max(1, Number(boardMeta && boardMeta.width) || 400);
+        const height = Math.max(1, Number(boardMeta && boardMeta.height) || 300);
+        model.images[sheet][view].push({
+          id: imageId, x: 0, y: 0, width, height,
+          aspect: width / height, locked: false,
+        });
+        const dataURL = (boardMeta && boardMeta.dataURL) || null;
+        const runtime = (state.images || []).find(image => image && image.id === note.imageId);
+        if (dataURL) ccImageDataById.set(imageId, dataURL);
+        if (runtime && runtime.img) ccImageElementById.set(imageId, runtime.img);
+      }
+      const rowId = state.idCounter++;
+      const calloutId = state.idCounter++;
+      model.rows.push({
+        id: rowId,
+        sheet,
+        view,
+        area: ccInferLegacyArea(note),
+        detail: String(note.note || ''),
+      });
+      model.callouts.push({
+        id: calloutId,
+        rowId,
+        sheet,
+        view,
+        imageId,
+        targets: Array.isArray(note.targets) && note.targets.length
+          ? clone(note.targets)
+          : [clone(note.target || { nx: 0.5, ny: 0.5 })],
+        textPos: clone(note.textPos || { nx: 0.58, ny: 0.45 }),
+        color: note.color || CC_CALLOUT_COLOR,
+        textRed: !!note.textRed,
+      });
+    });
+    CC_SHEETS.forEach(sheet => CC_VIEWS.forEach(view => ccReflowImagesIn(model, sheet, view)));
+    state.construction = model;
+    return model;
+  }
+
+  function ccSeedRows(cc) {
+    CC_SHEETS.forEach(sheet => {
+      CC_VIEWS.forEach(view => {
+        CC_SEED_AREAS.forEach(area => {
+          cc.rows.push({ id: state.idCounter++, sheet, view, area, detail: '' });
+        });
+      });
+    });
+    cc.seedId = CC_SEED_ID;
+  }
+
+  function ensureConstruction(rawBoardImages) {
+    let cc = state.construction && typeof state.construction === 'object'
+      ? state.construction
+      : (state.construction = {});
+    if (Array.isArray(cc.notes) && !Array.isArray(cc.rows)) {
+      cc = ccMigrateLegacyModel(cc, rawBoardImages);
+    }
+    if (!Array.isArray(cc.rows)) cc.rows = [];
+    if (!Array.isArray(cc.callouts)) cc.callouts = [];
+    if (!cc.images || typeof cc.images !== 'object') cc.images = ccEmptyImages();
+    CC_SHEETS.forEach(sheet => {
+      if (!cc.images[sheet] || typeof cc.images[sheet] !== 'object') cc.images[sheet] = { outer: [], inner: [] };
+      CC_VIEWS.forEach(view => {
+        if (!Array.isArray(cc.images[sheet][view])) cc.images[sheet][view] = [];
+        // Normalize in place. Runtime interactions keep direct references to
+        // image/row objects while dragging or changing a select; replacing
+        // those objects on every ensureConstruction() call would stale the
+        // reference between hit-test and mutation.
+        cc.images[sheet][view].forEach(image => {
+          Object.assign(image, ccStripImageForState(image));
+          // Bitmap bytes are held in ccImageDataById, never in history state.
+          // ccLoadProjectState extracts dataURL before this normalization.
+          delete image.dataURL;
+          delete image.img;
+        });
+      });
+    });
+    cc.rows.forEach(row => {
+      row.sheet = ccSheetKey(row.sheet || row.variant);
+      row.view = ccViewKey(row.view);
+      row.area = ccNormalizeArea(row.area || row.zone);
+      row.detail = String(row.detail != null ? row.detail : (row.note || ''));
+      delete row.variant;
+      delete row.zone;
+      delete row.note;
+    });
+    const rowIds = new Set(cc.rows.map(row => row.id));
+    const owned = new Set();
+    cc.callouts = cc.callouts.filter(callout => {
+      if (!rowIds.has(callout.rowId) || owned.has(callout.rowId)) return false;
+      owned.add(callout.rowId);
+      const row = cc.rows.find(item => item.id === callout.rowId);
+      callout.sheet = row.sheet;
+      callout.view = row.view;
+      if (!Array.isArray(callout.targets) || !callout.targets.length) callout.targets = [{ nx: 0.5, ny: 0.5 }];
+      if (!callout.textPos) callout.textPos = { nx: 0.58, ny: 0.45 };
+      return true;
+    });
+    if (!cc.seedId && !ccHasModelContent(cc)) ccSeedRows(cc);
+    cc.schemaVersion = CC_SCHEMA_VERSION;
+    delete cc.notes;
+    return cc;
+  }
+
+  function ccSerializeForProject() {
+    const out = state.construction ? clone(state.construction) : null;
+    if (!out || !out.images) return out;
+    CC_SHEETS.forEach(sheet => CC_VIEWS.forEach(view => {
+      out.images[sheet][view] = (out.images[sheet][view] || []).map(image => ({
+        ...ccStripImageForState(image),
+        dataURL: ccImageDataById.get(image.id) || null,
+      }));
+    }));
+    return out;
+  }
+
+  async function ccLoadProjectState(rawConstruction, rawBoardImages) {
+    ccImageDataById.clear();
+    ccImageElementById.clear();
+    const embedded = new Map();
+    const rawImages = rawConstruction && rawConstruction.images;
+    if (rawImages) {
+      CC_SHEETS.forEach(sheet => CC_VIEWS.forEach(view => {
+        const list = rawImages[sheet] && rawImages[sheet][view];
+        (list || []).forEach(image => { if (image && image.dataURL) embedded.set(image.id, image.dataURL); });
+      }));
+    }
+    state.construction = rawConstruction && typeof rawConstruction === 'object' ? clone(rawConstruction) : null;
+    const cc = ensureConstruction(rawBoardImages);
+    const loads = [];
+    CC_SHEETS.forEach(sheet => CC_VIEWS.forEach(view => {
+      cc.images[sheet][view].forEach(image => {
+        const dataURL = embedded.get(image.id) || ccImageDataById.get(image.id);
+        if (!dataURL) return;
+        ccImageDataById.set(image.id, dataURL);
+        loads.push(loadImageFromDataURL(dataURL)
+          .then(img => ccImageElementById.set(image.id, img))
+          .catch(() => {}));
+      });
+    }));
+    await Promise.all(loads);
+    return cc;
+  }
+
+  function ccExpectedSeedRows() {
+    const out = [];
+    CC_SHEETS.forEach(sheet => CC_VIEWS.forEach(view => CC_SEED_AREAS.forEach(area => {
+      out.push({ sheet, view, area, detail: '' });
+    })));
+    return out;
+  }
+
+  function hasMeaningfulConstructionWork() {
+    const cc = ensureConstruction();
+    if (cc.callouts.length) return true;
+    if (CC_SHEETS.some(sheet => CC_VIEWS.some(view => cc.images[sheet][view].length))) return true;
+    const comparable = cc.rows.map(row => ({ sheet: row.sheet, view: row.view, area: row.area, detail: row.detail }));
+    return JSON.stringify(comparable) !== JSON.stringify(ccExpectedSeedRows());
+  }
+
+  function ccRows(sheet) {
+    const key = ccSheetKey(sheet);
+    const rows = ensureConstruction().rows.filter(row => row.sheet === key);
+    return rows.slice().sort((a, b) => {
+      const va = CC_VIEWS.indexOf(a.view), vb = CC_VIEWS.indexOf(b.view);
+      if (va !== vb) return va - vb;
+      return ensureConstruction().rows.indexOf(a) - ensureConstruction().rows.indexOf(b);
+    });
+  }
+
+  function ccRowsForView(view, sheet) {
+    const key = ccViewKey(view);
+    return ccRows(sheet).filter(row => row.view === key);
+  }
+
+  function ccRowById(id) {
+    return ensureConstruction().rows.find(row => row.id === id) || null;
+  }
+
+  function ccRowSeq(id, sheet) {
+    const index = ccRows(sheet).findIndex(row => row.id === id);
+    return index === -1 ? '' : String(index + 1);
+  }
+
+  function ccCalloutForRow(rowId) {
+    return ensureConstruction().callouts.find(callout => callout.rowId === rowId) || null;
+  }
+
+  function ccVisibleCallouts() {
+    return ensureConstruction().callouts.filter(callout => callout.sheet === ccSheet);
+  }
+
+  function ccSelectedCallout() {
+    return ccVisibleCallouts().find(callout => callout.id === ccSelectedCalloutId) || null;
+  }
+
+  function ccImages(sheet, view) {
+    return ensureConstruction().images[ccSheetKey(sheet)][ccViewKey(view)];
+  }
+
+  function ccImageById(id, sheet, view) {
+    const views = view ? [ccViewKey(view)] : CC_VIEWS;
+    for (const candidate of views) {
+      const found = ccImages(sheet, candidate).find(image => image.id === id);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function ccImageRuntime(id) {
+    return ccImageElementById.get(id) || null;
+  }
+
+  function ccReflowImagesIn(model, sheet, view) {
+    const images = model.images[sheet][view];
+    const commonHeight = 300;
+    const gap = 28;
+    let x = 0;
+    images.forEach(image => {
+      image.height = commonHeight;
+      image.width = commonHeight * (image.aspect || 1);
+      image.x = x;
+      image.y = 0;
+      x += image.width + gap;
+    });
+  }
+
+  function ccReflowImages(sheet, view) {
+    ccReflowImagesIn(ensureConstruction(), ccSheetKey(sheet), ccViewKey(view));
+  }
+
+  async function ccAddImagesFromDataURLs(dataURLs, sheet, view) {
+    const sheetKey = ccSheetKey(sheet);
+    const viewKey = ccViewKey(view);
+    const images = ccImages(sheetKey, viewKey);
+    let added = 0;
+    for (const dataURL of dataURLs || []) {
+      if (!dataURL) continue;
+      const img = await loadImageFromDataURL(dataURL);
+      const id = state.idCounter++;
+      const aspect = img.height > 0 ? img.width / img.height : 1;
+      images.push({ id, x: 0, y: 0, width: 300 * aspect, height: 300, aspect, locked: false });
+      ccImageDataById.set(id, dataURL);
+      ccImageElementById.set(id, img);
+      added += 1;
+    }
+    if (!added) return 0;
+    ccReflowImages(sheetKey, viewKey);
+    ccActiveView = viewKey;
+    ccSelectedImageId = null;
+    ccSelectedCalloutId = null;
+    ccSetTool('select');
+    renderConstruction();
+    pushHistoryIfChanged();
+    showToast(added + ' image' + (added === 1 ? '' : 's') + ' added to ' + sheetKey.toUpperCase() + ' · ' + viewKey.toUpperCase());
+    return added;
+  }
+
+  async function ccAddImageFiles(files, sheet, view) {
+    const imageFiles = Array.from(files || []).filter(file => file && /^image\//i.test(file.type || ''));
+    if (!imageFiles.length) {
+      showToast('Add PNG, JPEG, or WebP images to the Construction working board.');
+      return 0;
+    }
+    const dataURLs = [];
+    for (const file of imageFiles) dataURLs.push(await blobToDataURL(file));
+    return ccAddImagesFromDataURLs(dataURLs, sheet, view);
+  }
+
+  function ccDeleteSelectedImage() {
+    const image = ccImageById(ccSelectedImageId, ccSheet, ccActiveView);
+    if (!image) { showToast('Select an image in the active Construction panel first.'); return; }
+    const linked = ccVisibleCallouts().filter(callout => callout.imageId === image.id);
+    if (linked.length && !window.confirm('Delete this image and its ' + linked.length + ' linked callout(s)?\n\nUndo restores both.')) return;
+    const images = ccImages(ccSheet, ccActiveView);
+    images.splice(images.indexOf(image), 1);
+    if (linked.length) {
+      const ids = new Set(linked.map(callout => callout.id));
+      state.construction.callouts = state.construction.callouts.filter(callout => !ids.has(callout.id));
+    }
+    ccSelectedImageId = null;
+    ccSelectedCalloutId = null;
+    ccReflowImages(ccSheet, ccActiveView);
+    renderConstruction();
+    pushHistoryIfChanged();
+  }
+
+  function ccZoomSelectedImage(factor) {
+    const image = ccImageById(ccSelectedImageId, ccSheet, ccActiveView);
+    if (!image) { showToast('Select an image in the active Construction panel first.'); return; }
+    const nextWidth = clamp(image.width * factor, 60, 1800);
+    const nextHeight = nextWidth / (image.aspect || 1);
+    const cx = image.x + image.width / 2, cy = image.y + image.height / 2;
+    image.width = nextWidth;
+    image.height = nextHeight;
+    image.x = cx - nextWidth / 2;
+    image.y = cy - nextHeight / 2;
+    renderConstruction();
+    pushHistoryIfChanged();
+  }
+
+  function ccAddRow(view) {
+    const row = {
+      id: state.idCounter++, sheet: ccSheet, view: ccViewKey(view), area: 'CUP', detail: '',
+    };
+    ensureConstruction().rows.push(row);
+    ccSelectedRowId = row.id;
+    ccActiveView = row.view;
+    renderConstruction();
+    pushHistoryIfChanged();
+  }
+
+  function ccDeleteRow(rowId) {
+    const cc = ensureConstruction();
+    const index = cc.rows.findIndex(row => row.id === rowId);
+    if (index === -1) return;
+    const callout = ccCalloutForRow(rowId);
+    cc.rows.splice(index, 1);
+    if (callout) cc.callouts = cc.callouts.filter(item => item.id !== callout.id);
+    if (ccSelectedRowId === rowId) ccSelectedRowId = null;
+    if (callout && ccSelectedCalloutId === callout.id) ccSelectedCalloutId = null;
+    if (ccTool === 'leader' && !ccSelectedCallout()) ccTool = 'select';
+    renderConstruction();
+    pushHistoryIfChanged();
+    showToast('Construction row deleted · Ctrl/Cmd+Z to undo');
+  }
+
+  function ccMoveRowView(row, nextView) {
+    const view = ccViewKey(nextView);
+    if (!row || row.view === view) return;
+    const callout = ccCalloutForRow(row.id);
+    if (callout) {
+      state.construction.callouts = state.construction.callouts.filter(item => item.id !== callout.id);
+      if (ccSelectedCalloutId === callout.id) ccSelectedCalloutId = null;
+    }
+    row.view = view;
+    ccActiveView = view;
+    if (ccTool === 'leader') ccTool = 'select';
+    renderConstruction();
+    pushHistoryIfChanged();
+    showToast(callout ? 'Row moved to ' + view.toUpperCase() + '; old-view callout removed · Undo restores both' : 'Row moved to ' + view.toUpperCase());
+  }
+
+  function ccMissingRows() {
+    return ccRows(ccSheet).filter(row => !ccCalloutForRow(row.id));
+  }
+
+  function ccNextMissingRow(afterId) {
+    const rows = ccRows(ccSheet);
+    const start = Math.max(-1, rows.findIndex(row => row.id === afterId));
+    for (let step = 1; step <= rows.length; step += 1) {
+      const row = rows[(start + step) % rows.length];
+      if (!ccCalloutForRow(row.id)) return row;
+    }
+    return null;
+  }
+
+  function ccArmRowCallout(rowId) {
+    const row = ccRowById(rowId);
+    if (!row || row.sheet !== ccSheet) return;
+    ccSelectedRowId = row.id;
+    ccActiveView = row.view;
+    const callout = ccCalloutForRow(row.id);
+    if (callout) {
+      ccSelectedCalloutId = callout.id;
+      ccSelectedImageId = null;
+      ccSetTool('select');
+      showToast('Selected the existing callout for Construction row ' + ccRowSeq(row.id));
+    } else {
+      ccSelectedCalloutId = null;
+      ccSelectedImageId = null;
+      ccSetTool('callout');
+      showToast('Click an image in ' + row.view.toUpperCase() + ' to place row ' + ccRowSeq(row.id));
+    }
+    renderConstruction();
+  }
+
+  function ccStartCalloutTool(preferredRowId) {
+    const missing = ccMissingRows();
+    if (!missing.length) {
+      ccSetTool('select');
+      showToast('Every Construction row on this sheet already has a callout');
+      return;
+    }
+    const row = missing.find(item => item.id === preferredRowId)
+      || missing.find(item => item.id === ccSelectedRowId)
+      || missing[0];
+    ccSelectedRowId = row.id;
+    ccSelectedCalloutId = null;
+    ccSelectedImageId = null;
+    ccActiveView = row.view;
+    ccSetTool('callout');
+    renderConstruction();
+  }
+
+  function ccSetTool(tool) {
+    if (!['select', 'callout', 'leader'].includes(tool)) tool = 'select';
+    if (tool === 'leader' && !ccSelectedCallout()) {
+      showToast('Select a Construction callout before adding leaders');
+      tool = 'select';
+    }
+    ccTool = tool;
+    ccSyncUi();
+  }
+
+  function ccDeleteSelectedCallout() {
+    const callout = ccSelectedCallout();
+    if (!callout) return;
+    state.construction.callouts = state.construction.callouts.filter(item => item.id !== callout.id);
+    ccSelectedCalloutId = null;
+    if (ccTool === 'leader') ccTool = 'select';
+    renderConstruction();
+    pushHistoryIfChanged();
+  }
+
+  function ccImageBounds(sheet, view) {
+    const images = ccImages(sheet, view);
+    if (!images.length) return { x: 0, y: 0, width: 1, height: 1 };
+    const minX = Math.min(...images.map(image => image.x));
+    const minY = Math.min(...images.map(image => image.y));
+    const maxX = Math.max(...images.map(image => image.x + image.width));
+    const maxY = Math.max(...images.map(image => image.y + image.height));
+    return { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
+  }
+
+  function ccBuildPanelLayout(view, x, y, width, height) {
+    const content = { x: x + 12, y: y + 36, width: width - 24, height: height - 48 };
+    const bounds = ccImageBounds(ccSheet, view);
+    const hasImages = ccImages(ccSheet, view).length > 0;
+    const scale = hasImages ? Math.min(content.width / bounds.width, content.height / bounds.height, 2) : 1;
+    return {
+      view, x, y, width, height, content,
+      offX: content.x + (content.width - bounds.width * scale) / 2 - bounds.x * scale,
+      offY: content.y + (content.height - bounds.height * scale) / 2 - bounds.y * scale,
+      scale,
+    };
+  }
+
+  function ccWorldToCanvas(layout, point) {
+    return { x: point.x * layout.scale + layout.offX, y: point.y * layout.scale + layout.offY };
+  }
+
+  function ccCanvasToWorld(layout, point) {
+    return { x: (point.x - layout.offX) / layout.scale, y: (point.y - layout.offY) / layout.scale };
+  }
+
+  function ccWorldOf(image, norm) {
+    return { x: image.x + norm.nx * image.width, y: image.y + norm.ny * image.height };
+  }
+
+  function ccNormalize(image, point) {
+    return {
+      nx: clamp((point.x - image.x) / image.width, 0, 1),
+      ny: clamp((point.y - image.y) / image.height, 0, 1),
+    };
+  }
+
+  function ccPanelAt(point) {
+    return CC_VIEWS.map(view => ccPanelLayouts[view]).find(layout => layout
+      && point.x >= layout.x && point.x <= layout.x + layout.width
+      && point.y >= layout.y && point.y <= layout.y + layout.height) || null;
+  }
+
+  function ccImageAt(view, worldPoint) {
+    const images = ccImages(ccSheet, view);
+    for (let i = images.length - 1; i >= 0; i -= 1) {
+      const image = images[i];
+      if (worldPoint.x >= image.x && worldPoint.x <= image.x + image.width
+        && worldPoint.y >= image.y && worldPoint.y <= image.y + image.height) return image;
+    }
+    return null;
+  }
+
+  function ccDistanceToSegment(point, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    if (!dx && !dy) return Math.hypot(point.x - a.x, point.y - a.y);
+    const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy));
+  }
+
+  function ccHitTest(point) {
+    const callouts = ccVisibleCallouts();
+    for (let i = callouts.length - 1; i >= 0; i -= 1) {
+      const callout = callouts[i];
+      const layout = ccPanelLayouts[callout.view];
+      const image = ccImageById(callout.imageId, ccSheet, callout.view);
+      if (!layout || !image) continue;
+      for (let ti = callout.targets.length - 1; ti >= 0; ti -= 1) {
+        const pin = ccWorldToCanvas(layout, ccWorldOf(image, callout.targets[ti]));
+        if (Math.hypot(point.x - pin.x, point.y - pin.y) <= CC_HIT_RADIUS) {
+          return { callout, image, layout, part: 'anchor', anchorIndex: ti };
+        }
+      }
+      const box = ccBoxCache[callout.id];
+      if (box && point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height) {
+        return { callout, image, layout, part: 'label', anchorIndex: -1 };
+      }
+      const label = ccWorldToCanvas(layout, ccWorldOf(image, callout.textPos));
+      for (let ti = callout.targets.length - 1; ti >= 0; ti -= 1) {
+        const pin = ccWorldToCanvas(layout, ccWorldOf(image, callout.targets[ti]));
+        if (ccDistanceToSegment(point, label, pin) <= 6) {
+          return { callout, image, layout, part: 'line', anchorIndex: ti };
+        }
+      }
+    }
+    return null;
+  }
+
+  function ccCreateCalloutAt(layout, worldPoint) {
+    const row = ccRowById(ccSelectedRowId) || ccMissingRows()[0];
+    if (!row || row.sheet !== ccSheet || ccCalloutForRow(row.id)) {
+      ccStartCalloutTool();
+      return;
+    }
+    if (layout.view !== row.view) {
+      ccActiveView = row.view;
+      ccSyncUi();
+      showToast('Row ' + ccRowSeq(row.id) + ' belongs to ' + row.view.toUpperCase() + '; place it in that panel');
+      return;
+    }
+    const image = ccImageAt(row.view, worldPoint);
+    if (!image) { showToast('Click a sketch image in the ' + row.view.toUpperCase() + ' panel'); return; }
+    const target = ccNormalize(image, worldPoint);
+    const callout = {
+      id: state.idCounter++, rowId: row.id, sheet: row.sheet, view: row.view, imageId: image.id,
+      targets: [target],
+      textPos: {
+        nx: clamp(target.nx + (target.nx > 0.65 ? -0.30 : 0.08), 0.02, 0.88),
+        ny: clamp(target.ny - 0.04, 0.04, 0.94),
+      },
+      color: CC_CALLOUT_COLOR,
+    };
+    ensureConstruction().callouts.push(callout);
+    const next = ccNextMissingRow(row.id);
+    if (next) {
+      ccSelectedRowId = next.id;
+      ccSelectedCalloutId = null;
+      ccActiveView = next.view;
+    } else {
+      ccSelectedRowId = row.id;
+      ccSelectedCalloutId = callout.id;
+      ccTool = 'select';
+    }
+    renderConstruction();
+    pushHistoryIfChanged();
+    showToast(next ? 'Callout added · next row ' + ccRowSeq(next.id) + ' · ' + next.view.toUpperCase() : 'All Construction rows now have callouts · Select is active');
+  }
+
+  function ccAddLeaderAt(layout, worldPoint) {
+    const callout = ccSelectedCallout();
+    if (!callout) { ccSetTool('select'); return; }
+    if (layout.view !== callout.view) { showToast('Add leaders inside the selected callout\'s ' + callout.view.toUpperCase() + ' panel'); return; }
+    const image = ccImageById(callout.imageId, ccSheet, callout.view);
+    if (!image || ccImageAt(callout.view, worldPoint) !== image) {
+      showToast('Add the leader inside the selected callout\'s own image');
+      return;
+    }
+    callout.targets.push(ccNormalize(image, worldPoint));
+    renderConstruction();
+    pushHistoryIfChanged();
+  }
+
+  function ccDeleteAnchorAt(point) {
+    const hit = ccHitTest(point);
+    if (!hit || hit.part !== 'anchor') return;
+    if (hit.callout.targets.length <= 1) {
+      showToast('A callout needs at least one leader; delete the callout to remove it');
+      return;
+    }
+    hit.callout.targets.splice(hit.anchorIndex, 1);
+    renderConstruction();
+    pushHistoryIfChanged();
+  }
+
+  function ccWrapLines(ctx, text, maxWidth) {
+    const paragraphs = String(text || '').split('\n');
+    const lines = [];
+    paragraphs.forEach(paragraph => {
+      const words = paragraph.split(/\s+/).filter(Boolean);
+      if (!words.length) { lines.push(''); return; }
+      let line = '';
+      words.forEach(word => {
+        const next = line ? line + ' ' + word : word;
+        if (line && ctx.measureText(next).width > maxWidth) { lines.push(line); line = word; }
+        else line = next;
+      });
+      lines.push(line);
+    });
+    return lines.length ? lines : [''];
+  }
+
+  function ccEdgeToward(box, target) {
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    const dx = target.x - cx, dy = target.y - cy;
+    const tx = dx ? (box.width / 2) / Math.abs(dx) : 1e9;
+    const ty = dy ? (box.height / 2) / Math.abs(dy) : 1e9;
+    const t = Math.min(tx, ty);
+    return { x: cx + dx * t, y: cy + dy * t };
+  }
+
+  function ccDrawArrow(ctx, from, to, color) {
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(to.x - CC_ARROW_SIZE * Math.cos(angle - Math.PI / 6), to.y - CC_ARROW_SIZE * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(to.x - CC_ARROW_SIZE * Math.cos(angle + Math.PI / 6), to.y - CC_ARROW_SIZE * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function ccCalloutText(callout) {
+    const row = ccRowById(callout.rowId);
+    if (!row) return '? deleted Construction row';
+    const detail = String(row.detail || '').trim();
+    return ccRowSeq(row.id, row.sheet) + '. ' + CC_AREA_LABELS[row.area].toUpperCase() + (detail ? ' — ' + detail : '');
+  }
+
+  function ccDrawCallout(ctx, callout) {
+    const row = ccRowById(callout.rowId);
+    const layout = ccPanelLayouts[callout.view];
+    const image = ccImageById(callout.imageId, callout.sheet, callout.view);
+    if (!row || !layout || !image) return;
+    const selected = callout.id === ccSelectedCalloutId;
+    const color = callout.color || CC_CALLOUT_COLOR;
+    const label = ccWorldToCanvas(layout, ccWorldOf(image, callout.textPos));
+    ctx.save();
+    ctx.font = (selected ? 'bold ' : '') + '12px sans-serif';
+    const lines = ccWrapLines(ctx, ccCalloutText(callout), CC_TEXT_WIDTH);
+    const widths = lines.map(line => ctx.measureText(line).width);
+    const box = { x: label.x - 5, y: label.y - 9, width: Math.max(34, ...widths) + 10, height: Math.max(1, lines.length) * CC_LINE_HEIGHT + 6 };
+    ccBoxCache[callout.id] = box;
+    ctx.fillStyle = 'rgba(255,255,255,.95)';
+    ctx.fillRect(box.x, box.y, box.width, box.height);
+    callout.targets.forEach((target, index) => {
+      const pin = ccWorldToCanvas(layout, ccWorldOf(image, target));
+      const from = ccEdgeToward(box, pin);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = selected ? 2.5 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(pin.x, pin.y);
+      ctx.stroke();
+      ccDrawArrow(ctx, from, pin, color);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(pin.x, pin.y, index === 0 ? CC_PIN_RADIUS : CC_ANCHOR_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+      if (index === 0) {
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(ccRowSeq(row.id, row.sheet), pin.x, pin.y + .5);
+      }
+    });
+    if (selected) {
+      ctx.strokeStyle = '#3f8ae0';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(box.x, box.y, box.width, box.height);
+    }
+    ctx.font = (selected ? 'bold ' : '') + '12px sans-serif';
+    ctx.fillStyle = callout.textRed ? '#cc0000' : '#111';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    lines.forEach((line, index) => ctx.fillText(line, label.x, label.y + index * CC_LINE_HEIGHT));
+    ctx.restore();
+  }
+
+  function ccDrawCanvas() {
+    const canvas = document.getElementById('constructionCanvas');
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const dpr = window.devicePixelRatio || 1;
+    ccDrawCanvasInto(canvas, rect.width, rect.height, dpr);
+  }
+
+  // Draw the active sheet's working board (Outer/Inner panels + callouts)
+  // into any canvas at a given CSS size and pixel scale. Extracted from
+  // ccDrawCanvas so the Preview & Export page can render a chosen sheet
+  // offscreen through the exact same drawing code the live board uses
+  // (US-079: preview and export share one render path).
+  function ccDrawCanvasInto(canvas, cssWidth, cssHeight, pixelScale) {
+    canvas.width = Math.round(cssWidth * pixelScale);
+    canvas.height = Math.round(cssHeight * pixelScale);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(pixelScale, 0, 0, pixelScale, 0, 0);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+    ctx.fillStyle = '#eef0f4';
+    ctx.fillRect(0, 0, cssWidth, cssHeight);
+    const gap = 12;
+    const panelWidth = (cssWidth - gap * 3) / 2;
+    const panelHeight = cssHeight - gap * 2;
+    ccPanelLayouts = {
+      outer: ccBuildPanelLayout('outer', gap, gap, panelWidth, panelHeight),
+      inner: ccBuildPanelLayout('inner', gap * 2 + panelWidth, gap, panelWidth, panelHeight),
+    };
+    ccBoxCache = {};
+    CC_VIEWS.forEach(view => {
+      const layout = ccPanelLayouts[view];
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(layout.x, layout.y, layout.width, layout.height);
+      ctx.strokeStyle = view === ccActiveView ? '#1c6dd0' : '#c7ccd4';
+      ctx.lineWidth = view === ccActiveView ? 2 : 1;
+      ctx.strokeRect(layout.x, layout.y, layout.width, layout.height);
+      ctx.fillStyle = view === ccActiveView ? '#eaf2ff' : '#f5f6f8';
+      ctx.fillRect(layout.x, layout.y, layout.width, 30);
+      ctx.fillStyle = '#111827';
+      ctx.font = '600 13px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(view.toUpperCase(), layout.x + 10, layout.y + 15);
+      const images = ccImages(ccSheet, view);
+      if (!images.length) {
+        ctx.strokeStyle = '#c8ccd4';
+        ctx.setLineDash([6, 5]);
+        ctx.strokeRect(layout.content.x, layout.content.y, layout.content.width, layout.content.height);
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#7a8190';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Paste, drop, or add images to ' + view.toUpperCase(), layout.content.x + layout.content.width / 2, layout.content.y + layout.content.height / 2);
+      }
+      images.forEach(image => {
+        const topLeft = ccWorldToCanvas(layout, { x: image.x, y: image.y });
+        const width = image.width * layout.scale, height = image.height * layout.scale;
+        const runtime = ccImageRuntime(image.id);
+        if (runtime) ctx.drawImage(runtime, topLeft.x, topLeft.y, width, height);
+        else {
+          ctx.fillStyle = '#f3f4f6';
+          ctx.fillRect(topLeft.x, topLeft.y, width, height);
+          ctx.fillStyle = '#8b919c';
+          ctx.textAlign = 'center';
+          ctx.fillText('Image data unavailable', topLeft.x + width / 2, topLeft.y + height / 2);
+        }
+        if (image.id === ccSelectedImageId) {
+          ctx.strokeStyle = '#3f8ae0';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(topLeft.x - 2, topLeft.y - 2, width + 4, height + 4);
+        }
+      });
+    });
+    ccVisibleCallouts().forEach(callout => ccDrawCallout(ctx, callout));
+  }
+
+  // Offscreen render of ONE sheet (solid|lace) for the Preview & Export page
+  // and the tech-pack Excel export. Swaps the module view state so the shared
+  // draw code targets the requested sheet with no selection/active-panel
+  // chrome, and restores it in finally so the live board never observes the
+  // swap. ccPanelLayouts/ccBoxCache are hit-testing caches keyed to the live
+  // canvas — they must be restored or clicks after a render would mis-hit.
+  function ccRenderSheetToCanvas(sheet, cssWidth, cssHeight, pixelScale) {
+    const saved = {
+      sheet: ccSheet, view: ccActiveView, callout: ccSelectedCalloutId,
+      image: ccSelectedImageId, layouts: ccPanelLayouts, boxes: ccBoxCache,
+    };
+    const canvas = document.createElement('canvas');
+    try {
+      ccSheet = ccSheetKey(sheet);
+      ccActiveView = '';
+      ccSelectedCalloutId = null;
+      ccSelectedImageId = null;
+      ccDrawCanvasInto(canvas, cssWidth, cssHeight, pixelScale || 1);
+    } finally {
+      ccSheet = saved.sheet;
+      ccActiveView = saved.view;
+      ccSelectedCalloutId = saved.callout;
+      ccSelectedImageId = saved.image;
+      ccPanelLayouts = saved.layouts;
+      ccBoxCache = saved.boxes;
+    }
+    return canvas;
+  }
+
+  function ccAreaOptions(selected) {
+    return CC_AREAS.map(area => '<option value="' + area + '"' + (area === selected ? ' selected' : '') + '>' + escapeHtml(CC_AREA_LABELS[area]) + '</option>').join('');
+  }
+
+  function ccRowHtml(row) {
+    const callout = ccCalloutForRow(row.id);
+    const selected = row.id === ccSelectedRowId || (callout && callout.id === ccSelectedCalloutId);
+    return '<tr data-cc-row="' + row.id + '"' + (selected ? ' class="cc-row-selected"' : '') + '>'
+      + '<td class="cc-tbl-seq">' + ccRowSeq(row.id) + '</td>'
+      + '<td class="cc-tbl-view"><select data-cc-row-view="' + row.id + '" aria-label="Construction view">'
+      + '<option value="outer"' + (row.view === 'outer' ? ' selected' : '') + '>Outer</option>'
+      + '<option value="inner"' + (row.view === 'inner' ? ' selected' : '') + '>Inner</option></select></td>'
+      + '<td class="cc-tbl-area"><select data-cc-row-area="' + row.id + '" aria-label="Construction area">' + ccAreaOptions(row.area) + '</select></td>'
+      + '<td class="cc-tbl-detail"><div class="cc-detail-wrap"><textarea rows="1" spellcheck="false" data-cc-row-detail="' + row.id + '" aria-label="Construction detail">' + escapeHtml(row.detail) + '</textarea>'
+      + '<button type="button" data-cc-phrase-row="' + row.id + '" title="Choose a construction phrase">&#9662;</button></div></td>'
+      + '<td class="cc-tbl-callout"><button type="button" data-cc-row-callout="' + row.id + '" title="' + (callout ? 'Select existing callout' : 'Place callout') + '">' + (callout ? '&#9679;' : '&#8853;') + '</button></td>'
+      + '<td class="cc-tbl-del"><button type="button" data-cc-row-del="' + row.id + '" title="Delete row">&#10005;</button></td>'
+      + '</tr>';
+  }
+
+  function ccRenderTable() {
+    const body = document.getElementById('ccTableBody');
+    if (!body) return;
+    const active = document.activeElement;
+    if (active && body.contains(active)) return;
+    body.innerHTML = CC_VIEWS.map(view => {
+      const rows = ccRowsForView(view, ccSheet);
+      return '<tr class="cc-view-band"><th colspan="6">' + view.toUpperCase() + '</th></tr>'
+        + rows.map(ccRowHtml).join('')
+        + '<tr class="cc-add-row"><td colspan="6"><button type="button" data-cc-add-row="' + view + '">&#65291; Add ' + view + ' row</button></td></tr>';
+    }).join('');
+  }
+
+  function ccOpenPhraseMenu(rowId, button) {
+    ccPhraseRowId = rowId;
+    ccSelectedRowId = rowId;
+    const row = ccRowById(rowId);
+    if (row) ccActiveView = row.view;
+    const menu = document.getElementById('ccPhraseMenu');
+    const search = document.getElementById('ccPhraseSearch');
+    if (!menu || !search) return;
+    search.value = '';
+    menu.hidden = false;
+    const rect = button.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 390)) + 'px';
+    menu.style.top = Math.min(rect.bottom + 4, window.innerHeight - 330) + 'px';
+    ccRenderPhraseList();
+    search.focus();
+    renderConstruction();
+  }
+
+  function ccClosePhraseMenu() {
+    const menu = document.getElementById('ccPhraseMenu');
+    if (menu) menu.hidden = true;
+    ccPhraseRowId = null;
+  }
+
+  function ccRenderPhraseList() {
+    const search = document.getElementById('ccPhraseSearch');
+    const list = document.getElementById('ccPhraseList');
+    if (!list) return;
+    const tokens = String((search && search.value) || '').toLowerCase().split(/\s+/).filter(Boolean);
+    ccPhraseHits = (tokens.length
+      ? CONSTRUCTION_PHRASES.filter(item => tokens.every(token => item.text.toLowerCase().includes(token)))
+      : CONSTRUCTION_PHRASES.filter(item => item.favorite)).slice(0, 60);
+    list.innerHTML = ccPhraseHits.map((item, index) => '<button type="button" data-cc-phrase="' + index + '">' + escapeHtml(item.text) + '</button>').join('')
+      || '<div class="cc-phrase-empty">No matching phrase</div>';
+  }
+
+  function ccApplyPhrase(index) {
+    const row = ccRowById(ccPhraseRowId);
+    const item = ccPhraseHits[index];
+    if (!row || !item) return;
+    row.detail = item.text;
+    ccClosePhraseMenu();
+    renderConstruction();
+    pushHistoryIfChanged();
+  }
+
+  function ccSyncUi() {
+    document.querySelectorAll('[data-cc-sheet]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.ccSheet === ccSheet));
+    });
+    document.querySelectorAll('[data-cc-active-view]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.ccActiveView === ccActiveView));
+    });
+    const tools = {
+      select: document.getElementById('ccSelectToolBtn'),
+      callout: document.getElementById('ccAddCalloutBtn'),
+      leader: document.getElementById('ccAddLeaderBtn'),
+    };
+    Object.keys(tools).forEach(tool => {
+      const button = tools[tool];
+      if (!button) return;
+      button.classList.toggle('cc-tool-active', ccTool === tool);
+      button.setAttribute('aria-pressed', String(ccTool === tool));
+    });
+    if (tools.leader) tools.leader.disabled = !ccSelectedCallout();
+    const deleteCallout = document.getElementById('ccDeleteCalloutBtn');
+    if (deleteCallout) deleteCallout.disabled = !ccSelectedCallout();
+    const deleteImage = document.getElementById('ccDeleteImageBtn');
+    if (deleteImage) deleteImage.disabled = !ccImageById(ccSelectedImageId, ccSheet, ccActiveView);
+    const hint = document.getElementById('ccToolHint');
+    if (hint) {
+      if (ccTool === 'callout') {
+        const row = ccRowById(ccSelectedRowId);
+        hint.textContent = row ? 'Add Callouts: place row ' + ccRowSeq(row.id) + ' in ' + row.view.toUpperCase() + '; Select/Esc finishes.' : 'Add Callouts: place the highlighted row.';
+      } else if (ccTool === 'leader') {
+        hint.textContent = 'Add Leaders: click multiple targets on the selected callout image; Select/Esc finishes.';
+      } else {
+        hint.textContent = 'Active panel: ' + ccActiveView.toUpperCase() + ' · select a label, leader, target, or image to adjust it.';
+      }
+    }
+    const canvas = document.getElementById('constructionCanvas');
+    if (canvas) {
+      canvas.classList.remove('cc-tool-select', 'cc-tool-callout', 'cc-tool-leader');
+      canvas.classList.add('cc-tool-' + ccTool);
+    }
+  }
+
+  function renderConstruction() {
+    ensureConstruction();
+    if (ccTool === 'leader' && !ccSelectedCallout()) ccTool = 'select';
+    const title = document.getElementById('ccSheetTitle');
+    if (title) title.textContent = 'CONSTRUCTION · ' + ccSheet.toUpperCase();
+    ccDrawCanvas();
+    ccRenderTable();
+    ccSyncUi();
+  }
+
+  function ccEventPoint(event, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  function ccOnPointerDown(event) {
+    const canvas = document.getElementById('constructionCanvas');
+    if (!canvas) return;
+    const point = ccEventPoint(event, canvas);
+    const layout = ccPanelAt(point);
+    if (!layout) return;
+    ccActiveView = layout.view;
+    const world = ccCanvasToWorld(layout, point);
+    if (ccTool === 'callout') { ccCreateCalloutAt(layout, world); return; }
+    if (ccTool === 'leader') { ccAddLeaderAt(layout, world); return; }
+    const hit = ccHitTest(point);
+    if (hit) {
+      ccSelectedCalloutId = hit.callout.id;
+      ccSelectedRowId = hit.callout.rowId;
+      ccSelectedImageId = null;
+      if (hit.part !== 'line') ccDrag = { kind: 'callout', hit };
+      renderConstruction();
+      event.preventDefault();
+      return;
+    }
+    const image = ccImageAt(layout.view, world);
+    if (image) {
+      ccSelectedImageId = image.id;
+      ccSelectedCalloutId = null;
+      ccDrag = { kind: 'image', image, layout, prev: world };
+    } else {
+      ccSelectedImageId = null;
+      ccSelectedCalloutId = null;
+    }
+    renderConstruction();
+  }
+
+  function ccOnPointerMove(event) {
+    if (!ccDrag) return;
+    const canvas = document.getElementById('constructionCanvas');
+    if (!canvas) return;
+    const point = ccEventPoint(event, canvas);
+    if (ccDrag.kind === 'callout') {
+      const hit = ccDrag.hit;
+      const world = ccCanvasToWorld(hit.layout, point);
+      const norm = ccNormalize(hit.image, world);
+      if (hit.part === 'anchor') hit.callout.targets[hit.anchorIndex] = norm;
+      else if (hit.part === 'label') hit.callout.textPos = norm;
+    } else if (ccDrag.kind === 'image') {
+      const world = ccCanvasToWorld(ccDrag.layout, point);
+      ccDrag.image.x += world.x - ccDrag.prev.x;
+      ccDrag.image.y += world.y - ccDrag.prev.y;
+      ccDrag.prev = world;
+    }
+    ccDrawCanvas();
+  }
+
+  function ccOnPointerUp() {
+    if (!ccDrag) return;
+    ccDrag = null;
+    pushHistoryIfChanged();
+  }
+
+  function initConstruction() {
+    ensureConstruction();
+    const page = document.getElementById('constructionPage');
+    if (!page) return;
+    const canvas = document.getElementById('constructionCanvas');
+    const imageInput = document.getElementById('ccImageInput');
+    const tableBody = document.getElementById('ccTableBody');
+
+    document.querySelectorAll('[data-cc-sheet]').forEach(button => {
+      button.addEventListener('click', () => {
+        ccSheet = ccSheetKey(button.dataset.ccSheet);
+        ccSelectedRowId = null;
+        ccSelectedCalloutId = null;
+        ccSelectedImageId = null;
+        ccSetTool('select');
+        renderConstruction();
+      });
+    });
+    document.querySelectorAll('[data-cc-active-view]').forEach(button => {
+      button.addEventListener('click', () => {
+        ccActiveView = ccViewKey(button.dataset.ccActiveView);
+        ccSelectedImageId = null;
+        renderConstruction();
+      });
+    });
+
+    const addImage = document.getElementById('ccAddImageBtn');
+    if (addImage) addImage.addEventListener('click', () => imageInput && imageInput.click());
+    if (imageInput) imageInput.addEventListener('change', async () => {
+      await ccAddImageFiles(imageInput.files, ccSheet, ccActiveView);
+      imageInput.value = '';
+    });
+    const pasteImage = document.getElementById('ccPasteImageBtn');
+    if (pasteImage) pasteImage.addEventListener('click', async () => {
+      if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+        showToast('Use Ctrl/Cmd+V while Construction is open to paste images.');
+        return;
+      }
+      try {
+        const items = await navigator.clipboard.read();
+        const urls = [];
+        for (const item of items) {
+          const type = item.types.find(value => /^image\//i.test(value));
+          if (type) urls.push(await blobToDataURL(await item.getType(type)));
+        }
+        if (urls.length) await ccAddImagesFromDataURLs(urls, ccSheet, ccActiveView);
+        else showToast('Clipboard has no image.');
+      } catch (_) { showToast('Clipboard access was blocked; use Ctrl/Cmd+V instead.'); }
+    });
+    const deleteImage = document.getElementById('ccDeleteImageBtn');
+    if (deleteImage) deleteImage.addEventListener('click', ccDeleteSelectedImage);
+    const zoomOut = document.getElementById('ccImageZoomOutBtn');
+    const zoomIn = document.getElementById('ccImageZoomInBtn');
+    if (zoomOut) zoomOut.addEventListener('click', () => ccZoomSelectedImage(0.9));
+    if (zoomIn) zoomIn.addEventListener('click', () => ccZoomSelectedImage(1.1));
+    const selectTool = document.getElementById('ccSelectToolBtn');
+    const addCallout = document.getElementById('ccAddCalloutBtn');
+    const addLeader = document.getElementById('ccAddLeaderBtn');
+    const deleteCallout = document.getElementById('ccDeleteCalloutBtn');
+    if (selectTool) selectTool.addEventListener('click', () => ccSetTool('select'));
+    if (addCallout) addCallout.addEventListener('click', () => ccStartCalloutTool(ccSelectedRowId));
+    if (addLeader) addLeader.addEventListener('click', () => ccSetTool('leader'));
+    if (deleteCallout) deleteCallout.addEventListener('click', ccDeleteSelectedCallout);
+
+    if (canvas) {
+      canvas.addEventListener('mousedown', ccOnPointerDown);
+      canvas.addEventListener('dblclick', event => {
+        if (ccTool === 'select') ccDeleteAnchorAt(ccEventPoint(event, canvas));
+      });
+      canvas.addEventListener('dragover', event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; });
+      canvas.addEventListener('drop', async event => {
+        event.preventDefault();
+        const layout = ccPanelAt(ccEventPoint(event, canvas));
+        if (layout) ccActiveView = layout.view;
+        await ccAddImageFiles(event.dataTransfer.files, ccSheet, ccActiveView);
+      });
+    }
+    window.addEventListener('mousemove', ccOnPointerMove);
+    window.addEventListener('mouseup', ccOnPointerUp);
+    window.addEventListener('resize', () => { if (state.activePage === 'construction') ccDrawCanvas(); });
+
+    if (tableBody) {
+      tableBody.addEventListener('input', event => {
+        const detail = event.target.closest('[data-cc-row-detail]');
+        if (!detail) return;
+        const row = ccRowById(Number(detail.dataset.ccRowDetail));
+        if (!row) return;
+        row.detail = detail.value;
+        ccDrawCanvas();
+      });
+      tableBody.addEventListener('change', event => {
+        const viewSelect = event.target.closest('[data-cc-row-view]');
+        if (viewSelect) {
+          const rowId = Number(viewSelect.dataset.ccRowView);
+          const nextView = viewSelect.value;
+          // A focused table control suppresses tbody rebuilds to preserve the
+          // caret. Blur before moving so the row immediately relocates under
+          // its new OUTER/INNER band.
+          viewSelect.blur();
+          ccMoveRowView(ccRowById(rowId), nextView);
+          return;
+        }
+        const areaSelect = event.target.closest('[data-cc-row-area]');
+        if (areaSelect) {
+          const row = ccRowById(Number(areaSelect.dataset.ccRowArea));
+          if (!row) return;
+          row.area = ccNormalizeArea(areaSelect.value);
+          ccDrawCanvas();
+          pushHistoryIfChanged();
+        }
+      });
+      tableBody.addEventListener('focusout', event => {
+        if (event.target.closest('[data-cc-row-detail]')) {
+          pushHistoryIfChanged();
+          setTimeout(ccRenderTable, 0);
+        }
+      });
+      tableBody.addEventListener('keydown', event => {
+        const detail = event.target.closest('[data-cc-row-detail]');
+        if (!detail || event.key !== 'Enter') return;
+        if (event.shiftKey) return;
+        event.preventDefault();
+        detail.blur();
+      });
+      tableBody.addEventListener('click', event => {
+        const phrase = event.target.closest('[data-cc-phrase-row]');
+        if (phrase) { ccOpenPhraseMenu(Number(phrase.dataset.ccPhraseRow), phrase); return; }
+        const callout = event.target.closest('[data-cc-row-callout]');
+        if (callout) { callout.blur(); ccArmRowCallout(Number(callout.dataset.ccRowCallout)); return; }
+        const remove = event.target.closest('[data-cc-row-del]');
+        if (remove) { remove.blur(); ccDeleteRow(Number(remove.dataset.ccRowDel)); return; }
+        const add = event.target.closest('[data-cc-add-row]');
+        if (add) { add.blur(); ccAddRow(add.dataset.ccAddRow); return; }
+        if (event.target.closest('select,textarea,button')) return;
+        const tr = event.target.closest('tr[data-cc-row]');
+        if (!tr) return;
+        const row = ccRowById(Number(tr.dataset.ccRow));
+        if (!row) return;
+        ccSelectedRowId = row.id;
+        ccActiveView = row.view;
+        const existing = ccCalloutForRow(row.id);
+        ccSelectedCalloutId = existing ? existing.id : null;
+        renderConstruction();
+      });
+    }
+
+    const phraseSearch = document.getElementById('ccPhraseSearch');
+    const phraseList = document.getElementById('ccPhraseList');
+    if (phraseSearch) phraseSearch.addEventListener('input', ccRenderPhraseList);
+    if (phraseList) phraseList.addEventListener('click', event => {
+      const button = event.target.closest('[data-cc-phrase]');
+      if (button) ccApplyPhrase(Number(button.dataset.ccPhrase));
+    });
+    document.addEventListener('click', event => {
+      const menu = document.getElementById('ccPhraseMenu');
+      if (menu && !menu.hidden && !event.target.closest('#ccPhraseMenu,[data-cc-phrase-row]')) ccClosePhraseMenu();
+    });
+    document.addEventListener('paste', async event => {
+      if (state.activePage !== 'construction') return;
+      const active = document.activeElement;
+      if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable)) return;
+      const files = Array.from((event.clipboardData && event.clipboardData.items) || [])
+        .filter(item => item.kind === 'file' && /^image\//i.test(item.type || ''))
+        .map(item => item.getAsFile()).filter(Boolean);
+      if (!files.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      await ccAddImageFiles(files, ccSheet, ccActiveView);
+    }, true);
+    document.addEventListener('keydown', event => {
+      if (state.activePage !== 'construction') return;
+      if (event.key === 'Escape') {
+        if (ccTool !== 'select') { ccSetTool('select'); return; }
+        if (ccSelectedCalloutId != null || ccSelectedImageId != null || ccSelectedRowId != null) {
+          ccSelectedCalloutId = null; ccSelectedImageId = null; ccSelectedRowId = null; renderConstruction(); return;
+        }
+        setActivePage('board');
+        return;
+      }
+      if (event.key === 'Backspace') {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable)) return;
+        if (ccSelectedCallout()) { event.preventDefault(); ccDeleteSelectedCallout(); }
+      }
+    }, true);
+    renderConstruction();
+  }
+
+  // ---- src/ui/bom-material-data.js ----
+// Ported from the sibling tech-pack project's #bom-lib data island (mod-bom)
+// per ADR 0041 — a static 27-material suggestion library mined from 1,748
+// historical BOM records. Verbatim data — do not hand-edit without checking
+// the source stays in sync. Suggestions only: supplier/article/width/size are
+// never written into a row as fact, only offered as a fill (bom.js never
+// overwrites a cell the TD has already typed into).
+
+const BOM_MATERIAL_LIBRARY = [
+  {
+    name: '2-piece removable cookies',
+    section: 'TRIM',
+    width: '',
+    size: 'To be size-wise graded',
+    supplierOptions: ['Easy fashion'],
+    articleOptions: [],
+    areaOptions: ['Cup', 'Cup panel', 'Inner cup panel'],
+  },
+  {
+    name: 'allover lace',
+    section: 'FABRIC',
+    width: '',
+    size: '',
+    supplierOptions: ['YiYuan', 'B&H Lace', 'B&H', 'Wanting', 'Yi Yuan'],
+    articleOptions: ['JG021043326H', '#10', '61201', '67152', 'AirMara vB 3.0'],
+    areaOptions: ['Outer cup panel', 'Outer cup', 'Cup'],
+  },
+  {
+    name: 'diamond trim',
+    section: 'TRIM',
+    width: '',
+    size: '',
+    supplierOptions: ['Factory source'],
+    articleOptions: [],
+    areaOptions: ['Center cradle', 'Outer CF neck'],
+  },
+  {
+    name: 'fusing',
+    section: 'FABRIC',
+    width: '',
+    size: '',
+    supplierOptions: ['Factory source', 'Same as Daisy'],
+    articleOptions: ['Factory source'],
+    areaOptions: ['inside lower strap panel at front', 'Between two layer shell fabric at the back strap', 'Cup panel stabilisation, Hook-and-eye guard'],
+  },
+  {
+    name: 'galloon lace',
+    section: 'FABRIC',
+    width: '10 cm',
+    size: '',
+    supplierOptions: ['YiYuan', 'Dongguan Guoyi', 'Same as Zenchic', 'Yi Yuan', 'Yusheng'],
+    articleOptions: ['BR-GL-KT-NL-M-150-YY-444', 'BR-GL-KT-NL-M-150-YY-634', '#8', '1037D', '7117'],
+    areaOptions: ['Cup panel', 'Front neckline', 'Front sling, back panel - outer middle'],
+  },
+  {
+    name: 'hook and eye',
+    section: 'TRIM',
+    width: '',
+    size: 'XS, S, M, L, XL',
+    supplierOptions: ['1', 'Factory source'],
+    articleOptions: [],
+    areaOptions: ['CB', 'CB closure', 'Back closure'],
+  },
+  {
+    name: 'insert (encased) elastic- ub',
+    section: 'FABRIC',
+    width: '3 cm',
+    size: '4XL and above',
+    supplierOptions: ['Mingshipai'],
+    articleOptions: ['D2008', 'D2009'],
+    areaOptions: ['UB', 'Front & back inner UB', 'Inside bottom UB'],
+  },
+  {
+    name: 'lace trim',
+    section: 'FABRIC',
+    width: '2.5 cm',
+    size: '',
+    supplierOptions: ['Yi Yuan', 'YiYuan', 'To be sorce', 'Wanhe'],
+    articleOptions: ['1752', '5088', 'JW254591', 'YIYUAN_LT_S010075', 'YIYUAN_LT_S020699'],
+    areaOptions: ['Front neckline', 'Front UB', 'Along cup top edge'],
+  },
+  {
+    name: 'loop elastic',
+    section: 'FABRIC',
+    width: '2 cm (full width)',
+    size: 'XS-XL',
+    supplierOptions: ['Factory source'],
+    articleOptions: ['Rosylift (free market)', 'Same quality as Uplacy 1.0- Loop dimensions will be provided', 'Same quality and dimensions as Uplacy 1.0- Loop dimensions will be provided'],
+    areaOptions: ['Shoulder straps', 'Shoulder Strap, Inner front apex', 'Straps'],
+  },
+  {
+    name: 'nylon coated 8-shaped ring',
+    section: 'TRIM',
+    width: '2.5 cm (inner width)',
+    size: 'XS to XL',
+    supplierOptions: [],
+    articleOptions: [],
+    areaOptions: ['Front apex', 'Back apex edge', 'Front apex adjuster'],
+  },
+  {
+    name: 'nylon coated slider',
+    section: 'TRIM',
+    width: '',
+    size: '2XL-4XL',
+    supplierOptions: [],
+    articleOptions: [],
+    areaOptions: ['BACK STRAP ADJUSTMENT', 'BACK SHOULDER STRAP'],
+  },
+  {
+    name: 'nylon coated swan hook',
+    section: 'TRIM',
+    width: '2.5 cm (inner width)',
+    size: 'XS, S, M, L, XL,2XL',
+    supplierOptions: ['Same as Uplacy'],
+    articleOptions: [],
+    areaOptions: ['Front strap', 'Front end of adjustable straps', 'Front side panel to strap'],
+  },
+  {
+    name: 'open end zipper- nylon coil, nylon coated puller, automatic locking',
+    section: 'TRIM',
+    width: '',
+    size: 'Size breakdown TBA by TD',
+    supplierOptions: ['Same as Uplacy', 'Factory source', 'Same as Ziplacy'],
+    articleOptions: ['3 teeth', 'Coil zipper #4'],
+    areaOptions: ['CF opening', 'Front closure', 'CF'],
+  },
+  {
+    name: 'oval ring',
+    section: 'TRIM',
+    width: '3 cm (inner width)',
+    size: '',
+    supplierOptions: [],
+    articleOptions: [],
+    areaOptions: ['CF ring on UB', 'Front rigid tape', 'Front stabilizer tape'],
+  },
+  {
+    name: 'power mesh',
+    section: 'FABRIC',
+    width: '',
+    size: '',
+    supplierOptions: ['Wanting', 'Same as LunaHug\'s powermesh', '74%Nylon 26%Spandex 150gsm 10.2 CNY', 'B&H 150 gsm 70CNY', 'Guang Da'],
+    articleOptions: ['BR-ME-KT-NL-M-130-LF-I/8', 'BR-ME-KT-NL-L-200-LF-338', 'BR-ME-KT-NL-M-140-BH-I/8', 'BR-ME-KT-NL-M-165-LF-337', 'BR-ME-KT-NL-M-165-LF-I/8'],
+    areaOptions: ['inner front UB', 'Front UB liner', 'inner front UB, liner strap, outer and liner top back, front cup liner, top back'],
+  },
+  {
+    name: 'ready-made soft stretch tape',
+    section: 'FABRIC',
+    width: '1cm',
+    size: 'Inner binding tape for synthetic bras',
+    supplierOptions: ['Mingshipai'],
+    articleOptions: ['L1827', 'L1875', 'Uplacy\'s'],
+    areaOptions: ['inner binding at side seam, inner binding under cup', 'Inner binding at under cup & side seam', 'Inner binding tape'],
+  },
+  {
+    name: 'rigid tape',
+    section: 'FABRIC',
+    width: '2.5 cm',
+    size: 'XS, S, M, L, XL',
+    supplierOptions: ['Same as EllaCurve', 'Shunxingsheng'],
+    articleOptions: ['6887'],
+    areaOptions: ['Inner front apex', 'Apex, strap', 'Inner apex'],
+  },
+  {
+    name: 'set-in molded foam cup',
+    section: 'FABRIC',
+    width: '',
+    size: 'To be size-wise graded',
+    supplierOptions: ['To be source', 'Factory source (thin fabric)'],
+    articleOptions: ['Need to be source', 'AF-FC-MF-01', 'need to source', 'Source new shape', 'To be sorce'],
+    areaOptions: ['Cup', 'Cup panel', 'Cups'],
+  },
+  {
+    name: 'shell fabric',
+    section: 'FABRIC',
+    width: '',
+    size: '',
+    supplierOptions: ['Yodu', 'Same as Curvyflex', 'JinTaiFeng', 'Lifeng/ code 33-260 66 % Nylon + 34% Spandex 260gsm 57cny/kg', 'CurvyFlex\'s synthetic'],
+    articleOptions: ['BR-FB-KT-NL-H-260-LF-I/28', 'BR-FB-KT-NL-H-200-XG-I/7', 'BR-FB-KT-NL-M-180-LF-I/6', '99009', 'BR-FB-KT-NL-H-215-LF-645'],
+    areaOptions: ['Front outer and liner side panel, outer UB, outer cup, outer strap, zipper gard', 'Cup panel, Inner and outer cradle, Inner and outer back panel', 'front inner side panel, strap outer and inner, Back liner'],
+  },
+  {
+    name: 'soft underwire channel tape',
+    section: 'FABRIC',
+    width: '',
+    size: '',
+    supplierOptions: [],
+    articleOptions: [],
+    areaOptions: ['Inner binding tape for synthetic bras'],
+  },
+  {
+    name: 'strap elastic',
+    section: 'FABRIC',
+    width: '2.5 cm',
+    size: 'XS, S, M, L, XL',
+    supplierOptions: ['Shunxingsheng', 'ShapeCurvy Exposed elastic OR new item that has the same clean appearence on the face & reverse'],
+    articleOptions: ['6887', '6888', '6886'],
+    areaOptions: ['Straps', 'Back straps', 'Strap'],
+  },
+  {
+    name: 'two-piece molded foam cup',
+    section: 'FABRIC',
+    width: '',
+    size: 'Size wise graded',
+    supplierOptions: [],
+    articleOptions: ['JH518', 'Need to be source', 'need to source', 'Source new shape'],
+    areaOptions: ['Cup', 'Cup panel', 'Front cups'],
+  },
+  {
+    name: 'ub plush elastic',
+    section: 'FABRIC',
+    width: '1 cm',
+    size: 'XS, S, M, L, XL',
+    supplierOptions: ['Mingshipai', 'To be sourced (thinner quality than UB elastic)', 'Baoyoule'],
+    articleOptions: ['L1619', 'To be sourced (thinner quality than UB elastic)', 'To be sourced (thinner quality than UB Plush elastic)', 'L1620', 'UpLacy\'s'],
+    areaOptions: ['Inner UB', 'UB', 'Front & back inner UB'],
+  },
+  {
+    name: 'v-fold elastic',
+    section: 'FABRIC',
+    width: '16 mm (full width)',
+    size: 'S -XL',
+    supplierOptions: ['Mingshipai'],
+    articleOptions: ['L1612', 'L1613', 'UpLacy\'s'],
+    areaOptions: ['Neckline & armholes finish', 'Front & back armholes, front & back neckline, back straps', 'Front & back neckline & armholes finish'],
+  },
+  {
+    name: 'velcro hook side',
+    section: 'TRIM',
+    width: '',
+    size: 'XS-XL',
+    supplierOptions: ['Same as Selina', 'Shengou'],
+    articleOptions: ['2 Velcro', 'Same quality as Emma bra'],
+    areaOptions: ['Strap', 'shoulder straps', 'CF opening'],
+  },
+  {
+    name: 'velcro loop side',
+    section: 'TRIM',
+    width: '',
+    size: 'XS-XL',
+    supplierOptions: ['Same as Selina', 'Shengou'],
+    articleOptions: ['2 Velcro', 'Same quality as Emma bra'],
+    areaOptions: ['Strap', 'shoulder straps', 'CF opening'],
+  },
+  {
+    name: 'zipper puller',
+    section: 'TRIM',
+    width: '',
+    size: '',
+    supplierOptions: [],
+    articleOptions: ['ComfyMia'],
+    areaOptions: ['CF', 'Zipper puller'],
+  },
+];
+
+  // ---- src/ui/bom.js ----
+// BOM page: editable material table + material-key canvas annotation
+// (US-072, ADR 0041). Source part for app.js. Run `npm run build` after
+// editing.
+//
+// Rebuilt on this tool's primitives from the sibling tech-pack project's
+// mod-bom module — that project has its own globals/closures with no shared
+// module, so this is a fork, not a link (same pattern as MAIN PAGE/
+// Construction, ADR 0037/0039). Static suggestion data is carried across
+// verbatim in bom-material-data.js (BOM_MATERIAL_LIBRARY, 27 entries mined
+// from 1,748 historical BOM records) — that file must load before this one
+// (see scripts/source-parts.mjs).
+//
+// A row is { id, section:'FABRIC'|'TRIM', scope:'BOTH'|'SOLID'|'LACE',
+// cells:{description, areaOfUse, supplier, article, width, size,
+// composition}, cwOverride:{}, groupId?, photo?:{dataURL} } — groupId marks
+// a size-split pair (x.1/x.2 numbering), photo is the MATERIAL IMAGES cell.
+// state.bom is { rows, images:{solid:[],lace:[]}, callouts, seedId,
+// schemaVersion } — seedId records that the
+// reference seed (BM_SEED_ROWS, US-074) already ran for this project.
+// One shared row list, scope-filtered per
+// Solid/Lace sheet at render time via this page's `[data-bom-variant]` tabs
+// — same convention as Construction's `[data-cc-variant]` (ADR 0040). `#` is
+// computed live from render order (FABRIC rows then TRIM rows), never
+// stored — same non-goal as Construction's seq.
+//
+// A callout is { id, rowId, imageId, variant, targets:[{nx,ny}, ...],
+// textPos:{nx,ny} } — the "material key" annotation, placed on a BOM-owned
+// image for that variant. It deliberately reuses Construction's exact
+// multi-anchor/edge-leader-line/arrowhead/double-click-delete geometry,
+// forked (not shared) under a bm* prefix, per this codebase's
+// duplicate-over-premature-abstraction convention — there is no existing
+// shared leader-line module to extract into. A callout's label text is
+// derived live from its linked row's current number + description
+// (`N. {description}`), never stored, matching how BOM row numbers are
+// computed.
+//
+// Colorway columns finally consume state.mainPage.colorways — ADR 0037
+// named this "knowingly inert" pending exactly this feature.
+//
+// The material-suggestion picker is a side-panel searchable list (mirroring
+// Construction's phrase quick-list, ADR 0039), not the reference tool's
+// per-cell floating popover. Picking a material always sets the selected
+// row's description, and pre-fills areaOfUse/supplier/article/width/size
+// only into cells the TD has not yet typed into — never overwrites.
+//
+// Dropped by ADR 0041: AI translation, bilingual cells, per-row reference
+// photo + asset-management catalog matching, auto-draft-from-Construction,
+// split-row (size-run pairing), floating per-cell SuggMenu popover.
+
+  const BM_SCHEMA_VERSION = 2;
+  const BM_SECTIONS = ['FABRIC', 'TRIM'];
+  // Section bands + column contract mirror the reference factory sheet
+  // (Tech pack Output/TechPack output.html mod-bom) exactly — order AND
+  // bilingual header strings are copied verbatim from its D.bom.columns
+  // (US-073): description, composition, supplier, article, width, size,
+  // area_of_use. Header 中文 is static parity text; cell-CONTENT translation
+  // stays dropped per ADR 0041 (offline, no API).
+  const BM_SECTION_BANDS = { FABRIC: 'MAIN BODY FABRICS', TRIM: 'TRIMS / COMPONENTS' };
+  const BM_CELL_FIELDS = ['description', 'composition', 'supplier', 'article', 'width', 'size', 'areaOfUse'];
+  const BM_CELL_LABELS = {
+    description: 'DESCRIPTION',
+    composition: 'TYPE / COMPOSITION',
+    supplier: 'SUPPLIER NAME',
+    article: 'ARTICLE #',
+    width: 'WIDTH',
+    size: 'SIZE',
+    areaOfUse: 'AREA OF USE',
+  };
+  const BM_CELL_LABELS_CN = {
+    description: '描述',
+    composition: '材质 / 成分',
+    supplier: '供应商名称',
+    article: '款号',
+    width: '宽度',
+    size: '尺码',
+    areaOfUse: '使用部位',
+  };
+  const BM_PHOTO_LABEL = 'MATERIAL IMAGES';
+  const BM_PHOTO_LABEL_CN = '材料图片';
+  // The six columns the reference sheet marks SUGGESTABLE_COLS — each gets a
+  // ▾ button in the cell. Composition has no library vocabulary.
+  const BM_SUGGESTABLE_FIELDS = ['description', 'areaOfUse', 'supplier', 'article', 'width', 'size'];
+
+  // US-074: a fresh BOM starts as the reference factory sheet's exact 12-row
+  // BOM (Tech pack Output/TechPack output.html, #pack-data bom.rows, style
+  // RSL vDraft 1.0) instead of empty. Every cell string is verbatim from that
+  // JSON (area_of_use → areaOfUse only renames the key). `group` marks the
+  // reference's two size-split pairs (group_id "strap-elastic" /
+  // "nylon-coated-slider") and becomes one shared numeric groupId per pair at
+  // seed time, so bmNumberedRows renders them 8.1/8.2 and 9.1/9.2 on the
+  // SOLID sheet exactly like the reference. bom.seedId records that seeding
+  // already happened: unlike MAIN PAGE fields, BOM rows are deletable on
+  // purpose, so a TD who empties the table must NOT get the seed back on the
+  // next load.
+  const BM_SEED_ID = 'rsl-vdraft-1.0';
+  const BM_SEED_ROWS = [
+    { section: 'FABRIC', scope: 'BOTH', cells: {
+      description: 'Shell fabric', composition: '', supplier: 'TBD',
+      article: 'AF-SF-01', width: '58"', size: 'ALL',
+      areaOfUse: 'Outer cup, outer cradle, outer UB, back panel' } },
+    { section: 'TRIM', scope: 'BOTH', cells: {
+      description: 'Two-piece molded foam cup', composition: '', supplier: '',
+      article: 'need to source', width: '', size: 'To be size-wise graded',
+      areaOfUse: 'Inner cup' } },
+    { section: 'FABRIC', scope: 'BOTH', cells: {
+      description: 'Power mesh -- front neckline yoke', composition: '', supplier: 'LiFeng',
+      article: 'BR-ME-KT-NL-L-200-LF-338', width: '', size: 'ALL',
+      areaOfUse: 'Front neckline yoke (outer + inner, both variants)' } },
+    { section: 'FABRIC', scope: 'BOTH', cells: {
+      description: 'Power mesh -- back panel (body fabric)', composition: '', supplier: '',
+      article: '', width: '', size: 'ALL',
+      areaOfUse: 'Back panel, full body from underarm to underband (outer, both variants)' } },
+    { section: 'FABRIC', scope: 'LACE', cells: {
+      description: 'Allover lace', composition: '', supplier: 'Yiyuan',
+      article: 'N/A', width: '120cm', size: 'ALL',
+      areaOfUse: 'Outer front cup (overlaid on shell layer)' } },
+    { section: 'TRIM', scope: 'BOTH', cells: {
+      description: 'Oval ring', composition: '', supplier: '',
+      article: '', width: '3 cm (inner width)', size: 'ALL',
+      areaOfUse: 'Strap hardware' } },
+    { section: 'TRIM', scope: 'BOTH', cells: {
+      description: 'Hook and eye', composition: '', supplier: 'Factory source',
+      article: '', width: '5 rows (observed on sketch); column count TBC', size: 'ALL',
+      areaOfUse: 'CB closure' } },
+    { section: 'TRIM', scope: 'BOTH', cells: {
+      description: 'Insert (encased) elastic- UB', composition: '', supplier: 'Mingshipai',
+      article: 'D2008', width: '3 cm', size: 'ALL',
+      areaOfUse: 'UB' } },
+    { section: 'TRIM', scope: 'BOTH', group: 'strap-elastic', cells: {
+      description: 'Strap elastic', composition: '', supplier: '',
+      article: '', width: '', size: 'S, M, L, XL, M2',
+      areaOfUse: 'Adjustable strap' } },
+    { section: 'TRIM', scope: 'BOTH', group: 'strap-elastic', cells: {
+      description: 'Strap elastic', composition: '', supplier: '',
+      article: '', width: '', size: '2XL, 3XL, 4XL, 5XL, L2, XL2, 2XL2, 3XL2, 4XL2, 5XL2',
+      areaOfUse: 'Adjustable strap' } },
+    { section: 'TRIM', scope: 'BOTH', group: 'nylon-coated-slider', cells: {
+      description: 'Nylon coated slider', composition: '', supplier: '',
+      article: '', width: '', size: 'S, M, L, XL, M2',
+      areaOfUse: 'Strap hardware, both attach ends (front + back)' } },
+    { section: 'TRIM', scope: 'BOTH', group: 'nylon-coated-slider', cells: {
+      description: 'Nylon coated slider', composition: '', supplier: '',
+      article: '', width: '', size: '2XL, 3XL, 4XL, 5XL, L2, XL2, 2XL2, 3XL2, 4XL2, 5XL2',
+      areaOfUse: 'Strap hardware, both attach ends (front + back)' } },
+  ];
+
+  const BM_PIN_RADIUS = 9;       // screen px at scale 1
+  const BM_ANCHOR_RADIUS = 4;    // screen px, secondary leader-line dots (index > 0)
+  const BM_HIT_RADIUS = 11;      // screen px, generous vs. the drawn pin/dot
+  const BM_LABEL_HALF_W = 70;    // screen px hit-box half-width for the label
+  const BM_LABEL_HALF_H = 12;    // screen px hit-box half-height for the label
+  const BM_ARROW_SIZE = 7;       // screen px, leader-line arrowhead
+  // #cc0066 is the reference sheet's material-key accent (its MK constant) —
+  // distinct on purpose from Construction's blue and the leader-arrow red.
+  const BM_CALLOUT_COLOR = '#cc0066';
+  const BM_ORPHAN_COLOR = '#b3261e';
+
+  // Session-only UI state — never persisted, same pattern as construction.js's
+  // ccArmed/ccVariant module-level lets.
+  let bmVariant = 'solid';       // 'solid' | 'lace' — shared by the table AND the material key
+  let bmSelectedRowId = null;    // selected editable BOM row
+  let bmSearchText = '';
+  let bmMaterialHits = [];
+  let bmTool = 'select';         // 'select' | 'callout' | 'leader'
+  let bmSelectedCalloutId = null;
+  let bmSelectedImageId = null;
+  let bmDrag = null;             // callout anchor/label or BOM image drag
+  let bmCanvasView = { offX: 0, offY: 0, scale: 1 };
+
+  // Bitmap bytes deliberately live outside state.bom. History snapshots clone
+  // state.bom frequently; embedding base64 there would duplicate every BOM
+  // image for every cell edit. Project save injects the bytes, project load
+  // extracts them again (the same split used by Board images/imageDataById).
+  const bmImageDataById = new Map();
+  const bmImageElementById = new Map();
+
+  function bmVariantKey(variant) {
+    return String(variant || bmVariant).toLowerCase() === 'lace' ? 'lace' : 'solid';
+  }
+
+  function bmVariantImages(variant) {
+    const bom = ensureBom();
+    const key = bmVariantKey(variant);
+    return bom.images[key];
+  }
+
+  function bmImageRuntime(id) {
+    return bmImageElementById.get(id) || null;
+  }
+
+  function bmStripImageForState(image) {
+    return {
+      id: image.id,
+      x: Number(image.x) || 0,
+      y: Number(image.y) || 0,
+      width: Math.max(1, Number(image.width) || 1),
+      height: Math.max(1, Number(image.height) || 1),
+      aspect: Math.max(0.01, Number(image.aspect) || ((Number(image.width) || 1) / (Number(image.height) || 1))),
+      locked: !!image.locked,
+    };
+  }
+
+  function bmSerializeForProject() {
+    const out = state.bom ? clone(state.bom) : null;
+    if (!out || !out.images) return out;
+    ['solid', 'lace'].forEach(variant => {
+      out.images[variant] = (out.images[variant] || []).map(image => ({
+        ...bmStripImageForState(image),
+        dataURL: bmImageDataById.get(image.id) || null,
+      }));
+    });
+    return out;
+  }
+
+  async function bmLoadProjectState(rawBom) {
+    state.bom = rawBom && typeof rawBom === 'object' ? clone(rawBom) : null;
+    bmImageDataById.clear();
+    bmImageElementById.clear();
+    const bom = ensureBom();
+    const loads = [];
+    ['solid', 'lace'].forEach(variant => {
+      bom.images[variant] = (bom.images[variant] || []).map(image => {
+        const meta = bmStripImageForState(image);
+        if (image.dataURL) {
+          bmImageDataById.set(meta.id, image.dataURL);
+          loads.push(loadImageFromDataURL(image.dataURL)
+            .then(img => bmImageElementById.set(meta.id, img))
+            .catch(() => {}));
+        }
+        return meta;
+      });
+    });
+    await Promise.all(loads);
+    return bom;
+  }
+
+  function bmSeedComparableRows(rows) {
+    const groupNames = new Map();
+    return (rows || []).map(row => {
+      let group = null;
+      if (row.groupId != null) {
+        if (!groupNames.has(row.groupId)) groupNames.set(row.groupId, 'g' + (groupNames.size + 1));
+        group = groupNames.get(row.groupId);
+      }
+      return {
+        section: row.section,
+        scope: row.scope || 'BOTH',
+        group,
+        cells: BM_CELL_FIELDS.reduce((out, key) => {
+          out[key] = String((row.cells && row.cells[key]) || '');
+          return out;
+        }, {}),
+      };
+    });
+  }
+
+  function bmExpectedSeedRows() {
+    const groups = new Map();
+    return BM_SEED_ROWS.map(seed => {
+      let group = null;
+      if (seed.group) {
+        if (!groups.has(seed.group)) groups.set(seed.group, 'g' + (groups.size + 1));
+        group = groups.get(seed.group);
+      }
+      return { section: seed.section, scope: seed.scope, group, cells: Object.assign({}, seed.cells) };
+    });
+  }
+
+  function hasMeaningfulBomWork() {
+    const bom = state && state.bom;
+    if (!bom) return false;
+    if ((bom.callouts || []).length) return true;
+    if (bom.images && ((bom.images.solid || []).length || (bom.images.lace || []).length)) return true;
+    if ((bom.rows || []).some(row => row.photo && row.photo.dataURL)) return true;
+    if ((bom.rows || []).some(row => row.cwOverride && Object.keys(row.cwOverride).length)) return true;
+    return JSON.stringify(bmSeedComparableRows(bom.rows)) !== JSON.stringify(bmExpectedSeedRows());
+  }
+
+  // Seeds state.bom in place. Safe to call repeatedly. Both callers that
+  // matter for undo run before seedHistory() (state.js boot init and
+  // project-io's loadProject), so the seeded rows are part of the history
+  // baseline, never an undoable step.
+  function ensureBom() {
+    const bom = state.bom && typeof state.bom === 'object'
+      ? state.bom
+      : (state.bom = {});
+    if (!Array.isArray(bom.rows)) bom.rows = [];
+    if (!Array.isArray(bom.callouts)) bom.callouts = [];
+    if (!bom.images || typeof bom.images !== 'object') bom.images = {};
+    if (!Array.isArray(bom.images.solid)) bom.images.solid = [];
+    if (!Array.isArray(bom.images.lace)) bom.images.lace = [];
+    // First materialization of a project's BOM: fill the reference rows.
+    // A bom that carries any seedId is stamped only — a TD-emptied table
+    // stays empty, and a pre-seed project that already has rows keeps them.
+    if (!bom.seedId) {
+      if (!bom.rows.length && !bom.callouts.length) {
+        const groupIds = {};
+        BM_SEED_ROWS.forEach(seed => {
+          const row = {
+            id: state.idCounter++,
+            section: seed.section,
+            scope: seed.scope,
+            cells: Object.assign({}, seed.cells),
+            cwOverride: {},
+          };
+          if (seed.group) {
+            if (groupIds[seed.group] == null) groupIds[seed.group] = state.idCounter++;
+            row.groupId = groupIds[seed.group];
+          }
+          bom.rows.push(row);
+        });
+      }
+      bom.seedId = BM_SEED_ID;
+    }
+    // Pre-0043 callouts pointed at Board images. Copy only the referenced
+    // image metadata/bytes into the callout's variant so old projects reopen
+    // without losing their Material Key. The two models are independent after
+    // this one-time migration.
+    if ((Number(bom.schemaVersion) || 0) < BM_SCHEMA_VERSION) {
+      bom.callouts.forEach(callout => {
+        const variant = bmVariantKey(callout.variant);
+        if (bom.images[variant].some(image => image.id === callout.imageId)) return;
+        const boardImage = (state.images || []).find(image => image.id === callout.imageId);
+        if (!boardImage) return;
+        bom.images[variant].push(bmStripImageForState(boardImage));
+        const dataURL = imageDataById.get(boardImage.id) || boardImage.dataURL;
+        if (dataURL) bmImageDataById.set(boardImage.id, dataURL);
+        if (boardImage.img) bmImageElementById.set(boardImage.id, boardImage.img);
+      });
+      bom.schemaVersion = BM_SCHEMA_VERSION;
+    }
+    return bom;
+  }
+
+  function bmVisibleRows(variant) {
+    const rows = (state.bom && state.bom.rows) || [];
+    const v = String(variant || bmVariant).toUpperCase();
+    return rows.filter(r => (r.scope || 'BOTH') === 'BOTH' || r.scope === v);
+  }
+
+  // FABRIC rows then TRIM rows, in list order — the only numbering BOM ever
+  // computes; nothing stores it (mirrors Construction's per-sheet seq).
+  // Consecutive rows sharing a groupId (size-split pairs, US-072 follow-up)
+  // number as one base with .1/.2 children — same numbering the reference
+  // sheet's numberRows() produces.
+  function bmNumberedRows(variant) {
+    const visible = bmVisibleRows(variant);
+    const out = [];
+    let base = 0;
+    BM_SECTIONS.forEach(section => {
+      const part = visible.filter(r => r.section === section);
+      const groups = [];
+      let cur = null, key = null;
+      part.forEach(r => {
+        const k = r.groupId != null ? 'g:' + r.groupId : 'id:' + r.id;
+        if (cur && k === key) cur.push(r);
+        else { if (cur) groups.push(cur); cur = [r]; key = k; }
+      });
+      if (cur) groups.push(cur);
+      groups.forEach(g => {
+        base += 1;
+        if (g.length === 1) out.push({ row: g[0], seq: String(base), base: String(base) });
+        else g.forEach((r, i) => out.push({ row: r, seq: base + '.' + (i + 1), base: String(base) }));
+      });
+    });
+    return out;
+  }
+
+  function bmRowSeq(rowId, variant) {
+    const hit = bmNumberedRows(variant).find(x => x.row.id === rowId);
+    return hit ? hit.seq : null;
+  }
+
+  // The plain group number ("3" for a "3.1"/"3.2" split pair) — what the
+  // material-key pin and label prefix show, mirroring the reference sheet's
+  // dedup-by-base behaviour in its material key.
+  function bmRowBase(rowId, variant) {
+    const hit = bmNumberedRows(variant).find(x => x.row.id === rowId);
+    return hit ? hit.base : null;
+  }
+
+  function bmRowById(id) {
+    return ((state.bom && state.bom.rows) || []).find(r => r.id === id) || null;
+  }
+
+  function bmAddRow(section) {
+    if (BM_SECTIONS.indexOf(section) === -1) return;
+    const bom = ensureBom();
+    const row = {
+      id: state.idCounter++,
+      section,
+      scope: 'BOTH',
+      cells: { description: '', composition: '', supplier: '', article: '', width: '', size: '', areaOfUse: '' },
+      cwOverride: {},
+    };
+    bom.rows.push(row);
+    bmSelectedRowId = row.id;
+    renderBom();
+    pushHistoryIfChanged();
+  }
+
+  // ADR 0044: the BOM row owns its Material Callouts. Remove the row and every
+  // linked variant callout in one history transaction so table and Material
+  // Key can never diverge; Undo restores both from the same snapshot.
+  function bmRemoveRow(id) {
+    const bom = ensureBom();
+    const idx = bom.rows.findIndex(r => r.id === id);
+    if (idx === -1) return;
+    const removed = bom.callouts.filter(c => c.rowId === id);
+    const removedIds = new Set(removed.map(c => c.id));
+    bom.rows.splice(idx, 1);
+    if (removed.length) bom.callouts = bom.callouts.filter(c => c.rowId !== id);
+    if (bmSelectedRowId === id) bmSelectedRowId = null;
+    if (removedIds.has(bmSelectedCalloutId)) bmSelectedCalloutId = null;
+    if (bmTool === 'leader' && !bmSelectedCallout()) bmTool = 'select';
+    renderBom();
+    pushHistoryIfChanged();
+    showToast('BOM row removed' + (removed.length ? ' with ' + removed.length + ' linked callout(s)' : '')
+      + ' · Ctrl/Cmd+Z to undo');
+  }
+
+  // Size-split (reference ⎘): clones the row right below itself and marks
+  // the pair with one shared groupId, so bmNumberedRows() renders them as
+  // x.1/x.2 — the "same material, small-size run vs 2XL+ run" convention the
+  // historical BOM corpus uses. Width/size are cleared on the clone (they
+  // are exactly what differs between the two halves of a split).
+  function bmSplitRow(id) {
+    const bom = ensureBom();
+    const idx = bom.rows.findIndex(r => r.id === id);
+    if (idx === -1) return;
+    const src = bom.rows[idx];
+    if (src.groupId == null) src.groupId = state.idCounter++;
+    const clone = {
+      id: state.idCounter++,
+      section: src.section,
+      scope: src.scope || 'BOTH',
+      groupId: src.groupId,
+      cells: Object.assign({}, src.cells, { width: '', size: '' }),
+      cwOverride: Object.assign({}, src.cwOverride),
+    };
+    bom.rows.splice(idx + 1, 0, clone);
+    bmSelectedRowId = clone.id;
+    renderBom();
+    pushHistoryIfChanged();
+    showToast('Row split into a size pair (.1/.2) · fill WIDTH/SIZE per run');
+  }
+
+  // A cwOverride key is only "set" if present at all — an explicit empty
+  // string (TD cleared it on purpose) must still win over the colorway's
+  // default name, so this checks key presence, not truthiness.
+  function bmCwValue(row, cw) {
+    const key = cw.col;
+    if (row.cwOverride && Object.prototype.hasOwnProperty.call(row.cwOverride, key)) {
+      return row.cwOverride[key];
+    }
+    return cw.value || '';
+  }
+
+  function bmMaterialMatches(m, tokens) {
+    const s = m.name.toLowerCase();
+    return tokens.every(t => s.includes(t));
+  }
+
+  // Fills the selected row's description (the point of picking a material)
+  // and pre-fills the remaining suggestion fields only into cells the TD
+  // has not already typed into — never overwrites a TD's own entry.
+  function bmApplyMaterial(rowId, material) {
+    const row = bmRowById(rowId);
+    if (!row || !material) return;
+    row.cells.description = material.name;
+    if (!row.cells.areaOfUse && material.areaOptions && material.areaOptions.length) {
+      row.cells.areaOfUse = material.areaOptions[0];
+    }
+    if (!row.cells.supplier && material.supplierOptions && material.supplierOptions.length) {
+      row.cells.supplier = material.supplierOptions[0];
+    }
+    if (!row.cells.article && material.articleOptions && material.articleOptions.length) {
+      row.cells.article = material.articleOptions[0];
+    }
+    if (!row.cells.width && material.width) row.cells.width = material.width;
+    if (!row.cells.size && material.size) row.cells.size = material.size;
+    renderBom();
+    pushHistoryIfChanged();
+  }
+
+  function bmApplyMaterialByIndex(i) {
+    const m = bmMaterialHits[i];
+    if (m && bmSelectedRowId) bmApplyMaterial(bmSelectedRowId, m);
+  }
+
+  /* ---- In-cell suggestion menu (reference bom-dd / SuggMenu, simplified) --- */
+
+  let bmDdOpenFor = null;   // 'rowId|field' the menu is open for, or null
+  let bmDdItems = [];
+
+  function bmMaterialInfoFor(description) {
+    const key = String(description || '').trim().toLowerCase();
+    if (!key) return null;
+    return BOM_MATERIAL_LIBRARY.find(m => m.name.toLowerCase() === key) || null;
+  }
+
+  // Suggestions are offered, never auto-inserted — same "chọn tay, KHÔNG tự
+  // điền" rule as the reference sheet. Non-description columns resolve from
+  // the row's OWN material when its description matches a library entry.
+  function bmSuggestItems(row, field) {
+    const out = [];
+    const add = (value, tag) => {
+      if (value && !out.some(x => x.value === value)) out.push({ value, tag: tag || '' });
+    };
+    if (field === 'description') {
+      BOM_MATERIAL_LIBRARY.forEach(m => add(m.name, m.section));
+      return out;
+    }
+    const info = bmMaterialInfoFor(row.cells.description);
+    if (field === 'areaOfUse') {
+      if (info) (info.areaOptions || []).forEach(v => add(v));
+      if (!out.length) {
+        BOM_MATERIAL_LIBRARY.forEach(m => (m.areaOptions || []).forEach(v => add(v, m.name)));
+      }
+    } else if (field === 'supplier') {
+      if (info) (info.supplierOptions || []).forEach(v => add(v));
+    } else if (field === 'article') {
+      if (info) (info.articleOptions || []).forEach(v => add(v));
+    } else if (field === 'width') {
+      if (info) add(info.width);
+    } else if (field === 'size') {
+      if (info) add(info.size);
+      add('ALL', 'default');
+    }
+    return out;
+  }
+
+  function bmDdMenuEl() {
+    let menu = document.getElementById('bomDdMenu');
+    if (menu) return menu;
+    menu = document.createElement('div');
+    menu.id = 'bomDdMenu';
+    menu.className = 'bm-dd-menu';
+    menu.hidden = true;
+    menu.innerHTML = '<input type="search" class="bm-dd-q" spellcheck="false" placeholder="Type to filter&hellip;">'
+      + '<div class="bm-dd-list"></div>';
+    document.body.appendChild(menu);
+    menu.querySelector('.bm-dd-q').addEventListener('input', e => bmDdRenderList(e.target.value));
+    menu.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { bmCloseDd(); return; }
+      if (e.key !== 'Tab') e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const first = menu.querySelector('.bm-dd-list [data-bm-pick]');
+        if (first) bmDdPick(+first.dataset.bmPick);
+      }
+    });
+    menu.addEventListener('click', e => {
+      const pick = e.target.closest('[data-bm-pick]');
+      if (pick) bmDdPick(+pick.dataset.bmPick);
+    });
+    return menu;
+  }
+
+  function bmDdRenderList(query) {
+    const menu = bmDdMenuEl();
+    const list = menu.querySelector('.bm-dd-list');
+    const tokens = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+    const hits = tokens.length
+      ? bmDdItems.filter(it => tokens.every(t => it.value.toLowerCase().includes(t)))
+      : bmDdItems;
+    list.innerHTML = hits.slice(0, 60).map(it =>
+      '<button type="button" data-bm-pick="' + bmDdItems.indexOf(it) + '">'
+      + escapeHtml(it.value)
+      + (it.tag ? '<span class="bm-dd-tag">' + escapeHtml(it.tag) + '</span>' : '')
+      + '</button>').join('')
+      || '<div class="bm-dd-empty">Library has nothing for this cell yet — type your own value</div>';
+  }
+
+  function bmOpenDd(btn) {
+    const [rowIdStr, field] = String(btn.dataset.bomDd).split('|');
+    const row = bmRowById(+rowIdStr);
+    if (!row) return;
+    bmDdOpenFor = btn.dataset.bomDd;
+    bmDdItems = bmSuggestItems(row, field);
+    const menu = bmDdMenuEl();
+    menu.hidden = false;
+    const q = menu.querySelector('.bm-dd-q');
+    q.value = '';
+    bmDdRenderList('');
+    const r = btn.getBoundingClientRect();
+    const w = 300;
+    menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+    menu.style.top = Math.min(r.bottom + 4, window.innerHeight - 80) + 'px';
+    q.focus();
+  }
+
+  function bmCloseDd() {
+    const menu = document.getElementById('bomDdMenu');
+    if (menu) menu.hidden = true;
+    bmDdOpenFor = null;
+  }
+
+  function bmDdPick(index) {
+    const it = bmDdItems[index];
+    if (!it || !bmDdOpenFor) return;
+    const [rowIdStr, field] = bmDdOpenFor.split('|');
+    const row = bmRowById(+rowIdStr);
+    bmCloseDd();
+    if (!row) return;
+    if (field === 'description') {
+      // Route through the same fill-empty rule as the side-panel pick: sets
+      // the description, pre-fills only cells the TD has not typed into.
+      const material = bmMaterialInfoFor(it.value);
+      if (material) { bmApplyMaterial(row.id, material); return; }
+    }
+    row.cells[field] = it.value;
+    renderBom();
+    pushHistoryIfChanged();
+  }
+
+  /* ---- Material photo cell (reference photo-trigger, offline-only) --------
+     A row's photo is { dataURL } in row.photo — uploaded or pasted by the
+     TD, stored in the project like board images. No catalog matching (the
+     reference's exact-article/same-material badges need its photo catalog,
+     which this offline tool does not carry). */
+
+  let bmPhotoOpenRow = null;
+
+  function bmSetRowPhoto(rowId, dataURL) {
+    const row = bmRowById(rowId);
+    if (!row) return;
+    if (dataURL) row.photo = { dataURL };
+    else delete row.photo;
+    bmClosePhotoMenu();
+    renderBom();
+    pushHistoryIfChanged();
+  }
+
+  function bmPhotoMenuEl() {
+    let menu = document.getElementById('bomPhotoMenu');
+    if (menu) return menu;
+    menu = document.createElement('div');
+    menu.id = 'bomPhotoMenu';
+    menu.className = 'bm-dd-menu bm-photo-menu';
+    menu.hidden = true;
+    menu.innerHTML = '<div class="bm-photo-hint">Material photo for this row — prints on the BOM sheet.</div>'
+      + '<div class="bm-photo-actions">'
+      + '<button type="button" data-bm-photo-upload title="Or Cmd/Ctrl+V to paste a copied image">Upload&hellip; / Paste</button>'
+      + '<button type="button" data-bm-photo-clear>Remove</button></div>';
+    document.body.appendChild(menu);
+    const filePick = document.createElement('input');
+    filePick.type = 'file';
+    filePick.accept = 'image/*';
+    filePick.hidden = true;
+    menu.appendChild(filePick);
+    filePick.addEventListener('change', () => {
+      const f = filePick.files && filePick.files[0];
+      const rowId = bmPhotoOpenRow;
+      filePick.value = '';
+      if (!f || rowId == null || !/^image\//i.test(f.type)) return;
+      const rd = new FileReader();
+      rd.onload = () => bmSetRowPhoto(rowId, rd.result);
+      rd.readAsDataURL(f);
+    });
+    menu.addEventListener('click', e => {
+      if (bmPhotoOpenRow == null) return;
+      if (e.target.closest('[data-bm-photo-upload]')) { filePick.click(); return; }
+      if (e.target.closest('[data-bm-photo-clear]')) bmSetRowPhoto(bmPhotoOpenRow, null);
+    });
+    // Paste lands here (not on the board): stopPropagation keeps the app's
+    // document-level paste router from also adopting the image as a sketch.
+    menu.addEventListener('paste', e => {
+      if (bmPhotoOpenRow == null || !e.clipboardData) return;
+      const it = Array.from(e.clipboardData.items)
+        .find(x => x.kind === 'file' && /^image\//i.test(x.type));
+      if (!it) return;
+      const f = it.getAsFile();
+      if (!f) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rowId = bmPhotoOpenRow;
+      const rd = new FileReader();
+      rd.onload = () => bmSetRowPhoto(rowId, rd.result);
+      rd.readAsDataURL(f);
+    });
+    menu.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { bmClosePhotoMenu(); return; }
+      if (e.key !== 'Tab') e.stopPropagation();
+    });
+    return menu;
+  }
+
+  function bmOpenPhotoMenu(btn) {
+    bmCloseDd();
+    bmPhotoOpenRow = +btn.dataset.bomPhoto;
+    const menu = bmPhotoMenuEl();
+    menu.hidden = false;
+    // tabindex makes the menu focusable so the paste event targets it.
+    menu.tabIndex = -1;
+    const r = btn.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 240)) + 'px';
+    menu.style.top = Math.min(r.bottom + 4, window.innerHeight - 90) + 'px';
+    menu.focus();
+  }
+
+  function bmClosePhotoMenu() {
+    const menu = document.getElementById('bomPhotoMenu');
+    if (menu) menu.hidden = true;
+    bmPhotoOpenRow = null;
+  }
+
+  /* ---- Material-key annotation engine (forked from construction.js) ------ */
+
+  function bmImageById(id, variant) {
+    return bmVariantImages(variant).find(im => im.id === id) || null;
+  }
+
+  function bmImageBounds(variant) {
+    const images = bmVariantImages(variant);
+    if (!images.length) return { x: 0, y: 0, width: 1, height: 1 };
+    const minX = Math.min(...images.map(im => im.x));
+    const minY = Math.min(...images.map(im => im.y));
+    const maxX = Math.max(...images.map(im => im.x + im.width));
+    const maxY = Math.max(...images.map(im => im.y + im.height));
+    return { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
+  }
+
+  function bmReflowImages(variant) {
+    const images = bmVariantImages(variant);
+    if (!images.length) return;
+    const commonHeight = 300;
+    const gap = 30;
+    let x = 0;
+    images.forEach(image => {
+      image.height = commonHeight;
+      image.width = commonHeight * (image.aspect || 1);
+      image.x = x;
+      image.y = 0;
+      x += image.width + gap;
+    });
+  }
+
+  async function bmAddImagesFromDataURLs(dataURLs, variant) {
+    const key = bmVariantKey(variant);
+    const images = bmVariantImages(key);
+    let added = 0;
+    for (const dataURL of dataURLs || []) {
+      if (!dataURL) continue;
+      const img = await loadImageFromDataURL(dataURL);
+      const id = state.idCounter++;
+      const aspect = img.height > 0 ? img.width / img.height : 1;
+      images.push({ id, x: 0, y: 0, width: 300 * aspect, height: 300, aspect, locked: false });
+      bmImageDataById.set(id, dataURL);
+      bmImageElementById.set(id, img);
+      added += 1;
+    }
+    if (!added) return 0;
+    bmReflowImages(key);
+    bmSelectedImageId = null;
+    bmSelectedCalloutId = null;
+    if (bmTool === 'leader') bmTool = 'select';
+    renderBom();
+    pushHistoryIfChanged();
+    showToast(added === 1
+      ? '1 image added to the ' + key.toUpperCase() + ' Material Key.'
+      : added + ' images added to the ' + key.toUpperCase() + ' Material Key.');
+    return added;
+  }
+
+  async function bmAddImageFiles(files, variant) {
+    const imageFiles = Array.from(files || []).filter(file => file && /^image\//i.test(file.type || ''));
+    if (!imageFiles.length) {
+      showToast('Add PNG, JPEG, or WebP images to the Material Key.');
+      return 0;
+    }
+    const dataURLs = [];
+    for (const file of imageFiles) dataURLs.push(await blobToDataURL(file));
+    return bmAddImagesFromDataURLs(dataURLs, variant);
+  }
+
+  function bmDeleteSelectedImage() {
+    const image = bmImageById(bmSelectedImageId);
+    if (!image) { showToast('Select a Material Key image first.'); return; }
+    const linked = bmVisibleCallouts().filter(callout => callout.imageId === image.id);
+    if (linked.length && !window.confirm(
+      'Delete this image and its ' + linked.length + ' linked material callout(s)?\n\nUndo restores both.'
+    )) return;
+    const images = bmVariantImages();
+    images.splice(images.indexOf(image), 1);
+    if (linked.length) {
+      const ids = new Set(linked.map(callout => callout.id));
+      state.bom.callouts = state.bom.callouts.filter(callout => !ids.has(callout.id));
+    }
+    bmSelectedImageId = null;
+    bmSelectedCalloutId = null;
+    bmReflowImages();
+    renderBom();
+    pushHistoryIfChanged();
+  }
+
+  function bmZoomSelectedImage(factor) {
+    const image = bmImageById(bmSelectedImageId);
+    if (!image) { showToast('Select a Material Key image first.'); return; }
+    const nextWidth = clamp(image.width * factor, 60, 1800);
+    const nextHeight = nextWidth / (image.aspect || (image.width / image.height) || 1);
+    const cx = image.x + image.width / 2;
+    const cy = image.y + image.height / 2;
+    image.width = nextWidth;
+    image.height = nextHeight;
+    image.x = cx - nextWidth / 2;
+    image.y = cy - nextHeight / 2;
+    renderBom();
+    pushHistoryIfChanged();
+  }
+
+  function bmVisibleCallouts() {
+    const callouts = (state.bom && state.bom.callouts) || [];
+    return callouts.filter(c => (c.variant || 'solid') === bmVariant);
+  }
+
+  function bmSelectedCallout() {
+    return bmVisibleCallouts().find(c => c.id === bmSelectedCalloutId) || null;
+  }
+
+  function bmCalloutForRow(rowId, variant) {
+    const key = bmVariantKey(variant);
+    return (((state.bom && state.bom.callouts) || []).find(c =>
+      c.rowId === rowId && bmVariantKey(c.variant) === key)) || null;
+  }
+
+  function bmMissingCalloutRows(variant) {
+    const key = bmVariantKey(variant);
+    return bmNumberedRows(key).map(x => x.row)
+      .filter(row => !bmCalloutForRow(row.id, key));
+  }
+
+  function bmNextMissingCalloutRow(afterRowId, variant) {
+    const key = bmVariantKey(variant);
+    const ordered = bmNumberedRows(key).map(x => x.row);
+    if (!ordered.length) return null;
+    const start = Math.max(-1, ordered.findIndex(row => row.id === afterRowId));
+    for (let step = 1; step <= ordered.length; step += 1) {
+      const row = ordered[(start + step) % ordered.length];
+      if (!bmCalloutForRow(row.id, key)) return row;
+    }
+    return null;
+  }
+
+  function bmWorldOf(imageRec, norm) {
+    return { x: imageRec.x + norm.nx * imageRec.width, y: imageRec.y + norm.ny * imageRec.height };
+  }
+
+  function bmNormalize(imageRec, pt) {
+    return { nx: (pt.x - imageRec.x) / imageRec.width, ny: (pt.y - imageRec.y) / imageRec.height };
+  }
+
+  function bmWorldToCanvas(pt) {
+    return { x: pt.x * bmCanvasView.scale + bmCanvasView.offX, y: pt.y * bmCanvasView.scale + bmCanvasView.offY };
+  }
+
+  function bmCanvasPointFromEvent(e, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    return { x: (cx - bmCanvasView.offX) / bmCanvasView.scale, y: (cy - bmCanvasView.offY) / bmCanvasView.scale };
+  }
+
+  function bmImageAt(pt) {
+    const images = bmVariantImages();
+    for (let i = images.length - 1; i >= 0; i -= 1) {
+      const im = images[i];
+      if (pt.x >= im.x && pt.x <= im.x + im.width && pt.y >= im.y && pt.y <= im.y + im.height) return im;
+    }
+    return null;
+  }
+
+  // Hit-tests every leader-line anchor (not just the first) before falling
+  // back to the label box, so a double-click on a secondary arrowhead can
+  // remove just that leader line.
+  function bmHitTest(pt) {
+    const callouts = bmVisibleCallouts();
+    const rWorld = BM_HIT_RADIUS / bmCanvasView.scale;
+    const halfW = BM_LABEL_HALF_W / bmCanvasView.scale;
+    const halfH = BM_LABEL_HALF_H / bmCanvasView.scale;
+    for (let i = callouts.length - 1; i >= 0; i -= 1) {
+      const c = callouts[i];
+      const im = bmImageById(c.imageId);
+      if (!im) continue;
+      const targets = c.targets || [];
+      for (let ti = targets.length - 1; ti >= 0; ti -= 1) {
+        const pin = bmWorldOf(im, targets[ti]);
+        if (Math.hypot(pt.x - pin.x, pt.y - pin.y) <= rWorld) {
+          return { callout: c, part: 'anchor', anchorIndex: ti, imageRec: im };
+        }
+      }
+      const label = bmWorldOf(im, c.textPos);
+      if (Math.abs(pt.x - label.x) <= halfW && Math.abs(pt.y - label.y) <= halfH) {
+        return { callout: c, part: 'label', imageRec: im };
+      }
+      for (let ti = targets.length - 1; ti >= 0; ti -= 1) {
+        const pin = bmWorldOf(im, targets[ti]);
+        if (bmDistanceToSegment(pt, label, pin) <= (6 / bmCanvasView.scale)) {
+          return { callout: c, part: 'line', anchorIndex: ti, imageRec: im };
+        }
+      }
+    }
+    return null;
+  }
+
+  function bmDistanceToSegment(pt, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    if (!dx && !dy) return Math.hypot(pt.x - a.x, pt.y - a.y);
+    const t = Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(pt.x - (a.x + t * dx), pt.y - (a.y + t * dy));
+  }
+
+  function bmCreateCalloutAt(pt) {
+    const im = bmImageAt(pt);
+    if (!im) { showToast('Click on a sketch image to place a material-key callout'); return; }
+    const rows = bmMissingCalloutRows(bmVariant);
+    if (!rows.length) {
+      bmSetTool('select');
+      showToast('Every visible BOM row already has a callout');
+      return;
+    }
+    const bom = ensureBom();
+    const target = bmNormalize(im, pt);
+    const rowId = (bmSelectedRowId && rows.some(r => r.id === bmSelectedRowId)) ? bmSelectedRowId : rows[0].id;
+    // Start the label on the roomier side of the target and keep its baseline
+    // inside the image. Drawing then connects every leader from the nearest
+    // edge of the label box, so TDs rarely need a cleanup drag after placement.
+    const textPos = {
+      nx: clamp(target.nx + (target.nx > 0.65 ? -0.28 : 0.08), 0.02, 0.90),
+      ny: clamp(target.ny - 0.03, 0.04, 0.96),
+    };
+    const callout = {
+      id: state.idCounter++,
+      rowId,
+      imageId: im.id,
+      variant: bmVariant,
+      targets: [target],
+      textPos,
+    };
+    bom.callouts.push(callout);
+    const next = bmNextMissingCalloutRow(rowId, bmVariant);
+    if (next) {
+      bmSelectedRowId = next.id;
+      bmSelectedCalloutId = null;
+    } else {
+      bmSelectedRowId = rowId;
+      bmSelectedCalloutId = callout.id;
+      bmTool = 'select';
+    }
+    renderBom();
+    pushHistoryIfChanged();
+    showToast(next
+      ? 'Callout added · next row ' + (bmRowSeq(next.id, bmVariant) || '') + '. ' + bmShortLabel(next.cells.description || '(empty)')
+      : 'All visible BOM rows now have callouts · Select is active');
+  }
+
+  // Add Leaders is a persistent tool: every valid click adds one image-local
+  // target to the selected callout until Select or Escape ends the mode.
+  function bmAddArrowAt(pt) {
+    const c = bmSelectedCallout();
+    if (!c) { showToast('Select a callout first'); return; }
+    const im = bmImageById(c.imageId);
+    if (!im) return;
+    if (bmImageAt(pt) !== im) {
+      showToast('Add the leader inside the selected callout\'s own image');
+      return;
+    }
+    c.targets.push(bmNormalize(im, pt));
+    renderBom();
+    pushHistoryIfChanged();
+    showToast('Leader ' + c.targets.length + ' added · click again, or Select/Esc to finish');
+  }
+
+  // Double-clicking an arrowhead removes just that leader line. A callout
+  // must keep at least one — deleting the last one is a no-op (use Delete
+  // callout to remove it entirely), matching Construction's convention.
+  function bmDeleteAnchorAt(pt) {
+    const hit = bmHitTest(pt);
+    if (!hit || hit.part !== 'anchor') return;
+    if (hit.callout.targets.length <= 1) {
+      showToast('A callout needs at least one arrow — use Delete callout to remove it entirely');
+      return;
+    }
+    hit.callout.targets.splice(hit.anchorIndex, 1);
+    renderBom();
+    pushHistoryIfChanged();
+  }
+
+  // Reference ⊕ (data-mk): jump straight to the Material Key armed for THIS
+  // row — the next sketch click drops its numbered callout. If the row
+  // prints on a single sheet, follow it onto that variant first, so the
+  // callout lands on (and stays filtered to) the row's own sheet.
+  function bmArmRowCallout(rowId) {
+    const row = bmRowById(rowId);
+    if (!row) return;
+    const scope = row.scope || 'BOTH';
+    if (scope !== 'BOTH' && scope.toLowerCase() !== bmVariant) {
+      bmVariant = scope.toLowerCase();
+      bmSyncVariantTabs();
+    }
+    bmSelectedRowId = rowId;
+    const existing = bmCalloutForRow(rowId, bmVariant);
+    if (existing) {
+      bmSelectedCalloutId = existing.id;
+      bmSelectedImageId = null;
+      bmSetTool('select');
+    } else {
+      bmSelectedCalloutId = null;
+      bmSelectedImageId = null;
+      bmSetTool('callout');
+    }
+    renderBom();
+    const mkView = document.getElementById('bomMatkeyView');
+    if (mkView) mkView.scrollIntoView({ block: 'start' });
+    showToast(existing
+      ? 'Selected the existing callout for row ' + (bmRowSeq(rowId, bmVariant) || '')
+      : 'Click the sketch to place the callout for row ' + (bmRowSeq(rowId, bmVariant) || ''));
+  }
+
+  function bmDeleteSelectedCallout() {
+    const c = bmSelectedCallout();
+    if (!c) return;
+    const callouts = state.bom.callouts;
+    const idx = callouts.indexOf(c);
+    if (idx === -1) return;
+    callouts.splice(idx, 1);
+    bmSelectedCalloutId = null;
+    if (bmTool === 'leader') bmTool = 'select';
+    renderBom();
+    pushHistoryIfChanged();
+    showToast('Deleted callout · Ctrl/Cmd+Z to undo');
+  }
+
+  // Reference shortLabel(): first comma-clause of the description, 40 chars.
+  function bmShortLabel(d) {
+    return String(d || '').split(',')[0].replace(/ -- /g, ' – ').slice(0, 40);
+  }
+
+  function bmCalloutLabelText(c) {
+    const row = bmRowById(c.rowId);
+    if (!row) return '? deleted BOM row';
+    const base = bmRowBase(c.rowId, bmVariant);
+    return (base || '?') + '. ' + (bmShortLabel(row.cells.description) || '(empty)');
+  }
+
+  function bmSetTool(tool) {
+    if (tool !== 'select' && tool !== 'callout' && tool !== 'leader') tool = 'select';
+    if (tool === 'leader' && !bmSelectedCallout()) {
+      showToast('Select a callout before adding leaders');
+      tool = 'select';
+    }
+    bmTool = tool;
+    bmSyncToolUi();
+  }
+
+  function bmStartCalloutTool(preferredRowId) {
+    const missing = bmMissingCalloutRows(bmVariant);
+    if (!missing.length) {
+      bmSetTool('select');
+      showToast('Every visible BOM row already has a callout');
+      return;
+    }
+    const preferred = missing.find(row => row.id === preferredRowId)
+      || missing.find(row => row.id === bmSelectedRowId)
+      || missing[0];
+    bmSelectedRowId = preferred.id;
+    bmSelectedCalloutId = null;
+    bmSelectedImageId = null;
+    bmSetTool('callout');
+    renderBom();
+    showToast('Add Callouts · place row ' + (bmRowSeq(preferred.id, bmVariant) || '')
+      + '. ' + bmShortLabel(preferred.cells.description || '(empty)'));
+  }
+
+  function bmSyncToolUi() {
+    const tools = {
+      select: document.getElementById('bomSelectToolBtn'),
+      callout: document.getElementById('bomAddCalloutBtn'),
+      leader: document.getElementById('bomAddArrowBtn'),
+    };
+    Object.keys(tools).forEach(tool => {
+      const btn = tools[tool];
+      if (!btn) return;
+      const active = bmTool === tool;
+      btn.classList.toggle('bm-tool-active', active);
+      btn.setAttribute('aria-pressed', String(active));
+    });
+    if (tools.leader) tools.leader.disabled = !bmSelectedCallout();
+    const canvas = document.getElementById('bomMatkeyCanvas');
+    if (canvas) {
+      canvas.classList.remove('bm-tool-select', 'bm-tool-callout', 'bm-tool-leader');
+      canvas.classList.add('bm-tool-' + bmTool);
+    }
+    const hint = document.getElementById('bomToolHint');
+    if (hint) {
+      if (bmTool === 'callout') {
+        const row = bmSelectedRowId ? bmRowById(bmSelectedRowId) : null;
+        hint.textContent = 'Add Callouts: place ' + (row ? (bmRowSeq(row.id, bmVariant) || '') + '. ' + bmShortLabel(row.cells.description || '(empty)') : 'the highlighted row')
+          + '; Select/Esc finishes.';
+      } else if (bmTool === 'leader') {
+        hint.textContent = 'Add Leaders: click multiple targets on the selected callout image; Select/Esc finishes.';
+      } else {
+        hint.textContent = 'Select a callout label, leader, or target to adjust it.';
+      }
+    }
+  }
+
+  function bmSyncVariantTabs() {
+    document.querySelectorAll('[data-bom-variant]').forEach(btn => {
+      btn.setAttribute('aria-pressed', String(btn.dataset.bomVariant === bmVariant));
+    });
+  }
+
+  function bmSyncSelectedRowClass() {
+    document.querySelectorAll('#bomSections tr[data-bom-row]').forEach(tr => {
+      tr.classList.toggle('bm-row-selected', String(bmSelectedRowId) === tr.dataset.bomRow);
+    });
+  }
+
+  /* ---- Rendering ----------------------------------------------------------- */
+
+  function renderBom() {
+    if (!state.bom) return;
+    if (bmTool === 'leader' && !bmSelectedCallout()) bmTool = 'select';
+    bmRenderTable();
+    bmDrawCanvas();
+    bmRenderCalloutSidePanel();
+    bmSyncToolUi();
+  }
+
+  // One factory-style table per sheet — section band rows (MAIN BODY
+  // FABRICS / TRIMS / COMPONENTS) with the header row repeated under each
+  // band and an add-row line per section, matching the reference sheet's
+  // renderTable() structure. Numbering runs continuously across sections.
+  // Bilingual header row shared by the screen table and the print sheets —
+  // EN label + the reference's verbatim 中文 string in a .bm-cn span (a
+  // sibling of the text, mirroring the reference's <span class='cn'>).
+  function bmHeaderRowHtml(colorways, withActCol) {
+    return '<tr class="bm-hdr"><th class="bm-num">#</th>'
+      + BM_CELL_FIELDS.map(f => '<th>' + escapeHtml(BM_CELL_LABELS[f])
+        + '<span class="bm-cn">' + BM_CELL_LABELS_CN[f] + '</span></th>').join('')
+      + '<th>' + BM_PHOTO_LABEL + '<span class="bm-cn">' + BM_PHOTO_LABEL_CN + '</span></th>'
+      + colorways.map(c => '<th>' + escapeHtml(c.col) + '</th>').join('')
+      + (withActCol ? '<th class="act">&middot;</th>' : '')
+      + '</tr>';
+  }
+
+  function bmColgroupHtml(colorways, withActCol) {
+    return '<colgroup>'
+      + '<col class="bm-col-num">'
+      + '<col class="bm-col-description"><col class="bm-col-composition">'
+      + '<col class="bm-col-supplier"><col class="bm-col-article">'
+      + '<col class="bm-col-width"><col class="bm-col-size">'
+      + '<col class="bm-col-area"><col class="bm-col-photo">'
+      + colorways.map(() => '<col class="bm-col-colorway">').join('')
+      + (withActCol ? '<col class="bm-col-actions">' : '')
+      + '</colgroup>';
+  }
+
+  // Reference .sheethead: a style meta line (.shl) + the sheet name (.shm),
+  // composed live from MAIN PAGE fields — Range Name, Style No, tech-pack
+  // creation date — skipping blanks and TBC placeholders.
+  // The style meta line as plain text — shared by the HTML sheet head and
+  // the tech-pack Excel meta row (US-079), so both always agree.
+  function bmSheetMetaText() {
+    const fields = (state.mainPage && state.mainPage.fields) || [];
+    const val = re => {
+      const hit = fields.find(f => re.test(String((f && f.label) || '')));
+      const v = hit ? String(hit.value || '').trim() : '';
+      return /^TBC$/i.test(v) ? '' : v;
+    };
+    const styleNo = val(/^Style No\s*-/i);
+    return [
+      val(/^Range Name\b/i),
+      styleNo ? 'Style # ' + styleNo : '',
+      val(/Tech Pack Creation date/i),
+    ].filter(Boolean).join(' · ');
+  }
+
+  function bmSheetHeadHtml(variant) {
+    return '<div class="bm-sheet-head"><div class="bm-shl">'
+      + escapeHtml(bmSheetMetaText()) + '</div><div class="bm-shm">BOM-'
+      + String(variant).toUpperCase() + '</div></div>';
+  }
+
+  function bmRenderTable() {
+    const host = document.getElementById('bomSections');
+    if (!host) return;
+    const sheetHead = document.getElementById('bomSheetHead');
+    if (sheetHead) sheetHead.innerHTML = bmSheetHeadHtml(bmVariant);
+    const colorways = (state.mainPage && state.mainPage.colorways) || [];
+    const span = 1 + BM_CELL_FIELDS.length + 1 + colorways.length + 1;
+    const hdr = bmHeaderRowHtml(colorways, true);
+    const numbered = bmNumberedRows(bmVariant);
+    let html = '';
+    BM_SECTIONS.forEach(section => {
+      html += '<tr><td class="bm-secband" colspan="' + span + '">'
+        + escapeHtml(BM_SECTION_BANDS[section]) + '</td></tr>' + hdr;
+      html += numbered.filter(x => x.row.section === section)
+        .map(x => bmRenderRow(x.row, x.seq, colorways)).join('');
+      html += '<tr class="bm-addrow-tr"><td colspan="' + span + '">'
+        + '<button type="button" class="bm-addrow" data-bom-add="' + section + '">&#65291; Dòng '
+        + escapeHtml(section) + '</button></td></tr>';
+    });
+    host.innerHTML = '<div class="bm-band">Bill of Materials Sheet</div>'
+      + '<table class="bm-table">' + bmColgroupHtml(colorways, true)
+      + '<tbody>' + html + '</tbody></table>';
+    bmRenderPrintSheets();
+  }
+
+  // Print parity (US-073): the reference prints BOM-SOLID then BOM-LACE as
+  // two factory sheets regardless of which tab is open on screen. Rendered
+  // into a print-only container (#bomPrintSheets, shown by the @media print
+  // rules) so the interactive screen table — and every #bomSections-scoped
+  // selector bom-check relies on — stays untouched. No editor affordances
+  // here: no ▾, no action column, no add-row line, plain text cells.
+  function bmRenderPrintSheets() {
+    const host = document.getElementById('bomPrintSheets');
+    if (!host) return;
+    host.innerHTML = ['solid', 'lace'].map(variant =>
+      '<section class="bm-print-sheet">' + bmPrintSheetHtml(variant) + '</section>').join('');
+  }
+
+  // One variant's full factory sheet (head + material key + table) as plain
+  // non-interactive HTML. Extracted from bmRenderPrintSheets (US-079) so the
+  // Preview & Export page shows the exact same sheet the print path produces.
+  function bmPrintSheetHtml(variant) {
+    const colorways = (state.mainPage && state.mainPage.colorways) || [];
+    const span = 1 + BM_CELL_FIELDS.length + 1 + colorways.length;
+    const hdr = bmHeaderRowHtml(colorways, false);
+    const numbered = bmNumberedRows(variant);
+    let html = '';
+    BM_SECTIONS.forEach(section => {
+      html += '<tr><td class="bm-secband" colspan="' + span + '">'
+        + escapeHtml(BM_SECTION_BANDS[section]) + '</td></tr>' + hdr;
+      html += numbered.filter(x => x.row.section === section)
+        .map(x => bmRenderPrintRow(x.row, x.seq, colorways)).join('');
+    });
+    return '<div class="bm-sheet">' + bmSheetHeadHtml(variant)
+      + '<div class="bm-band bm-band-big">Fabric and Trim Requirement</div>'
+      + bmPrintMaterialKeyHtml(variant)
+      + '<div class="bm-band">Bill of Materials Sheet</div>'
+      + '<table class="bm-table">' + bmColgroupHtml(colorways, false)
+      + '<tbody>' + html + '</tbody></table></div>';
+  }
+
+  function bmPrintMaterialKeyHtml(variant) {
+    const images = bmVariantImages(variant);
+    if (!images.length) return '<div class="bm-print-matkey bm-print-matkey-empty"></div>';
+    const W = 1900, H = 820, pad = 55;
+    const bounds = bmImageBounds(variant);
+    const scale = Math.min((W - pad * 2) / bounds.width, (H - pad * 2) / bounds.height);
+    const offX = (W - bounds.width * scale) / 2 - bounds.x * scale;
+    const offY = (H - bounds.height * scale) / 2 - bounds.y * scale;
+    const project = pt => ({ x: pt.x * scale + offX, y: pt.y * scale + offY });
+    const imageHtml = images.map(image => {
+      const dataURL = bmImageDataById.get(image.id);
+      if (!dataURL) return '';
+      const p = project({ x: image.x, y: image.y });
+      return '<img src="' + dataURL + '" alt="" style="left:' + (p.x / W * 100)
+        + '%;top:' + (p.y / H * 100) + '%;width:' + (image.width * scale / W * 100)
+        + '%;height:' + (image.height * scale / H * 100) + '%">';
+    }).join('');
+    let svg = '';
+    let labels = '';
+    const callouts = ((state.bom && state.bom.callouts) || [])
+      .filter(callout => bmVariantKey(callout.variant) === bmVariantKey(variant));
+    callouts.forEach(callout => {
+      const image = bmImageById(callout.imageId, variant);
+      if (!image) return;
+      const label = project(bmWorldOf(image, callout.textPos));
+      const text = bmCalloutLabelTextForVariant(callout, variant);
+      const labelBox = { x: label.x - 4, y: label.y - 9, width: Math.max(20, text.length * 6.5 + 8), height: 18 };
+      (callout.targets || []).forEach(target => {
+        const pin = project(bmWorldOf(image, target));
+        const edge = bmEdgeToward(labelBox, pin.x, pin.y) || label;
+        svg += '<line x1="' + edge.x + '" y1="' + edge.y + '" x2="' + pin.x + '" y2="' + pin.y + '"></line>'
+          + '<circle cx="' + pin.x + '" cy="' + pin.y + '" r="7"></circle>';
+      });
+      labels += '<div class="bm-print-label" style="left:' + (label.x / W * 100)
+        + '%;top:' + (label.y / H * 100) + '%">' + escapeHtml(text) + '</div>';
+    });
+    return '<div class="bm-print-matkey">' + imageHtml
+      + '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + svg + '</svg>'
+      + labels + '</div>';
+  }
+
+  function bmCalloutLabelTextForVariant(callout, variant) {
+    const row = bmRowById(callout.rowId);
+    if (!row) return '? deleted BOM row';
+    const base = bmRowBase(callout.rowId, variant);
+    return (base || '?') + '. ' + (bmShortLabel(row.cells.description) || '(empty)');
+  }
+
+  function bmRenderPrintRow(row, seq, colorways) {
+    const cells = BM_CELL_FIELDS.map(f => '<td>' + escapeHtml(row.cells[f] || '') + '</td>').join('');
+    const photo = '<td class="bm-photo-cell">'
+      + (row.photo && row.photo.dataURL ? '<img src="' + row.photo.dataURL + '" alt="">' : '')
+      + '</td>';
+    const cw = colorways.map(c => '<td>' + escapeHtml(bmCwValue(row, c)) + '</td>').join('');
+    return '<tr><td class="bm-num">' + seq + '</td>' + cells + photo + cw + '</tr>';
+  }
+
+  function bmRenderRow(row, seq, colorways) {
+    // Editable content lives in an inner span (reference structure): the ▾
+    // suggestion button is a plain sibling of the span, so it can never be
+    // typed over or swallowed into the cell's textContent.
+    const cells = BM_CELL_FIELDS.map(f => {
+      const suggestable = BM_SUGGESTABLE_FIELDS.indexOf(f) !== -1;
+      return '<td' + (suggestable ? ' class="bm-sugg"' : '') + '>'
+        + '<span contenteditable spellcheck="false" data-row="' + row.id + '" data-cell="' + f + '">'
+        + escapeHtml(row.cells[f] || '') + '</span>'
+        + (suggestable
+          ? '<button type="button" class="bm-dd" data-bom-dd="' + row.id + '|' + f
+            + '" tabindex="-1" title="Suggestions from the material library — pick by hand, never auto-filled"></button>'
+          : '')
+        + '</td>';
+    }).join('');
+    const photoCell = '<td class="bm-photo-cell"><button type="button" class="bm-photo-trigger" data-bom-photo="'
+      + row.id + '" title="Material photo — upload or paste an image">'
+      + (row.photo && row.photo.dataURL ? '<img src="' + row.photo.dataURL + '" alt="">' : '+')
+      + '</button></td>';
+    const cw = colorways.map(c =>
+      '<td contenteditable spellcheck="false" data-row="' + row.id + '" data-cw="' + escapeHtml(c.col) + '">'
+      + escapeHtml(bmCwValue(row, c)) + '</td>').join('');
+    const scope = row.scope || 'BOTH';
+    const act = '<td class="act">'
+      + '<button type="button" data-row="' + row.id + '" data-bom-mk title="Place this row&#39;s numbered callout on the Material Key">&#8853;</button>'
+      + '<button type="button" data-row="' + row.id + '" data-bom-split title="Split into a size pair (.1/.2)">&#9112;</button>'
+      + '<button type="button" data-row="' + row.id + '" data-bom-rm title="Delete row">&times;</button>'
+      + '<select data-row="' + row.id + '" data-scope aria-label="Scope" title="Which sheet prints this row">'
+      + ['BOTH', 'SOLID', 'LACE'].map(s =>
+        '<option value="' + s + '"' + (scope === s ? ' selected' : '') + '>' + s + '</option>').join('')
+      + '</select></td>';
+    const selectedCls = row.id === bmSelectedRowId ? ' class="bm-row-selected"' : '';
+    return '<tr data-bom-row="' + row.id + '"' + selectedCls + '>'
+      + '<td class="bm-num">' + seq + '</td>' + cells + photoCell + cw + act + '</tr>';
+  }
+
+  function bmRenderMaterialPanel() {
+    const empty = document.getElementById('bomMatEmpty');
+    const panel = document.getElementById('bomMatPanel');
+    if (!empty || !panel) return;
+    const row = bmSelectedRowId ? bmRowById(bmSelectedRowId) : null;
+    if (!row) {
+      empty.hidden = false;
+      panel.hidden = true;
+      return;
+    }
+    empty.hidden = true;
+    panel.hidden = false;
+    const label = document.getElementById('bomMatRowLabel');
+    if (label) {
+      const seq = bmRowSeq(row.id, bmVariant);
+      label.textContent = (seq ? seq + '. ' : '') + (row.cells.description || '(empty description)');
+    }
+    bmRenderMaterialList();
+  }
+
+  function bmRenderMaterialList() {
+    const box = document.getElementById('bomMatList');
+    if (!box) return;
+    const tokens = bmSearchText.toLowerCase().split(/\s+/).filter(Boolean);
+    const hits = tokens.length
+      ? BOM_MATERIAL_LIBRARY.filter(m => bmMaterialMatches(m, tokens))
+      : BOM_MATERIAL_LIBRARY;
+    bmMaterialHits = hits.slice(0, 60);
+    box.innerHTML = bmMaterialHits.map((m, i) =>
+      '<button type="button" data-bom-mat="' + i + '">' + escapeHtml(m.name)
+      + '<span class="bm-mat-section">' + escapeHtml(m.section) + '</span></button>').join('')
+      || '<div class="bm-mat-empty">No material matches — type your own description in the row</div>';
+  }
+
+  function bmDrawCanvas() {
+    const canvas = document.getElementById('bomMatkeyCanvas');
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    bmDrawCanvasInto(canvas, rect.width, rect.height, dpr);
+  }
+
+  // Draw the active variant's Material Key (images + callouts) into any
+  // canvas at a given CSS size and pixel scale. Extracted from bmDrawCanvas
+  // (US-079) so the tech-pack Excel export can render a chosen variant
+  // offscreen through the same drawing code the live Material Key uses.
+  function bmDrawCanvasInto(canvas, cssWidth, cssHeight, pixelScale) {
+    const w = Math.max(1, Math.round(cssWidth * pixelScale));
+    const h = Math.max(1, Math.round(cssHeight * pixelScale));
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(pixelScale, 0, 0, pixelScale, 0, 0);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    const images = bmVariantImages();
+    if (!images.length) {
+      ctx.fillStyle = '#8a8f9a';
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Paste, drop, or add images to this ' + bmVariant.toUpperCase() + ' Material Key.', cssWidth / 2, cssHeight / 2);
+      bmCanvasView = { offX: cssWidth / 2, offY: cssHeight / 2, scale: 1 };
+      return;
+    }
+
+    const bounds = bmImageBounds();
+    const pad = 40;
+    const scale = Math.min(
+      (cssWidth - pad * 2) / bounds.width,
+      (cssHeight - pad * 2) / bounds.height,
+      4
+    );
+    const offX = (cssWidth - bounds.width * scale) / 2 - bounds.x * scale;
+    const offY = (cssHeight - bounds.height * scale) / 2 - bounds.y * scale;
+    bmCanvasView = { offX, offY, scale };
+
+    ctx.save();
+    ctx.translate(offX, offY);
+    ctx.scale(scale, scale);
+    images.forEach(image => {
+      const img = bmImageRuntime(image.id);
+      if (img) ctx.drawImage(img, image.x, image.y, image.width, image.height);
+      if (image.id === bmSelectedImageId) {
+        ctx.strokeStyle = '#356dff';
+        ctx.lineWidth = 2 / scale;
+        ctx.strokeRect(image.x, image.y, image.width, image.height);
+      }
+    });
+    ctx.restore();
+
+    bmVisibleCallouts().forEach(c => bmDrawCallout(ctx, c, c.id === bmSelectedCalloutId));
+  }
+
+  // Offscreen render of ONE variant's Material Key for the tech-pack Excel
+  // export (US-079). Swaps the module view state so the shared draw code
+  // targets the requested variant with no selection chrome, and restores it
+  // in finally — bmCanvasView is the live canvas's hit-test mapping and must
+  // never be left pointing at the offscreen render.
+  function bmRenderMatkeyToCanvas(variant, cssWidth, cssHeight, pixelScale) {
+    const saved = {
+      variant: bmVariant, callout: bmSelectedCalloutId,
+      image: bmSelectedImageId, view: bmCanvasView,
+    };
+    const canvas = document.createElement('canvas');
+    try {
+      bmVariant = bmVariantKey(variant);
+      bmSelectedCalloutId = null;
+      bmSelectedImageId = null;
+      bmDrawCanvasInto(canvas, cssWidth, cssHeight, pixelScale || 1);
+    } finally {
+      bmVariant = saved.variant;
+      bmSelectedCalloutId = saved.callout;
+      bmSelectedImageId = saved.image;
+      bmCanvasView = saved.view;
+    }
+    return canvas;
+  }
+
+  function bmLabelBox(ctx, label, text, isSelected) {
+    ctx.font = (isSelected ? 'bold ' : '') + '12px sans-serif';
+    const w = ctx.measureText(text).width;
+    return { x: label.x - 4, y: label.y - 9, width: w + 8, height: 18 };
+  }
+
+  function bmEdgeToward(box, ax, ay) {
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    const dx = ax - cx, dy = ay - cy;
+    if (Math.abs(dx) < box.width / 2 && Math.abs(dy) < box.height / 2) return null;
+    const tx = dx !== 0 ? (box.width / 2) / Math.abs(dx) : 1e9;
+    const ty = dy !== 0 ? (box.height / 2) / Math.abs(dy) : 1e9;
+    const t = Math.min(tx, ty);
+    return { x: cx + dx * t, y: cy + dy * t };
+  }
+
+  function bmDrawArrowHead(ctx, from, to, color) {
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(to.x - BM_ARROW_SIZE * Math.cos(angle - Math.PI / 6), to.y - BM_ARROW_SIZE * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(to.x - BM_ARROW_SIZE * Math.cos(angle + Math.PI / 6), to.y - BM_ARROW_SIZE * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function bmDrawCallout(ctx, c, isSelected) {
+    const im = bmImageById(c.imageId);
+    if (!im) return;
+    const label = bmWorldToCanvas(bmWorldOf(im, c.textPos));
+    const orphan = !bmRowById(c.rowId);
+    const color = orphan ? BM_ORPHAN_COLOR : BM_CALLOUT_COLOR;
+    const text = bmCalloutLabelText(c);
+    const box = bmLabelBox(ctx, label, text, isSelected);
+    const targets = c.targets || [];
+    const seq = bmRowBase(c.rowId, bmVariant);
+
+    ctx.save();
+    targets.forEach((t, i) => {
+      const pin = bmWorldToCanvas(bmWorldOf(im, t));
+      const edge = bmEdgeToward(box, pin.x, pin.y);
+      const from = edge || { x: label.x, y: label.y };
+      ctx.strokeStyle = color;
+      ctx.lineWidth = isSelected ? 2.5 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(pin.x, pin.y);
+      ctx.stroke();
+      bmDrawArrowHead(ctx, from, pin, color);
+      if (i === 0) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(pin.x, pin.y, BM_PIN_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(seq || '?'), pin.x, pin.y + 0.5);
+      } else {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(pin.x, pin.y, BM_ANCHOR_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    });
+
+    ctx.font = (isSelected ? 'bold ' : '') + '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    if (isSelected) {
+      ctx.strokeStyle = color;
+      ctx.setLineDash([3, 2]);
+      ctx.strokeRect(box.x, box.y, box.width, box.height);
+      ctx.setLineDash([]);
+    }
+    ctx.fillStyle = orphan ? BM_ORPHAN_COLOR : '#111';
+    ctx.fillText(text, label.x, label.y);
+    ctx.restore();
+  }
+
+  function bmRenderCalloutSidePanel() {
+    const empty = document.getElementById('bomMkSideEmpty');
+    const panel = document.getElementById('bomMkSideCallout');
+    if (!empty || !panel) return;
+    const c = bmSelectedCallout();
+    if (!c) {
+      empty.hidden = false;
+      panel.hidden = true;
+      return;
+    }
+    empty.hidden = true;
+    panel.hidden = false;
+    const seqEl = document.getElementById('bomMkSideSeq');
+    if (seqEl) seqEl.textContent = String(bmRowSeq(c.rowId, bmVariant) || '?');
+    const rowSelect = document.getElementById('bomMkRowSelect');
+    if (rowSelect && rowSelect !== document.activeElement) {
+      const rows = bmVisibleRows(bmVariant);
+      const orphan = !rows.some(r => r.id === c.rowId);
+      rowSelect.innerHTML = (orphan
+        ? '<option value="" selected disabled>? deleted BOM row — pick a row to relink</option>'
+        : '')
+        + rows.map(r => {
+          const seq = bmRowSeq(r.id, bmVariant);
+          const occupied = bmCalloutForRow(r.id, bmVariant);
+          const disabled = occupied && occupied.id !== c.id;
+          return '<option value="' + r.id + '"' + (!orphan && r.id === c.rowId ? ' selected' : '')
+            + (disabled ? ' disabled' : '') + '>'
+            + seq + '. ' + escapeHtml(r.cells.description || '(empty)') + '</option>';
+        }).join('');
+    }
+  }
+
+  /* ---- Wiring --------------------------------------------------------------- */
+  // Page open/close belongs to page-nav.js's setActivePage('bom' | 'board' |
+  // 'mainpage' | 'construction') — the BOM page is a peer page, not a modal
+  // this file owns the visibility of.
+
+  function bmOnPointerDown(e) {
+    if (!state.bom) return;
+    const canvas = document.getElementById('bomMatkeyCanvas');
+    if (!canvas) return;
+    const pt = bmCanvasPointFromEvent(e, canvas);
+    if (bmTool === 'callout') { bmCreateCalloutAt(pt); return; }
+    if (bmTool === 'leader') { bmAddArrowAt(pt); return; }
+    const hit = bmHitTest(pt);
+    if (hit) {
+      bmSelectedCalloutId = hit.callout.id;
+      bmSelectedRowId = hit.callout.rowId;
+      bmSelectedImageId = null;
+      bmDrag = hit.part === 'line' ? null
+        : { callout: hit.callout, part: hit.part, anchorIndex: hit.anchorIndex, imageRec: hit.imageRec };
+      renderBom();
+      e.preventDefault();
+      return;
+    }
+    const image = bmImageAt(pt);
+    if (image) {
+      bmSelectedCalloutId = null;
+      bmSelectedImageId = image.id;
+      bmDrag = {
+        part: 'image', imageRec: image,
+        startX: pt.x, startY: pt.y, originX: image.x, originY: image.y,
+      };
+      renderBom();
+      e.preventDefault();
+      return;
+    }
+    bmSelectedCalloutId = null;
+    bmSelectedImageId = null;
+    renderBom();
+  }
+
+  function bmOnPointerMove(e) {
+    if (!bmDrag) return;
+    const canvas = document.getElementById('bomMatkeyCanvas');
+    if (!canvas) return;
+    const pt = bmCanvasPointFromEvent(e, canvas);
+    if (bmDrag.part === 'image') {
+      if (!bmDrag.imageRec.locked) {
+        bmDrag.imageRec.x = bmDrag.originX + pt.x - bmDrag.startX;
+        bmDrag.imageRec.y = bmDrag.originY + pt.y - bmDrag.startY;
+      }
+    } else {
+      const norm = bmNormalize(bmDrag.imageRec, pt);
+      if (bmDrag.part === 'anchor') bmDrag.callout.targets[bmDrag.anchorIndex] = norm;
+      else bmDrag.callout.textPos = norm;
+    }
+    bmDrawCanvas();
+  }
+
+  function bmOnPointerUp() {
+    if (!bmDrag) return;
+    bmDrag = null;
+    pushHistoryIfChanged();
+  }
+
+  function bmOnDoubleClick(e) {
+    if (bmTool !== 'select') return;
+    const canvas = document.getElementById('bomMatkeyCanvas');
+    if (!canvas) return;
+    bmDeleteAnchorAt(bmCanvasPointFromEvent(e, canvas));
+  }
+
+  function initBom() {
+    ensureBom();
+    const page = document.getElementById('bomPage');
+    if (!page) return;
+
+    document.querySelectorAll('[data-bom-variant]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const v = btn.dataset.bomVariant;
+        if (v !== 'solid' && v !== 'lace') return;
+        bmVariant = v;
+        bmCloseDd();
+        bmSelectedRowId = null;
+        bmSelectedCalloutId = null;
+        bmSelectedImageId = null;
+        bmSetTool('select');
+        bmSyncVariantTabs();
+        renderBom();
+      });
+    });
+
+    const selectToolBtn = document.getElementById('bomSelectToolBtn');
+    if (selectToolBtn) selectToolBtn.addEventListener('click', () => {
+      bmSetTool('select');
+      showToast('Select tool active');
+    });
+
+    const addCalloutBtn = document.getElementById('bomAddCalloutBtn');
+    if (addCalloutBtn) {
+      addCalloutBtn.addEventListener('click', () => {
+        if (bmTool === 'callout') {
+          bmSetTool('select');
+          showToast('Select tool active');
+          return;
+        }
+        bmStartCalloutTool();
+      });
+    }
+
+    const addArrowBtn = document.getElementById('bomAddArrowBtn');
+    if (addArrowBtn) {
+      addArrowBtn.addEventListener('click', () => {
+        if (!bmSelectedCallout()) { showToast('Select a callout first'); return; }
+        if (bmTool === 'leader') {
+          bmSetTool('select');
+          showToast('Select tool active');
+          return;
+        }
+        bmSetTool('leader');
+        showToast('Add Leaders · click multiple targets; Select/Esc finishes');
+      });
+    }
+
+    const deleteCalloutBtn = document.getElementById('bomDeleteCalloutBtn');
+    if (deleteCalloutBtn) deleteCalloutBtn.addEventListener('click', bmDeleteSelectedCallout);
+
+    const imageInput = document.getElementById('bomImageFileInput');
+    const addImageBtn = document.getElementById('bomAddImageBtn');
+    if (addImageBtn && imageInput) addImageBtn.addEventListener('click', () => imageInput.click());
+    if (imageInput) imageInput.addEventListener('change', async () => {
+      const files = Array.from(imageInput.files || []);
+      imageInput.value = '';
+      await bmAddImageFiles(files, bmVariant);
+    });
+    const pasteImageBtn = document.getElementById('bomPasteImageBtn');
+    if (pasteImageBtn) pasteImageBtn.addEventListener('click', async () => {
+      if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+        showToast('Use Cmd/Ctrl+V while Material Key is open.');
+        return;
+      }
+      try {
+        const items = await navigator.clipboard.read();
+        const dataURLs = [];
+        for (const item of items) {
+          const type = item.types.find(t => /^image\//i.test(t));
+          if (type) dataURLs.push(await blobToDataURL(await item.getType(type)));
+        }
+        if (dataURLs.length) await bmAddImagesFromDataURLs(dataURLs, bmVariant);
+        else showToast('Clipboard has no image.');
+      } catch (_) {
+        showToast('Clipboard access was blocked. Use Cmd/Ctrl+V instead.');
+      }
+    });
+    const deleteImageBtn = document.getElementById('bomDeleteImageBtn');
+    if (deleteImageBtn) deleteImageBtn.addEventListener('click', bmDeleteSelectedImage);
+    const zoomOutImageBtn = document.getElementById('bomImageZoomOutBtn');
+    if (zoomOutImageBtn) zoomOutImageBtn.addEventListener('click', () => bmZoomSelectedImage(0.9));
+    const zoomInImageBtn = document.getElementById('bomImageZoomInBtn');
+    if (zoomInImageBtn) zoomInImageBtn.addEventListener('click', () => bmZoomSelectedImage(1.1));
+    const fitImagesBtn = document.getElementById('bomFitImagesBtn');
+    if (fitImagesBtn) fitImagesBtn.addEventListener('click', () => {
+      if (!bmVariantImages().length) return;
+      bmReflowImages();
+      bmSelectedImageId = null;
+      renderBom();
+      pushHistoryIfChanged();
+    });
+
+    const rowSelect = document.getElementById('bomMkRowSelect');
+    if (rowSelect) {
+      rowSelect.addEventListener('change', () => {
+        const c = bmSelectedCallout();
+        if (!c) return;
+        const rowId = +rowSelect.value;
+        const occupied = bmCalloutForRow(rowId, bmVariant);
+        if (occupied && occupied.id !== c.id) {
+          showToast('That BOM row already owns a callout on this variant');
+          renderBom();
+          return;
+        }
+        c.rowId = rowId;
+        bmSelectedRowId = rowId;
+        renderBom();
+        pushHistoryIfChanged();
+      });
+    }
+
+    const canvas = document.getElementById('bomMatkeyCanvas');
+    if (canvas) {
+      canvas.addEventListener('mousedown', bmOnPointerDown);
+      canvas.addEventListener('dblclick', bmOnDoubleClick);
+      const filesDragging = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+      canvas.addEventListener('dragover', e => {
+        if (!filesDragging(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        canvas.classList.add('bm-drag-over');
+      });
+      canvas.addEventListener('dragleave', () => canvas.classList.remove('bm-drag-over'));
+      canvas.addEventListener('drop', async e => {
+        if (!e.dataTransfer) return;
+        e.preventDefault();
+        canvas.classList.remove('bm-drag-over');
+        await bmAddImageFiles(e.dataTransfer.files, bmVariant);
+      });
+    }
+    window.addEventListener('mousemove', bmOnPointerMove);
+    window.addEventListener('mouseup', bmOnPointerUp);
+    window.addEventListener('resize', () => {
+      if (state.activePage === 'bom') bmDrawCanvas();
+    });
+
+    const searchEl = document.getElementById('bomMatSearch');
+    if (searchEl) {
+      searchEl.addEventListener('input', () => {
+        bmSearchText = searchEl.value;
+        bmRenderMaterialList();
+      });
+      searchEl.addEventListener('keydown', e => {
+        if (e.key !== 'Tab') e.stopPropagation();
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        if (bmMaterialHits[0]) bmApplyMaterialByIndex(0);
+      });
+    }
+
+    const matList = document.getElementById('bomMatList');
+    if (matList) {
+      matList.addEventListener('click', e => {
+        const btn = e.target.closest('[data-bom-mat]');
+        if (btn) bmApplyMaterialByIndex(+btn.dataset.bomMat);
+      });
+    }
+
+    // The floating ▾ menu is parked on <body>; anything that moves the cell
+    // out from under it (outside click, scroll, tab/variant switches) closes
+    // it rather than leaving it hovering over stale coordinates.
+    document.addEventListener('click', e => {
+      if (bmDdOpenFor && !e.target.closest('#bomDdMenu,[data-bom-dd]')) bmCloseDd();
+      if (bmPhotoOpenRow != null && !e.target.closest('#bomPhotoMenu,[data-bom-photo]')) bmClosePhotoMenu();
+    });
+    window.addEventListener('scroll', () => {
+      if (bmDdOpenFor) bmCloseDd();
+      if (bmPhotoOpenRow != null) bmClosePhotoMenu();
+    }, true);
+
+    // Delegated on the page element, which survives every table re-render —
+    // a listener on a cell/row/button would die on the next renderBom().
+    page.addEventListener('input', e => {
+      const cell = e.target.closest('[data-cell]');
+      if (cell) {
+        const row = bmRowById(+cell.dataset.row);
+        if (row) {
+          row.cells[cell.dataset.cell] = cell.textContent;
+          if (cell.dataset.cell === 'description') {
+            bmDrawCanvas();
+            bmRenderPrintSheets();
+          }
+        }
+        return;
+      }
+      const cw = e.target.closest('[data-cw]');
+      if (cw) {
+        const row = bmRowById(+cw.dataset.row);
+        if (row) {
+          if (!row.cwOverride || typeof row.cwOverride !== 'object') row.cwOverride = {};
+          row.cwOverride[cw.dataset.cw] = cw.textContent;
+        }
+      }
+    });
+
+    // One history entry per cell, not per keystroke: mutate on input, push
+    // on blur, same pattern as main-page.js's contenteditable fields.
+    page.addEventListener('focusout', e => {
+      if (e.target.closest('[contenteditable]')) pushHistoryIfChanged();
+    });
+
+    page.addEventListener('change', e => {
+      const scopeSel = e.target.closest('[data-scope]');
+      if (!scopeSel) return;
+      const row = bmRowById(+scopeSel.dataset.row);
+      if (!row) return;
+      row.scope = scopeSel.value;
+      const allowed = row.scope === 'BOTH'
+        ? new Set(['solid', 'lace'])
+        : new Set([row.scope.toLowerCase()]);
+      const removed = state.bom.callouts.filter(c => c.rowId === row.id && !allowed.has(bmVariantKey(c.variant)));
+      if (removed.length) {
+        const removedIds = new Set(removed.map(c => c.id));
+        state.bom.callouts = state.bom.callouts.filter(c => !removedIds.has(c.id));
+        if (removedIds.has(bmSelectedCalloutId)) bmSelectedCalloutId = null;
+        if (bmTool === 'leader' && !bmSelectedCallout()) bmTool = 'select';
+      }
+      renderBom();
+      pushHistoryIfChanged();
+      if (removed.length) showToast('Scope updated · removed ' + removed.length + ' callout(s) from excluded variant(s) · Ctrl/Cmd+Z to undo');
+    });
+
+    page.addEventListener('click', e => {
+      const dd = e.target.closest('[data-bom-dd]');
+      if (dd) {
+        if (bmDdOpenFor === dd.dataset.bomDd) bmCloseDd();
+        else bmOpenDd(dd);
+        return;
+      }
+      const photoBtn = e.target.closest('[data-bom-photo]');
+      if (photoBtn) {
+        if (bmPhotoOpenRow === +photoBtn.dataset.bomPhoto) bmClosePhotoMenu();
+        else bmOpenPhotoMenu(photoBtn);
+        return;
+      }
+      const addRow = e.target.closest('[data-bom-add]');
+      if (addRow) { bmAddRow(addRow.dataset.bomAdd); return; }
+      const mk = e.target.closest('[data-bom-mk]');
+      if (mk) { bmArmRowCallout(+mk.dataset.row); return; }
+      const split = e.target.closest('[data-bom-split]');
+      if (split) { bmSplitRow(+split.dataset.row); return; }
+      const rm = e.target.closest('[data-bom-rm]');
+      if (rm) { bmRemoveRow(+rm.dataset.row); return; }
+      const rowEl = e.target.closest('[data-bom-row]');
+      if (rowEl) {
+        const id = +rowEl.dataset.bomRow;
+        if (bmSelectedRowId !== id) {
+          bmSelectedRowId = id;
+          bmSyncSelectedRowClass();
+          bmRenderMaterialPanel();
+        }
+      }
+    });
+
+    document.addEventListener('keydown', e => {
+      if (state.activePage !== 'bom') return;
+      if (e.key === 'Escape') {
+        if (bmDdOpenFor) { bmCloseDd(); return; }
+        if (bmPhotoOpenRow != null) { bmClosePhotoMenu(); return; }
+        if (bmTool !== 'select') { bmSetTool('select'); showToast('Select tool active'); return; }
+        if (bmSelectedCalloutId !== null) { bmSelectedCalloutId = null; renderBom(); return; }
+        if (bmSelectedImageId !== null) { bmSelectedImageId = null; renderBom(); return; }
+        setActivePage('board');
+        return;
+      }
+      if (e.key === 'Backspace' && bmSelectedCalloutId !== null) {
+        const active = document.activeElement;
+        const inField = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable);
+        if (inField) return;
+        e.preventDefault();
+        bmDeleteSelectedCallout();
+      }
+      if ((e.key === 'Backspace' || e.key === 'Delete') && bmSelectedImageId !== null) {
+        const active = document.activeElement;
+        const inField = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable);
+        if (inField) return;
+        e.preventDefault();
+        bmDeleteSelectedImage();
+      }
+    }, true);
+
+    bmSyncVariantTabs();
+    renderBom();
+  }
+
+  // ---- src/ui/preview-page.js ----
+// Preview & Export page (US-079, ADR 0046). Source part for app.js.
+// Run `npm run build` after editing.
+//
+// Fifth tech-pack tab: the whole tech pack as A4 sheets stacked vertically
+// in the fixed contract order — MAIN PAGE (portrait), CONSTRUCTION SOLID and
+// LACE (landscape), BOM-SOLID and BOM-LACE (portrait), POM / How to Measure
+// (landscape). Each sheet has an include checkbox persisted in the project
+// (state.preview.enabledPages); "Export Tech Pack (.xlsx)" writes only the
+// enabled sheets as one multi-sheet workbook (see export-xlsx.js).
+//
+// Preview fidelity is CONTENT on paper, not an Excel-pixel simulation
+// (ADR 0046 §4): cell-based sheets render as paper-styled DOM of the same
+// live state the workbook reads; the two Construction sheets are drawn by
+// ccRenderSheetToCanvas — the same function whose output the workbook embeds.
+
+  const PV_SHEETS = [
+    { key: 'mainpage', label: 'MAIN PAGE', orient: 'portrait' },
+    { key: 'construction-solid', label: 'CONSTRUCTION - SOLID', orient: 'landscape' },
+    { key: 'construction-lace', label: 'CONSTRUCTION - LACE', orient: 'landscape' },
+    { key: 'bom-solid', label: 'BOM-SOLID', orient: 'portrait' },
+    { key: 'bom-lace', label: 'BOM-LACE', orient: 'portrait' },
+    { key: 'pom', label: 'POM / HOW TO MEASURE', orient: 'landscape' },
+  ];
+
+  // A4 at 96 dpi; .pv-paper uses these as CSS width/min-height.
+  const PV_PAPER = { portrait: { w: 794, h: 1123 }, landscape: { w: 1123, h: 794 } };
+  const PV_PAPER_PAD = 28;
+
+  // Natural content widths wider than the paper: the fit transform in
+  // pvFitPaper scales these down so the sheet is always fully visible.
+  // BOM sheets keep the reference sheet's 1450px+ factory table; the MAIN
+  // PAGE three-column layout is authored around ~1140px.
+  const PV_NATURAL_WIDTH = { 'mainpage': 1140, 'bom-solid': 1502, 'bom-lace': 1502 };
+
+  function ensurePreviewPage() {
+    const pv = state.preview && typeof state.preview === 'object'
+      ? state.preview
+      : (state.preview = {});
+    if (!pv.enabledPages || typeof pv.enabledPages !== 'object' || Array.isArray(pv.enabledPages)) {
+      pv.enabledPages = {};
+    }
+    // Missing keys default to enabled — a legacy project (or a new sheet key
+    // added later) previews complete rather than silently dropping pages.
+    PV_SHEETS.forEach(sheet => {
+      if (typeof pv.enabledPages[sheet.key] !== 'boolean') pv.enabledPages[sheet.key] = true;
+    });
+    return pv;
+  }
+
+  function pvEnabledSheets() {
+    const pv = ensurePreviewPage();
+    return PV_SHEETS.filter(sheet => pv.enabledPages[sheet.key]);
+  }
+
+  /* ---- Per-sheet content builders ---------------------------------------- */
+
+  function pvMainPageHtml() {
+    const mp = state.mainPage || {};
+    const fields = mp.fields || [];
+    const kvRows = fields.map(f => {
+      const isBrand = /^\s*Brand\b/i.test(f.label || '');
+      /* US-080: the breakdown row prints as its three captioned sub-cells,
+         the same shape the page shows — the composite `value` is for readers
+         that have no room for a sub-grid (the worksheet has its own rows). */
+      if (f.parts && /Style No Breakdown/i.test(f.label || '')) {
+        return '<tr class="mp-bd-headrow"><th class="mp-bd-blank"></th><td class="mp-bdhead">'
+          + MP_BREAKDOWN_PARTS.map(p => '<span>' + escapeHtml(p.head) + '</span>').join('')
+          + '</td></tr>'
+          + '<tr><th>' + escapeHtml(f.label || '') + '</th><td class="mp-bdcell">'
+          + MP_BREAKDOWN_PARTS.map(p => '<span class="mp-bd-sub">'
+            + escapeHtml(String(f.parts[p.key] || '')) + '</span>').join('')
+          + '</td></tr>';
+      }
+      const value = isBrand
+        ? '<strong>' + escapeHtml(f.value || '') + '</strong>'
+        : escapeHtml(f.value || '');
+      return '<tr><th>' + escapeHtml(f.label || '') + '</th><td>' + value + '</td></tr>';
+    }).join('');
+    const cwRows = (mp.colorways || []).map((c, i) =>
+      '<tr><th>' + escapeHtml(c.col || ('COL ' + (i + 1))) + '</th><td>'
+      + escapeHtml(c.value || '') + '</td></tr>').join('');
+    const versionPanel = (title, variant) =>
+      '<div class="mp-vpanel"><div class="mp-vhead">' + title + '</div>'
+      + '<div class="mp-sketchrow">' + mpSketchRowHtml(variant, false) + '</div>'
+      + '<table class="mp-cwx"><tbody>' + cwRows + '</tbody></table></div>';
+    return '<div class="mp-sheet pv-mp-sheet">'
+      + '<div class="mp-sheethead"><div class="mp-shl">Bra Auto Measure</div>'
+      + '<div class="mp-shm">MAIN PAGE</div>'
+      + '<div class="mp-shr"><span class="mp-draft">DRAFT &middot; all measurements TBC</span></div></div>'
+      + '<div class="mp-cols">'
+      + '<div class="mp-col mp-col-fields"><table class="mp-kv"><tbody>' + kvRows + '</tbody></table>'
+      + (String(mp.provenance || '').trim()
+        ? '<div class="mp-note-label" style="margin-top:10px;">Provenance</div>'
+          + '<div class="mp-note">' + escapeHtml(mp.provenance) + '</div>'
+        : '')
+      + '</div>'
+      + '<div class="mp-col mp-col-version">' + versionPanel('Lace Version', 'lace') + '</div>'
+      + '<div class="mp-col mp-col-version">' + versionPanel('Solid Version', 'solid') + '</div>'
+      + '</div></div>';
+  }
+
+  function pvSpecTableHtml() {
+    const annByPom = new Map();
+    for (const ann of state.annotations) annByPom.set(getLabelText(ann), ann);
+    const pomKeys = specVisiblePomKeys(annByPom);
+    const layout = selectedSizeRun();
+    const fullIndexByLabel = new Map(SPEC_SIZE_RUN.map((c, i) => [c.label, i]));
+    const head = '<tr><th>POM</th><th>Description - English</th>'
+      + '<th>Description - Chinese</th><th>TOL</th>'
+      + layout.map(col => '<th>' + escapeHtml(col.label) + '</th>').join('') + '</tr>';
+    const rows = pomKeys.map(key => {
+      const spec = getPomSpec(key);
+      const run = buildFullSizeRun(key, annByPom);
+      return '<tr><td class="pv-num">' + escapeHtml(key) + '</td>'
+        + '<td>' + escapeHtml(spec.en) + '</td>'
+        + '<td>' + escapeHtml(spec.zh) + '</td>'
+        + '<td class="pv-num">'
+        + (spec.tol ? escapeHtml(inchesToFractionOrDecimal(spec.tol)) : '') + '</td>'
+        + layout.map(col => {
+          const cell = run[fullIndexByLabel.get(col.label)];
+          return '<td class="pv-num">'
+            + (cell && cell.value != null ? escapeHtml(specNumberText(cell.value)) : '')
+            + '</td>';
+        }).join('') + '</tr>';
+    }).join('');
+    return '<table class="pv-spec"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function pvPomSheetInto(inner) {
+    const styleLabel = (state.styleId || '').trim() || 'Untitled';
+    inner.innerHTML = '<div class="bm-band bm-band-big">Measurement Spec &middot; '
+      + escapeHtml(styleLabel) + '</div>';
+    const bounds = getContentBounds();
+    if (bounds) {
+      const canvas = renderBoardRegionToCanvas(bounds);
+      canvas.className = 'pv-board';
+      inner.appendChild(canvas);
+    } else {
+      const empty = document.createElement('div');
+      empty.className = 'pv-empty';
+      empty.textContent = 'Board is empty — add a sketch and apply POM lines first.';
+      inner.appendChild(empty);
+    }
+    const table = document.createElement('div');
+    table.innerHTML = pvSpecTableHtml();
+    inner.appendChild(table.firstElementChild);
+  }
+
+  function pvFillPaper(sheet) {
+    const paper = document.querySelector('[data-pv-paper="' + sheet.key + '"]');
+    if (!paper) return;
+    const inner = document.createElement('div');
+    inner.className = 'pv-inner';
+    paper.textContent = '';
+    paper.appendChild(inner);
+    if (sheet.key === 'mainpage') {
+      inner.innerHTML = pvMainPageHtml();
+    } else if (sheet.key === 'construction-solid' || sheet.key === 'construction-lace') {
+      const variant = sheet.key.slice('construction-'.length);
+      inner.innerHTML = '<div class="bm-band bm-band-big">Construction &middot; '
+        + variant.toUpperCase() + ' &middot; Working Board</div>';
+      const size = PV_PAPER.landscape;
+      const canvas = ccRenderSheetToCanvas(
+        variant, size.w - PV_PAPER_PAD * 2, size.h - PV_PAPER_PAD * 2 - 38, 2);
+      canvas.className = 'pv-canvas';
+      inner.appendChild(canvas);
+    } else if (sheet.key === 'bom-solid' || sheet.key === 'bom-lace') {
+      inner.innerHTML = bmPrintSheetHtml(sheet.key.slice('bom-'.length));
+    } else if (sheet.key === 'pom') {
+      pvPomSheetInto(inner);
+    }
+    pvFitPaper(paper, sheet);
+  }
+
+  // Content wider than the paper (BOM's 1450px factory table, the MAIN PAGE
+  // three-column layout) is scaled down to fit the page width. transform
+  // does not affect layout height, so the paper gets an explicit height to
+  // avoid clipping tall scaled content while keeping the A4 minimum.
+  function pvFitPaper(paper, sheet) {
+    const inner = paper.firstElementChild;
+    if (!inner) return;
+    const size = PV_PAPER[sheet.orient];
+    const avail = size.w - PV_PAPER_PAD * 2;
+    const natural = PV_NATURAL_WIDTH[sheet.key] || 0;
+    if (natural) inner.style.width = natural + 'px';
+    const contentW = Math.max(inner.scrollWidth, natural);
+    if (contentW > avail) {
+      const scale = avail / contentW;
+      if (!natural) inner.style.width = contentW + 'px';
+      inner.style.transformOrigin = 'top left';
+      inner.style.transform = 'scale(' + scale + ')';
+      paper.style.height = Math.max(size.h, Math.ceil(inner.offsetHeight * scale) + PV_PAPER_PAD * 2) + 'px';
+    } else {
+      paper.style.height = Math.max(size.h, inner.offsetHeight + PV_PAPER_PAD * 2) + 'px';
+    }
+  }
+
+  /* ---- Page rendering ----------------------------------------------------- */
+
+  function pvSyncExportButton() {
+    const btn = document.getElementById('pvExportXlsxBtn');
+    if (!btn) return;
+    const count = pvEnabledSheets().length;
+    btn.disabled = count === 0;
+    btn.textContent = '⬇ Export Tech Pack (.xlsx) — ' + count + '/' + PV_SHEETS.length + ' sheets';
+  }
+
+  function renderPreviewPage() {
+    const host = document.getElementById('pvSheets');
+    if (!host) return;
+    const pv = ensurePreviewPage();
+    if (typeof ensureMainPage === 'function') ensureMainPage();
+    if (typeof ensureConstruction === 'function') ensureConstruction();
+    if (typeof ensureBom === 'function') ensureBom();
+    host.innerHTML = PV_SHEETS.map(sheet => {
+      const on = !!pv.enabledPages[sheet.key];
+      return '<section class="pv-sheet' + (on ? '' : ' pv-off') + '" data-pv-sheet="' + sheet.key + '">'
+        + '<label class="pv-sheet-head">'
+        + '<input type="checkbox" data-pv-toggle="' + sheet.key + '"' + (on ? ' checked' : '') + '>'
+        + '<span class="pv-sheet-name">' + escapeHtml(sheet.label) + '</span>'
+        + '<span class="pv-orient">A4 ' + sheet.orient + '</span></label>'
+        + '<div class="pv-paper pv-' + sheet.orient + '" data-pv-paper="' + sheet.key + '"></div>'
+        + '</section>';
+    }).join('');
+    PV_SHEETS.forEach(sheet => pvFillPaper(sheet));
+    pvSyncExportButton();
+  }
+
+  function initPreviewPage() {
+    // Materialize state.preview before seedHistory (same ordering contract
+    // as initMainPage): the first history fingerprint must already contain
+    // the default enabledPages, or the first tab visit would fabricate a
+    // spurious undo step.
+    ensurePreviewPage();
+    const page = document.getElementById('previewPage');
+    if (!page) return;
+    page.addEventListener('change', (e) => {
+      const box = e.target.closest('[data-pv-toggle]');
+      if (!box) return;
+      const pv = ensurePreviewPage();
+      pv.enabledPages[box.dataset.pvToggle] = box.checked;
+      const section = page.querySelector('[data-pv-sheet="' + box.dataset.pvToggle + '"]');
+      if (section) section.classList.toggle('pv-off', !box.checked);
+      pvSyncExportButton();
+      pushHistoryIfChanged();
+    });
+    const btn = document.getElementById('pvExportXlsxBtn');
+    if (btn) btn.addEventListener('click', () => { void exportTechPackXlsx(); });
+  }
+
+  // ---- src/ui/page-nav.js ----
+// Page navigation shell (US-069, ADR 0038). Source part for app.js.
+//
+// The tool now hosts more than one page of the tech pack: the Board (sketch
+// photos + POM lines, the original single-page app), the MAIN PAGE sheet
+// (US-068), and Construction annotation (US-070). They are peers — tabs on
+// the shared toolbar, not an app-plus-popup — because all are pages of the
+// same tech pack output, not a document you open over the app and dismiss.
+//
+// TECH_PACK_PAGES is the only place a page is registered. Adding a future
+// tech-pack page means adding one entry here and a content element for it to
+// show/hide; the tab bar, the show/hide toggle, and the print gating all
+// read the registry generically — proven three times now by MAIN PAGE,
+// Construction, and BOM (US-072) landing without touching this file's shape.
+//
+// state.activePage is session-only (like state.selectedImageIds) — which
+// page is showing is a view concern, not project data, so it is not part of
+// makeSnapshot/buildProjectSnapshot and does not round-trip through undo or
+// a saved project. A reopened project always starts on the Board.
+
+  // Each page names the elements it owns rather than one wrapper, because
+  // the Board page is the original app shell (toolbar groups + statusbar +
+  // canvas), not a single container — wrapping it in one div to get a single
+  // toggle point would mean restructuring the whole existing layout.
+  const TECH_PACK_PAGES = [
+    { id: 'board', label: 'Board', els: ['boardToolbarGroups', 'statusbar', 'workspace'] },
+    { id: 'mainpage', label: 'Main Page', els: ['mainPageOverlay'] },
+    { id: 'construction', label: 'Construction', els: ['constructionPage'] },
+    { id: 'bom', label: 'BOM', els: ['bomPage'] },
+    { id: 'preview', label: 'Preview & Export', els: ['previewPage'] },
+  ];
+
+  function pageEls(page) {
+    return page.els.map(function (idOrClass) {
+      return document.getElementById(idOrClass) || document.querySelector('.' + idOrClass);
+    }).filter(Boolean);
+  }
+
+  function renderPageTabs() {
+    const bar = document.getElementById('pageTabBar');
+    if (!bar) return;
+    bar.innerHTML = TECH_PACK_PAGES.map(function (p) {
+      const active = state.activePage === p.id;
+      return '<button type="button" class="' + (active ? 'active' : '') + '" data-page="' + p.id + '"'
+        + ' role="tab" aria-selected="' + active + '">' + escapeHtml(p.label) + '</button>';
+    }).join('');
+  }
+
+  function setActivePage(id) {
+    if (!TECH_PACK_PAGES.some(function (p) { return p.id === id; })) return;
+    state.activePage = id;
+    TECH_PACK_PAGES.forEach(function (p) {
+      pageEls(p).forEach(function (el) { el.classList.toggle('page-hidden', p.id !== id); });
+    });
+    document.body.classList.toggle('mainpage-open', id === 'mainpage');
+    document.body.classList.toggle('construction-open', id === 'construction');
+    document.body.classList.toggle('bom-open', id === 'bom');
+    document.body.classList.toggle('preview-open', id === 'preview');
+    renderPageTabs();
+    if (id === 'mainpage') {
+      ensureMainPage();
+      renderMainPage();
+    }
+    if (id === 'construction') {
+      ensureConstruction();
+      renderConstruction();
+    }
+    if (id === 'bom') {
+      ensureBom();
+      renderBom();
+    }
+    if (id === 'preview') {
+      ensurePreviewPage();
+      renderPreviewPage();
+    }
+    updateUI();
+  }
+
+  function initPageNav() {
+    state.activePage = 'board';
+    const bar = document.getElementById('pageTabBar');
+    if (bar) {
+      bar.addEventListener('click', function (e) {
+        const btn = e.target.closest('[data-page]');
+        if (btn) setActivePage(btn.dataset.page);
+      });
+    }
+    setActivePage('board');
+  }
+
   // ---- src/ui/bindings.js ----
 // Top-level UI bindings: bindUI() wires the toolbar, dropdowns, file
 // inputs, the canvas, the label editor, and keyboard shortcuts. Tool and
@@ -6501,6 +14414,10 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       gradeRules: clone(state.gradeRules || {}),
       customPoms: clone(state.customPoms || []),
       deletedPomKeys: clone(state.deletedPomKeys || []),
+      mainPage: state.mainPage ? clone(state.mainPage) : null,
+      construction: state.construction ? clone(state.construction) : null,
+      bom: state.bom ? clone(state.bom) : null,
+      preview: state.preview ? clone(state.preview) : null,
     };
   }
 
@@ -6556,6 +14473,14 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     state.gradeRules = migrateGradeRulesV2(snapshot.gradeRules, snapshot.depthRules);
     state.customPoms = clone(snapshot.customPoms || []);
     state.deletedPomKeys = clone(snapshot.deletedPomKeys || []);
+    state.mainPage = snapshot.mainPage ? clone(snapshot.mainPage) : null;
+    if (typeof renderMainPage === 'function') renderMainPage();
+    state.construction = snapshot.construction ? clone(snapshot.construction) : null;
+    if (typeof renderConstruction === 'function') renderConstruction();
+    state.bom = snapshot.bom ? clone(snapshot.bom) : null;
+    if (typeof renderBom === 'function') renderBom();
+    state.preview = snapshot.preview ? clone(snapshot.preview) : null;
+    if (state.activePage === 'preview' && typeof renderPreviewPage === 'function') renderPreviewPage();
     state.editingLabelId = null;
     state.drawSession = null;
     state.eraseSession = null;
@@ -6639,13 +14564,32 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
         customPoms: clone(state.customPoms || []),
         deletedPomKeys: clone(state.deletedPomKeys || []),
         sizeSelection: state.sizeSelection ? clone(state.sizeSelection) : null,
+        // US-068: MAIN PAGE sheet. Additive — files saved before US-068 have
+        // no key and seed a default on open. US-080: the serializer injects
+        // the version-sketch bytes, which live outside state.mainPage.
+        mainPage: (typeof mpSerializeForProject === 'function')
+          ? mpSerializeForProject()
+          : (state.mainPage ? clone(state.mainPage) : null),
+        // US-070: Construction annotation page. Additive — files saved
+        // before US-070 have no key and seed a default on open.
+        construction: (typeof ccSerializeForProject === 'function')
+          ? ccSerializeForProject()
+          : (state.construction ? clone(state.construction) : null),
+        // US-072: BOM page. Additive — files saved before US-072 have no
+        // key and seed a default (empty BOM) on open.
+        bom: (typeof bmSerializeForProject === 'function')
+          ? bmSerializeForProject()
+          : (state.bom ? clone(state.bom) : null),
+        // US-079: Preview & Export page-inclusion checkboxes. Additive —
+        // files saved before US-079 have no key and default to all enabled.
+        preview: state.preview ? clone(state.preview) : null,
       },
     };
   }
 
   function saveProject() {
-    if (!state.annotations.length && !state.images.length) {
-      showToast('Nothing to save yet. Paste an image or draw a line first.');
+    if (typeof hasUnsavedWork === 'function' ? !hasUnsavedWork() : (!state.annotations.length && !state.images.length)) {
+      showToast('Nothing to save yet. Add or edit Board/BOM work first.');
       return;
     }
     if (state.appMode === 'auto' && state.autoMode.draftAnnotations.length > 0) {
@@ -6748,7 +14692,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       return;
     }
 
-    if ((state.annotations.length || state.images.length) &&
+    if ((typeof hasUnsavedWork === 'function' ? hasUnsavedWork() : (state.annotations.length || state.images.length)) &&
         !window.confirm('Open this project? Your current board will be replaced. Save it first if you want to keep it.')) {
       return;
     }
@@ -6840,6 +14784,30 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       state.deletedPomKeys = Array.isArray(s.deletedPomKeys) ? clone(s.deletedPomKeys) : [];
       state.sizeSelection = (s.sizeSelection && typeof s.sizeSelection === 'object')
         ? clone(s.sizeSelection) : null;
+      // US-080: mpLoadProjectState pulls the sketch bytes out into the module
+      // map and leaves state.mainPage byte-free, the way BOM images load.
+      if (typeof mpLoadProjectState === 'function') mpLoadProjectState(s.mainPage);
+      else {
+        state.mainPage = (s.mainPage && typeof s.mainPage === 'object')
+          ? clone(s.mainPage) : null;
+        if (typeof ensureMainPage === 'function') ensureMainPage();
+      }
+      if (typeof renderMainPage === 'function') renderMainPage();
+      if (typeof ccLoadProjectState === 'function') await ccLoadProjectState(s.construction, s.images);
+      else {
+        state.construction = (s.construction && typeof s.construction === 'object')
+          ? clone(s.construction) : null;
+        if (typeof ensureConstruction === 'function') ensureConstruction(s.images);
+      }
+      if (typeof renderConstruction === 'function') renderConstruction();
+      if (typeof bmLoadProjectState === 'function') await bmLoadProjectState(s.bom);
+      else {
+        state.bom = (s.bom && typeof s.bom === 'object') ? clone(s.bom) : null;
+        if (typeof ensureBom === 'function') ensureBom();
+      }
+      if (typeof renderBom === 'function') renderBom();
+      state.preview = (s.preview && typeof s.preview === 'object') ? clone(s.preview) : null;
+      if (typeof ensurePreviewPage === 'function') ensurePreviewPage();
 
       // Images are in place now, so the Auto status chip can resolve
       // ready/idle correctly for the reopened board.
@@ -6918,6 +14886,8 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     if (!state) return false;
     if (state.annotations && state.annotations.length > 0) return true;
     if (state.images && state.images.length > 0) return true;
+    if (typeof hasMeaningfulConstructionWork === 'function' && hasMeaningfulConstructionWork()) return true;
+    if (typeof hasMeaningfulBomWork === 'function' && hasMeaningfulBomWork()) return true;
     if (state.autoMode && state.autoMode.draftAnnotations && state.autoMode.draftAnnotations.length > 0) return true;
     return false;
   }
@@ -6946,6 +14916,24 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       record.snapshot.state.images = record.snapshot.state.images.map((img) => ({
         ...img, dataURL: null,
       }));
+      const bom = record.snapshot.state.bom;
+      if (bom && bom.images) {
+        record.bomImagesStripped = true;
+        ['solid', 'lace'].forEach(variant => {
+          bom.images[variant] = (bom.images[variant] || []).map(image => ({ ...image, dataURL: null }));
+        });
+      }
+      const construction = record.snapshot.state.construction;
+      if (construction && construction.images) {
+        record.constructionImagesStripped = true;
+        ['solid', 'lace'].forEach(sheet => {
+          ['outer', 'inner'].forEach(view => {
+            if (!construction.images[sheet]) return;
+            construction.images[sheet][view] = (construction.images[sheet][view] || [])
+              .map(image => ({ ...image, dataURL: null }));
+          });
+        });
+      }
     }
     if (tryWriteAutosave(record)) return;
     console.warn('[autosave] Could not persist even the annotation-only snapshot; localStorage is full.');
@@ -6992,6 +14980,13 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     const s = record.snapshot.state;
     const anns = Array.isArray(s.annotations) ? s.annotations.length : 0;
     const imgs = Array.isArray(s.images) ? s.images.length : 0;
+    const bomImgs = s.bom && s.bom.images
+      ? (s.bom.images.solid || []).length + (s.bom.images.lace || []).length
+      : 0;
+    const constructionImgs = s.construction && s.construction.images
+      ? ['solid', 'lace'].reduce((sum, sheet) => sum + ['outer', 'inner'].reduce((viewSum, view) =>
+        viewSum + (((s.construction.images[sheet] || {})[view] || []).length), 0), 0)
+      : 0;
     const ageMs = Number.isFinite(record.savedAt) ? Date.now() - record.savedAt : null;
     let when = '';
     if (ageMs != null) {
@@ -7003,6 +14998,8 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     const parts = [];
     if (anns) parts.push(anns + ' line' + (anns === 1 ? '' : 's'));
     if (imgs) parts.push(imgs + ' image' + (imgs === 1 ? '' : 's'));
+    if (bomImgs) parts.push(bomImgs + ' BOM image' + (bomImgs === 1 ? '' : 's'));
+    if (constructionImgs) parts.push(constructionImgs + ' Construction image' + (constructionImgs === 1 ? '' : 's'));
     if (record.imagesStripped) parts.push('image bitmap dropped to fit storage');
     return (parts.join(', ') || 'work in progress') + (when ? ' • saved ' + when : '');
   }
@@ -7018,7 +15015,14 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     if (!record) return;
     const s = record.snapshot && record.snapshot.state;
     const hasContent = s && ((Array.isArray(s.annotations) && s.annotations.length)
-      || (Array.isArray(s.images) && s.images.length));
+      || (Array.isArray(s.images) && s.images.length)
+      || (s.construction && ((s.construction.callouts || []).length
+        || (s.construction.images && ['solid', 'lace'].some(sheet => ['outer', 'inner'].some(view =>
+          ((((s.construction.images[sheet] || {})[view]) || []).length))))
+        || (typeof hasMeaningfulConstructionWork === 'function' && s.construction)))
+      || (s.bom && ((s.bom.callouts || []).length
+        || (s.bom.images && ((s.bom.images.solid || []).length || (s.bom.images.lace || []).length))
+        || (typeof hasMeaningfulBomWork === 'function' && s.bom))));
     if (!hasContent) { clearAutosave(); return; }
     showAutosaveRestoreBanner(record);
   }
@@ -7058,8 +15062,8 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       try {
         suspendAutosave();
         await loadProject(record.snapshot);
-        showToast(record.imagesStripped
-          ? 'Restored annotations. The reference image was not saved to storage — please re-add it.'
+        showToast(record.imagesStripped || record.bomImagesStripped
+          ? 'Restored project geometry. Some image bitmaps did not fit storage — please re-add them.'
           : 'Restored your previous session.');
         clearAutosave();
       } catch (err) {
@@ -10365,11 +18369,30 @@ function getAnnotationsOnImage(image) {
     for (const ann of state.annotations) max = Math.max(max, Number(ann.id) || 0);
     for (const image of state.images) max = Math.max(max, Number(image.id) || 0);
     for (const draft of state.autoMode.draftAnnotations) max = Math.max(max, Number(draft.id) || 0);
+    // BOM rows/callouts/groupIds draw from the same counter (and since
+    // US-074 every project has seeded rows) — skipping them here would let a
+    // project file with a missing idCounter re-issue their ids to new
+    // rows/images and corrupt id-keyed lookups like bmRowById.
+    if (state.bom) {
+      for (const row of state.bom.rows || []) {
+        max = Math.max(max, Number(row.id) || 0, Number(row.groupId) || 0);
+      }
+      for (const c of state.bom.callouts || []) max = Math.max(max, Number(c.id) || 0);
+      const bomImages = state.bom.images || {};
+      for (const image of [...(bomImages.solid || []), ...(bomImages.lace || [])]) {
+        max = Math.max(max, Number(image.id) || 0);
+      }
+    }
     return max + 1;
   }
 
 
   async function onPasteEvent(e) {
+    // Text fields keep native text paste. BOM photo popovers handle their own
+    // image paste and stop propagation before this document-level router.
+    const target = e.target;
+    const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+    if (inField) return;
     const items = Array.from(e.clipboardData?.items || []);
     const imageItems = items.filter(item => item.type && item.type.startsWith('image/'));
     if (imageItems.length) {
@@ -10380,7 +18403,9 @@ function getAnnotationsOnImage(image) {
         if (!blob) continue;
         dataURLs.push(await blobToDataURL(blob));
       }
-      if (dataURLs.length) {
+      if (dataURLs.length && state.activePage === 'bom' && typeof bmAddImagesFromDataURLs === 'function') {
+        await bmAddImagesFromDataURLs(dataURLs, bmVariant);
+      } else if (dataURLs.length) {
         await addImagesFromDataURLs(dataURLs);
       }
       return;
@@ -10389,8 +18414,6 @@ function getAnnotationsOnImage(image) {
     // clipboard. copySelectedAnnotation claims the OS clipboard with a text
     // marker, so whichever was copied LAST wins here, like a real clipboard.
     // Never hijack a paste aimed at a text field.
-    const target = e.target;
-    const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
     if (inField || state.appMode === 'auto' || !hasLineClipboard()) return;
     e.preventDefault();
     pasteLineFromClipboard();
@@ -23415,6 +31438,14 @@ function getAnnotationsOnImage(image) {
       },
       applyApprovedDrafts: () => applyApprovedDraftsAtomically({ suppressPrompt: true }),
       exportProject: () => clone(buildProjectSnapshot()),
+      /* US-080: drives a MAIN PAGE sketch slot the way the upload/paste menu
+         does, and hands back the RAW runtime state.mainPage — the one history
+         clones — so a suite can prove the image bytes never land in it. */
+      setMainPageSketch: async (variant, index, dataURL) => {
+        if (typeof mpSetSketch !== 'function') return null;
+        await mpSetSketch(variant, index, dataURL);
+        return JSON.stringify(state.mainPage);
+      },
       loadProject: async (project) => {
         await loadProject(project);
         return window.__braAutoModeDebug.getState();
@@ -23431,6 +31462,7 @@ function getAnnotationsOnImage(image) {
       },
       getState: () => ({
         appMode: state.appMode,
+        activePage: state.activePage,
         autoStatus: state.autoMode.status,
         lastError: state.autoMode.lastError,
         validation: clone(state.autoMode.validation),
@@ -24473,10 +32505,10 @@ function makeExportFileName() {
   // ({ bytes, width, height }); without it the sheet is table-only.
   // `now` feeds the header date and the ZIP timestamps — pass a fixed date
   // to get byte-identical output (determinism tests).
-  function buildSpecWorkbookXlsx(now, image) {
-    const encoder = new TextEncoder();
-    const annByPom = new Map();
-    for (const ann of state.annotations) annByPom.set(getLabelText(ann), ann);
+  // The POM keys the spec actually emits, in row order. Extracted from
+  // buildSpecWorkbookXlsx (US-079) so the Preview & Export page's spec-table
+  // replica and the tech-pack workbook share the exact same visibility rules.
+  function specVisiblePomKeys(annByPom) {
     // Standard 16 + registered custom POMs (US-011 S4). Customs sort after 16
     // by construction (numbering starts at 19) and get identical treatment:
     // spec row, grading (flat until the TD grades them), live formulas.
@@ -24504,7 +32536,16 @@ function makeExportFileName() {
       const partner = pairing && (pairing.partner || pairing.primary);
       if (partner != null) hiddenPomKeys.add(String(partner));
     }
-    const pomKeys = allPomKeys.filter(key => !hiddenPomKeys.has(String(key)));
+    return allPomKeys.filter(key => !hiddenPomKeys.has(String(key)));
+  }
+
+  // The Measurement Spec row grid — shared by the single-sheet Board export
+  // and the tech-pack workbook's POM sheet (US-079: one builder, two entry
+  // points, so the two exports can never disagree about the spec).
+  function buildSpecSheetRows(now) {
+    const annByPom = new Map();
+    for (const ann of state.annotations) annByPom.set(getLabelText(ann), ann);
+    const pomKeys = specVisiblePomKeys(annByPom);
 
     // US-011: the sheet emits only the SELECTED size columns. The grade math
     // always runs over the full 15-cell run (positional delta lookups assume
@@ -24593,7 +32634,12 @@ function makeExportFileName() {
       });
       rowsData.push({ r, cells });
     }
+    return { rowsData, colCount, pomKeys };
+  }
 
+  function buildSpecWorkbookXlsx(now, image) {
+    const encoder = new TextEncoder();
+    const { rowsData, colCount, pomKeys } = buildSpecSheetRows(now);
     const hasImage = !!(image && image.bytes && image.bytes.length);
     const sheetXml = buildSpecSheetXml(rowsData, hasImage, colCount);
 
@@ -24706,6 +32752,411 @@ function makeExportFileName() {
     }
   }
 
+  // ---- Tech-pack multi-sheet workbook (US-079, ADR 0046) ----
+  //
+  // One workbook, one worksheet per ENABLED Preview & Export sheet, in the
+  // preview's fixed order. MAIN PAGE and the two BOM sheets are real cells;
+  // the two Construction sheets and every board/photo/material-key image are
+  // embedded PNGs. The POM sheet reuses buildSpecSheetRows — the exact grid
+  // the Board "Export Excel" button writes, which stays untouched.
+
+  const TECHPACK_SHEET_NAMES = {
+    'mainpage': 'MAIN PAGE',
+    'construction-solid': 'CONSTRUCTION-SOLID',
+    'construction-lace': 'CONSTRUCTION-LACE',
+    'bom-solid': 'BOM-SOLID',
+    'bom-lace': 'BOM-LACE',
+    'pom': 'Measurement Spec',
+  };
+
+  function canvasToPngBytes(canvas) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(result => {
+        if (!result) { reject(new Error('canvas.toBlob produced no data')); return; }
+        result.arrayBuffer().then(buffer => resolve({
+          bytes: new Uint8Array(buffer), width: canvas.width, height: canvas.height,
+        }), reject);
+      }, 'image/png');
+    });
+  }
+
+  // Row-photo dataURLs can be any raster type the TD pasted; re-encode to
+  // PNG (capped) so the workbook only ever embeds one image format and one
+  // [Content_Types] default covers all media parts.
+  async function pngBytesFromDataURL(dataURL, maxDim) {
+    const img = await loadImageFromDataURL(dataURL);
+    const natW = img.naturalWidth || img.width || 1;
+    const natH = img.naturalHeight || img.height || 1;
+    const scale = Math.min(1, (maxDim || 800) / Math.max(natW, natH));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(natW * scale));
+    canvas.height = Math.max(1, Math.round(natH * scale));
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvasToPngBytes(canvas);
+  }
+
+  // Generic worksheet XML: optional per-column widths, sparse rows allowed,
+  // no merges. The POM sheet keeps using buildSpecSheetXml (its merges and
+  // column grid are part of the byte-stable single-sheet contract).
+  function buildTechPackSheetXml(rowsData, colWidths, hasDrawing) {
+    const lastRow = rowsData.length ? rowsData[rowsData.length - 1].r : 1;
+    const lastCol = specColLetter(Math.max(0, (colWidths ? colWidths.length : 1) - 1));
+    const cols = colWidths && colWidths.length
+      ? '<cols>' + colWidths.map((w, i) =>
+        '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>').join('') + '</cols>'
+      : '';
+    const rows = rowsData.map(row =>
+      '<row r="' + row.r + '"' + (row.ht ? ' ht="' + row.ht + '" customHeight="1"' : '') + '>'
+      + row.cells.join('') + '</row>').join('');
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+      + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+      + '<dimension ref="A1:' + lastCol + lastRow + '"/>'
+      + '<sheetViews><sheetView workbookViewId="0"/></sheetViews>'
+      + cols
+      + '<sheetData>' + rows + '</sheetData>'
+      + (hasDrawing ? '<drawing r:id="rId1"/>' : '')
+      + '</worksheet>';
+  }
+
+  // One drawing part per sheet, any number of oneCellAnchor images. Image k
+  // binds to the drawing rels' rId(k+1); explicit EMU extents keep aspect
+  // ratios identical across viewers (same rationale as buildSpecDrawingXml).
+  function buildTechPackDrawingXml(images) {
+    const anchors = images.map((image, i) => {
+      const cx = Math.round(image.displayWidth * 9525);
+      const cy = Math.round(image.displayHeight * 9525);
+      return '<xdr:oneCellAnchor>'
+        + '<xdr:from><xdr:col>' + (image.anchorCol || 0) + '</xdr:col><xdr:colOff>0</xdr:colOff>'
+        + '<xdr:row>' + (image.anchorRow || 0) + '</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>'
+        + '<xdr:ext cx="' + cx + '" cy="' + cy + '"/>'
+        + '<xdr:pic>'
+        + '<xdr:nvPicPr><xdr:cNvPr id="' + (i + 2) + '" name="Image ' + (i + 1) + '"/>'
+        + '<xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>'
+        + '<xdr:blipFill><a:blip r:embed="rId' + (i + 1) + '"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>'
+        + '<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm>'
+        + '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>'
+        + '</xdr:pic>'
+        + '<xdr:clientData/>'
+        + '</xdr:oneCellAnchor>';
+    }).join('');
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      + '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"'
+      + ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+      + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+      + anchors + '</xdr:wsDr>';
+  }
+
+  async function buildMainPageSheetPart(now) {
+    const mp = state.mainPage || {};
+    const rowsData = [];
+    const images = [];
+    const band = (r, styleId, text) => ({
+      r, ht: r === 1 ? 26 : 18,
+      cells: [specInlineStrCell('A' + r, styleId, text), specBlankCell('B' + r, styleId)],
+    });
+    rowsData.push(band(1, SPEC_XF.title, 'MAIN PAGE'));
+    rowsData.push(band(2, SPEC_XF.styleRow,
+      ((state.styleId || '').trim() || 'Untitled') + ' - ' + formatSpecDate(now)));
+    let r = 3;
+    (mp.fields || []).forEach(f => {
+      /* US-080: a worksheet has no room for a three-cell sub-grid, so the
+         breakdown's parts each get their own labelled row — the captions the
+         factory reads are the sheet's own, never invented at export time. */
+      if (f.parts && /Style No Breakdown/i.test(f.label || '')) {
+        rowsData.push({ r, cells: [
+          specInlineStrCell('A' + r, SPEC_XF.headLabel, f.label || ''),
+          specInlineStrCell('B' + r, SPEC_XF.text, f.value || ''),
+        ] });
+        r += 1;
+        MP_BREAKDOWN_PARTS.forEach(p => {
+          rowsData.push({ r, cells: [
+            specInlineStrCell('A' + r, SPEC_XF.text, '    ' + p.head),
+            specInlineStrCell('B' + r, SPEC_XF.text, String(f.parts[p.key] || '')),
+          ] });
+          r += 1;
+        });
+        return;
+      }
+      rowsData.push({ r, cells: [
+        specInlineStrCell('A' + r, SPEC_XF.headLabel, f.label || ''),
+        specInlineStrCell('B' + r, SPEC_XF.text, f.value || ''),
+      ] });
+      r += 1;
+    });
+    r += 1;
+    rowsData.push(band(r, SPEC_XF.styleRow, 'COLORWAYS'));
+    r += 1;
+    (mp.colorways || []).forEach((c, i) => {
+      rowsData.push({ r, cells: [
+        specInlineStrCell('A' + r, SPEC_XF.headLabel, c.col || ('COL ' + (i + 1))),
+        specInlineStrCell('B' + r, SPEC_XF.text, c.value || ''),
+      ] });
+      r += 1;
+    });
+    /* Version sketches (US-080). A worksheet cannot put the two panels beside
+       the field column the way the page does, so each version becomes its own
+       band with its flats anchored under it; blank rows are reserved beneath
+       the anchors (default row ≈ 20px) so nothing runs under an image. */
+    for (const variant of MP_SKETCH_VARIANTS) {
+      const present = MP_SKETCH_SLOTS
+        .map((slot, i) => ({ slot, dataURL: mpSketchDataURL(variant, i) }))
+        .filter(entry => entry.dataURL);
+      if (!present.length) continue;
+      r += 1;
+      rowsData.push(band(r, SPEC_XF.styleRow, variant.toUpperCase() + ' VERSION'));
+      r += 1;
+      let blockRows = 0;
+      let anchorCol = 0;
+      for (const entry of present) {
+        const png = await pngBytesFromDataURL(entry.dataURL, 1200);
+        const displayWidth = 320;
+        const displayHeight = Math.round(png.height * (displayWidth / png.width));
+        rowsData.push({ r, cells: [
+          specInlineStrCell(specColLetter(anchorCol) + r, SPEC_XF.headLabel, entry.slot.label),
+        ] });
+        images.push({ bytes: png.bytes, anchorCol, anchorRow: r, displayWidth, displayHeight });
+        blockRows = Math.max(blockRows, Math.ceil(displayHeight / 20) + 1);
+        anchorCol += 3;   // FRONT in A, BACK clear of it in D
+      }
+      r += blockRows;
+    }
+    if (String(mp.provenance || '').trim()) {
+      r += 1;
+      rowsData.push(band(r, SPEC_XF.styleRow, 'Provenance'));
+      r += 1;
+      rowsData.push({ r, cells: [
+        specInlineStrCell('A' + r, SPEC_XF.text, mp.provenance),
+        specBlankCell('B' + r, SPEC_XF.text),
+      ] });
+    }
+    return {
+      name: TECHPACK_SHEET_NAMES['mainpage'],
+      sheetXml: buildTechPackSheetXml(rowsData, [34, 58, 12, 34, 24, 12], images.length > 0),
+      images,
+    };
+  }
+
+  async function buildConstructionSheetPart(key) {
+    const variant = key.slice('construction-'.length);
+    const image = await canvasToPngBytes(ccRenderSheetToCanvas(variant, 1440, 900, 2));
+    const rowsData = [{ r: 1, ht: 26, cells: [specInlineStrCell(
+      'A1', SPEC_XF.title, 'CONSTRUCTION - ' + variant.toUpperCase() + ' - WORKING BOARD')] }];
+    const displayWidth = 1160;
+    return {
+      name: TECHPACK_SHEET_NAMES[key],
+      sheetXml: buildTechPackSheetXml(rowsData, [150], true),
+      images: [{
+        bytes: image.bytes, anchorCol: 0, anchorRow: 2, displayWidth,
+        displayHeight: Math.round(image.height * (displayWidth / image.width)),
+      }],
+    };
+  }
+
+  async function buildBomSheetPart(key, now) {
+    const variant = key.slice('bom-'.length);
+    const colorways = (state.mainPage && state.mainPage.colorways) || [];
+    const colCount = 1 + BM_CELL_FIELDS.length + 1 + colorways.length;
+    const photoColIdx = 1 + BM_CELL_FIELDS.length;
+    const rowsData = [];
+    const band = (r, styleId, text) => ({
+      r, ht: r === 1 ? 26 : 18,
+      cells: [specInlineStrCell('A' + r, styleId, text)].concat(
+        Array.from({ length: colCount - 1 }, (_, i) => specBlankCell(specColLetter(i + 1) + r, styleId))),
+    });
+    rowsData.push(band(1, SPEC_XF.title, 'BOM-' + variant.toUpperCase() + ' - Fabric and Trim Requirement'));
+    rowsData.push(band(2, SPEC_XF.styleRow, bmSheetMetaText() || formatSpecDate(now)));
+    const headerCells = (r) => {
+      const cells = [specInlineStrCell('A' + r, SPEC_XF.headLabel, '#')];
+      BM_CELL_FIELDS.forEach((f, i) => cells.push(specInlineStrCell(
+        specColLetter(1 + i) + r, SPEC_XF.headLabel, BM_CELL_LABELS[f] + '\n' + BM_CELL_LABELS_CN[f])));
+      cells.push(specInlineStrCell(
+        specColLetter(photoColIdx) + r, SPEC_XF.headLabel, BM_PHOTO_LABEL + '\n' + BM_PHOTO_LABEL_CN));
+      colorways.forEach((c, i) => cells.push(specInlineStrCell(
+        specColLetter(photoColIdx + 1 + i) + r, SPEC_XF.headAlpha, c.col || '')));
+      return cells;
+    };
+    const images = [];
+    const numbered = bmNumberedRows(variant);
+    let r = 3;
+    // Material Key sits ABOVE the table — same order as the BOM page and its
+    // preview sheet (the factory reads the annotated key first). Blank rows
+    // are reserved under the anchor (default row ≈ 20px) so the table never
+    // runs beneath the image.
+    if (bmVariantImages(variant).length) {
+      rowsData.push(band(r, SPEC_XF.styleRow, 'MATERIAL KEY'));
+      const matkey = await canvasToPngBytes(bmRenderMatkeyToCanvas(variant, 1400, 620, 2));
+      const displayWidth = 1000;
+      const displayHeight = Math.round(matkey.height * (displayWidth / matkey.width));
+      images.push({ bytes: matkey.bytes, anchorCol: 0, anchorRow: r, displayWidth, displayHeight });
+      r += 1 + Math.ceil(displayHeight / 20) + 1;
+    }
+    for (const section of BM_SECTIONS) {
+      rowsData.push(band(r, SPEC_XF.styleRow, BM_SECTION_BANDS[section]));
+      r += 1;
+      rowsData.push({ r, ht: 28, cells: headerCells(r) });
+      r += 1;
+      for (const x of numbered.filter(n => n.row.section === section)) {
+        const row = x.row;
+        const cells = [specInlineStrCell('A' + r, SPEC_XF.textCenter, x.seq)];
+        BM_CELL_FIELDS.forEach((f, i) => cells.push(specInlineStrCell(
+          specColLetter(1 + i) + r, SPEC_XF.text, row.cells[f] || '')));
+        cells.push(specBlankCell(specColLetter(photoColIdx) + r, SPEC_XF.text));
+        colorways.forEach((c, i) => cells.push(specInlineStrCell(
+          specColLetter(photoColIdx + 1 + i) + r, SPEC_XF.textCenter, bmCwValue(row, c))));
+        const hasPhoto = !!(row.photo && row.photo.dataURL);
+        rowsData.push(hasPhoto ? { r, ht: 58, cells } : { r, cells });
+        if (hasPhoto) {
+          const photo = await pngBytesFromDataURL(row.photo.dataURL, 400);
+          const displayHeight = 72; // fits the 58pt (~77px) photo row
+          images.push({
+            bytes: photo.bytes, anchorCol: photoColIdx, anchorRow: r - 1,
+            displayWidth: Math.max(1, Math.round(photo.width * (displayHeight / photo.height))),
+            displayHeight,
+          });
+        }
+        r += 1;
+      }
+    }
+    const widths = [6, 26, 20, 18, 20, 12, 16, 22, 30].concat(colorways.map(() => 16));
+    return {
+      name: TECHPACK_SHEET_NAMES[key],
+      sheetXml: buildTechPackSheetXml(rowsData, widths, images.length > 0),
+      images,
+    };
+  }
+
+  async function buildPomSheetPart(now) {
+    const { rowsData, colCount, pomKeys } = buildSpecSheetRows(now);
+    const image = await specBoardPngBytes();
+    const hasImage = !!(image && image.bytes && image.bytes.length);
+    const images = [];
+    if (hasImage) {
+      const displayWidth = Math.min(image.width, 1100);
+      images.push({
+        bytes: image.bytes, anchorCol: 0, anchorRow: 3 + pomKeys.length + 2,
+        displayWidth,
+        displayHeight: Math.round(image.height * (displayWidth / image.width)),
+      });
+    }
+    return {
+      name: TECHPACK_SHEET_NAMES['pom'],
+      sheetXml: buildSpecSheetXml(rowsData, hasImage, colCount),
+      images,
+    };
+  }
+
+  function assembleTechPackZip(parts, now) {
+    const encoder = new TextEncoder();
+    const hasAnyImage = parts.some(p => p.images.length > 0);
+    const wsType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml';
+    const contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+      + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+      + '<Default Extension="xml" ContentType="application/xml"/>'
+      + (hasAnyImage ? '<Default Extension="png" ContentType="image/png"/>' : '')
+      + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+      + parts.map((p, i) =>
+        '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="' + wsType + '"/>').join('')
+      + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+      + parts.map((p, i) => p.images.length
+        ? '<Override PartName="/xl/drawings/drawing' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>'
+        : '').join('')
+      + '</Types>';
+
+    const rootRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+      + '</Relationships>';
+
+    const workbookXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+      + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+      + '<sheets>' + parts.map((p, i) =>
+        '<sheet name="' + xmlEscape(p.name) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>').join('')
+      + '</sheets></workbook>';
+
+    const workbookRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + parts.map((p, i) =>
+        '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>').join('')
+      + '<Relationship Id="rId' + (parts.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+      + '</Relationships>';
+
+    const files = [
+      { name: '[Content_Types].xml', bytes: encoder.encode(contentTypes) },
+      { name: '_rels/.rels', bytes: encoder.encode(rootRels) },
+      { name: 'xl/workbook.xml', bytes: encoder.encode(workbookXml) },
+      { name: 'xl/_rels/workbook.xml.rels', bytes: encoder.encode(workbookRels) },
+      { name: 'xl/styles.xml', bytes: encoder.encode(buildSpecStylesXml()) },
+    ];
+
+    let mediaIndex = 0;
+    parts.forEach((p, i) => {
+      files.push({ name: 'xl/worksheets/sheet' + (i + 1) + '.xml', bytes: encoder.encode(p.sheetXml) });
+      if (!p.images.length) return;
+      const sheetRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing' + (i + 1) + '.xml"/>'
+        + '</Relationships>';
+      const mediaNames = p.images.map(() => { mediaIndex += 1; return 'image' + mediaIndex + '.png'; });
+      const drawingRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + p.images.map((img, k) =>
+          '<Relationship Id="rId' + (k + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/' + mediaNames[k] + '"/>').join('')
+        + '</Relationships>';
+      files.push(
+        { name: 'xl/worksheets/_rels/sheet' + (i + 1) + '.xml.rels', bytes: encoder.encode(sheetRels) },
+        { name: 'xl/drawings/drawing' + (i + 1) + '.xml', bytes: encoder.encode(buildTechPackDrawingXml(p.images)) },
+        { name: 'xl/drawings/_rels/drawing' + (i + 1) + '.xml.rels', bytes: encoder.encode(drawingRels) }
+      );
+      p.images.forEach((img, k) => files.push({ name: 'xl/media/' + mediaNames[k], bytes: img.bytes }));
+    });
+
+    return zipStore(files, now);
+  }
+
+  // Enabled preview sheets → workbook bytes; null when nothing is ticked.
+  async function buildTechPackXlsxBytes(now) {
+    if (typeof ensureMainPage === 'function') ensureMainPage();
+    if (typeof ensureConstruction === 'function') ensureConstruction();
+    if (typeof ensureBom === 'function') ensureBom();
+    const enabled = pvEnabledSheets();
+    if (!enabled.length) return null;
+    const parts = [];
+    for (const sheet of enabled) {
+      if (sheet.key === 'mainpage') parts.push(await buildMainPageSheetPart(now));
+      else if (sheet.key.indexOf('construction-') === 0) parts.push(await buildConstructionSheetPart(sheet.key));
+      else if (sheet.key.indexOf('bom-') === 0) parts.push(await buildBomSheetPart(sheet.key, now));
+      else if (sheet.key === 'pom') parts.push(await buildPomSheetPart(now));
+    }
+    return assembleTechPackZip(parts, now);
+  }
+
+  function makeTechPackFileName(now) {
+    const pad = (v) => String(v).padStart(2, '0');
+    const styleSlug = ((state.styleId || '').trim() || 'untitled').replace(/[^\w\-]+/g, '_');
+    return 'tech-pack-' + styleSlug + '-'
+      + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '.xlsx';
+  }
+
+  async function exportTechPackXlsx() {
+    try {
+      const now = new Date();
+      const zipBytes = await buildTechPackXlsxBytes(now);
+      if (!zipBytes) {
+        showToast('No sheets selected — tick at least one page in the preview first.');
+        return;
+      }
+      downloadBlob(new Blob([zipBytes], { type: SPEC_XLSX_MIME }), makeTechPackFileName(now));
+      showToast('Tech pack exported — ' + pvEnabledSheets().length + ' of '
+        + PV_SHEETS.length + ' sheets in one workbook.');
+    } catch (error) {
+      console.error('[Export Tech Pack] failed:', error);
+      showToast('Tech pack export failed. Please try again after reducing image size.', 4200);
+    }
+  }
+
   // Test hooks for scripts/export-xlsx-tests.mjs: build the workbook with a
   // frozen date (determinism) and hand the bytes back as base64 — headless
   // Chrome can't observe a real download. Attached here (this part loads
@@ -24723,6 +33174,20 @@ function makeExportFileName() {
         return bytesToBase64(buildSpecWorkbookXlsx(now, image));
       } finally {
         if (options && 'sizeSelection' in options) state.sizeSelection = hadSelection;
+      }
+    };
+    // US-079: tech-pack workbook with a frozen date; options.enabledPages
+    // lets the suite exercise sheet subsets without driving the checkboxes.
+    window.__braAutoModeDebug.exportTechPackXlsxBase64 = async (isoDate, options) => {
+      const now = isoDate ? new Date(isoDate) : new Date();
+      const pv = ensurePreviewPage();
+      const hadPages = clone(pv.enabledPages);
+      if (options && options.enabledPages) Object.assign(pv.enabledPages, options.enabledPages);
+      try {
+        const bytes = await buildTechPackXlsxBytes(now);
+        return bytes ? bytesToBase64(bytes) : null;
+      } finally {
+        pv.enabledPages = hadPages;
       }
     };
     window.__braAutoModeDebug.buildFullSizeRun = (pomKey) => {

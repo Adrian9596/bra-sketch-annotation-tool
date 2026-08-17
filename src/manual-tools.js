@@ -335,11 +335,30 @@
     for (const ann of state.annotations) max = Math.max(max, Number(ann.id) || 0);
     for (const image of state.images) max = Math.max(max, Number(image.id) || 0);
     for (const draft of state.autoMode.draftAnnotations) max = Math.max(max, Number(draft.id) || 0);
+    // BOM rows/callouts/groupIds draw from the same counter (and since
+    // US-074 every project has seeded rows) — skipping them here would let a
+    // project file with a missing idCounter re-issue their ids to new
+    // rows/images and corrupt id-keyed lookups like bmRowById.
+    if (state.bom) {
+      for (const row of state.bom.rows || []) {
+        max = Math.max(max, Number(row.id) || 0, Number(row.groupId) || 0);
+      }
+      for (const c of state.bom.callouts || []) max = Math.max(max, Number(c.id) || 0);
+      const bomImages = state.bom.images || {};
+      for (const image of [...(bomImages.solid || []), ...(bomImages.lace || [])]) {
+        max = Math.max(max, Number(image.id) || 0);
+      }
+    }
     return max + 1;
   }
 
 
   async function onPasteEvent(e) {
+    // Text fields keep native text paste. BOM photo popovers handle their own
+    // image paste and stop propagation before this document-level router.
+    const target = e.target;
+    const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+    if (inField) return;
     const items = Array.from(e.clipboardData?.items || []);
     const imageItems = items.filter(item => item.type && item.type.startsWith('image/'));
     if (imageItems.length) {
@@ -350,7 +369,9 @@
         if (!blob) continue;
         dataURLs.push(await blobToDataURL(blob));
       }
-      if (dataURLs.length) {
+      if (dataURLs.length && state.activePage === 'bom' && typeof bmAddImagesFromDataURLs === 'function') {
+        await bmAddImagesFromDataURLs(dataURLs, bmVariant);
+      } else if (dataURLs.length) {
         await addImagesFromDataURLs(dataURLs);
       }
       return;
@@ -359,8 +380,6 @@
     // clipboard. copySelectedAnnotation claims the OS clipboard with a text
     // marker, so whichever was copied LAST wins here, like a real clipboard.
     // Never hijack a paste aimed at a text field.
-    const target = e.target;
-    const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
     if (inField || state.appMode === 'auto' || !hasLineClipboard()) return;
     e.preventDefault();
     pasteLineFromClipboard();

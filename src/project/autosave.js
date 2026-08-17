@@ -60,6 +60,8 @@
     if (!state) return false;
     if (state.annotations && state.annotations.length > 0) return true;
     if (state.images && state.images.length > 0) return true;
+    if (typeof hasMeaningfulConstructionWork === 'function' && hasMeaningfulConstructionWork()) return true;
+    if (typeof hasMeaningfulBomWork === 'function' && hasMeaningfulBomWork()) return true;
     if (state.autoMode && state.autoMode.draftAnnotations && state.autoMode.draftAnnotations.length > 0) return true;
     return false;
   }
@@ -88,6 +90,24 @@
       record.snapshot.state.images = record.snapshot.state.images.map((img) => ({
         ...img, dataURL: null,
       }));
+      const bom = record.snapshot.state.bom;
+      if (bom && bom.images) {
+        record.bomImagesStripped = true;
+        ['solid', 'lace'].forEach(variant => {
+          bom.images[variant] = (bom.images[variant] || []).map(image => ({ ...image, dataURL: null }));
+        });
+      }
+      const construction = record.snapshot.state.construction;
+      if (construction && construction.images) {
+        record.constructionImagesStripped = true;
+        ['solid', 'lace'].forEach(sheet => {
+          ['outer', 'inner'].forEach(view => {
+            if (!construction.images[sheet]) return;
+            construction.images[sheet][view] = (construction.images[sheet][view] || [])
+              .map(image => ({ ...image, dataURL: null }));
+          });
+        });
+      }
     }
     if (tryWriteAutosave(record)) return;
     console.warn('[autosave] Could not persist even the annotation-only snapshot; localStorage is full.');
@@ -134,6 +154,13 @@
     const s = record.snapshot.state;
     const anns = Array.isArray(s.annotations) ? s.annotations.length : 0;
     const imgs = Array.isArray(s.images) ? s.images.length : 0;
+    const bomImgs = s.bom && s.bom.images
+      ? (s.bom.images.solid || []).length + (s.bom.images.lace || []).length
+      : 0;
+    const constructionImgs = s.construction && s.construction.images
+      ? ['solid', 'lace'].reduce((sum, sheet) => sum + ['outer', 'inner'].reduce((viewSum, view) =>
+        viewSum + (((s.construction.images[sheet] || {})[view] || []).length), 0), 0)
+      : 0;
     const ageMs = Number.isFinite(record.savedAt) ? Date.now() - record.savedAt : null;
     let when = '';
     if (ageMs != null) {
@@ -145,6 +172,8 @@
     const parts = [];
     if (anns) parts.push(anns + ' line' + (anns === 1 ? '' : 's'));
     if (imgs) parts.push(imgs + ' image' + (imgs === 1 ? '' : 's'));
+    if (bomImgs) parts.push(bomImgs + ' BOM image' + (bomImgs === 1 ? '' : 's'));
+    if (constructionImgs) parts.push(constructionImgs + ' Construction image' + (constructionImgs === 1 ? '' : 's'));
     if (record.imagesStripped) parts.push('image bitmap dropped to fit storage');
     return (parts.join(', ') || 'work in progress') + (when ? ' • saved ' + when : '');
   }
@@ -160,7 +189,14 @@
     if (!record) return;
     const s = record.snapshot && record.snapshot.state;
     const hasContent = s && ((Array.isArray(s.annotations) && s.annotations.length)
-      || (Array.isArray(s.images) && s.images.length));
+      || (Array.isArray(s.images) && s.images.length)
+      || (s.construction && ((s.construction.callouts || []).length
+        || (s.construction.images && ['solid', 'lace'].some(sheet => ['outer', 'inner'].some(view =>
+          ((((s.construction.images[sheet] || {})[view]) || []).length))))
+        || (typeof hasMeaningfulConstructionWork === 'function' && s.construction)))
+      || (s.bom && ((s.bom.callouts || []).length
+        || (s.bom.images && ((s.bom.images.solid || []).length || (s.bom.images.lace || []).length))
+        || (typeof hasMeaningfulBomWork === 'function' && s.bom))));
     if (!hasContent) { clearAutosave(); return; }
     showAutosaveRestoreBanner(record);
   }
@@ -200,8 +236,8 @@
       try {
         suspendAutosave();
         await loadProject(record.snapshot);
-        showToast(record.imagesStripped
-          ? 'Restored annotations. The reference image was not saved to storage — please re-add it.'
+        showToast(record.imagesStripped || record.bomImagesStripped
+          ? 'Restored project geometry. Some image bitmaps did not fit storage — please re-add them.'
           : 'Restored your previous session.');
         clearAutosave();
       } catch (err) {

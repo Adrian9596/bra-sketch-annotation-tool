@@ -302,6 +302,44 @@
     // not board content).
     sizeSelection: null,
 
+    // US-068 / ADR 0037: tech pack MAIN PAGE sheet — style metadata (13
+    // fields), off-list values the TD typed (fieldExtra), colorways, and the
+    // Color Master List copy this project was saved against. Style metadata
+    // only: no anchor, no POM, no view, so detection never reads it. Seeded
+    // lazily by ensureMainPage() in src/ui/main-page.js, which owns the field
+    // roster and the colour data — null here so state.js does not carry 47
+    // colour rows. Persisted with the project and captured in history so
+    // undo/redo covers MAIN PAGE edits.
+    mainPage: null,
+
+    // US-078 / ADR 0045: two Construction sheets (Solid/Lace), each with
+    // independently-owned Outer/Inner working-view images, editable operation
+    // rows, and row-owned multi-leader callouts. Image bytes live outside
+    // history and are injected only for project save/autosave. No anchor or
+    // POM consumes this metadata, so detection remains isolated.
+    construction: null,
+
+    // US-072 / ADR 0041: BOM page — editable material table rows
+    // { id, section:'FABRIC'|'TRIM', scope:'BOTH'|'SOLID'|'LACE', cells:{...},
+    // cwOverride:{} }, variant-owned Material Key image metadata under
+    // images.solid/images.lace, plus callouts { id, rowId, imageId, variant,
+    // targets:[{nx,ny},...], textPos:{nx,ny} }. BOM image bytes live outside
+    // history state and are materialized only for project save/autosave.
+    // mod-bom module on this tool's own primitives; no anchor, no POM, so
+    // detection never reads it. Seeded lazily by ensureBom() in
+    // src/ui/bom.js — a first-time BOM materializes as the reference
+    // sheet's exact 12-row BOM (BM_SEED_ROWS, US-074), guarded by
+    // bom.seedId so an emptied table stays empty. Null here so state.js
+    // does not carry row/callout data by default. Persisted with the
+    // project and captured in history so undo/redo covers BOM edits.
+    bom: null,
+
+    // src/ui/preview-page.js — Preview & Export page-inclusion checkboxes
+    // ({ enabledPages: { <sheetKey>: boolean } }, US-079/ADR 0046). Null here;
+    // initPreviewPage materializes the all-enabled default before seedHistory.
+    // Persisted with the project and captured in history.
+    preview: null,
+
     // Review-time per-POM visibility toggles. When an annotation / draft id
     // is in these lists it is skipped by the canvas renderer and hit-test
     // so the TD can isolate one POM line to sanity-check the detection.
@@ -366,6 +404,11 @@
     // and the readiness chip never stalls silently on the first Detect.
     warmupVisionEngine();
     bindUI();
+    initMainPage();
+    initConstruction();
+    initBom();
+    initPreviewPage();
+    initPageNav();
     // Auto-only build: boot straight into Auto Mode (sets body class,
     // status chip, and locks manual editing paths).
     setAppMode('auto');

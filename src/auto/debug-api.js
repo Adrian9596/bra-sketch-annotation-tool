@@ -631,6 +631,14 @@
       },
       applyApprovedDrafts: () => applyApprovedDraftsAtomically({ suppressPrompt: true }),
       exportProject: () => clone(buildProjectSnapshot()),
+      /* US-080: drives a MAIN PAGE sketch slot the way the upload/paste menu
+         does, and hands back the RAW runtime state.mainPage — the one history
+         clones — so a suite can prove the image bytes never land in it. */
+      setMainPageSketch: async (variant, index, dataURL) => {
+        if (typeof mpSetSketch !== 'function') return null;
+        await mpSetSketch(variant, index, dataURL);
+        return JSON.stringify(state.mainPage);
+      },
       loadProject: async (project) => {
         await loadProject(project);
         return window.__braAutoModeDebug.getState();
@@ -647,6 +655,7 @@
       },
       getState: () => ({
         appMode: state.appMode,
+        activePage: state.activePage,
         autoStatus: state.autoMode.status,
         lastError: state.autoMode.lastError,
         validation: clone(state.autoMode.validation),
