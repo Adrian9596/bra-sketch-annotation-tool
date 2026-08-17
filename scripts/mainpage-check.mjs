@@ -314,6 +314,39 @@ async function main() {
   check(undone.hasSlot && undone.bytes,
     `undo should restore the sketch and its bytes, got ${JSON.stringify(undone)}`);
 
+  // --- 12. The sheet reflows for a narrow screen but NEVER on paper ------
+  const LAYOUT = `(() => {
+    const tops = Array.from(document.querySelectorAll('#mainPageOverlay .mp-col'))
+      .map(el => Math.round(el.getBoundingClientRect().top));
+    return { tops, sameRow: tops.every(t => t === tops[0]) };
+  })()`;
+
+  await s.cdp('Emulation.setDeviceMetricsOverride',
+    { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  const wide = await s.eval(LAYOUT);
+  check(wide.sameRow, `at 1280px the three sheet columns must share a row, got ${JSON.stringify(wide.tops)}`);
+
+  await s.cdp('Emulation.setDeviceMetricsOverride',
+    { width: 760, height: 900, deviceScaleFactor: 1, mobile: false });
+  const narrow = await s.eval(LAYOUT);
+  check(!narrow.sameRow,
+    'below 1024px the editing sheet should stack the field column above the version panels');
+  const fits = await s.eval(`(() => {
+    const t = document.getElementById('mp-fields').getBoundingClientRect();
+    const sheet = document.querySelector('#mainPageOverlay .mp-sheet').getBoundingClientRect();
+    return Math.round(t.right) <= Math.round(sheet.right)
+      && document.documentElement.scrollWidth <= document.documentElement.clientWidth;
+  })()`);
+  check(fits, 'the field table must stay inside the sheet at 760px (no overflow, no page scroll)');
+
+  // Print keeps the factory three-column layout whatever the window is doing.
+  await s.cdp('Emulation.setEmulatedMedia', { media: 'print' });
+  const printed = await s.eval(LAYOUT);
+  check(printed.sameRow,
+    `print must keep the three columns on one row, got ${JSON.stringify(printed.tops)}`);
+  await s.cdp('Emulation.setEmulatedMedia', { media: '' });
+  await s.cdp('Emulation.clearDeviceMetricsOverride', {});
+
   await s.close();
   console.log(`PASS  mainpage-check   ${passed}/${passed} assertions ok`);
 }
@@ -369,7 +402,7 @@ async function connectToTarget(wsUrl) {
     }
     throw new Error('waitFor timeout: ' + expression);
   };
-  return { eval: evalJs, waitFor, close: () => ws.close() };
+  return { eval: evalJs, waitFor, cdp, close: () => ws.close() };
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }

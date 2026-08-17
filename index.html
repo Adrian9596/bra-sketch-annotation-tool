@@ -1588,16 +1588,42 @@
     margin-bottom:12px;
   }
   .mp-sbhint{ font-size:11.5px; color:var(--muted); }
+  /* The three bases plus two 14px gaps overshoot 100%, so the columns must be
+     allowed to shrink (flex-shrink 1, not 0) — otherwise the row is always a
+     few pixels wider than the sheet. */
   .mp-cols{ display:flex; gap:14px; align-items:flex-start; }
   .mp-col{ min-width:0; }
-  .mp-col-fields{ flex:0 0 30%; }
-  .mp-col-version{ flex:0 0 34%; }
+  /* 32/33/33 rather than 30/34/34: the breakdown splits the value cell three
+     ways, so the field column needs the extra points more than the version
+     panels do. */
+  .mp-col-fields{ flex:0 1 32%; }
+  .mp-col-version{ flex:0 1 33%; }
+  /* On a narrow window the three columns still FIT (nothing overflows), but
+     the value column gets too thin to read a breakdown sub-cell in. Reflow
+     the EDITING page only — scoped to #mainPageOverlay so the Preview & Export
+     paper, which is laid out at its own natural width and then scaled, keeps
+     the factory three-column layout whatever the window is doing. */
+  /* `screen and`, not a bare width query: the print page box is ~794px, so an
+     all-media rule would stack the columns on paper too and the factory would
+     get a sheet that does not match the layout it works from. */
+  @media screen and (max-width: 1024px) {
+    #mainPageOverlay .mp-cols{ flex-wrap:wrap; }
+    #mainPageOverlay .mp-col-fields{ flex:1 1 100%; }
+    #mainPageOverlay .mp-col-version{ flex:1 1 calc(50% - 7px); }
+  }
 
   table.mp-kv, table.mp-cwx{
     width:100%;
     border-collapse:collapse;
     font-size:12px;
+    /* Auto layout sizes a table to its min-content, which the long bilingual
+       labels push past the 30% column: below ~800px the field table used to
+       overflow and print under the Lace panel. Fixed layout makes the table
+       follow its column and wrap the label instead. */
+    table-layout:fixed;
   }
+  table.mp-kv th, table.mp-kv td,
+  table.mp-cwx th, table.mp-cwx td{ overflow-wrap:break-word; }
   table.mp-kv th, table.mp-kv td,
   table.mp-cwx th, table.mp-cwx td{
     border:1px solid var(--border);
@@ -1608,7 +1634,7 @@
   table.mp-kv th, table.mp-cwx th{
     background:#f7f8fa;
     font-weight:600;
-    width:44%;
+    width:40%;
   }
   table.mp-cwx th{ width:26%; }
   table.mp-kv td[contenteditable]:focus,
@@ -1719,10 +1745,15 @@
 
   /* Style No Breakdown — three sub-cells under their own captions. */
   .mp-bdhead, .mp-bdcell{ padding:0 !important; }
-  .mp-bdhead{ display:grid; grid-template-columns:repeat(3,1fr); }
+  /* minmax(0,1fr), not 1fr: a grid track's default min-content floor lets a
+     long prefix push the third sub-cell past the (now fixed-width) value
+     column. Wrapping inside the track is the behaviour that survives a narrow
+     window. */
+  .mp-bdhead{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
   /* The row's height comes from the wrapped label in the th, so the sub-cell
      track has to stretch or its dividers stop short of the row border. */
-  .mp-bdcell{ display:grid; grid-template-columns:repeat(3,1fr); align-content:stretch; grid-auto-rows:minmax(19px,1fr); }
+  .mp-bdcell{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-content:stretch; grid-auto-rows:minmax(19px,1fr); }
+  .mp-bdhead span, .mp-bd-sub{ min-width:0; overflow-wrap:break-word; }
   .mp-bdhead span{
     padding:2px 5px;
     font-size:10px;
