@@ -25792,6 +25792,9 @@ function getAnnotationsOnImage(image) {
       x: clamp01(view.x + view.width * rx),
       y: clamp01(view.y + view.height * ry),
     });
+    // x-only view-box fallback, for a landmark whose y must come from a SHARED
+    // row rather than from this side's own ratio (see the band/chest seeds).
+    const inViewX = (view, rx) => clamp01(view.x + view.width * rx);
     const roleByKind = Object.create(null);
     for (const schema of ANCHOR_SCHEMA) {
       roleByKind[schema.kind] = defaultViewRoleForAnchorKind(schema.kind);
@@ -26455,10 +26458,22 @@ function getAnnotationsOnImage(image) {
         ? detection.underbustRightX
         : (detection.chestRightX != null ? detection.chestRightX : null);
       const bandYf  = detection.bandY  != null ? detection.bandY  : (f.y + f.height * 0.978);
-      const useChestL = chestSeedLeftX  != null ? { x: chestSeedLeftX,  y: chestSeedY } : inView(f, 0.004, 0.615);
-      const useChestR = chestSeedRightX != null ? { x: chestSeedRightX, y: chestSeedY } : inView(f, 0.990, 0.605);
-      const useBandL  = detection.bandLeftX   != null ? { x: detection.bandLeftX,   y: bandYf  } : inView(f, 0.063, 0.978);
-      const useBandR  = detection.bandRightX  != null ? { x: detection.bandRightX,  y: bandYf  } : inView(f, 0.936, 0.978);
+      // band-left/-right are the two ends of ONE horizontal band row, and
+      // chest-left/-right of ONE chest row — so both ends must share that
+      // row's y and only the x may fall back per side. Taking a per-side
+      // view-box y (the old `inView(f, rx, ry)` fallback) put the two ends at
+      // DIFFERENT heights whenever the walker found ink on just one side, and
+      // for chest even when it found neither: the two ratios disagreed with
+      // each other (0.615 vs 0.605) and with chestSeedY's own 0.615 fallback.
+      // POM 1/3 force their line level at the LEFT end's y and POM 2/4 hang
+      // off the RIGHT end's y, so any such gap showed up as lines 1-4 sitting
+      // vertically off anchors that were themselves correctly placed.
+      // The ink-on-both-sides path is unchanged, which is what every golden
+      // fixture exercises.
+      const useChestL = { x: chestSeedLeftX  != null ? chestSeedLeftX  : inViewX(f, 0.004), y: chestSeedY };
+      const useChestR = { x: chestSeedRightX != null ? chestSeedRightX : inViewX(f, 0.990), y: chestSeedY };
+      const useBandL  = { x: detection.bandLeftX  != null ? detection.bandLeftX  : inViewX(f, 0.063), y: bandYf };
+      const useBandR  = { x: detection.bandRightX != null ? detection.bandRightX : inViewX(f, 0.936), y: bandYf };
       const useCfTop  = detection.cfTopY      != null ? { x: detection.axisX,       y: detection.cfTopY }
                                                       : inView(f, 0.505, 0.485);
       // POM 9 / POM 10 inner-cup anchors. Rule.md requires both to belong to
@@ -26841,12 +26856,32 @@ function getAnnotationsOnImage(image) {
       // Falls back to chestLeftX/chestRightX (panel OUTER corners) only when the
       // strap detector finds nothing, then to view-box ratios.
       const bStrapInner = detection.backStrapInner || null;
-      const bStrapL = bStrapInner && bStrapInner.left
-        ? { x: bStrapInner.left.x, y: bStrapInner.left.y }
-        : (bf && bf.chestLeftX  != null ? { x: bf.chestLeftX,  y: bChestY } : inView(b, 0.276, 0.414));
-      const bStrapR = bStrapInner && bStrapInner.right
-        ? { x: bStrapInner.right.x, y: bStrapInner.right.y }
-        : (bf && bf.chestRightX != null ? { x: bf.chestRightX, y: bChestY } : inView(b, 0.729, 0.426));
+      // Same one-row rule as the front band/chest pairs above: POM 15 is a
+      // horizontal span, and it draws level at the LEFT end's y, so the two
+      // ends must sit on ONE row or the line misses the right anchor. Resolve
+      // the row ONCE — mean of the two ink edges when both are detected (they
+      // agree on every fixture, so this is a no-op there), the single detected
+      // edge when only one is, then the back chest row, then one shared ratio
+      // instead of the old mismatched 0.414 / 0.426 pair.
+      const bStrapInkL = bStrapInner && bStrapInner.left ? bStrapInner.left : null;
+      const bStrapInkR = bStrapInner && bStrapInner.right ? bStrapInner.right : null;
+      const bStrapY = (bStrapInkL && bStrapInkR)
+        ? (bStrapInkL.y + bStrapInkR.y) / 2
+        : (bStrapInkL ? bStrapInkL.y
+          : (bStrapInkR ? bStrapInkR.y
+            : (bf && (bf.chestLeftX != null || bf.chestRightX != null)
+              ? bChestY
+              : b.y + b.height * 0.414)));
+      const bStrapL = {
+        x: bStrapInkL ? bStrapInkL.x
+          : (bf && bf.chestLeftX  != null ? bf.chestLeftX  : inViewX(b, 0.276)),
+        y: bStrapY,
+      };
+      const bStrapR = {
+        x: bStrapInkR ? bStrapInkR.x
+          : (bf && bf.chestRightX != null ? bf.chestRightX : inViewX(b, 0.729)),
+        y: bStrapY,
+      };
       // Back-panel top/bottom: prefer the ink-following detector. Falls back
       // to view-box ratios; the old inView(b, 0.232, 1.005) used to clamp the
       // bottom anchor off-image — keep the same fraction but clamp at 0.985
@@ -27912,6 +27947,55 @@ function getAnnotationsOnImage(image) {
         uncertainty: 'Back strap distance requires a side / back view, which offline detection cannot localise.',
         reason: 'Back strap distance — review only until a side view is available.' };
 
+    // POM 16 — front apex distance (US-083).
+    //
+    // Unlike the band/chest pairs, apex-left and apex-right are NOT two ends of
+    // one detected row: each is found independently on its own side, and the TD
+    // ground truth legitimately places them at slightly different heights
+    // (measured slants of 0.0135 / 0.0418 / 0.0548 in scripts/groundtruth).
+    // So the anchors are left exactly where detection put them — flattening
+    // them onto a shared row would move them AWAY from TD truth.
+    //
+    // What is fixed is the LINE. It used to be forced level at apex-LEFT's y,
+    // which put it 0 from the left pin and the full gap from the right one. It
+    // now draws level at the MIDPOINT, so a legitimate small height difference
+    // costs each pin half the gap instead of loading it all onto one.
+    //
+    // Beyond a point the gap stops being a real height difference and becomes
+    // one side mis-detected: on demo7 apex-left is exactly right while
+    // apex-right is off by 0.134, and averaging that would drag the CORRECT
+    // anchor off truth. The credibility test is the line's SLANT (dy/dx), not
+    // an absolute distance — scale-free, so the same garment feature scores the
+    // same on a 3-view board as on a lone sketch (the POM 7 arc-tier rule,
+    // ADR 0022). Every TD-labelled apex pair slants at most 0.0548; every
+    // detected slant that ground truth proves wrong is at least 0.0767. The
+    // threshold sits in that gap. Over it, POM 16 demotes to REVIEW_ONLY rather
+    // than draw a confident-looking wrong line.
+    const APEX_MAX_SLANT = 0.06;
+    const apexSpanX = Math.abs(apexR.x - apexL.x);
+    const apexDy = Math.abs(apexR.y - apexL.y);
+    const apexSlant = apexSpanX > 0 ? apexDy / apexSpanX : Infinity;
+    const apexMidY = (apexL.y + apexR.y) / 2;
+    const pom16Row = apexSlant <= APEX_MAX_SLANT
+      ? { fixtureId: 'gen-16', pom: '16', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('16'),
+        // Apex distance is a horizontal span — level, at the midpoint of the
+        // two apex heights so neither pin is favoured.
+        start: { x: apexL.x, y: apexMidY }, end: { x: apexR.x, y: apexMidY },
+        drawability: 'DRAWABLE', confidence: 'medium',
+        proposedStartLandmark: 'apex-left', proposedEndLandmark: 'apex-right',
+        reason: 'Front apex-to-apex distance.' }
+      : { fixtureId: 'gen-16', pom: '16', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('16'),
+        drawability: 'REVIEW_ONLY', confidence: 'low',
+        proposedStartLandmark: 'apex-left', proposedEndLandmark: 'apex-right',
+        uncertainty: 'The two apex joins were detected ' + apexDy.toFixed(3)
+          + ' apart vertically over a ' + apexSpanX.toFixed(3) + ' span (slant '
+          + apexSlant.toFixed(3) + ', limit ' + APEX_MAX_SLANT
+          + ') — too steep for an apex-to-apex measurement, so one side is very'
+          + ' likely mis-detected. Place the apex anchors and re-generate.',
+        reason: 'Front apex-to-apex distance — review only: the two apex anchors disagree on height.' };
+
     const rows = [
       // POM 1 — bottom band (relax)
       { fixtureId: 'gen-1', pom: '1', type: 'straight', style: 'solid', arrowType: 'double',
@@ -28152,13 +28236,7 @@ function getAnnotationsOnImage(image) {
       pom15Row,
 
       // POM 16 — front apex distance
-      { fixtureId: 'gen-16', pom: '16', type: 'straight', style: 'solid', arrowType: 'double',
-        viewRole: effectivePomViewRole('16'),
-        // Apex distance is a horizontal span — force end.y to start.y.
-        start: apexL, end: { x: apexR.x, y: apexL.y },
-        drawability: 'DRAWABLE', confidence: 'medium',
-        proposedStartLandmark: 'apex-left', proposedEndLandmark: 'apex-right',
-        reason: 'Front apex-to-apex distance.' },
+      pom16Row,
 
       // POM 17 — neckline length: curve tracing the neckline edge from the
       // center front (171) up to the right strap junction (172).

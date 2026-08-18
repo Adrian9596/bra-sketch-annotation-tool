@@ -49,6 +49,10 @@ const EPS_CENTER_Y = 0.08;
 const EPS_ROW_SLANT = 0.09;
 const EPS_AXIS_PAD = 0.005;
 const EPS_SIDE_PAD = 0.003;
+// The two ends of one horizontal-span pair (band, chest, back strap) read the
+// SAME row variable in the seeder, so they must be exactly equal — this is a
+// float-noise guard, not a tolerance (see the E-series).
+const EPS_SHARED_ROW = 1e-9;
 
 const has9 = (c) => c.poms && c.poms['9'] && c.poms['9'].drawability !== 'REVIEW_ONLY'
   && c.anchors['inner-cup-top'] && c.anchors['inner-cup-bottom'];
@@ -224,6 +228,36 @@ const ASSERTIONS = [
       return { ok, msg: `pom9=${p9 ? p9.drawability : '-'} pom10=${p10 ? p10.drawability : '-'}` };
     },
   },
+
+  // --- E: shared-row model for the force-levelled horizontal spans ----------
+  //
+  // POM 1 (band), POM 3 (chest) and POM 15 (back strap) are horizontal spans:
+  // the drafter draws them level at the LEFT end's y and discards the right
+  // end's. That is correct TD semantics, but it silently misplaces the line
+  // when the two anchors of the pair are seeded at different heights — the
+  // line then misses the right anchor by exactly that gap while both pins
+  // still render in the right place. These pairs are the two ends of ONE row
+  // by definition, so the seeder must give them ONE y. Exact equality is the
+  // contract (both ends read the same row variable), not an approximation.
+  ...[
+    ['E1', 'band',       '1',  'band-left',       'band-right'],
+    ['E2', 'chest',      '3',  'chest-left',      'chest-right'],
+    ['E3', 'back strap', '15', 'back-strap-left', 'back-strap-right'],
+  ].map(([id, label, pom, leftKind, rightKind]) => ({
+    id,
+    name: `${leftKind} / ${rightKind} share one row (POM ${pom} draws level)`,
+    require: (c) => !!(c.anchors[leftKind] && c.anchors[rightKind]),
+    test: (c) => {
+      const L = c.anchors[leftKind];
+      const R = c.anchors[rightKind];
+      const dy = Math.abs(L.y - R.y);
+      return {
+        ok: dy <= EPS_SHARED_ROW,
+        msg: `${label} row: ${leftKind}.y=${L.y.toFixed(6)} ${rightKind}.y=${R.y.toFixed(6)} dy=${dy.toFixed(6)}`
+          + ` (need <= ${EPS_SHARED_ROW}) — POM ${pom} would miss ${rightKind} by dy`,
+      };
+    },
+  })),
 ];
 
 // ---- Run all fixtures -----------------------------------------------------

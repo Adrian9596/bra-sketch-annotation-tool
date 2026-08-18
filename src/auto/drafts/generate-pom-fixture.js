@@ -460,6 +460,55 @@
         uncertainty: 'Back strap distance requires a side / back view, which offline detection cannot localise.',
         reason: 'Back strap distance — review only until a side view is available.' };
 
+    // POM 16 — front apex distance (US-083).
+    //
+    // Unlike the band/chest pairs, apex-left and apex-right are NOT two ends of
+    // one detected row: each is found independently on its own side, and the TD
+    // ground truth legitimately places them at slightly different heights
+    // (measured slants of 0.0135 / 0.0418 / 0.0548 in scripts/groundtruth).
+    // So the anchors are left exactly where detection put them — flattening
+    // them onto a shared row would move them AWAY from TD truth.
+    //
+    // What is fixed is the LINE. It used to be forced level at apex-LEFT's y,
+    // which put it 0 from the left pin and the full gap from the right one. It
+    // now draws level at the MIDPOINT, so a legitimate small height difference
+    // costs each pin half the gap instead of loading it all onto one.
+    //
+    // Beyond a point the gap stops being a real height difference and becomes
+    // one side mis-detected: on demo7 apex-left is exactly right while
+    // apex-right is off by 0.134, and averaging that would drag the CORRECT
+    // anchor off truth. The credibility test is the line's SLANT (dy/dx), not
+    // an absolute distance — scale-free, so the same garment feature scores the
+    // same on a 3-view board as on a lone sketch (the POM 7 arc-tier rule,
+    // ADR 0022). Every TD-labelled apex pair slants at most 0.0548; every
+    // detected slant that ground truth proves wrong is at least 0.0767. The
+    // threshold sits in that gap. Over it, POM 16 demotes to REVIEW_ONLY rather
+    // than draw a confident-looking wrong line.
+    const APEX_MAX_SLANT = 0.06;
+    const apexSpanX = Math.abs(apexR.x - apexL.x);
+    const apexDy = Math.abs(apexR.y - apexL.y);
+    const apexSlant = apexSpanX > 0 ? apexDy / apexSpanX : Infinity;
+    const apexMidY = (apexL.y + apexR.y) / 2;
+    const pom16Row = apexSlant <= APEX_MAX_SLANT
+      ? { fixtureId: 'gen-16', pom: '16', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('16'),
+        // Apex distance is a horizontal span — level, at the midpoint of the
+        // two apex heights so neither pin is favoured.
+        start: { x: apexL.x, y: apexMidY }, end: { x: apexR.x, y: apexMidY },
+        drawability: 'DRAWABLE', confidence: 'medium',
+        proposedStartLandmark: 'apex-left', proposedEndLandmark: 'apex-right',
+        reason: 'Front apex-to-apex distance.' }
+      : { fixtureId: 'gen-16', pom: '16', type: 'straight', style: 'solid', arrowType: 'double',
+        viewRole: effectivePomViewRole('16'),
+        drawability: 'REVIEW_ONLY', confidence: 'low',
+        proposedStartLandmark: 'apex-left', proposedEndLandmark: 'apex-right',
+        uncertainty: 'The two apex joins were detected ' + apexDy.toFixed(3)
+          + ' apart vertically over a ' + apexSpanX.toFixed(3) + ' span (slant '
+          + apexSlant.toFixed(3) + ', limit ' + APEX_MAX_SLANT
+          + ') — too steep for an apex-to-apex measurement, so one side is very'
+          + ' likely mis-detected. Place the apex anchors and re-generate.',
+        reason: 'Front apex-to-apex distance — review only: the two apex anchors disagree on height.' };
+
     const rows = [
       // POM 1 — bottom band (relax)
       { fixtureId: 'gen-1', pom: '1', type: 'straight', style: 'solid', arrowType: 'double',
@@ -700,13 +749,7 @@
       pom15Row,
 
       // POM 16 — front apex distance
-      { fixtureId: 'gen-16', pom: '16', type: 'straight', style: 'solid', arrowType: 'double',
-        viewRole: effectivePomViewRole('16'),
-        // Apex distance is a horizontal span — force end.y to start.y.
-        start: apexL, end: { x: apexR.x, y: apexL.y },
-        drawability: 'DRAWABLE', confidence: 'medium',
-        proposedStartLandmark: 'apex-left', proposedEndLandmark: 'apex-right',
-        reason: 'Front apex-to-apex distance.' },
+      pom16Row,
 
       // POM 17 — neckline length: curve tracing the neckline edge from the
       // center front (171) up to the right strap junction (172).

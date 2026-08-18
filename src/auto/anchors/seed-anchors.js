@@ -43,6 +43,9 @@
       x: clamp01(view.x + view.width * rx),
       y: clamp01(view.y + view.height * ry),
     });
+    // x-only view-box fallback, for a landmark whose y must come from a SHARED
+    // row rather than from this side's own ratio (see the band/chest seeds).
+    const inViewX = (view, rx) => clamp01(view.x + view.width * rx);
     const roleByKind = Object.create(null);
     for (const schema of ANCHOR_SCHEMA) {
       roleByKind[schema.kind] = defaultViewRoleForAnchorKind(schema.kind);
@@ -706,10 +709,22 @@
         ? detection.underbustRightX
         : (detection.chestRightX != null ? detection.chestRightX : null);
       const bandYf  = detection.bandY  != null ? detection.bandY  : (f.y + f.height * 0.978);
-      const useChestL = chestSeedLeftX  != null ? { x: chestSeedLeftX,  y: chestSeedY } : inView(f, 0.004, 0.615);
-      const useChestR = chestSeedRightX != null ? { x: chestSeedRightX, y: chestSeedY } : inView(f, 0.990, 0.605);
-      const useBandL  = detection.bandLeftX   != null ? { x: detection.bandLeftX,   y: bandYf  } : inView(f, 0.063, 0.978);
-      const useBandR  = detection.bandRightX  != null ? { x: detection.bandRightX,  y: bandYf  } : inView(f, 0.936, 0.978);
+      // band-left/-right are the two ends of ONE horizontal band row, and
+      // chest-left/-right of ONE chest row — so both ends must share that
+      // row's y and only the x may fall back per side. Taking a per-side
+      // view-box y (the old `inView(f, rx, ry)` fallback) put the two ends at
+      // DIFFERENT heights whenever the walker found ink on just one side, and
+      // for chest even when it found neither: the two ratios disagreed with
+      // each other (0.615 vs 0.605) and with chestSeedY's own 0.615 fallback.
+      // POM 1/3 force their line level at the LEFT end's y and POM 2/4 hang
+      // off the RIGHT end's y, so any such gap showed up as lines 1-4 sitting
+      // vertically off anchors that were themselves correctly placed.
+      // The ink-on-both-sides path is unchanged, which is what every golden
+      // fixture exercises.
+      const useChestL = { x: chestSeedLeftX  != null ? chestSeedLeftX  : inViewX(f, 0.004), y: chestSeedY };
+      const useChestR = { x: chestSeedRightX != null ? chestSeedRightX : inViewX(f, 0.990), y: chestSeedY };
+      const useBandL  = { x: detection.bandLeftX  != null ? detection.bandLeftX  : inViewX(f, 0.063), y: bandYf };
+      const useBandR  = { x: detection.bandRightX != null ? detection.bandRightX : inViewX(f, 0.936), y: bandYf };
       const useCfTop  = detection.cfTopY      != null ? { x: detection.axisX,       y: detection.cfTopY }
                                                       : inView(f, 0.505, 0.485);
       // POM 9 / POM 10 inner-cup anchors. Rule.md requires both to belong to
@@ -1092,12 +1107,32 @@
       // Falls back to chestLeftX/chestRightX (panel OUTER corners) only when the
       // strap detector finds nothing, then to view-box ratios.
       const bStrapInner = detection.backStrapInner || null;
-      const bStrapL = bStrapInner && bStrapInner.left
-        ? { x: bStrapInner.left.x, y: bStrapInner.left.y }
-        : (bf && bf.chestLeftX  != null ? { x: bf.chestLeftX,  y: bChestY } : inView(b, 0.276, 0.414));
-      const bStrapR = bStrapInner && bStrapInner.right
-        ? { x: bStrapInner.right.x, y: bStrapInner.right.y }
-        : (bf && bf.chestRightX != null ? { x: bf.chestRightX, y: bChestY } : inView(b, 0.729, 0.426));
+      // Same one-row rule as the front band/chest pairs above: POM 15 is a
+      // horizontal span, and it draws level at the LEFT end's y, so the two
+      // ends must sit on ONE row or the line misses the right anchor. Resolve
+      // the row ONCE — mean of the two ink edges when both are detected (they
+      // agree on every fixture, so this is a no-op there), the single detected
+      // edge when only one is, then the back chest row, then one shared ratio
+      // instead of the old mismatched 0.414 / 0.426 pair.
+      const bStrapInkL = bStrapInner && bStrapInner.left ? bStrapInner.left : null;
+      const bStrapInkR = bStrapInner && bStrapInner.right ? bStrapInner.right : null;
+      const bStrapY = (bStrapInkL && bStrapInkR)
+        ? (bStrapInkL.y + bStrapInkR.y) / 2
+        : (bStrapInkL ? bStrapInkL.y
+          : (bStrapInkR ? bStrapInkR.y
+            : (bf && (bf.chestLeftX != null || bf.chestRightX != null)
+              ? bChestY
+              : b.y + b.height * 0.414)));
+      const bStrapL = {
+        x: bStrapInkL ? bStrapInkL.x
+          : (bf && bf.chestLeftX  != null ? bf.chestLeftX  : inViewX(b, 0.276)),
+        y: bStrapY,
+      };
+      const bStrapR = {
+        x: bStrapInkR ? bStrapInkR.x
+          : (bf && bf.chestRightX != null ? bf.chestRightX : inViewX(b, 0.729)),
+        y: bStrapY,
+      };
       // Back-panel top/bottom: prefer the ink-following detector. Falls back
       // to view-box ratios; the old inView(b, 0.232, 1.005) used to clamp the
       // bottom anchor off-image — keep the same fraction but clamp at 0.985

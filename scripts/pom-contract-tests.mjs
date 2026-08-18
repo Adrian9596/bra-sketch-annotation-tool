@@ -90,6 +90,9 @@ const has = (c, ...kinds) => kinds.every(k => a(c, k));
 // (styleEvidenceStatus === 'confirmed-prior') intentionally leave the anchors
 // and are skipped.
 const EPS_LINE_ANCHOR = 0.004;
+// The two ends of one horizontal-span pair read the SAME row variable in the
+// seeder, so they must be exactly equal — float noise only, not a tolerance.
+const EPS_SHARED_ROW = 1e-9;
 const g = (c, pom) => (c && c.pomGeom && c.pomGeom[pom]) || null;
 const hasLine = (gm) => !!(gm && gm.start && gm.end);
 const clamp01n = (v) => Math.max(0, Math.min(1, v));
@@ -170,7 +173,13 @@ const CLA_EXPECT = {
   '16': (c) => {
     if (!has(c, 'apex-left', 'apex-right')) return null;
     const L = a(c, 'apex-left'); const R = a(c, 'apex-right');
-    return { start: L, end: { x: R.x, y: L.y } };
+    // US-083: apex-left and apex-right are detected independently and the TD
+    // legitimately places them at slightly different heights, so the line is
+    // levelled at their MIDPOINT rather than at the left end's y — neither pin
+    // is favoured. (Too steep a slant demotes the row to REVIEW_ONLY upstream,
+    // which skips this assertion via hasLine.)
+    const midY = (L.y + R.y) / 2;
+    return { start: { x: L.x, y: midY }, end: { x: R.x, y: midY } };
   },
   '17': (c) => {
     // Neckline length: the curve TRACES the neckline edge and its endpoints
@@ -203,7 +212,7 @@ const CLA_NAMES = {
   '13': 'POM 13 line sits on back-panel anchors (or back-top/bottom + 0.04 x fallback)',
   '14': 'POM 14 curve endpoints sit on strap-top → strap-bottom',
   '15': 'POM 15 line sits on back-strap-left, end forced horizontal (back-strap-right.x at back-strap-left.y)',
-  '16': 'POM 16 line sits on apex-left, end forced horizontal (apex-right.x at apex-left.y)',
+  '16': 'POM 16 line spans apex-left → apex-right, levelled at their midpoint height',
   '17': 'POM 17 curve endpoints sit on 171 (center front) → 172 (strap)',
   '18': 'POM 18 curve endpoints sit on armhole-top → armhole-bottom',
 };
@@ -256,6 +265,148 @@ const horizontalAssertions = () => HORIZONTAL_POMS.map(({ pom, label }) => ({
     const gm = g(c, pom);
     const dy = Math.abs(gm.start.y - gm.end.y);
     return { ok: dy < EPS_SAME_COL, msg: `|Δy|=${dy.toFixed(4)}` };
+  },
+}));
+
+// --- TRA: the drawn line must pass through BOTH required anchors -----------
+// The CLA series above recomputes the drafter's own formula and compares — so
+// for a force-levelled span it asserts `end = (R.x, L.y)`, i.e. it reproduces
+// the discard of R.y and can never fail on it. That blind spot let a real
+// defect ship: when the seeder put the two ends of one row at different
+// heights, POM 1/3 drew level at L.y and missed the right-hand pin entirely
+// while CLA stayed green (all 21 golden fixtures happened to seed the pair
+// level, so the corpus never exercised it either).
+//
+// TRA asserts the property a TD actually cares about, independent of the
+// formula: the point-to-SEGMENT distance from each required anchor to the drawn
+// line is within tolerance. Force-levelling stays legal — it only has to keep
+// the line on both pins, which it does exactly when the pair shares a row.
+//
+// POM 16 is deliberately NOT in this list. Its two anchors are detected
+// independently and the TD ground truth legitimately places them at different
+// heights, so a levelled line CANNOT touch both — it sits half the gap from
+// each by design. APX below asserts that midpoint property instead.
+const distToSegment = (p, s, e) => {
+  const vx = e.x - s.x;
+  const vy = e.y - s.y;
+  const len2 = vx * vx + vy * vy;
+  if (len2 === 0) return Math.hypot(p.x - s.x, p.y - s.y);
+  let t = ((p.x - s.x) * vx + (p.y - s.y) * vy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (s.x + t * vx), p.y - (s.y + t * vy));
+};
+// --- RPF: one-sided seeding still yields ONE row --------------------------
+// The corpus only ever detects band/chest ink on both sides, so the branch
+// where one side falls back to a view-box ratio is unreachable from any
+// fixture — and that is precisely the branch where the two ends of a row used
+// to land at different heights, throwing POM 1-4 off anchors that still
+// rendered correctly. captureExpr re-seeds that branch explicitly; these
+// assertions check the result.
+const RPF_CASES = [
+  { key: 'band-right-missing',  label: 'band row, right ink missing' },
+  { key: 'band-left-missing',   label: 'band row, left ink missing' },
+  { key: 'band-both-missing',   label: 'band row, no ink either side' },
+  { key: 'chest-right-missing', label: 'chest row, right ink missing' },
+  { key: 'chest-left-missing',  label: 'chest row, left ink missing' },
+  { key: 'chest-both-missing',  label: 'chest row, no ink either side' },
+];
+const rowPairFallbackAssertions = () => RPF_CASES.map(({ key, label }) => ({
+  id: `RPF.${key}`,
+  name: `${label}: pair shares one row and POM line stays on both anchors`,
+  require: (c) => !!(c.rowPairs && Object.keys(c.rowPairs).length),
+  test: (c) => {
+    const r = c.rowPairs[key];
+    if (!r) return { ok: false, msg: `no capture for ${key} — the re-seed never ran` };
+    if (r.error) return { ok: false, msg: `re-seed threw: ${r.error}` };
+    if (!r.left || !r.right) return { ok: false, msg: `${key}: pair anchors missing after re-seed` };
+    if (!r.line) return { ok: false, msg: `${key}: POM ${r.pom} produced no line after re-seed` };
+    const dy = Math.abs(r.left.y - r.right.y);
+    const problems = [];
+    if (dy > EPS_SHARED_ROW) {
+      problems.push(`pair split across rows: left.y=${r.left.y.toFixed(6)}`
+        + ` right.y=${r.right.y.toFixed(6)} dy=${dy.toFixed(6)}`
+        + ` — POM ${r.pom} draws level at left.y and would miss the right anchor by dy`);
+    }
+    // Sharing a row is not enough — it must be the DETECTED row, otherwise both
+    // ends could agree on a wrong one.
+    if (r.detectedRow != null && Math.abs(r.left.y - r.detectedRow) > EPS_SHARED_ROW) {
+      problems.push(`row is ${r.left.y.toFixed(6)} but detection resolved ${r.detectedRow.toFixed(6)}`);
+    }
+    const gapL = distToSegment(r.left, r.line.start, r.line.end);
+    const gapR = distToSegment(r.right, r.line.start, r.line.end);
+    if (gapL > EPS_LINE_ANCHOR || gapR > EPS_LINE_ANCHOR) {
+      problems.push(`POM ${r.pom} line gaps left=${gapL.toFixed(4)} right=${gapR.toFixed(4)}`
+        + ` (need <= ${EPS_LINE_ANCHOR})`);
+    }
+    return {
+      ok: problems.length === 0,
+      msg: problems.length ? problems.join('; ')
+        : `dy=${dy.toFixed(6)}, line gaps ${gapL.toFixed(4)}/${gapR.toFixed(4)}`,
+    };
+  },
+}));
+
+// --- APX: POM 16 splits the difference between its two apex pins ------------
+// The apex pair is not one row (see CLA_EXPECT['16']), so "touches both" is the
+// wrong contract. The right one is that the levelled line favours NEITHER pin:
+// it must be equidistant from both, and that distance must be exactly half the
+// pair's height gap. Before US-083 the line sat ON apex-left and the full gap
+// away from apex-right — which is what this catches.
+const apexAssertions = () => [{
+  id: 'APX.16',
+  name: 'POM 16 line is levelled at the midpoint of both apex pins',
+  require: (c) => {
+    const gm = g(c, '16');
+    return hasLine(gm) && gm.styleEvidenceStatus !== 'confirmed-prior'
+      && has(c, 'apex-left', 'apex-right');
+  },
+  test: (c) => {
+    const gm = g(c, '16');
+    const L = a(c, 'apex-left');
+    const R = a(c, 'apex-right');
+    const gapL = distToSegment(L, gm.start, gm.end);
+    const gapR = distToSegment(R, gm.start, gm.end);
+    const halfSpread = Math.abs(L.y - R.y) / 2;
+    const problems = [];
+    if (Math.abs(gapL - gapR) > EPS_LINE_ANCHOR) {
+      problems.push(`line favours one pin: gapL=${gapL.toFixed(4)} gapR=${gapR.toFixed(4)}`);
+    }
+    if (Math.abs(Math.max(gapL, gapR) - halfSpread) > EPS_LINE_ANCHOR) {
+      problems.push(`gap ${Math.max(gapL, gapR).toFixed(4)} is not half the`
+        + ` ${(halfSpread * 2).toFixed(4)} apex height spread`);
+    }
+    return {
+      ok: problems.length === 0,
+      msg: problems.length ? problems.join('; ')
+        : `gaps ${gapL.toFixed(4)}/${gapR.toFixed(4)}, half-spread ${halfSpread.toFixed(4)}`,
+    };
+  },
+}];
+
+const TOUCH_POMS = [
+  { pom: '1',  kinds: ['band-left', 'band-right'] },
+  { pom: '3',  kinds: ['chest-left', 'chest-right'] },
+  { pom: '15', kinds: ['back-strap-left', 'back-strap-right'] },
+];
+const touchesRequiredAnchorAssertions = () => TOUCH_POMS.map(({ pom, kinds }) => ({
+  id: `TRA.${pom}`,
+  name: `POM ${pom} line passes through both anchors (${kinds.join(' + ')})`,
+  require: (c) => {
+    const gm = g(c, pom);
+    return hasLine(gm) && gm.styleEvidenceStatus !== 'confirmed-prior' && has(c, ...kinds);
+  },
+  test: (c) => {
+    const gm = g(c, pom);
+    const parts = kinds.map((kind) => {
+      const anchor = a(c, kind);
+      const d = distToSegment(anchor, gm.start, gm.end);
+      return { kind, d, ok: d <= EPS_LINE_ANCHOR };
+    });
+    return {
+      ok: parts.every(p => p.ok),
+      msg: parts.map(p => `${p.kind} gap=${p.d.toFixed(4)}${p.ok ? '' : ' ✗'}`).join('; ')
+        + ` (need <= ${EPS_LINE_ANCHOR})`,
+    };
   },
 }));
 
@@ -778,6 +929,15 @@ const ASSERTIONS = [
 
   // --- Horizontal-span POMs (1 / 3 / 15 / 16) must be drawn level ----------
   ...horizontalAssertions(),
+
+  // --- TRA: the drawn line must actually TOUCH both required anchors -------
+  ...touchesRequiredAnchorAssertions(),
+
+  // --- RPF: the one-sided seeding branch no fixture can reach on its own ---
+  ...rowPairFallbackAssertions(),
+
+  // --- APX: POM 16 is levelled at the midpoint of its two apex pins --------
+  ...apexAssertions(),
 ];
 
 // ---- Run -----------------------------------------------------------------
@@ -934,8 +1094,59 @@ function captureExpr(imagePath) {
           end: d.end ? toNorm(d.end) : null,
         };
       }
+      // Row-pair fallback branches. Every fixture in this corpus detects band
+      // and chest ink on BOTH sides, so the corpus alone can never exercise the
+      // one-sided seeding path — the exact path where the two ends of a row
+      // used to receive different y values. Re-seed here from the same
+      // detection with one side's ink fields removed, so the asymmetric branch
+      // is covered without needing a sketch that happens to trigger it.
+      const rowPairCases = [
+        { key: 'band-right-missing',  pair: 'band',  nulls: ['bandRightX'] },
+        { key: 'band-left-missing',   pair: 'band',  nulls: ['bandLeftX'] },
+        { key: 'band-both-missing',   pair: 'band',  nulls: ['bandLeftX', 'bandRightX'] },
+        { key: 'chest-right-missing', pair: 'chest', nulls: ['underbustRightX', 'chestRightX'] },
+        { key: 'chest-left-missing',  pair: 'chest', nulls: ['underbustLeftX', 'chestLeftX'] },
+        { key: 'chest-both-missing',  pair: 'chest',
+          nulls: ['underbustLeftX', 'underbustRightX', 'chestLeftX', 'chestRightX'] },
+      ];
+      const rowPairs = {};
+      const seedImage = imgs.length ? imgs[imgs.length - 1] : null;
+      const pipe = debug.pipeline || {};
+      if (seedImage && typeof pipe.seedAnchorsFromDetection === 'function') {
+        for (const rc of rowPairCases) {
+          try {
+            const mutated = debug.getDetection();
+            for (const field of rc.nulls) mutated[field] = null;
+            // skipLearning: a polluted calibration store must not bias the
+            // seeds under test (the residual buckets cover band anchors).
+            const seeded = pipe.seedAnchorsFromDetection(mutated, seedImage, { skipLearning: true });
+            const byKind = {};
+            for (const anchor of seeded) byKind[anchor.kind] = anchor;
+            const pom = rc.pair === 'band' ? '1' : '3';
+            const fixture = pipe.buildPOMFixtureFromAnchors(seeded, mutated);
+            const line = (fixture.annotations || []).find(r => String(r.pom) === pom) || null;
+            const L = byKind[rc.pair + '-left'] || null;
+            const R = byKind[rc.pair + '-right'] || null;
+            rowPairs[rc.key] = {
+              pair: rc.pair,
+              pom,
+              left: L ? { x: L.x, y: L.y } : null,
+              right: R ? { x: R.x, y: R.y } : null,
+              line: (line && line.start && line.end) ? { start: line.start, end: line.end } : null,
+              // The row the pair SHOULD sit on, straight from the detection.
+              detectedRow: rc.pair === 'band'
+                ? (typeof mutated.bandY === 'number' ? mutated.bandY : null)
+                : (typeof mutated.underbustY === 'number' ? mutated.underbustY
+                  : (typeof mutated.chestY === 'number' ? mutated.chestY : null)),
+            };
+          } catch (e) {
+            rowPairs[rc.key] = { pair: rc.pair, error: String((e && e.message) || e) };
+          }
+        }
+      }
+
       return {
-        anchors, poms, pomGeom,
+        anchors, poms, pomGeom, rowPairs,
         cupModel: det.cupModel ? {
           side: det.cupModel.side,
           viewRole: det.cupModel.viewRole,
