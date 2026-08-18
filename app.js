@@ -21396,7 +21396,13 @@ function getAnnotationsOnImage(image) {
     const cfBottomHemY = hemNormAtColumn(axisPx, bandY);
     const apexLeftCandidate = findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, -1);
     const apexRightCandidate = findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, +1);
-    const apexPair = validateCupApexPair(apexLeftCandidate, apexRightCandidate, bounds, w, h);
+    // US-084: the two cup/strap joins are near-symmetric features, so a pair
+    // that disagrees sharply on row means one side locked onto the wrong ink —
+    // and the sides are found INDEPENDENTLY, so nothing above caught that. Give
+    // the outlier side a second look, anchored on the side we trust.
+    const apexRepaired = repairApexPairRow(
+      apexLeftCandidate, apexRightCandidate, dark, w, h, bounds, axisPx, chestRow);
+    const apexPair = validateCupApexPair(apexRepaired.left, apexRepaired.right, bounds, w, h);
     const apexLeftInfo = apexPair ? apexPair.left : null;
     const apexRightInfo = apexPair ? apexPair.right : null;
     const apexLeft = apexLeftInfo ? apexLeftInfo.point : null;
@@ -23865,15 +23871,31 @@ function getAnnotationsOnImage(image) {
     };
   }
 
-  function findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, side) {
+  // rowHintNorm (US-084, optional): when the other side's join is trusted, scan
+  // only a band around that row and score by PROXIMITY to it instead of by the
+  // topmost-run preference. The top preference is what takes the bait on a high
+  // stray feature, so a hinted retry must not reuse it — otherwise the retry
+  // simply re-picks the same wrong run inside a smaller window.
+  function findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, side, rowHintNorm) {
     const bboxW = bounds.maxX - bounds.minX + 1;
     const bboxH = bounds.maxY - bounds.minY + 1;
     const guard = Math.max(4, Math.round(bboxW * 0.075));
-    const y1 = bounds.minY + Math.round(bboxH * 0.08);
-    const y2 = Math.min(
+    let y1 = bounds.minY + Math.round(bboxH * 0.08);
+    let y2 = Math.min(
       bounds.maxY,
       chestRow > 0 ? chestRow + Math.round(bboxH * 0.05) : bounds.minY + Math.round(bboxH * 0.48)
     );
+    // Band half-height for a hinted retry. Wide enough to absorb a real
+    // left/right height difference (TD pairs slant at most 0.0548) plus the
+    // run-centre quantisation, narrow enough to exclude the stray that caused
+    // the disagreement.
+    const hinted = Number.isFinite(rowHintNorm);
+    if (hinted) {
+      const hintPx = rowHintNorm * h;
+      const band = Math.max(3, Math.round(bboxH * 0.06));
+      y1 = Math.max(y1, Math.round(hintPx - band));
+      y2 = Math.min(y2, Math.round(hintPx + band));
+    }
     const x1 = side < 0
       ? bounds.minX + Math.round(bboxW * 0.05)
       : axisPx + guard;
@@ -23939,8 +23961,19 @@ function getAnnotationsOnImage(image) {
         // still requires real cup body below the pick, so this cannot snap onto
         // a thin strap-ribbon tick above the true cup seam.
         const topPref = 0.5 + 0.5 * highCupBias * highCupBias;
-        const score = support * topPref * (0.75 + edgeBias * 0.25);
-        if (!best || score > best.score || (Math.abs(score - best.score) < 1e-6 && y < best.y)) {
+        // A hinted retry scores by nearness to the trusted row instead of by
+        // height in the window — see the rowHintNorm note on this function.
+        const rowPref = hinted
+          ? 1 - Math.min(1, Math.abs(y - rowHintNorm * h) / Math.max(1, y2 - y1))
+          : topPref;
+        const score = support * rowPref * (0.75 + edgeBias * 0.25);
+        // Tie-break: normally the higher run wins (cup top, not a lower seam);
+        // on a hinted retry the run nearer the trusted row wins instead.
+        const tieBreakWins = best && Math.abs(score - best.score) < 1e-6
+          && (hinted
+            ? Math.abs(y - rowHintNorm * h) < Math.abs(best.y - rowHintNorm * h)
+            : y < best.y);
+        if (!best || score > best.score || tieBreakWins) {
           best = {
             x: cx,
             // Inner edge of the strap ribbon at the join row — the edge nearer
@@ -23975,6 +24008,68 @@ function getAnnotationsOnImage(image) {
         count: best.support,
         verticalSpan: best.verticalSpan,
         score: Math.round(best.score * 100) / 100,
+      },
+    };
+  }
+
+  // US-084: cross-check the two cup/strap joins against each other.
+  //
+  // findCupStrapJoinFromInk runs once per side with no knowledge of the other,
+  // and it deliberately prefers the TOPMOST qualifying run so the pick lands on
+  // the strap join rather than a lower cup-body seam. When one side carries an
+  // extra high feature that clears the support gates (a strap ribbon tick, a
+  // trim line, a neckline binding crossing the search window), that preference
+  // takes the bait on that side only. The result is a pair straddling two
+  // different rows, which no per-side check can see: on demo7.png the left join
+  // is exactly on the TD-labelled row while the right sits 0.134 above it.
+  //
+  // The two joins are near-symmetric features on a flat sketch. TD-labelled
+  // pairs slant (dy/dx) by at most 0.0548, so a pair beyond APEX_SLANT_LIMIT is
+  // a detection disagreement, not a garment property. Re-run the losing side
+  // with the trusted side's row as a hint and keep the result only if it
+  // genuinely reconciles the pair — otherwise leave both candidates untouched
+  // and let validateCupApexPair / the POM 16 slant gate handle it, so a sketch
+  // this cannot repair degrades exactly as before rather than getting a
+  // fabricated anchor.
+  const APEX_SLANT_LIMIT = 0.06;
+
+  function apexPairSlant(left, right) {
+    if (!left || !right) return null;
+    const dx = Math.abs(right.point.x - left.point.x);
+    if (!(dx > 0)) return Infinity;
+    return Math.abs(left.point.y - right.point.y) / dx;
+  }
+
+  function repairApexPairRow(left, right, dark, w, h, bounds, axisPx, chestRow) {
+    const slant = apexPairSlant(left, right);
+    if (slant == null || slant <= APEX_SLANT_LIMIT) return { left, right, repaired: null };
+
+    // Trust the more confident side; on a tie prefer the LOWER row, since the
+    // failure mode this repairs is a pick that jumped UP off the cup.
+    const leftWins = left.confidence > right.confidence + 1e-9
+      || (Math.abs(left.confidence - right.confidence) <= 1e-9 && left.point.y >= right.point.y);
+    const keep = leftWins ? left : right;
+    const side = leftWins ? +1 : -1;   // re-search the OTHER side
+    const retry = findCupStrapJoinFromInk(
+      dark, w, h, bounds, axisPx, chestRow, side, keep.point.y);
+    if (!retry) return { left, right, repaired: null };
+
+    const next = leftWins ? { left, right: retry } : { left: retry, right };
+    const nextSlant = apexPairSlant(next.left, next.right);
+    // Only accept a retry that actually reconciles the pair.
+    if (nextSlant == null || nextSlant > APEX_SLANT_LIMIT || nextSlant >= slant) {
+      return { left, right, repaired: null };
+    }
+    return {
+      left: next.left,
+      right: next.right,
+      repaired: {
+        side: leftWins ? 'right' : 'left',
+        fromY: (leftWins ? right : left).point.y,
+        toY: retry.point.y,
+        hintY: keep.point.y,
+        slantBefore: slant,
+        slantAfter: nextSlant,
       },
     };
   }

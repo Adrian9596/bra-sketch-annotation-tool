@@ -53,6 +53,10 @@ const EPS_SIDE_PAD = 0.003;
 // SAME row variable in the seeder, so they must be exactly equal — this is a
 // float-noise guard, not a tolerance (see the E-series).
 const EPS_SHARED_ROW = 1e-9;
+// Keep in lockstep with APEX_MAX_SLANT in src/auto/drafts/generate-pom-fixture.js
+// and APEX_SLANT_LIMIT in src/auto-detection.js — E4 is the assertion that
+// catches them drifting apart.
+const APEX_SLANT_LIMIT = 0.06;
 
 const has9 = (c) => c.poms && c.poms['9'] && c.poms['9'].drawability !== 'REVIEW_ONLY'
   && c.anchors['inner-cup-top'] && c.anchors['inner-cup-bottom'];
@@ -258,6 +262,37 @@ const ASSERTIONS = [
       };
     },
   })),
+
+  // --- E4: POM 16's drawability tracks the apex pair's credibility ----------
+  // Two halves have to agree here, and E4 is what keeps them agreeing:
+  //   - the DETECTOR (US-084) repairs a pair that straddles two rows by
+  //     re-searching the outlier side around the trusted side's row, and leaves
+  //     the pair alone when it cannot reconcile it;
+  //   - the DRAFTER (US-083) draws POM 16 level at the pair's midpoint, and
+  //     demotes to REVIEW_ONLY when the pair slants past the same limit.
+  // So a drawn POM 16 implies a reconciled pair and vice versa. If the two
+  // limits ever drift apart, this fails instead of silently drawing a line off
+  // a mis-detected apex (or withholding one from a good pair).
+  {
+    id: 'E4',
+    name: 'POM 16 is drawable exactly when the apex pair slant is within limit',
+    require: (c) => !!(c.anchors['apex-left'] && c.anchors['apex-right']
+      && c.poms && c.poms['16']),
+    test: (c) => {
+      const L = c.anchors['apex-left'];
+      const R = c.anchors['apex-right'];
+      const dx = Math.abs(R.x - L.x);
+      const slant = dx > 0 ? Math.abs(L.y - R.y) / dx : Infinity;
+      const drawable = c.poms['16'].drawability !== 'REVIEW_ONLY';
+      const within = slant <= APEX_SLANT_LIMIT;
+      return {
+        ok: drawable === within,
+        msg: `slant=${Number.isFinite(slant) ? slant.toFixed(4) : 'inf'}`
+          + ` (limit ${APEX_SLANT_LIMIT}) drawability=${c.poms['16'].drawability}`
+          + (drawable === within ? '' : ' — drawability and slant disagree'),
+      };
+    },
+  },
 ];
 
 // ---- Run all fixtures -----------------------------------------------------
