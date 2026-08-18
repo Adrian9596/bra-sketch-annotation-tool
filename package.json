@@ -46,6 +46,7 @@
     "construction-measurement-test": "node test/run-tests.mjs",
     "construction-measurement-browser-test": "node test/browser-smoke.mjs",
     "mainpage-check": "node scripts/mainpage-check.mjs",
+    "board-toolbar-check": "node scripts/board-toolbar-check.mjs",
     "construction-check": "node scripts/construction-check.mjs",
     "bom-check": "node scripts/bom-check.mjs",
     "preview-check": "node scripts/preview-check.mjs"

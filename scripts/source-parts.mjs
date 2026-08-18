@@ -35,6 +35,7 @@ export const SOURCE_PARTS = [
   'src/ui/bom.js',
   'src/ui/preview-page.js',
   'src/ui/page-nav.js',
+  'src/ui/board-toolbar.js',
   'src/ui/bindings.js',
   'src/project/history.js',
   'src/project/project-io.js',

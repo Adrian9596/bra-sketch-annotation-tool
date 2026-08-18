@@ -132,6 +132,7 @@
     el.toggleLabelsBtn.disabled = isStitchMode();
 
     updateAutoModeUI();
+    updateBoardToolbarUI();
     renderSpecPanel();
     // US-038: keep the floating anchor panel in sync (fresh detect, mode
     // switch, canvas pin selection). renderAnchorManagerPanel auto-closes it

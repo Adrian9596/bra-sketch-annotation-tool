@@ -4,6 +4,7 @@
 // Source part for app.js. Run `npm run build` after editing.
 
   function bindUI() {
+    initBoardToolbar();
     el.toolSelect.addEventListener('click', () => setTool('select'));
     el.toolStraight.addEventListener('click', () => setTool('straight'));
     el.toolCurved.addEventListener('click', () => setTool('curved'));

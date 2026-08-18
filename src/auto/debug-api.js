@@ -533,6 +533,16 @@
         width: image.width,
         height: image.height,
       })),
+      // US-082 toolbar test seam: add decoded Board image data without also
+      // invoking detection. This isolates the ready-state toolbar contract;
+      // the smoke/golden suites continue to own detection proof.
+      addBoardImages: async (dataURLs) => {
+        await addImagesFromDataURLs(Array.isArray(dataURLs) ? dataURLs : []);
+        return {
+          imageCount: state.images.length,
+          status: state.autoMode.status,
+        };
+      },
       getAnnotations: () => clone(state.annotations),
       // Test-only: set the review-time hidden POM lines by annotation id — the
       // same session-only state the panel's × toggle writes (state.hiddenAnnIds).

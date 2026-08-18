@@ -20,6 +20,7 @@
     --select:#356dff;
   }
   *{box-sizing:border-box}
+  [hidden]{ display:none !important; }
   html,body{height:100%;margin:0}
   body{
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -43,6 +44,7 @@
   .toolbar{
     grid-row:1;
     display:flex;
+    min-width:0;
     align-items:center;
     gap:6px;
     padding:7px 8px;
@@ -56,6 +58,9 @@
     display:flex;
     align-items:center;
     flex-wrap:wrap;
+    gap:6px;
+    flex:1 0 100%;
+    min-width:0;
   }
   .page-hidden{ display:none !important; }
   .group{
@@ -74,6 +79,121 @@
     bottom:7px;
     width:1px;
     background:var(--hairline);
+  }
+  .toolbar-spacer{ flex:1 1 18px; min-width:0; }
+
+  /* US-082: the Board toolbar is state-driven. Core workflow and authoring
+     actions stay direct; secondary commands live in compact, accessible
+     menus. Existing command button ids stay on the real menu items so
+     shortcuts and bindings keep one execution path. */
+  .board-menu-tray{
+    display:flex;
+    align-items:center;
+    gap:5px;
+    padding-right:0;
+    margin-left:auto;
+  }
+  .board-menu-tray::after{ display:none; }
+  .toolbar-menu{ position:relative; }
+  .toolbar-menu-trigger[aria-expanded="true"]{
+    background:#eef0f4;
+    border-color:#cfd2da;
+  }
+  .toolbar-menu-list{
+    position:absolute;
+    top:calc(100% + 7px);
+    right:0;
+    z-index:60;
+    min-width:220px;
+    max-width:min(320px, calc(100vw - 24px));
+    max-height:min(70vh, 520px);
+    overflow:auto;
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    padding:6px;
+    border:1px solid var(--hairline);
+    border-radius:11px;
+    background:#fff;
+    box-shadow:0 14px 34px rgba(17,24,39,.2);
+  }
+  .toolbar-menu-list.menu-left{ left:0; right:auto; }
+  .toolbar-menu-list button{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:flex-start;
+    gap:8px;
+    text-align:left;
+    border-color:transparent;
+    background:transparent;
+    box-shadow:none;
+    white-space:nowrap;
+  }
+  .toolbar-menu-list button:hover:not(:disabled){ background:#f4f5f7; }
+  .toolbar-menu-list button.active{ background:#eef0f4; }
+  .toolbar-menu-list .menu-danger{ color:#b42318; }
+  .toolbar-menu-list .menu-danger:hover:not(:disabled){ background:#fff1f0; border-color:#fecaca; }
+  .toolbar-menu-separator{ height:1px; margin:4px 2px; background:var(--hairline); }
+  .toolbar-menu-label{
+    padding:6px 9px 3px;
+    color:#8a909c;
+    font:700 10px/1 system-ui,sans-serif;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+  }
+  .toolbar-menu-meta{ padding:4px 8px 6px; display:flex; flex-wrap:wrap; gap:5px; }
+  .board-drawing-group{ gap:5px; }
+  .board-drawing-group::after, .board-context-actions::after{ display:none; }
+  .board-context-actions{ padding:3px; border:1px solid var(--hairline); border-radius:10px; background:#fafafa; }
+  .board-context-actions button{ padding:6px 9px; }
+  .line-quick-menu > .toolbar-menu-trigger{ min-width:78px; }
+  #colorMenuBtn .color-swatch{ width:15px; height:15px; }
+  #autoModeBar.workflow-empty{ display:none; }
+  #autoModeBar .auto-flow-status{ display:flex; align-items:center; gap:5px; }
+  #autoModeBar .auto-flow-status::before{
+    content:"";
+    width:1px;
+    align-self:stretch;
+    background:var(--hairline);
+    margin:0 2px;
+  }
+  .board-toolbar-groups .primary-btn.context-primary{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#fff;
+  }
+  body:not(.app-auto) .auto-only{ display:none !important; }
+  #colorMenuBtn[data-color="red"] .color-swatch{ background:#e63939; }
+  #colorMenuBtn[data-color="blue"] .color-swatch{ background:#2563eb; }
+  #colorMenuBtn[data-color="black"] .color-swatch{ background:#111827; }
+  #colorMenuBtn[data-color="white"] .color-swatch{ background:#fff; border-color:#e5e7eb; }
+  @media (max-width: 1100px){
+    .auto-step-indicator{ display:none !important; }
+    #visionEngineChip{ display:none !important; }
+  }
+  @media (max-width: 820px){
+    .toolbar{ align-items:flex-start; }
+    .board-toolbar-groups{
+      flex:0 0 100%;
+      width:100%;
+      max-width:100%;
+      flex-wrap:nowrap;
+      overflow-x:auto;
+      padding-bottom:2px;
+      scrollbar-width:thin;
+    }
+    .board-toolbar-groups > *{ flex:0 0 auto; }
+    .toolbar-spacer{ flex:1 0 8px; }
+    .board-menu-tray{
+      position:sticky;
+      right:0;
+      z-index:8;
+      margin-left:auto;
+      padding-left:8px;
+      background:#fff;
+      box-shadow:-10px 0 14px rgba(255,255,255,.96);
+    }
   }
   button, .chip{
     appearance:none;
@@ -2643,35 +2763,23 @@
         <button id="modeAutoBtn" type="button" title="Auto Mode — detect the sketch, review generated POM drafts, then apply approved lines">Auto</button>
       </div>
     </div>
-    <div id="autoModeBar" class="group group-auto">
-      <button id="autoDetectBtn" data-key="1" class="primary-btn" type="button" title="Run local offline vision on the source sketch to estimate view, landmarks, and anchors">Detect</button>
-      <button id="autoResetAnchorsBtn" type="button" title="Re-seed anchors from the current detection (discards manual anchor edits)">Reset Anchors</button>
+    <div id="autoModeBar" class="group group-auto workflow-empty">
+      <button id="autoDetectBtn" data-key="1" type="button" title="Run local offline vision on the source sketch to estimate view, landmarks, and anchors">Detect</button>
       <button id="autoManageAnchorsBtn" type="button" title="Manage anchor visibility — hide all / show all, hide a group, or isolate one anchor">Anchors</button>
-      <button id="autoGenerateBtn" data-key="2" class="primary-btn" type="button" title="Generate 16 POM drafts from the current anchor positions">Generate Drafts</button>
+      <button id="autoGenerateBtn" data-key="2" type="button" title="Generate 18 POM drafts from the current anchor positions">Generate Drafts</button>
       <button id="autoApproveBtn" class="recovery-only" type="button" title="Approve the selected draft line">Approve</button>
       <button id="autoReviewOnlyBtn" class="recovery-only" type="button" title="Mark the selected draft as REVIEW_ONLY (no line will be drawn)">Review-Only</button>
       <button id="autoApplyBtn" data-key="3" class="primary-btn recovery-only" type="button" title="Atomically copy all approved drafts into the project">Apply Lines</button>
       <button id="autoDiscardBtn" class="recovery-only" type="button" title="Discard all current drafts without changing the project">Discard Drafts</button>
-      <button id="autoResetBoardBtn" type="button" title="Reset the working board — delete all photos and lines so you can start a new bra sketch">Reset Board</button>
-      <button id="autoLearnToggleBtn" class="manual-only" type="button" title="Apply learned anchor calibration from past TD corrections">Learning</button>
-      <span id="autoLearnChip" class="auto-status-chip manual-only" title="Number of recorded TD corrections that feed the calibration median">0 samples</span>
-      <span id="autoAcceptanceChip" class="auto-status-chip acceptance manual-only" title="Auto-applied POM lines accepted without edit">0/0 accepted</span>
-      <div id="autoLearnMenuWrap" class="style-menu manual-only">
-        <button id="autoLearnMenuBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Reset learning or manage POM meanings">Manage ▾</button>
-        <div id="autoLearnMenuList" class="style-menu-list" role="menu" hidden>
-          <button id="viewLearningDataItem" role="menuitem" type="button" title="See what the tool has learned: anchor calibration samples, confirmed POM meanings, and known style buckets">View learning data…</button>
-          <button id="resetResidualsItem" role="menuitem" type="button" title="Clear all learned anchor corrections — Auto Mode goes back to the raw geometric rules">Reset calibration residuals</button>
-          <button id="resetMeaningsCurrentItem" role="menuitem" type="button" title="Forget every confirmed POM meaning for the current style code">Forget POM meanings (current style)</button>
-          <button id="resetMeaningsAllItem" role="menuitem" type="button" title="Forget every confirmed POM meaning across every style code, plus custom measurements">Forget POM meanings (all styles)</button>
-        </div>
-      </div>
-      <span id="autoStepIndicator" class="auto-step-indicator" title="Where you are in the auto-measure pass">
-        <span class="step" data-step="detect">1 Detect</span>
-        <span class="step" data-step="generate">2 Generate</span>
-        <span class="step" data-step="review">3 Review</span>
+      <span class="auto-flow-status">
+        <span id="autoStepIndicator" class="auto-step-indicator" title="Where you are in the auto-measure pass">
+          <span class="step" data-step="detect">1 Detect</span>
+          <span class="step" data-step="generate">2 Generate</span>
+          <span class="step" data-step="review">3 Review</span>
+        </span>
+        <span id="autoStatusChip" class="auto-status-chip" title="Auto Mode status">Add a sketch to start</span>
+        <span id="visionEngineChip" class="auto-status-chip vision" data-engine="warming" title="The OpenCV vision engine compiles in the background after the page loads">vision warming…</span>
       </span>
-      <span id="autoStatusChip" class="auto-status-chip" title="Auto Mode status">Add a sketch to start</span>
-      <span id="visionEngineChip" class="auto-status-chip vision" data-engine="warming" title="The OpenCV vision engine compiles in the background after the page loads">vision warming…</span>
     </div>
     <div class="group group-add">
       <button id="addImageBtn" data-key="A" class="primary-btn has-ico" type="button" title="Add a sketch image (A) — or paste with Ctrl/Cmd+V, or drag one onto the board">
@@ -2684,11 +2792,10 @@
         Add Image
       </button>
       <input id="imageFileInput" type="file" accept="image/*" multiple hidden />
-      <button id="importPptxBtn" data-key="I" class="manual-only" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PPTX</button>
       <input id="pptxFileInput" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" hidden />
     </div>
 
-    <div class="group manual-only">
+    <div class="group manual-only board-drawing-group">
       <div class="toolset" role="group" aria-label="Drawing tools">
         <button id="toolSelect" data-key="S" class="tool-btn active has-ico" type="button" title="Select & move — click a line, label, or image to edit it (S)">
           <svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.4 3.1l13 6.1c.74.35.6 1.43-.2 1.59l-5 1-2 5c-.3.78-1.4.7-1.6-.1L4.2 4.4c-.2-.83.6-1.55 1.2-1.3z"/></svg>
@@ -2744,28 +2851,33 @@
       </label>
     </div>
 
-    <div class="group manual-only">
-      <div class="segmented-control" role="group" aria-label="Arrow type">
-        <button id="arrowDoubleBtn" class="active" type="button" title="Arrowheads on both ends">Double</button>
-        <button id="arrowSingleBtn" type="button" title="Arrowhead on end point only">Single</button>
-        <button id="arrowNoneBtn" type="button" title="Line without arrowhead">None</button>
+    <div class="group manual-only board-line-settings">
+      <div id="arrowMenuWrap" class="toolbar-menu line-quick-menu">
+        <button id="arrowMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="arrowMenuList" title="Choose arrowheads">Arrow: Double</button>
+        <div id="arrowMenuList" class="toolbar-menu-list menu-left" role="menu" hidden>
+          <button id="arrowDoubleBtn" class="active" role="menuitem" type="button" title="Arrowheads on both ends">Double arrows</button>
+          <button id="arrowSingleBtn" role="menuitem" type="button" title="Arrowhead on end point only">Single arrow</button>
+          <button id="arrowNoneBtn" role="menuitem" type="button" title="Line without arrowhead">No arrows</button>
+        </div>
       </div>
-      <div class="segmented-control" role="group" aria-label="Line color">
-        <button id="colorRedBtn" class="color-btn active" data-color="red" type="button" title="Red line"><span class="color-swatch"></span></button>
-        <button id="colorBlueBtn" class="color-btn" data-color="blue" type="button" title="Blue line"><span class="color-swatch"></span></button>
-        <button id="colorBlackBtn" class="color-btn" data-color="black" type="button" title="Black line"><span class="color-swatch"></span></button>
-        <button id="colorWhiteBtn" class="color-btn" data-color="white" type="button" title="White line (for dark sketch areas)"><span class="color-swatch"></span></button>
+      <div id="colorMenuWrap" class="toolbar-menu line-quick-menu">
+        <button id="colorMenuBtn" class="toolbar-menu-trigger has-ico" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="colorMenuList" title="Choose line color"><span class="color-swatch"></span><span id="colorMenuLabel">Red</span></button>
+        <div id="colorMenuList" class="toolbar-menu-list menu-left" role="menu" hidden>
+          <button id="colorRedBtn" class="color-btn active" data-color="red" role="menuitem" type="button" title="Red line"><span class="color-swatch"></span>Red</button>
+          <button id="colorBlueBtn" class="color-btn" data-color="blue" role="menuitem" type="button" title="Blue line"><span class="color-swatch"></span>Blue</button>
+          <button id="colorBlackBtn" class="color-btn" data-color="black" role="menuitem" type="button" title="Black line"><span class="color-swatch"></span>Black</button>
+          <button id="colorWhiteBtn" class="color-btn" data-color="white" role="menuitem" type="button" title="White line (for dark sketch areas)"><span class="color-swatch"></span>White</button>
+        </div>
       </div>
     </div>
 
-    <div class="group manual-only">
+    <div id="boardContextActions" class="group manual-only board-context-actions" hidden>
       <button id="undoBtn" data-key="⌘Z" type="button">Undo</button>
       <button id="redoBtn" data-key="⌘⇧Z" type="button">Redo</button>
       <button id="copyLineBtn" data-key="⌘C" type="button" title="Copy the selected line (⌘/Ctrl+C)">Copy</button>
       <button id="pasteLineBtn" data-key="⌘V" type="button" title="Paste the copied line (⌘/Ctrl+V)">Paste</button>
       <button id="reflectLineBtn" data-key="M" type="button" title="Reflect the selected line across the sketch axis (M)">Reflect</button>
       <button id="deleteBtn" data-key="⌫" type="button" title="Delete the selected line or image">Delete</button>
-      <button id="clearBtn" type="button" title="Clear all annotations">Clear</button>
       <button id="lockImageBtn" data-key="L" class="has-ico" type="button" title="Lock the selected image so it can't be moved, resized, or deleted accidentally">
         <svg id="lockImageIco" class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="5" y="11" width="14" height="9" rx="2" />
@@ -2775,36 +2887,63 @@
       </button>
     </div>
 
-    <div class="group">
-      <button id="fitBtn" data-key="F" type="button">Fit</button>
-      <button id="togglePanelBtn" data-key="H" type="button" title="Hide the Measurements panel (H)">Hide Panel</button>
-      <button id="toggleLabelsBtn" data-key="N" class="manual-only" type="button" title="Hide the callout numbers on the board (N) — the measurements panel still shows them">Hide Numbers</button>
-      <button id="learningToolbarBtn" class="learning-toolbar-btn manual-only" type="button" title="Turn learning on, then correct Auto lines and save evidence for reuse">Learning Off</button>
-      <span id="learningToolbarChip" class="auto-status-chip manual-only" title="Recorded learning samples">0 samples</span>
-      <button id="setScaleBtn" type="button" title="Calibrate: select a line whose real length you know, then set the scale">Set Scale</button>
-      <button id="clearScaleBtn" type="button" title="Remove calibration">Clear Scale</button>
-      <button id="sizeRunBtn" type="button" title="Grade the base spec into a full size run (S–5XL)">Size Run</button>
-      <button id="gradingBtn" data-key="G" type="button" title="View and edit the per-size grading rule (G) — saved with the project">Grading</button>
-    </div>
-
-    <div class="group">
-      <button id="saveProjectBtn" data-key="⌘S" type="button" title="Save the whole board (images, lines, measurements) to a file you can reopen later">Save</button>
-      <button id="openProjectBtn" data-key="⌘O" type="button" title="Open a previously saved project file">Open</button>
+    <div class="toolbar-spacer" aria-hidden="true"></div>
+    <div class="group board-menu-tray">
+      <div id="fileMenuWrap" class="toolbar-menu">
+        <button id="fileMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="fileMenuList">File ▾</button>
+        <div id="fileMenuList" class="toolbar-menu-list" role="menu" hidden>
+          <button id="addImageMenuBtn" class="manual-only" role="menuitem" type="button">Add image…</button>
+          <button id="saveProjectBtn" data-key="⌘S" role="menuitem" type="button" title="Save the whole board (images, lines, measurements) to a file you can reopen later">Save project</button>
+          <button id="openProjectBtn" data-key="⌘O" role="menuitem" type="button" title="Open a previously saved project file">Open project…</button>
+          <button id="importPptxBtn" data-key="I" class="manual-only" role="menuitem" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PowerPoint…</button>
+          <button id="libraryBtn" class="manual-only" role="menuitem" type="button" title="Browse every saved project archived inside this tool">Project Library…</button>
+        </div>
+      </div>
       <input id="projectFileInput" type="file" accept=".json,application/json" hidden />
-      <button id="libraryBtn" class="manual-only" type="button" title="Browse every saved project archived inside this tool (per-style history, available for review and editing)">Library</button>
-      <button id="copyImageBtn" data-key="⌘⇧C" class="export-btn manual-only" type="button" title="Copy the whole board (sketch + lines + labels) to the clipboard as a PNG image (Ctrl/Cmd+Shift+C)">Copy Image</button>
-      <button id="exportPdfBtn" data-key="P" class="export-btn manual-only" type="button">Export PDF</button>
-      <button id="exportExcelBtn" data-key="E" class="export-btn manual-only" type="button" title="Export the measurement spec (E) — POMs, size run, sketch, as an .xlsx">Export Excel</button>
-    </div>
 
-    <div class="group group-help manual-only">
-      <button id="helpBtn" class="icon-btn" type="button" aria-label="Help & keyboard shortcuts" title="Help & keyboard shortcuts (?)">
-        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M9.2 9.3a2.8 2.8 0 0 1 5.4 1c0 1.9-2.6 2.3-2.6 4" />
-          <circle cx="12" cy="17" r="0.7" fill="currentColor" stroke="none" />
-        </svg>
-      </button>
+      <div id="exportMenuWrap" class="toolbar-menu manual-only">
+        <button id="exportMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="exportMenuList">Export ▾</button>
+        <div id="exportMenuList" class="toolbar-menu-list" role="menu" hidden>
+          <button id="copyImageBtn" data-key="⌘⇧C" role="menuitem" type="button" title="Copy the whole board as a PNG image">Copy board image</button>
+          <button id="exportPdfBtn" data-key="P" role="menuitem" type="button">Export PDF</button>
+          <button id="exportExcelBtn" data-key="E" role="menuitem" type="button" title="Export the measurement spec — POMs, size run, sketch, as an .xlsx">Export measurement Excel</button>
+        </div>
+      </div>
+
+      <div id="moreMenuWrap" class="toolbar-menu">
+        <button id="moreMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="moreMenuList" aria-label="More Board actions">More ···</button>
+        <div id="moreMenuList" class="toolbar-menu-list" role="menu" hidden>
+          <div class="toolbar-menu-label">View</div>
+          <button id="fitBtn" data-key="F" role="menuitem" type="button">Fit board</button>
+          <button id="togglePanelBtn" data-key="H" role="menuitem" type="button" title="Hide the Measurements panel (H)">Hide Measurements</button>
+          <button id="toggleLabelsBtn" data-key="N" class="manual-only" role="menuitem" type="button" title="Hide the callout numbers on the board">Hide Numbers</button>
+          <div class="toolbar-menu-separator"></div>
+          <div class="toolbar-menu-label">Measurements</div>
+          <button id="setScaleBtn" role="menuitem" type="button" title="Calibrate from a selected line whose real length you know">Set Scale…</button>
+          <button id="clearScaleBtn" role="menuitem" type="button" title="Remove calibration">Clear Scale</button>
+          <button id="sizeRunBtn" role="menuitem" type="button" title="Grade the base spec into a full size run (S–5XL)">Size Run…</button>
+          <button id="gradingBtn" data-key="G" role="menuitem" type="button" title="View and edit the per-size grading rule">Grading Rules…</button>
+          <div class="toolbar-menu-separator"></div>
+          <div class="toolbar-menu-label">Learning</div>
+          <button id="autoLearnToggleBtn" class="auto-only" role="menuitem" type="button" title="Apply learned anchor calibration from past TD corrections">Learning</button>
+          <button id="learningToolbarBtn" class="learning-toolbar-btn manual-only" role="menuitem" type="button" title="Turn learning on, then correct Auto lines and save evidence for reuse">Learning Off</button>
+          <button id="viewLearningDataItem" class="auto-only" role="menuitem" type="button" title="See learned anchor calibration, POM meanings, and style buckets">View learning data…</button>
+          <button id="resetResidualsItem" class="auto-only" role="menuitem" type="button">Reset calibration residuals</button>
+          <button id="resetMeaningsCurrentItem" class="auto-only" role="menuitem" type="button">Forget POM meanings (current style)</button>
+          <button id="resetMeaningsAllItem" class="auto-only" role="menuitem" type="button">Forget POM meanings (all styles)</button>
+          <div class="toolbar-menu-meta">
+            <span id="autoLearnChip" class="auto-status-chip auto-only" title="Recorded TD corrections that feed calibration">0 samples</span>
+            <span id="autoAcceptanceChip" class="auto-status-chip acceptance auto-only" title="Auto-applied POM lines accepted without edit">0/0 accepted</span>
+            <span id="learningToolbarChip" class="auto-status-chip manual-only" title="Recorded learning samples">0 samples</span>
+          </div>
+          <div class="toolbar-menu-separator"></div>
+          <div class="toolbar-menu-label">Board</div>
+          <button id="autoResetAnchorsBtn" class="auto-only" role="menuitem" type="button" title="Re-seed anchors from the current detection">Reset Anchors</button>
+          <button id="autoResetBoardBtn" class="auto-only menu-danger" role="menuitem" type="button" title="Delete all photos and lines and start a new sketch">Reset Board…</button>
+          <button id="clearBtn" class="manual-only menu-danger" role="menuitem" type="button" title="Clear all annotations">Clear all annotations…</button>
+          <button id="helpBtn" class="manual-only" role="menuitem" type="button" aria-label="Help & keyboard shortcuts" title="Help & keyboard shortcuts (?)">Help &amp; shortcuts…</button>
+        </div>
+      </div>
     </div>
     </div>
   </div>
@@ -3071,6 +3210,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=985f783d16ed"></script>
+<script src="app.js?v=5aee9688eb67"></script>
 </body>
 </html>

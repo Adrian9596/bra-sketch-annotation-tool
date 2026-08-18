@@ -30,7 +30,7 @@ function resizeCanvas() {
 
 function toggleSpecPanel() {
   const hidden = el.workspace.classList.toggle('panel-hidden');
-  el.togglePanelBtn.textContent = hidden ? 'Show Panel' : 'Hide Panel';
+  el.togglePanelBtn.textContent = hidden ? 'Show Measurements' : 'Hide Measurements';
   el.togglePanelBtn.classList.toggle('active', hidden);
   // Layout changed — recompute canvas size and keep current view.
   resizeCanvas();
