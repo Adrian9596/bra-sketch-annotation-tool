@@ -4405,21 +4405,14 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   return out;
 }
 
-  // ---- src/ui/spec-panel.js ----
-// Measurement / spec panel rendering and the calibration commands it owns.
+  // ---- src/ui/spec-visibility.js ----
+// Per-POM line visibility on the canvas: the state helpers plus the DOM
+// controls (the per-row × / + toggle and the sticky "Hide all / Show all"
+// row) that expose it in the Measurements panel.
+// Extracted from src/ui/spec-panel.js; the panel orchestrator that calls
+// these lives there, and the row builders that embed the toggle live in
+// src/ui/spec-row-builders.js.
 // Source part for app.js. Run `npm run build` after editing.
-//
-// renderSpecPanel rebuilds the table on the right side of the board. It
-// renders the Auto Mode draft review section (if drafts are present),
-// then walks the 18 POM template slots in order — using a drawn
-// annotation when the label matches, or a read-only template row when
-// nothing has been drawn yet — pairing primary/secondary POMs into one
-// row where the schema defines a pair. Every row exposes editable Size L
-// and TOL inputs so the TD can enter spec-sheet targets even before a
-// line is drawn; those values live on state.pomSpecs (per POM label) and
-// persist through save/load + undo/redo. Cell builders here are paired
-// helpers; setScaleFromSelection / clearScale drive the calibration row
-// shown above the table.
 
   // ---- Per-POM visibility (review overlay) ----
   // Hide toggles let the TD isolate one POM line at a time on the canvas so
@@ -4542,308 +4535,68 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     return btn;
   }
 
-  // ---- Calibration ----
-  function setScaleFromSelection() {
-    const ann = getSelectedAnnotation();
-    if (!ann) {
-      showToast('Select a line first, then click Set Scale to calibrate by its real length.');
-      return;
-    }
-    const px = lineLength(ann);
-    if (px <= 0) {
-      showToast('That line is too short to calibrate.');
-      return;
-    }
-    openScaleDialog(px);
-  }
-
-  function clearScale() {
-    if (state.calibration.unitsPerPx == null) return;
-    state.calibration = { unitsPerPx: null, unit: state.calibration.unit };
-    pushHistoryIfChanged();
-    showToast('Scale cleared. Values are now manual only.');
-    updateUI();
-    requestRender();
-  }
-
-  // ---- Measurement table panel ----
-  // Total column count in the spec table:
-  //   POM | Description | 中文 | Value | Size L | Size L2 | TOL.
-  // Value is the measured length of the drawn line (the connection back to
-  // the sketch); Size L is the spec target and TOL its allowed variance.
-  // Size L2 is the optional second sample base that anchors the depth tier
-  // (M2–5XL2) in the Excel export — blank derives L2 = L + offset.
-  const SPEC_COL_COUNT = 7;
-
-  // ---- US-033: rebuild-skip fingerprint -----------------------------------
-  // renderSpecPanel runs on every updateUI (every click), but most calls
-  // change nothing the table renders from — only the selection moved. The
-  // fingerprint captures the table's actual data inputs; when it matches the
-  // one stored after the last full rebuild, we refresh highlight classes and
-  // stop. Selection is deliberately NOT fingerprinted.
-  //
-  // If you add a panel feature that renders from state not listed here, add
-  // its input to this fingerprint or the panel will go stale.
-  let lastSpecPanelFingerprint = null;
-  const specDepIds = new WeakMap();
-  let specDepNext = 1;
-
-  // Identity marker for heavyweight objects that are replaced wholesale
-  // (detection) rather than mutated — cheaper than stringifying them.
-  function specDepId(obj) {
-    if (!obj || typeof obj !== 'object') return 0;
-    if (!specDepIds.has(obj)) specDepIds.set(obj, specDepNext++);
-    return specDepIds.get(obj);
-  }
-
-  function specPanelFingerprint() {
-    const r = (p) => (p ? [Math.round(p.x * 1000), Math.round(p.y * 1000)] : 0);
-    const annBits = state.annotations.map(a => [
-      a.id, a.seq, a.text, a.type,
-      r(a.start), r(a.end), r(a.midPoint),
-      r(a.control1), r(a.control2), r(a.midHandleIn), r(a.midHandleOut),
-    ]);
-    const draftBits = state.autoMode.draftAnnotations.map(d => [
-      d.id, d.seq, d.text, !!d.tdApproved, !!d.tdEdited, !!d.tdTouched,
-      d.drawability, d.confidence, d.reason, d.uncertainty, d.reviewNotes,
-    ]);
-    const anchors = state.autoMode.anchors;
-    return JSON.stringify([
-      state.appMode,
-      annBits,
-      draftBits,
-      state.pomSpecs,
-      state.customPoms,
-      state.calibration.unitsPerPx, state.calibration.unit,
-      state.hiddenAnnIds, state.hiddenDraftIds,
-      state.images.length,
-      specDepId(state.autoMode.detection),
-      anchors.length, anchors.filter(a => a && a.reviewRequired).length,
-      // US-038 anchor visibility lives in its OWN floating panel, not the
-      // exported Measurements panel — so it is deliberately NOT fingerprinted
-      // here.
-    ]);
-  }
-
-  // US-035: the three numeric column headers name the board's active unit.
-  // Runs before the US-033 fingerprint skip — it's three textContent sets,
-  // and calibration is fingerprinted so full rebuilds stay correct too.
-  function updateSpecUnitHeaders() {
-    const u = '(' + (state.calibration.unit || 'in') + ')';
-    document.querySelectorAll('.specPanel thead .th-unit').forEach((elm) => {
-      if (elm.textContent !== u) elm.textContent = u;
-    });
-  }
-
-  function renderSpecPanel() {
-    renderSpecCalNote();
-    updateSpecUnitHeaders();
-    // Only preserve focus when the user is mid-edit in a text field inside
-    // the panel — annotation rows, template rows, and paired rows all
-    // qualify. Draft rows have no editable inputs, so Approve / R/O buttons
-    // must always allow a full rebuild — otherwise row badges and the
-    // review-header counts go stale (e.g. Approved/Edited badges, the
-    // "N approved" line in the panel header).
-    const active = document.activeElement;
-    const editingPanelField = active
-      && el.specBody.contains(active)
-      && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')
-      // The Add-POM inline form (US-011) also counts: rebuilding while the
-      // TD types the new POM's name would destroy the half-typed entry.
-      && !!(active.closest('tr[data-ann-id]') || active.closest('tr[data-pom-key]')
-        || active.closest('tr.add-pom-row'));
-    if (editingPanelField) {
-      updateSpecHighlightOnly();
-      return;
-    }
-
-    // US-033: nothing the table renders from changed — selection-only call.
-    const fingerprint = specPanelFingerprint();
-    if (fingerprint === lastSpecPanelFingerprint) {
-      updateSpecHighlightOnly();
-      return;
-    }
-
-    el.specBody.innerHTML = '';
-
-    // Sticky visibility control row: renders whenever there is at least one
-    // hideable line, offering "Hide all" (isolate the sketch) and, once
-    // anything is hidden, "Show all" — each a one-click toggle so the TD can
-    // reveal and re-hide lines while checking evidence.
-    if (hideablePomCount() > 0) {
-      el.specBody.appendChild(buildVisibilityControlRow());
-    }
-
-    // Auto Mode: render the 18-row draft review section first.
-    const draftPomKeys = new Set();
-    // Construction summary renders whenever a detection exists — the TD
-    // lands in Manual mode after Apply (ADR 0008) and still needs to see
-    // what the detector recognized. No-op on pure manual projects.
-    renderConstructionSummary();
-
-    if (state.appMode === 'auto') {
-      renderAutoReviewHeader();
-      const drafts = state.autoMode.draftAnnotations
-        .slice()
-        .sort((a, b) => (a.seq || 0) - (b.seq || 0));
-      for (const draft of drafts) {
-        el.specBody.appendChild(buildDraftRow(draft));
-        const draftKey = String(draft.text != null ? draft.text : draft.seq);
-        if (draftKey) draftPomKeys.add(draftKey);
-      }
-    }
-
-    // Panel is now pre-populated with the 18 POM template rows, so the
-    // "No measurements yet" placeholder is redundant.
-    el.specEmpty.style.display = 'none';
-
-    // Lookup by effective POM label so each slot can find its annotation.
-    const anns = state.annotations.slice();
-    const annByPom = new Map();
-    for (const ann of anns) annByPom.set(getLabelText(ann), ann);
-
-    // Render one row per POM slot in POM order — every POM gets its own row,
-    // including the band (1 & 2) and chest (3 & 4) pairs, which each show
-    // their own description, 中文, TOL and Size L. Pairing still lives in the
-    // rule data (it drives the POM 2/4 extension-stub geometry) but is no
-    // longer merged into a single panel row. Uses the annotation when one
-    // exists, else a template row so 中文 / TOL / Size L stay editable. In
-    // Auto Mode, POMs covered by an outstanding draft skip their template row
-    // so the draft review section is not duplicated.
-    const renderedAnnIds = new Set();
-    const templateOrder = Object.keys(POM_TEMPLATE).sort((a, b) => Number(a) - Number(b));
-    for (const pomKey of templateOrder) {
-      const ann = annByPom.get(pomKey) || null;
-      if (ann) {
-        el.specBody.appendChild(buildSingleSpecRow(ann));
-        renderedAnnIds.add(ann.id);
-      } else if (!draftPomKeys.has(pomKey)) {
-        el.specBody.appendChild(buildTemplateSpecRow(pomKey));
-      }
-    }
-
-    // Registered custom POMs (19+, US-011) render template-style rows right
-    // after the core 18 — with or without a drawn line — so a TD can spec them
-    // before drawing. A row with a line behaves exactly like a template POM.
-    const customKeys = (state.customPoms || []).map(p => String(p.pom))
-      .sort((a, b) => Number(a) - Number(b));
-    for (const pomKey of customKeys) {
-      const ann = annByPom.get(pomKey) || null;
-      if (ann) {
-        el.specBody.appendChild(buildSingleSpecRow(ann));
-        renderedAnnIds.add(ann.id);
-      } else if (!draftPomKeys.has(pomKey)) {
-        const tr = buildTemplateSpecRow(pomKey);
-        decorateCustomPomRow(tr, pomKey);
-        el.specBody.appendChild(tr);
-      }
-    }
-
-    // Any additional user-labeled annotations that fall outside 1..18
-    // (unregistered custom labels, renamed labels) render after the template
-    // block in POM-numerical order.
-    const extras = anns
-      .filter(a => !renderedAnnIds.has(a.id))
-      .sort((a, b) => labelSortKey(a) - labelSortKey(b) || a.seq - b.seq);
-    for (const ann of extras) {
-      if (renderedAnnIds.has(ann.id)) continue;
-      el.specBody.appendChild(buildSingleSpecRow(ann));
-      renderedAnnIds.add(ann.id);
-    }
-
-    el.specBody.appendChild(buildAddPomRow());
-
-    // Stored only after a COMPLETED rebuild — the focus-guard early return
-    // above must never mark a skipped rebuild as up to date.
-    lastSpecPanelFingerprint = fingerprint;
-  }
-
-  // Small × on a custom POM's template row: removing the registry entry is
-  // only offered while no drawn line carries the number (a row with a line
-  // renders as a normal annotation row, so this control never shows there).
-  function decorateCustomPomRow(tr, pomKey) {
-    tr.classList.add('custom-pom-row');
-    const pomTd = tr.querySelector('td');
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.textContent = '×';
-    removeBtn.title = 'Remove custom POM ' + pomKey + ' (no line uses it)';
-    removeBtn.style.cssText = 'margin-left:4px;border:0;background:none;color:#b91c1c;cursor:pointer;font-size:12px;';
-    removeBtn.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      state.customPoms = (state.customPoms || []).filter(p => String(p.pom) !== String(pomKey));
-      if (state.pomSpecs) delete state.pomSpecs[String(pomKey)];
-      pushHistoryIfChanged();
-      renderSpecPanel();
-      showToast('Custom POM ' + pomKey + ' removed.');
-    });
-    pomTd.appendChild(removeBtn);
-  }
-
-  // Full-width "+ Add POM" row (US-011 S4): creates the next free number
-  // (17, 18, …) with a TD-entered English name (中文 optional). The new POM
-  // gets a template-style row with full Size L / L2 / TOL / grading / export
-  // parity; the 18-POM rule JSON is never touched (ADR 0018).
-  function buildAddPomRow() {
+  // Sticky control row at the top of the panel. Shows "Hide all POMs" while any
+  // line is still visible and "Show all POMs (N hidden)" while any line is
+  // hidden — both together when the sketch is partially hidden.
+  function buildVisibilityControlRow() {
     const tr = document.createElement('tr');
-    tr.className = 'add-pom-row';
+    tr.className = 'spec-show-all-row';
     const td = document.createElement('td');
     td.colSpan = SPEC_COL_COUNT;
-    td.style.cssText = 'text-align:center;padding:6px;';
+    const wrap = document.createElement('div');
+    wrap.className = 'spec-vis-actions';
 
-    const addBtn = document.createElement('button');
-    addBtn.type = 'button';
-    addBtn.className = 'picker-btn';
-    addBtn.textContent = '+ Add POM';
-    addBtn.title = 'Add a style-specific POM beyond the standard 16';
-    addBtn.addEventListener('click', () => {
-      const nextNum = String(nextCustomPomNumber());
-      td.innerHTML = '';
-      const form = document.createElement('span');
-      form.style.cssText = 'display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;';
-      const label = document.createElement('span');
-      label.textContent = 'POM ' + nextNum + ':';
-      label.style.cssText = 'font-weight:600;font-size:12px;';
-      const enInput = document.createElement('input');
-      enInput.type = 'text';
-      enInput.placeholder = 'Description - English (required)';
-      enInput.style.cssText = 'width:220px;font-size:12px;padding:3px 6px;';
-      const zhInput = document.createElement('input');
-      zhInput.type = 'text';
-      zhInput.placeholder = '中文 (optional)';
-      zhInput.style.cssText = 'width:140px;font-size:12px;padding:3px 6px;';
-      const okBtn = document.createElement('button');
-      okBtn.type = 'button';
-      okBtn.className = 'picker-btn';
-      okBtn.textContent = 'Add';
-      const cancelBtn = document.createElement('button');
-      cancelBtn.type = 'button';
-      cancelBtn.className = 'picker-btn';
-      cancelBtn.textContent = 'Cancel';
-      okBtn.addEventListener('click', () => {
-        const en = enInput.value.trim();
-        if (!en) { showToast('Enter an English description for the new POM.'); enInput.focus(); return; }
-        if (!Array.isArray(state.customPoms)) state.customPoms = [];
-        state.customPoms.push({ pom: nextNum, en, zh: zhInput.value.trim() });
-        pushHistoryIfChanged();
-        renderSpecPanel();
-        showToast('POM ' + nextNum + ' added — label a drawn line "' + nextNum + '" to measure it.');
+    const hiddenCount = hiddenPomCount();
+    const visibleCount = hideablePomCount() - hiddenCount;
+
+    if (visibleCount > 0) {
+      const hideBtn = document.createElement('button');
+      hideBtn.type = 'button';
+      hideBtn.className = 'spec-hide-all-btn';
+      hideBtn.textContent = 'Hide all POMs';
+      hideBtn.title = 'Hide every POM line on the sketch so you can reveal them one at a time.';
+      hideBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hideAllPoms();
       });
-      cancelBtn.addEventListener('click', () => renderSpecPanel());
-      enInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') okBtn.click(); });
-      zhInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') okBtn.click(); });
-      form.appendChild(label);
-      form.appendChild(enInput);
-      form.appendChild(zhInput);
-      form.appendChild(okBtn);
-      form.appendChild(cancelBtn);
-      td.appendChild(form);
-      enInput.focus();
-    });
-    td.appendChild(addBtn);
+      wrap.appendChild(hideBtn);
+    }
+    if (hiddenCount > 0) {
+      const showBtn = document.createElement('button');
+      showBtn.type = 'button';
+      showBtn.className = 'spec-show-all-btn';
+      showBtn.textContent = 'Show all POMs (' + hiddenCount + ' hidden)';
+      showBtn.title = 'Restore visibility for every hidden POM line on the sketch.';
+      showBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showAllPoms();
+      });
+      wrap.appendChild(showBtn);
+    }
+    td.appendChild(wrap);
     tr.appendChild(td);
     return tr;
   }
+
+  function appendVisibilityToggle(td, opts) {
+    const btn = buildVisibilityToggleButton(!!opts.hidden, opts.onToggle, {
+      disabled: !!opts.disabled,
+      disabledTitle: opts.disabledTitle,
+    });
+    td.appendChild(btn);
+  }
+
+  // ---- src/ui/spec-values.js ----
+// Value model behind the Measurements panel's Size L / Size L2 / TOL / 中文 /
+// English columns: built-in POM name fallbacks, the Tier-0 library-suggestion
+// lookup, the ADR 0033 Mode-B measured-fusion gate, the imperial
+// fraction <-> decimal math, the state.pomSpecs read/write layer, and the
+// tolerance evaluation shared with the on-canvas readout. buildSpecInputCell
+// lives here too because its ArrowUp/Down stepping is bound to
+// scheduleSpecStepCommit's module-private timer.
+// Extracted from src/ui/spec-panel.js; the row/cell DOM that consumes these
+// values lives in src/ui/spec-row-builders.js.
+// Source part for app.js. Run `npm run build` after editing.
 
   // ---- Size L / TOL cell helpers ----
   // Values are stored per POM label in state.pomSpecs, so a paired row can
@@ -5136,6 +4889,86 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     return td;
   }
 
+  // Read-only measured value for a drawn line: its length in the calibrated
+  // unit when a scale is set, else raw board pixels. This is the connection
+  // from the detected / adjusted geometry back to a usable number — Size L is
+  // the target, TOL the allowed variance, and this is what the sketch is.
+  function measuredValueText(ann) {
+    if (!ann || !ann.start || !ann.end) return '';
+    const lengthPx = lineLength(ann);
+    if (!(lengthPx > 0)) return '';
+    if (state.calibration.unitsPerPx != null) {
+      return formatMeasure(lengthPx * state.calibration.unitsPerPx) + ' ' + state.calibration.unit;
+    }
+    return Math.round(lengthPx) + ' px';
+  }
+
+  // Tolerant numeric parse for a Size L / TOL field (leading number wins;
+  // blank / non-numeric → null so the caller can treat it as "not set").
+  // US-035: also accepts the fraction forms TDs actually type — "1/2",
+  // "12 1/2", "12-1/2" — so a typed fraction behaves like its decimal
+  // everywhere this parser is used (chip, readout, stepping, size run,
+  // Excel export L2).
+  function parseSpecNumber(raw) {
+    if (raw == null) return null;
+    const s = String(raw).trim();
+    if (!s) return null;
+    const frac = s.match(/^(\d+(?:\.\d+)?)?[\s-]*(\d+)\s*\/\s*(\d+)$/);
+    if (frac && parseInt(frac[3], 10) !== 0) {
+      const whole = frac[1] ? parseFloat(frac[1]) : 0;
+      return whole + parseInt(frac[2], 10) / parseInt(frac[3], 10);
+    }
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // Compare a drawn line's measured length against its Size L ± TOL target.
+  // Only meaningful when a real-unit scale is set (Size L / TOL are entered in
+  // the calibrated unit; an uncalibrated px value can't be compared to cm/in).
+  // status: 'in' (within TOL) | 'out' (outside TOL) | 'delta' (target set, no
+  // TOL — show the difference only) | null (cannot compare).
+  function evaluateSpecTolerance(ann, pomKey) {
+    const out = { measured: null, target: null, tol: null, delta: null, status: null };
+    if (!ann || state.calibration.unitsPerPx == null) return out;
+    const lengthPx = lineLength(ann);
+    if (!(lengthPx > 0)) return out;
+    out.measured = lengthPx * state.calibration.unitsPerPx;
+    const target = parseSpecNumber(getPomSpec(pomKey).sizeL);
+    if (target == null) return out;
+    out.target = target;
+    out.delta = out.measured - target;
+    const tol = parseSpecNumber(getPomSpec(pomKey).tol);
+    if (tol == null) { out.status = 'delta'; return out; }
+    out.tol = Math.abs(tol);
+    out.status = Math.abs(out.delta) <= out.tol + 1e-9 ? 'in' : 'out';
+    return out;
+  }
+
+  // Signed Δ against Size L with its ✓ / ✗ verdict — one formatter shared by
+  // the panel's Value-cell chip and the on-canvas adjustment readout
+  // (US-029), so the two can never disagree.
+  function specDeltaText(ev) {
+    if (!ev || !ev.status) return '';
+    const signed = (ev.delta > 0 ? '+' : ev.delta < 0 ? '−' : '±') + formatMeasure(Math.abs(ev.delta));
+    return ev.status === 'in' ? signed + ' ✓' : ev.status === 'out' ? signed + ' ✗' : signed;
+  }
+
+  // ---- src/ui/spec-row-builders.js ----
+// Row and cell DOM builders for the Measurements table: the suggestion badge
+// decoration, the English-description / POM / measured-value cells, the
+// pairing hint, the template and annotation row shapes, and the custom-POM
+// (US-011) remove control + "+ Add POM" row.
+// Extracted from src/ui/spec-panel.js; the values these cells display come
+// from src/ui/spec-values.js, the × / + toggle from src/ui/spec-visibility.js,
+// and the orchestrator that assembles the rows stays in src/ui/spec-panel.js.
+//
+// NOTE: renderSpecPanel's focus-preservation guard decides what is "mid-edit
+// safe" during a rebuild from three row selectors — tr[data-ann-id],
+// tr[data-pom-key] and tr.add-pom-row. A row built here that matches none of
+// them will have a TD's half-typed value blown away by the next rebuild, so
+// keep those class / data-attribute names in sync with that guard.
+// Source part for app.js. Run `npm run build` after editing.
+
   function appendSuggestBadge(td, text, cls, title) {
     const badge = document.createElement('div');
     badge.className = 'spec-conf spec-suggest-badge ' + cls;
@@ -5206,57 +5039,6 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     return td;
   }
 
-  // Sticky control row at the top of the panel. Shows "Hide all POMs" while any
-  // line is still visible and "Show all POMs (N hidden)" while any line is
-  // hidden — both together when the sketch is partially hidden.
-  function buildVisibilityControlRow() {
-    const tr = document.createElement('tr');
-    tr.className = 'spec-show-all-row';
-    const td = document.createElement('td');
-    td.colSpan = SPEC_COL_COUNT;
-    const wrap = document.createElement('div');
-    wrap.className = 'spec-vis-actions';
-
-    const hiddenCount = hiddenPomCount();
-    const visibleCount = hideablePomCount() - hiddenCount;
-
-    if (visibleCount > 0) {
-      const hideBtn = document.createElement('button');
-      hideBtn.type = 'button';
-      hideBtn.className = 'spec-hide-all-btn';
-      hideBtn.textContent = 'Hide all POMs';
-      hideBtn.title = 'Hide every POM line on the sketch so you can reveal them one at a time.';
-      hideBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        hideAllPoms();
-      });
-      wrap.appendChild(hideBtn);
-    }
-    if (hiddenCount > 0) {
-      const showBtn = document.createElement('button');
-      showBtn.type = 'button';
-      showBtn.className = 'spec-show-all-btn';
-      showBtn.textContent = 'Show all POMs (' + hiddenCount + ' hidden)';
-      showBtn.title = 'Restore visibility for every hidden POM line on the sketch.';
-      showBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        showAllPoms();
-      });
-      wrap.appendChild(showBtn);
-    }
-    td.appendChild(wrap);
-    tr.appendChild(td);
-    return tr;
-  }
-
-  function appendVisibilityToggle(td, opts) {
-    const btn = buildVisibilityToggleButton(!!opts.hidden, opts.onToggle, {
-      disabled: !!opts.disabled,
-      disabledTitle: opts.disabledTitle,
-    });
-    td.appendChild(btn);
-  }
-
   // Rich hover tooltip for a POM badge. Surfaces the JSON contract data
   // (view, required + optional anchors, expected confidence tier) so the
   // TD reviewing evidence can see at a glance what a POM is supposed to
@@ -5287,70 +5069,6 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     if (viewRole === 'front_inner') return 'front inner';
     if (viewRole === 'back') return 'back';
     return String(viewRole);
-  }
-
-  // Read-only measured value for a drawn line: its length in the calibrated
-  // unit when a scale is set, else raw board pixels. This is the connection
-  // from the detected / adjusted geometry back to a usable number — Size L is
-  // the target, TOL the allowed variance, and this is what the sketch is.
-  function measuredValueText(ann) {
-    if (!ann || !ann.start || !ann.end) return '';
-    const lengthPx = lineLength(ann);
-    if (!(lengthPx > 0)) return '';
-    if (state.calibration.unitsPerPx != null) {
-      return formatMeasure(lengthPx * state.calibration.unitsPerPx) + ' ' + state.calibration.unit;
-    }
-    return Math.round(lengthPx) + ' px';
-  }
-
-  // Tolerant numeric parse for a Size L / TOL field (leading number wins;
-  // blank / non-numeric → null so the caller can treat it as "not set").
-  // US-035: also accepts the fraction forms TDs actually type — "1/2",
-  // "12 1/2", "12-1/2" — so a typed fraction behaves like its decimal
-  // everywhere this parser is used (chip, readout, stepping, size run,
-  // Excel export L2).
-  function parseSpecNumber(raw) {
-    if (raw == null) return null;
-    const s = String(raw).trim();
-    if (!s) return null;
-    const frac = s.match(/^(\d+(?:\.\d+)?)?[\s-]*(\d+)\s*\/\s*(\d+)$/);
-    if (frac && parseInt(frac[3], 10) !== 0) {
-      const whole = frac[1] ? parseFloat(frac[1]) : 0;
-      return whole + parseInt(frac[2], 10) / parseInt(frac[3], 10);
-    }
-    const n = parseFloat(s);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  // Compare a drawn line's measured length against its Size L ± TOL target.
-  // Only meaningful when a real-unit scale is set (Size L / TOL are entered in
-  // the calibrated unit; an uncalibrated px value can't be compared to cm/in).
-  // status: 'in' (within TOL) | 'out' (outside TOL) | 'delta' (target set, no
-  // TOL — show the difference only) | null (cannot compare).
-  function evaluateSpecTolerance(ann, pomKey) {
-    const out = { measured: null, target: null, tol: null, delta: null, status: null };
-    if (!ann || state.calibration.unitsPerPx == null) return out;
-    const lengthPx = lineLength(ann);
-    if (!(lengthPx > 0)) return out;
-    out.measured = lengthPx * state.calibration.unitsPerPx;
-    const target = parseSpecNumber(getPomSpec(pomKey).sizeL);
-    if (target == null) return out;
-    out.target = target;
-    out.delta = out.measured - target;
-    const tol = parseSpecNumber(getPomSpec(pomKey).tol);
-    if (tol == null) { out.status = 'delta'; return out; }
-    out.tol = Math.abs(tol);
-    out.status = Math.abs(out.delta) <= out.tol + 1e-9 ? 'in' : 'out';
-    return out;
-  }
-
-  // Signed Δ against Size L with its ✓ / ✗ verdict — one formatter shared by
-  // the panel's Value-cell chip and the on-canvas adjustment readout
-  // (US-029), so the two can never disagree.
-  function specDeltaText(ev) {
-    if (!ev || !ev.status) return '';
-    const signed = (ev.delta > 0 ? '+' : ev.delta < 0 ? '−' : '±') + formatMeasure(Math.abs(ev.delta));
-    return ev.status === 'in' ? signed + ' ✓' : ev.status === 'out' ? signed + ' ✗' : signed;
   }
 
   function buildMeasuredValueCell(ann, pomKey) {
@@ -5550,6 +5268,308 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     return m ? parseFloat(m[0]) : 9999;
   }
 
+  // Small × on a custom POM's template row: removing the registry entry is
+  // only offered while no drawn line carries the number (a row with a line
+  // renders as a normal annotation row, so this control never shows there).
+  function decorateCustomPomRow(tr, pomKey) {
+    tr.classList.add('custom-pom-row');
+    const pomTd = tr.querySelector('td');
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.textContent = '×';
+    removeBtn.title = 'Remove custom POM ' + pomKey + ' (no line uses it)';
+    removeBtn.style.cssText = 'margin-left:4px;border:0;background:none;color:#b91c1c;cursor:pointer;font-size:12px;';
+    removeBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      state.customPoms = (state.customPoms || []).filter(p => String(p.pom) !== String(pomKey));
+      if (state.pomSpecs) delete state.pomSpecs[String(pomKey)];
+      pushHistoryIfChanged();
+      renderSpecPanel();
+      showToast('Custom POM ' + pomKey + ' removed.');
+    });
+    pomTd.appendChild(removeBtn);
+  }
+
+  // Full-width "+ Add POM" row (US-011 S4): creates the next free number
+  // (17, 18, …) with a TD-entered English name (中文 optional). The new POM
+  // gets a template-style row with full Size L / L2 / TOL / grading / export
+  // parity; the 18-POM rule JSON is never touched (ADR 0018).
+  function buildAddPomRow() {
+    const tr = document.createElement('tr');
+    tr.className = 'add-pom-row';
+    const td = document.createElement('td');
+    td.colSpan = SPEC_COL_COUNT;
+    td.style.cssText = 'text-align:center;padding:6px;';
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'picker-btn';
+    addBtn.textContent = '+ Add POM';
+    addBtn.title = 'Add a style-specific POM beyond the standard 16';
+    addBtn.addEventListener('click', () => {
+      const nextNum = String(nextCustomPomNumber());
+      td.innerHTML = '';
+      const form = document.createElement('span');
+      form.style.cssText = 'display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;';
+      const label = document.createElement('span');
+      label.textContent = 'POM ' + nextNum + ':';
+      label.style.cssText = 'font-weight:600;font-size:12px;';
+      const enInput = document.createElement('input');
+      enInput.type = 'text';
+      enInput.placeholder = 'Description - English (required)';
+      enInput.style.cssText = 'width:220px;font-size:12px;padding:3px 6px;';
+      const zhInput = document.createElement('input');
+      zhInput.type = 'text';
+      zhInput.placeholder = '中文 (optional)';
+      zhInput.style.cssText = 'width:140px;font-size:12px;padding:3px 6px;';
+      const okBtn = document.createElement('button');
+      okBtn.type = 'button';
+      okBtn.className = 'picker-btn';
+      okBtn.textContent = 'Add';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'picker-btn';
+      cancelBtn.textContent = 'Cancel';
+      okBtn.addEventListener('click', () => {
+        const en = enInput.value.trim();
+        if (!en) { showToast('Enter an English description for the new POM.'); enInput.focus(); return; }
+        if (!Array.isArray(state.customPoms)) state.customPoms = [];
+        state.customPoms.push({ pom: nextNum, en, zh: zhInput.value.trim() });
+        pushHistoryIfChanged();
+        renderSpecPanel();
+        showToast('POM ' + nextNum + ' added — label a drawn line "' + nextNum + '" to measure it.');
+      });
+      cancelBtn.addEventListener('click', () => renderSpecPanel());
+      enInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') okBtn.click(); });
+      zhInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') okBtn.click(); });
+      form.appendChild(label);
+      form.appendChild(enInput);
+      form.appendChild(zhInput);
+      form.appendChild(okBtn);
+      form.appendChild(cancelBtn);
+      td.appendChild(form);
+      enInput.focus();
+    });
+    td.appendChild(addBtn);
+    tr.appendChild(td);
+    return tr;
+  }
+
+  // ---- src/ui/spec-panel.js ----
+// Measurement / spec panel orchestration.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// renderSpecPanel rebuilds the table on the right side of the board. It
+// renders the Auto Mode draft review section (if drafts are present),
+// then walks the 18 POM template slots in order — using a drawn
+// annotation when the label matches, or a read-only template row when
+// nothing has been drawn yet — pairing primary/secondary POMs into one
+// row where the schema defines a pair. Every row exposes editable Size L
+// and TOL inputs so the TD can enter spec-sheet targets even before a
+// line is drawn; those values live on state.pomSpecs (per POM label) and
+// persist through save/load + undo/redo.
+//
+// This file owns the assembly and the US-033 rebuild-skip fingerprint plus
+// the Auto Mode status prose and draft-review rows. The pieces it assembles
+// live next door: src/ui/spec-values.js (Size L / TOL value model, fraction
+// math, pomSpecs read/write), src/ui/spec-row-builders.js (row + cell DOM),
+// src/ui/spec-visibility.js (per-POM line visibility on the canvas), and
+// src/ui/anchor-manager-panel.js (the separate floating anchor panel).
+// The calibration commands the panel's note refers to (setScaleFromSelection
+// / clearScale) live with their toolbar listeners in src/ui/bindings.js.
+
+  // ---- Measurement table panel ----
+  // Total column count in the spec table:
+  //   POM | Description | 中文 | Value | Size L | Size L2 | TOL.
+  // Value is the measured length of the drawn line (the connection back to
+  // the sketch); Size L is the spec target and TOL its allowed variance.
+  // Size L2 is the optional second sample base that anchors the depth tier
+  // (M2–5XL2) in the Excel export — blank derives L2 = L + offset.
+  const SPEC_COL_COUNT = 7;
+
+  // ---- US-033: rebuild-skip fingerprint -----------------------------------
+  // renderSpecPanel runs on every updateUI (every click), but most calls
+  // change nothing the table renders from — only the selection moved. The
+  // fingerprint captures the table's actual data inputs; when it matches the
+  // one stored after the last full rebuild, we refresh highlight classes and
+  // stop. Selection is deliberately NOT fingerprinted.
+  //
+  // If you add a panel feature that renders from state not listed here, add
+  // its input to this fingerprint or the panel will go stale.
+  let lastSpecPanelFingerprint = null;
+  const specDepIds = new WeakMap();
+  let specDepNext = 1;
+
+  // Identity marker for heavyweight objects that are replaced wholesale
+  // (detection) rather than mutated — cheaper than stringifying them.
+  function specDepId(obj) {
+    if (!obj || typeof obj !== 'object') return 0;
+    if (!specDepIds.has(obj)) specDepIds.set(obj, specDepNext++);
+    return specDepIds.get(obj);
+  }
+
+  function specPanelFingerprint() {
+    const r = (p) => (p ? [Math.round(p.x * 1000), Math.round(p.y * 1000)] : 0);
+    const annBits = state.annotations.map(a => [
+      a.id, a.seq, a.text, a.type,
+      r(a.start), r(a.end), r(a.midPoint),
+      r(a.control1), r(a.control2), r(a.midHandleIn), r(a.midHandleOut),
+    ]);
+    const draftBits = state.autoMode.draftAnnotations.map(d => [
+      d.id, d.seq, d.text, !!d.tdApproved, !!d.tdEdited, !!d.tdTouched,
+      d.drawability, d.confidence, d.reason, d.uncertainty, d.reviewNotes,
+    ]);
+    const anchors = state.autoMode.anchors;
+    return JSON.stringify([
+      state.appMode,
+      annBits,
+      draftBits,
+      state.pomSpecs,
+      state.customPoms,
+      state.calibration.unitsPerPx, state.calibration.unit,
+      state.hiddenAnnIds, state.hiddenDraftIds,
+      state.images.length,
+      specDepId(state.autoMode.detection),
+      anchors.length, anchors.filter(a => a && a.reviewRequired).length,
+      // US-038 anchor visibility lives in its OWN floating panel, not the
+      // exported Measurements panel — so it is deliberately NOT fingerprinted
+      // here.
+    ]);
+  }
+
+  // US-035: the three numeric column headers name the board's active unit.
+  // Runs before the US-033 fingerprint skip — it's three textContent sets,
+  // and calibration is fingerprinted so full rebuilds stay correct too.
+  function updateSpecUnitHeaders() {
+    const u = '(' + (state.calibration.unit || 'in') + ')';
+    document.querySelectorAll('.specPanel thead .th-unit').forEach((elm) => {
+      if (elm.textContent !== u) elm.textContent = u;
+    });
+  }
+
+  function renderSpecPanel() {
+    renderSpecCalNote();
+    updateSpecUnitHeaders();
+    // Only preserve focus when the user is mid-edit in a text field inside
+    // the panel — annotation rows, template rows, and paired rows all
+    // qualify. Draft rows have no editable inputs, so Approve / R/O buttons
+    // must always allow a full rebuild — otherwise row badges and the
+    // review-header counts go stale (e.g. Approved/Edited badges, the
+    // "N approved" line in the panel header).
+    const active = document.activeElement;
+    const editingPanelField = active
+      && el.specBody.contains(active)
+      && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')
+      // The Add-POM inline form (US-011) also counts: rebuilding while the
+      // TD types the new POM's name would destroy the half-typed entry.
+      && !!(active.closest('tr[data-ann-id]') || active.closest('tr[data-pom-key]')
+        || active.closest('tr.add-pom-row'));
+    if (editingPanelField) {
+      updateSpecHighlightOnly();
+      return;
+    }
+
+    // US-033: nothing the table renders from changed — selection-only call.
+    const fingerprint = specPanelFingerprint();
+    if (fingerprint === lastSpecPanelFingerprint) {
+      updateSpecHighlightOnly();
+      return;
+    }
+
+    el.specBody.innerHTML = '';
+
+    // Sticky visibility control row: renders whenever there is at least one
+    // hideable line, offering "Hide all" (isolate the sketch) and, once
+    // anything is hidden, "Show all" — each a one-click toggle so the TD can
+    // reveal and re-hide lines while checking evidence.
+    if (hideablePomCount() > 0) {
+      el.specBody.appendChild(buildVisibilityControlRow());
+    }
+
+    // Auto Mode: render the 18-row draft review section first.
+    const draftPomKeys = new Set();
+    // Construction summary renders whenever a detection exists — the TD
+    // lands in Manual mode after Apply (ADR 0008) and still needs to see
+    // what the detector recognized. No-op on pure manual projects.
+    renderConstructionSummary();
+
+    if (state.appMode === 'auto') {
+      renderAutoReviewHeader();
+      const drafts = state.autoMode.draftAnnotations
+        .slice()
+        .sort((a, b) => (a.seq || 0) - (b.seq || 0));
+      for (const draft of drafts) {
+        el.specBody.appendChild(buildDraftRow(draft));
+        const draftKey = String(draft.text != null ? draft.text : draft.seq);
+        if (draftKey) draftPomKeys.add(draftKey);
+      }
+    }
+
+    // Panel is now pre-populated with the 18 POM template rows, so the
+    // "No measurements yet" placeholder is redundant.
+    el.specEmpty.style.display = 'none';
+
+    // Lookup by effective POM label so each slot can find its annotation.
+    const anns = state.annotations.slice();
+    const annByPom = new Map();
+    for (const ann of anns) annByPom.set(getLabelText(ann), ann);
+
+    // Render one row per POM slot in POM order — every POM gets its own row,
+    // including the band (1 & 2) and chest (3 & 4) pairs, which each show
+    // their own description, 中文, TOL and Size L. Pairing still lives in the
+    // rule data (it drives the POM 2/4 extension-stub geometry) but is no
+    // longer merged into a single panel row. Uses the annotation when one
+    // exists, else a template row so 中文 / TOL / Size L stay editable. In
+    // Auto Mode, POMs covered by an outstanding draft skip their template row
+    // so the draft review section is not duplicated.
+    const renderedAnnIds = new Set();
+    const templateOrder = Object.keys(POM_TEMPLATE).sort((a, b) => Number(a) - Number(b));
+    for (const pomKey of templateOrder) {
+      const ann = annByPom.get(pomKey) || null;
+      if (ann) {
+        el.specBody.appendChild(buildSingleSpecRow(ann));
+        renderedAnnIds.add(ann.id);
+      } else if (!draftPomKeys.has(pomKey)) {
+        el.specBody.appendChild(buildTemplateSpecRow(pomKey));
+      }
+    }
+
+    // Registered custom POMs (19+, US-011) render template-style rows right
+    // after the core 18 — with or without a drawn line — so a TD can spec them
+    // before drawing. A row with a line behaves exactly like a template POM.
+    const customKeys = (state.customPoms || []).map(p => String(p.pom))
+      .sort((a, b) => Number(a) - Number(b));
+    for (const pomKey of customKeys) {
+      const ann = annByPom.get(pomKey) || null;
+      if (ann) {
+        el.specBody.appendChild(buildSingleSpecRow(ann));
+        renderedAnnIds.add(ann.id);
+      } else if (!draftPomKeys.has(pomKey)) {
+        const tr = buildTemplateSpecRow(pomKey);
+        decorateCustomPomRow(tr, pomKey);
+        el.specBody.appendChild(tr);
+      }
+    }
+
+    // Any additional user-labeled annotations that fall outside 1..18
+    // (unregistered custom labels, renamed labels) render after the template
+    // block in POM-numerical order.
+    const extras = anns
+      .filter(a => !renderedAnnIds.has(a.id))
+      .sort((a, b) => labelSortKey(a) - labelSortKey(b) || a.seq - b.seq);
+    for (const ann of extras) {
+      if (renderedAnnIds.has(ann.id)) continue;
+      el.specBody.appendChild(buildSingleSpecRow(ann));
+      renderedAnnIds.add(ann.id);
+    }
+
+    el.specBody.appendChild(buildAddPomRow());
+
+    // Stored only after a COMPLETED rebuild — the focus-guard early return
+    // above must never mark a skipped rebuild as up to date.
+    lastSpecPanelFingerprint = fingerprint;
+  }
+
   function renderSpecCalNote() {
     let note = 'Label a callout with its <b>POM number</b> (e.g. 8) to auto-fill its description and standard size-L value. Values are editable per style.';
     if (state.appMode === 'auto') {
@@ -5624,157 +5644,6 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   // these as library style-feature evidence (LIBRARY_CONSTRUCTION_TAXONOMY.md
   // Tier A) is a later slice. Absence of the placket signature is reported as
   // "not found", never as a claim about the back closure.
-  // ---- US-038: Anchors visibility manager (its OWN floating panel) -------
-  // Deliberately NOT part of the Measurements panel: measurements are the
-  // exported spec; anchors are a testing / accuracy-checking aid that never
-  // exports. The panel floats over the board (non-modal) and is opened from
-  // the Auto toolbar "Anchors" button. Offers Hide all / Show all, per-group
-  // hide, per-anchor hide, and Isolate ("show only one"); a row click selects
-  // the pin on the canvas.
-
-  function anchorGroupLabel(group) {
-    const map = {
-      axis: 'Center / cradle', band: 'Band', chest: 'Chest', 'inner-cup': 'Cup',
-      side: 'Side seam', apex: 'Apex', strap: 'Straps', back: 'Back',
-      neckline: 'Neckline (17)', armhole: 'Armhole (18)',
-    };
-    return map[group] || group;
-  }
-
-  function anchorMiniBtn(label, title, onClick, extraCss) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    b.title = title;
-    b.style.cssText = 'border:1px solid #cbd5e1;background:#fff;border-radius:5px;'
-      + 'cursor:pointer;font-size:11px;line-height:1;padding:2px 6px;color:#334155;'
-      + (extraCss || '');
-    b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
-    return b;
-  }
-
-  function isAnchorManagerOpen() {
-    return !!(el.anchorManagerPanel && !el.anchorManagerPanel.hidden);
-  }
-
-  // Toolbar entry point: open the floating anchor panel (Auto Mode only).
-  function openAnchorManager() {
-    if (state.appMode !== 'auto') {
-      showToast('Anchor management is available in Auto Mode.');
-      return;
-    }
-    if (!state.autoMode.anchors.length) {
-      showToast('Run Detect Sketch first to place anchors.');
-      return;
-    }
-    if (!el.anchorManagerPanel) return;
-    el.anchorManagerPanel.hidden = false;
-    if (el.autoManageAnchorsBtn) el.autoManageAnchorsBtn.classList.add('active');
-    renderAnchorManagerPanel();
-  }
-
-  function closeAnchorManager() {
-    if (!el.anchorManagerPanel) return;
-    el.anchorManagerPanel.hidden = true;
-    if (el.autoManageAnchorsBtn) el.autoManageAnchorsBtn.classList.remove('active');
-  }
-
-  function toggleAnchorManager() {
-    if (isAnchorManagerOpen()) closeAnchorManager();
-    else openAnchorManager();
-  }
-
-  // Rebuild the floating panel body from the current anchor set + hidden
-  // state. Called on open, on every in-panel action, and from updateUI while
-  // open (so a fresh Detect / canvas pin selection stays in sync).
-  function renderAnchorManagerPanel() {
-    const panel = el.anchorManagerPanel;
-    const body = el.anchorManagerBody;
-    if (!panel || !body) return;
-    // Anchors only exist in Auto Mode; auto-close if we left it or lost them.
-    if (state.appMode !== 'auto' || !state.autoMode.anchors.length) {
-      closeAnchorManager();
-      return;
-    }
-    const anchors = state.autoMode.anchors;
-    const nameByKind = Object.create(null);
-    const groupByKind = Object.create(null);
-    const groupOrder = [];
-    for (const schema of ANCHOR_SCHEMA) {
-      nameByKind[schema.kind] = schema.name || schema.kind;
-      groupByKind[schema.kind] = schema.group || 'other';
-      if (groupOrder.indexOf(schema.group) === -1) groupOrder.push(schema.group);
-    }
-    const hidden = (k) => isAnchorHidden(k);
-    const visibleCount = anchors.filter(a => !hidden(a.kind)).length;
-    if (el.anchorManagerCount) {
-      el.anchorManagerCount.textContent = visibleCount + '/' + anchors.length + ' shown';
-    }
-
-    body.innerHTML = '';
-    for (const group of groupOrder) {
-      const groupAnchors = anchors.filter(a => groupByKind[a.kind] === group);
-      if (!groupAnchors.length) continue;
-      const groupKinds = groupAnchors.map(a => a.kind);
-      const groupAllHidden = groupKinds.every(hidden);
-
-      const gRow = document.createElement('div');
-      gRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 10px;'
-        + 'font-size:11.5px;color:#475569;background:#f8fafc;border-top:1px solid #eef2f7;';
-      const gName = document.createElement('span');
-      gName.style.fontWeight = '600';
-      gName.textContent = anchorGroupLabel(group) + ' (' + groupAnchors.length + ')';
-      gRow.appendChild(gName);
-      const gSpacer = document.createElement('span'); gSpacer.style.flex = '1'; gRow.appendChild(gSpacer);
-      gRow.appendChild(anchorMiniBtn(groupAllHidden ? 'Show' : 'Hide',
-        groupAllHidden ? 'Show this group' : 'Hide this group',
-        () => { toggleAnchorGroup(groupKinds); renderAnchorManagerPanel(); }));
-      body.appendChild(gRow);
-
-      for (const anchor of groupAnchors) {
-        const isHidden = hidden(anchor.kind);
-        const aRow = document.createElement('div');
-        aRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 10px 4px 22px;'
-          + 'font-size:12px;border-top:1px solid #f4f6fa;'
-          + (state.autoMode.anchorSelectedId === anchor.id ? 'background:#eff6ff;' : '')
-          + (isHidden ? 'opacity:.5;' : '');
-        const dot = document.createElement('span');
-        dot.style.cssText = 'width:8px;height:8px;border-radius:50%;flex:0 0 auto;'
-          + 'background:' + anchorFillForConfidence(anchor.confidence) + ';'
-          + 'border:1px solid rgba(15,23,42,.5);';
-        aRow.appendChild(dot);
-        const aName = document.createElement('span');
-        aName.textContent = nameByKind[anchor.kind] || anchor.kind;
-        aName.style.cssText = 'color:#0f172a;cursor:pointer;';
-        aName.title = anchor.name + ' — click to select on the sketch';
-        aRow.appendChild(aName);
-        if (anchor.reviewRequired) {
-          const flag = document.createElement('span');
-          flag.textContent = 'review';
-          flag.style.cssText = 'font-size:10px;color:#b45309;background:#fffbeb;'
-            + 'border:1px solid #fde68a;border-radius:4px;padding:0 4px;';
-          aRow.appendChild(flag);
-        }
-        const aSpacer = document.createElement('span'); aSpacer.style.flex = '1'; aRow.appendChild(aSpacer);
-        aRow.appendChild(anchorMiniBtn('◎', 'Isolate — show only this anchor',
-          () => { isolateAnchor(anchor.kind); renderAnchorManagerPanel(); }));
-        aRow.appendChild(anchorMiniBtn(isHidden ? '+' : '×',
-          isHidden ? 'Show this anchor' : 'Hide this anchor',
-          () => { toggleAnchorHidden(anchor.kind); renderAnchorManagerPanel(); },
-          isHidden ? 'color:#2563eb;' : 'color:#b91c1c;'));
-        aName.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (isHidden) return;
-          state.autoMode.anchorSelectedId = anchor.id;
-          updateUI();
-          requestRender();
-          renderAnchorManagerPanel();
-        });
-        body.appendChild(aRow);
-      }
-    }
-  }
-
   function renderConstructionSummary() {
     const det = state.autoMode.detection;
     if (!det) return;
@@ -6039,18 +5908,178 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     });
   }
 
-  // ---- src/ui/main-page.js ----
-// MAIN PAGE sheet: style metadata fields + colorways (US-068, ADR 0037).
+  // ---- src/ui/anchor-manager-panel.js ----
+// The Anchor Manager: a floating, non-modal panel over the board for hiding,
+// showing and isolating detected anchors while checking Auto Mode's accuracy.
+// Extracted from src/ui/spec-panel.js — see the US-038 note below for why it
+// is deliberately NOT part of the exported Measurements panel.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // ---- US-038: Anchors visibility manager (its OWN floating panel) -------
+  // Deliberately NOT part of the Measurements panel: measurements are the
+  // exported spec; anchors are a testing / accuracy-checking aid that never
+  // exports. The panel floats over the board (non-modal) and is opened from
+  // the Auto toolbar "Anchors" button. Offers Hide all / Show all, per-group
+  // hide, per-anchor hide, and Isolate ("show only one"); a row click selects
+  // the pin on the canvas.
+
+  function anchorGroupLabel(group) {
+    const map = {
+      axis: 'Center / cradle', band: 'Band', chest: 'Chest', 'inner-cup': 'Cup',
+      side: 'Side seam', apex: 'Apex', strap: 'Straps', back: 'Back',
+      neckline: 'Neckline (17)', armhole: 'Armhole (18)',
+    };
+    return map[group] || group;
+  }
+
+  function anchorMiniBtn(label, title, onClick, extraCss) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.title = title;
+    b.style.cssText = 'border:1px solid #cbd5e1;background:#fff;border-radius:5px;'
+      + 'cursor:pointer;font-size:11px;line-height:1;padding:2px 6px;color:#334155;'
+      + (extraCss || '');
+    b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+    return b;
+  }
+
+  function isAnchorManagerOpen() {
+    return !!(el.anchorManagerPanel && !el.anchorManagerPanel.hidden);
+  }
+
+  // Toolbar entry point: open the floating anchor panel (Auto Mode only).
+  function openAnchorManager() {
+    if (state.appMode !== 'auto') {
+      showToast('Anchor management is available in Auto Mode.');
+      return;
+    }
+    if (!state.autoMode.anchors.length) {
+      showToast('Run Detect Sketch first to place anchors.');
+      return;
+    }
+    if (!el.anchorManagerPanel) return;
+    el.anchorManagerPanel.hidden = false;
+    if (el.autoManageAnchorsBtn) el.autoManageAnchorsBtn.classList.add('active');
+    renderAnchorManagerPanel();
+  }
+
+  function closeAnchorManager() {
+    if (!el.anchorManagerPanel) return;
+    el.anchorManagerPanel.hidden = true;
+    if (el.autoManageAnchorsBtn) el.autoManageAnchorsBtn.classList.remove('active');
+  }
+
+  function toggleAnchorManager() {
+    if (isAnchorManagerOpen()) closeAnchorManager();
+    else openAnchorManager();
+  }
+
+  // Rebuild the floating panel body from the current anchor set + hidden
+  // state. Called on open, on every in-panel action, and from updateUI while
+  // open (so a fresh Detect / canvas pin selection stays in sync).
+  function renderAnchorManagerPanel() {
+    const panel = el.anchorManagerPanel;
+    const body = el.anchorManagerBody;
+    if (!panel || !body) return;
+    // Anchors only exist in Auto Mode; auto-close if we left it or lost them.
+    if (state.appMode !== 'auto' || !state.autoMode.anchors.length) {
+      closeAnchorManager();
+      return;
+    }
+    const anchors = state.autoMode.anchors;
+    const nameByKind = Object.create(null);
+    const groupByKind = Object.create(null);
+    const groupOrder = [];
+    for (const schema of ANCHOR_SCHEMA) {
+      nameByKind[schema.kind] = schema.name || schema.kind;
+      groupByKind[schema.kind] = schema.group || 'other';
+      if (groupOrder.indexOf(schema.group) === -1) groupOrder.push(schema.group);
+    }
+    const hidden = (k) => isAnchorHidden(k);
+    const visibleCount = anchors.filter(a => !hidden(a.kind)).length;
+    if (el.anchorManagerCount) {
+      el.anchorManagerCount.textContent = visibleCount + '/' + anchors.length + ' shown';
+    }
+
+    body.innerHTML = '';
+    for (const group of groupOrder) {
+      const groupAnchors = anchors.filter(a => groupByKind[a.kind] === group);
+      if (!groupAnchors.length) continue;
+      const groupKinds = groupAnchors.map(a => a.kind);
+      const groupAllHidden = groupKinds.every(hidden);
+
+      const gRow = document.createElement('div');
+      gRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 10px;'
+        + 'font-size:11.5px;color:#475569;background:#f8fafc;border-top:1px solid #eef2f7;';
+      const gName = document.createElement('span');
+      gName.style.fontWeight = '600';
+      gName.textContent = anchorGroupLabel(group) + ' (' + groupAnchors.length + ')';
+      gRow.appendChild(gName);
+      const gSpacer = document.createElement('span'); gSpacer.style.flex = '1'; gRow.appendChild(gSpacer);
+      gRow.appendChild(anchorMiniBtn(groupAllHidden ? 'Show' : 'Hide',
+        groupAllHidden ? 'Show this group' : 'Hide this group',
+        () => { toggleAnchorGroup(groupKinds); renderAnchorManagerPanel(); }));
+      body.appendChild(gRow);
+
+      for (const anchor of groupAnchors) {
+        const isHidden = hidden(anchor.kind);
+        const aRow = document.createElement('div');
+        aRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 10px 4px 22px;'
+          + 'font-size:12px;border-top:1px solid #f4f6fa;'
+          + (state.autoMode.anchorSelectedId === anchor.id ? 'background:#eff6ff;' : '')
+          + (isHidden ? 'opacity:.5;' : '');
+        const dot = document.createElement('span');
+        dot.style.cssText = 'width:8px;height:8px;border-radius:50%;flex:0 0 auto;'
+          + 'background:' + anchorFillForConfidence(anchor.confidence) + ';'
+          + 'border:1px solid rgba(15,23,42,.5);';
+        aRow.appendChild(dot);
+        const aName = document.createElement('span');
+        aName.textContent = nameByKind[anchor.kind] || anchor.kind;
+        aName.style.cssText = 'color:#0f172a;cursor:pointer;';
+        aName.title = anchor.name + ' — click to select on the sketch';
+        aRow.appendChild(aName);
+        if (anchor.reviewRequired) {
+          const flag = document.createElement('span');
+          flag.textContent = 'review';
+          flag.style.cssText = 'font-size:10px;color:#b45309;background:#fffbeb;'
+            + 'border:1px solid #fde68a;border-radius:4px;padding:0 4px;';
+          aRow.appendChild(flag);
+        }
+        const aSpacer = document.createElement('span'); aSpacer.style.flex = '1'; aRow.appendChild(aSpacer);
+        aRow.appendChild(anchorMiniBtn('◎', 'Isolate — show only this anchor',
+          () => { isolateAnchor(anchor.kind); renderAnchorManagerPanel(); }));
+        aRow.appendChild(anchorMiniBtn(isHidden ? '+' : '×',
+          isHidden ? 'Show this anchor' : 'Hide this anchor',
+          () => { toggleAnchorHidden(anchor.kind); renderAnchorManagerPanel(); },
+          isHidden ? 'color:#2563eb;' : 'color:#b91c1c;'));
+        aName.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (isHidden) return;
+          state.autoMode.anchorSelectedId = anchor.id;
+          updateUI();
+          requestRender();
+          renderAnchorManagerPanel();
+        });
+        body.appendChild(aRow);
+      }
+    }
+  }
+
+  // ---- src/ui/main-page-data.js ----
+// MAIN PAGE sheet — static rosters and pure helpers (US-068, ADR 0037).
 // Source part for app.js. Run `npm run build` after editing.
 //
-// Rebuilt on this tool's primitives from the tech pack's mod-main module —
-// the Pack.* runtime does not exist here (ADR 0037). The data is carried
-// across verbatim: the 13-row field roster, the suggestion rosters mined
-// from 52 historical packs, and the 47-entry Color Master List.
+// The data carried across verbatim from the tech pack's mod-main module: the
+// field roster, the suggestion rosters mined from 52 historical packs, and the
+// 47-entry Color Master List. No DOM, no state.mainPage mutation — the sheet
+// state owner is main-page.js, the version sketches are in
+// main-page-sketches.js, the field picker is in main-page-fields.js and the
+// colorway picker is in main-page-colorways.js.
 //
-// Style metadata only: no anchor, no POM, no view, so detection never reads
-// it. state.mainPage is seeded lazily by ensureMainPage() so state.js does
-// not carry 47 colour rows.
+// MP_SHADE_RE and MP_FIELD_SPEC are built at top level, at load time, so this
+// part must precede the rest of the main-page-* parts in
+// scripts/source-parts.mjs.
 
   /* House colour master list — the 47 entries of Color_Master_List.xlsx,
      verbatim (Pantone code + TCX + name + CP suffix exactly as recorded), so
@@ -6111,6 +6140,10 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
      library picks the new list up on open instead of keeping a stale one. */
   const MP_COLOR_LIB_ID = 'color-master-list-47';
 
+  function mpDefaultColorLibrary() {
+    return MP_COLOR_MASTER.map(n => ({ name: n, hex: mpShadeOf(n) }));
+  }
+
   /* The shipped field roster, verbatim from the tech pack's own default
      mainpage island. Labels are editable, hence the bind-once-by-regex rule
      below. "Block Reference" is a row here (US-080/ADR 0047) — the layout FD
@@ -6154,14 +6187,6 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     { key: 'front', label: 'FRONT' },
     { key: 'back', label: 'BACK' },
   ];
-
-  /* Bytes deliberately live outside state.mainPage, like BOM board images:
-     history clones state.mainPage on every field edit, and four
-     full-resolution flats cloned 120 deep is a different order of memory.
-     Every import mints a NEW id and nothing is ever evicted, so undo across a
-     replaced slot still finds the previous image's bytes here. */
-  const mpSketchDataById = new Map();
-  let mpSketchSeq = 0;
 
   /* ---- Field suggestion rosters -------------------------------------------
      Lists live HERE, in code, not copied into the saved project the way
@@ -6231,123 +6256,24 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     { key: 'season', re: /Season/i, values: mpSeasonOpts },
   ];
 
-  // Parallel to state.mainPage.fields; null where a row has no spec.
-  let mpFieldSpec = [];
-  let mpSpecRowCount = -1;
-  let mpColorWrap = null;
-  let mpColorMenu = null;
-  let mpFldMenu = null;   // the one shared field picker, parked on <body>
-  let mpFldOpen = null;   // {i, sp, btn} while a picker is open
-  let mpFldFlat = [];     // options currently listed, indexed by data-mp-opt
+  // ---- src/ui/main-page-sketches.js ----
+// MAIN PAGE sheet — version sketches (US-080, ADR 0047).
+// Source part for app.js. Run `npm run build` after editing.
+//
+// The two fixed slots per version: the byte store that lives outside
+// state.mainPage, the save/open round trip for those bytes, the upload/paste
+// slot menu, and mpSketchRowHtml — the one markup builder shared with the
+// Preview & Export sheet. The slot roster itself (MP_SKETCH_VARIANTS /
+// MP_SKETCH_SLOTS) is in main-page-data.js; state.mainPage.sketches is seeded
+// by ensureMainPage() in main-page.js, which also wires the slot clicks.
 
-  function mpIsoToday() {
-    const d = new Date(), p = n => String(n).padStart(2, '0');
-    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-  }
-
-  function mpDefaultColorLibrary() {
-    return MP_COLOR_MASTER.map(n => ({ name: n, hex: mpShadeOf(n) }));
-  }
-
-  /* Composite kept in sync from the parts, never typed directly. Empty parts
-     drop out, so a breakdown with only a prefix reads "LiftyBliss" and not
-     "LiftyBliss ·  · ". */
-  function mpBreakdownValue(parts) {
-    return MP_BREAKDOWN_PARTS
-      .map(p => String((parts || {})[p.key] || '').trim())
-      .filter(Boolean)
-      .join(MP_BREAKDOWN_SEP);
-  }
-
-  function mpSyncBreakdown(field) {
-    if (!field) return;
-    field.value = mpBreakdownValue(field.parts);
-  }
-
-  /* A project saved before US-080 has one free-text breakdown value. It
-     becomes the prefix — the historical packs put the range name there — and
-     the placeholder 'TBC' is dropped rather than carried into a sub-cell. */
-  function mpEnsureBreakdown(mp) {
-    const i = mp.fields.findIndex(f => /Style No Breakdown/i.test((f && f.label) || ''));
-    if (i === -1) return;
-    const f = mp.fields[i];
-    if (!f.parts || typeof f.parts !== 'object') {
-      const legacy = String(f.value || '').trim();
-      f.parts = {
-        prefix: /^tbc$/i.test(legacy) ? '' : legacy,
-        category: '',
-        rangeNo: '',
-      };
-    }
-    MP_BREAKDOWN_PARTS.forEach(p => {
-      if (typeof f.parts[p.key] !== 'string') f.parts[p.key] = '';
-    });
-    mpSyncBreakdown(f);
-  }
-
-  // Seeds state.mainPage in place and migrates a project saved against an
-  // older colour library. Safe to call repeatedly.
-  function ensureMainPage() {
-    const mp = state.mainPage && typeof state.mainPage === 'object'
-      ? state.mainPage
-      : (state.mainPage = {});
-    if (!Array.isArray(mp.fields) || !mp.fields.length) {
-      mp.fields = MP_DEFAULT_FIELDS.map(f => ({ ...f }));
-    }
-    /* Appended, not inserted by index: labels are editable, so a project can
-       carry a reordered or renamed roster and there is no position to trust
-       beyond "not present yet". */
-    if (!mp.fields.some(f => /^Block Reference\b/i.test(String((f && f.label) || '').trim()))) {
-      mp.fields.push({ ...MP_DEFAULT_FIELDS[MP_DEFAULT_FIELDS.length - 1] });
-    }
-    mpEnsureBreakdown(mp);
-    if (!mp.sketches || typeof mp.sketches !== 'object') mp.sketches = {};
-    MP_SKETCH_VARIANTS.forEach(v => {
-      const slots = Array.isArray(mp.sketches[v]) ? mp.sketches[v] : [];
-      mp.sketches[v] = MP_SKETCH_SLOTS.map((_, i) => {
-        const s = slots[i];
-        return s && typeof s === 'object' && s.id
-          ? { id: String(s.id), aspect: Math.max(0.01, Number(s.aspect) || 1) }
-          : null;
-      });
-    });
-    const brand = mp.fields.find(f => /^\s*Brand\b/i.test(f.label || ''));
-    if (brand) brand.value = 'Crossian';
-    const created = mp.fields.find(f => /Tech Pack Creation date/i.test(f.label || ''));
-    if (created && !/^\d{4}-\d{2}-\d{2}$/.test(String(created.value || '').trim())) {
-      created.value = mpIsoToday();
-    }
-    if (!mp.fieldExtra || typeof mp.fieldExtra !== 'object') mp.fieldExtra = {};
-    if (!Array.isArray(mp.colorways) || !mp.colorways.length) {
-      mp.colorways = [
-        { col: 'COL 1', value: 'Default White', hex: mpShadeOf('Default White') },
-        { col: 'COL 2', value: 'Default Black', hex: mpShadeOf('Default Black') },
-      ];
-    }
-    if (mp.colorLibId !== MP_COLOR_LIB_ID || !Array.isArray(mp.colorLibrary)) {
-      mp.colorLibrary = mpDefaultColorLibrary();
-      mp.colorLibId = MP_COLOR_LIB_ID;
-    }
-    if (typeof mp.provenance !== 'string') mp.provenance = '';
-    mpResolveSpecs();
-    return mp;
-  }
-
-  function mpResolveSpecs() {
-    const f = (state.mainPage && state.mainPage.fields) || [];
-    const taken = new Set();
-    mpFieldSpec = f.map(() => null);
-    MP_FIELD_SPEC.forEach(sp => {
-      const i = f.findIndex((row, idx) => !taken.has(idx) && sp.re.test((row && row.label) || ''));
-      if (i === -1) return;
-      taken.add(i);
-      mpFieldSpec[i] = sp;
-    });
-    mpSpecRowCount = f.length;
-  }
-
-  function mpFieldsEl() { return document.getElementById('mp-fields'); }
-  function mpCwTables() { return Array.from(document.querySelectorAll('table.mp-cwx')); }
+  /* Bytes deliberately live outside state.mainPage, like BOM board images:
+     history clones state.mainPage on every field edit, and four
+     full-resolution flats cloned 120 deep is a different order of memory.
+     Every import mints a NEW id and nothing is ever evicted, so undo across a
+     replaced slot still finds the previous image's bytes here. */
+  const mpSketchDataById = new Map();
+  let mpSketchSeq = 0;
 
   /* ---- Version sketches -------------------------------------------------- */
 
@@ -6447,14 +6373,121 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     });
   }
 
-  function renderMainPage() {
-    if (!state.mainPage) return;
-    mpRenderFields();
-    mpRenderCw();
-    mpRenderSketches();
-    const prov = document.getElementById('mp-provenance');
-    if (prov && prov !== document.activeElement) prov.textContent = state.mainPage.provenance || '';
+  /* ---- Sketch slot menu (forked from the BOM material-photo trigger) ------
+     Upload or paste only: offline, no catalog, no auto-adoption. */
+
+  let mpSketchOpen = null;   // 'lace:0' while a slot menu is open
+
+  function mpSketchMenuEl() {
+    let menu = document.getElementById('mpSketchMenu');
+    if (menu) return menu;
+    menu = document.createElement('div');
+    menu.id = 'mpSketchMenu';
+    menu.className = 'mp-menu mp-sketch-menu';
+    menu.hidden = true;
+    menu.innerHTML = '<div class="mp-sk-hint">Technical flat for this version — prints on the MAIN PAGE sheet.</div>'
+      + '<div class="mp-sk-actions">'
+      + '<button type="button" data-mp-sk-upload title="Or Cmd/Ctrl+V to paste a copied image">Upload&hellip; / Paste</button>'
+      + '<button type="button" data-mp-sk-remove>Remove</button></div>';
+    document.body.appendChild(menu);
+    const filePick = document.createElement('input');
+    filePick.type = 'file';
+    filePick.accept = 'image/*';
+    filePick.hidden = true;
+    menu.appendChild(filePick);
+    const applyFile = (f, ref) => {
+      if (!f || !ref || !/^image\//i.test(f.type)) return;
+      const [variant, i] = ref.split(':');
+      const rd = new FileReader();
+      rd.onload = () => mpSetSketch(variant, +i, rd.result);
+      rd.readAsDataURL(f);
+    };
+    filePick.addEventListener('change', () => {
+      const f = filePick.files && filePick.files[0];
+      const ref = mpSketchOpen;
+      filePick.value = '';
+      applyFile(f, ref);
+    });
+    menu.addEventListener('click', e => {
+      if (!mpSketchOpen) return;
+      if (e.target.closest('[data-mp-sk-upload]')) { filePick.click(); return; }
+      if (e.target.closest('[data-mp-sk-remove]')) {
+        const [variant, i] = mpSketchOpen.split(':');
+        mpSetSketch(variant, +i, null);
+      }
+    });
+    /* stopPropagation keeps the app's document-level paste router from also
+       adopting the image as a Board sketch. */
+    menu.addEventListener('paste', e => {
+      if (!mpSketchOpen || !e.clipboardData) return;
+      const it = Array.from(e.clipboardData.items)
+        .find(x => x.kind === 'file' && /^image\//i.test(x.type));
+      if (!it) return;
+      const f = it.getAsFile();
+      if (!f) return;
+      e.preventDefault();
+      e.stopPropagation();
+      applyFile(f, mpSketchOpen);
+    });
+    menu.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { mpCloseSketchMenu(); return; }
+      if (e.key !== 'Tab') e.stopPropagation();
+    });
+    return menu;
   }
+
+  function mpOpenSketchMenu(ref, box) {
+    mpCloseFldMenu();
+    if (mpColorWrap) mpColorWrap.classList.remove('open');
+    mpSketchOpen = ref;
+    const menu = mpSketchMenuEl();
+    menu.hidden = false;
+    menu.tabIndex = -1;   // focusable, so the paste event targets the menu
+    const r = box.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 260)) + 'px';
+    menu.style.top = Math.min(r.bottom + 4, window.innerHeight - 110) + 'px';
+    menu.focus();
+  }
+
+  function mpCloseSketchMenu() {
+    const menu = document.getElementById('mpSketchMenu');
+    if (menu) menu.hidden = true;
+    mpSketchOpen = null;
+  }
+
+  // ---- src/ui/main-page-fields.js ----
+// MAIN PAGE sheet — field table + field suggestion picker (US-068, ADR 0037;
+// breakdown sub-cells US-080/ADR 0047).
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Renders the style-metadata rows and owns the one shared suggestion dropdown
+// parked on <body>: search, diacritic-folded filtering, remember-a-new-value,
+// apply. What a field IS lives in main-page-data.js (MP_FIELD_SPEC and its
+// rosters); the colorway rows have their own near-identical but distinct
+// picker in main-page-colorways.js; state.mainPage itself is owned by
+// main-page.js, which also builds and wires this menu's DOM in initMainPage().
+
+  // Parallel to state.mainPage.fields; null where a row has no spec.
+  let mpFieldSpec = [];
+  let mpSpecRowCount = -1;
+  let mpFldMenu = null;   // the one shared field picker, parked on <body>
+  let mpFldOpen = null;   // {i, sp, btn} while a picker is open
+  let mpFldFlat = [];     // options currently listed, indexed by data-mp-opt
+
+  function mpResolveSpecs() {
+    const f = (state.mainPage && state.mainPage.fields) || [];
+    const taken = new Set();
+    mpFieldSpec = f.map(() => null);
+    MP_FIELD_SPEC.forEach(sp => {
+      const i = f.findIndex((row, idx) => !taken.has(idx) && sp.re.test((row && row.label) || ''));
+      if (i === -1) return;
+      taken.add(i);
+      mpFieldSpec[i] = sp;
+    });
+    mpSpecRowCount = f.length;
+  }
+
+  function mpFieldsEl() { return document.getElementById('mp-fields'); }
 
   function mpRenderFields() {
     const host = mpFieldsEl();
@@ -6498,82 +6531,6 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
           : '')
         + '</td></tr>';
     }).join('');
-  }
-
-  function mpRenderCw() {
-    const rows = (state.mainPage && state.mainPage.colorways) || [];
-    mpCwTables().forEach(t => {
-      t.innerHTML = rows.map((c, i) =>
-        '<tr><th>' + escapeHtml(c.col || ('COL ' + (i + 1))) + '</th>'
-        + '<td contenteditable spellcheck="false" data-cw="' + i + '">' + escapeHtml(c.value) + '</td>'
-        + '<td class="act mp-screen-only"><button type="button" data-rm="' + i + '" title="Remove this colorway">×</button></td></tr>').join('');
-    });
-    mpRenderColorMenu();   // keeps the "already used" marks in the picker honest
-  }
-
-  /* Every token of the query has to appear somewhere in the entry, so
-     "14-38 lilac" and "lilac 14-38" both find 14-3812 TCX Lilac Mist. */
-  function mpColorMatches(name, query) {
-    const s = String(name).toLowerCase();
-    return query.every(t => s.includes(t));
-  }
-
-  function mpRenderColorMenu() {
-    if (!mpColorMenu) return;
-    const box = mpColorMenu.querySelector('.cm-list');
-    const foot = mpColorMenu.querySelector('.cm-foot');
-    const raw = (mpColorMenu.querySelector('.cm-q').value || '').trim();
-    const query = raw.toLowerCase().split(/\s+/).filter(Boolean);
-    const lib = (state.mainPage && state.mainPage.colorLibrary) || [];
-    const used = new Set(((state.mainPage && state.mainPage.colorways) || [])
-      .map(c => String(c.value || '').toLowerCase()));
-    const hits = lib.map((c, i) => ({ c, i })).filter(h => mpColorMatches(h.c.name, query));
-    box.innerHTML = hits.map(({ c, i }) =>
-      '<button type="button" data-color-choice="' + i + '"'
-      + (used.has(String(c.name).toLowerCase()) ? ' class="cm-on" title="Already in the colorway list"' : '') + '>'
-      + '<span class="mp-chip" style="--chip:' + escapeHtml(c.hex || 'transparent') + '"></span>'
-      + '<span class="cm-name">' + escapeHtml(c.name || 'TBC') + '</span></button>').join('')
-      // anything not on the house list can still be added by hand
-      || (raw
-        ? '<button type="button" class="cm-new" data-color-free>'
-          + '<span class="mp-chip" style="--chip:transparent"></span>'
-          + '<span class="cm-name">＋ Add “' + escapeHtml(raw) + '” (off the master list)</span></button>'
-        : '<div class="cm-empty">No colour matches</div>');
-    foot.textContent = raw
-      ? hits.length + '/' + lib.length + ' colours match · Enter picks the first'
-      : lib.length + ' colours in the Color Master List · type to search';
-  }
-
-  function mpAddColor(choice) {
-    const mp = ensureMainPage();
-    const picked = choice || { name: 'TBC', hex: '' };
-    mp.colorways.push({
-      col: 'COL ' + (mp.colorways.length + 1),
-      value: picked.name || 'TBC',
-      hex: picked.hex || '',
-    });
-    if (mpColorWrap) mpColorWrap.classList.remove('open');
-    if (mpColorMenu) mpColorMenu.querySelector('.cm-q').value = '';
-    mpRenderCw();
-    pushHistoryIfChanged();
-    showToast('Added ' + mp.colorways[mp.colorways.length - 1].col + ': ' + (picked.name || 'TBC'));
-  }
-
-  /* US-072/ADR 0041: BOM table columns now read state.mainPage.colorways
-     directly (col/value), so removing a colorway does change what BOM
-     shows — but col labels are renumbered below, and a BOM row's
-     cwOverride is keyed by col label, not by a stable colorway id, so an
-     override keyed 'COL 2' stays orphaned under the old label if a
-     colorway ahead of it is removed. Accepted limitation: no remap pass
-     exists, same as this function never remapped anything before BOM
-     existed. */
-  function mpRemoveColor(i) {
-    const mp = ensureMainPage();
-    if (!mp.colorways[i]) return;
-    mp.colorways.splice(i, 1);
-    mp.colorways.forEach((c, j) => { c.col = 'COL ' + (j + 1); });
-    mpRenderCw();
-    pushHistoryIfChanged();
   }
 
   /* ---- Field picker ------------------------------------------------------ */
@@ -6684,86 +6641,213 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     showToast(label + ': ' + (v || '(blank)') + ' · Ctrl/Cmd+Z to undo');
   }
 
-  /* ---- Sketch slot menu (forked from the BOM material-photo trigger) ------
-     Upload or paste only: offline, no catalog, no auto-adoption. */
+  // ---- src/ui/main-page-colorways.js ----
+// MAIN PAGE sheet — colorway rows + the Color Master List picker (US-068,
+// ADR 0037; BOM columns US-072/ADR 0041).
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Adds, removes and renders state.mainPage.colorways, and owns the searchable
+// colour menu hung off the sheet bar's "Add colour" button. The master list
+// and the shade→chip inference are in main-page-data.js; the field rows have
+// their own separate picker in main-page-fields.js; state.mainPage is seeded
+// by ensureMainPage() in main-page.js, which also wires the menu's input.
+//
+// Read mpRemoveColor's comment before touching the `col` labels: BOM keys its
+// per-row cwOverride by them.
 
-  let mpSketchOpen = null;   // 'lace:0' while a slot menu is open
+  let mpColorWrap = null;
+  let mpColorMenu = null;
 
-  function mpSketchMenuEl() {
-    let menu = document.getElementById('mpSketchMenu');
-    if (menu) return menu;
-    menu = document.createElement('div');
-    menu.id = 'mpSketchMenu';
-    menu.className = 'mp-menu mp-sketch-menu';
-    menu.hidden = true;
-    menu.innerHTML = '<div class="mp-sk-hint">Technical flat for this version — prints on the MAIN PAGE sheet.</div>'
-      + '<div class="mp-sk-actions">'
-      + '<button type="button" data-mp-sk-upload title="Or Cmd/Ctrl+V to paste a copied image">Upload&hellip; / Paste</button>'
-      + '<button type="button" data-mp-sk-remove>Remove</button></div>';
-    document.body.appendChild(menu);
-    const filePick = document.createElement('input');
-    filePick.type = 'file';
-    filePick.accept = 'image/*';
-    filePick.hidden = true;
-    menu.appendChild(filePick);
-    const applyFile = (f, ref) => {
-      if (!f || !ref || !/^image\//i.test(f.type)) return;
-      const [variant, i] = ref.split(':');
-      const rd = new FileReader();
-      rd.onload = () => mpSetSketch(variant, +i, rd.result);
-      rd.readAsDataURL(f);
-    };
-    filePick.addEventListener('change', () => {
-      const f = filePick.files && filePick.files[0];
-      const ref = mpSketchOpen;
-      filePick.value = '';
-      applyFile(f, ref);
+  function mpCwTables() { return Array.from(document.querySelectorAll('table.mp-cwx')); }
+
+  function mpRenderCw() {
+    const rows = (state.mainPage && state.mainPage.colorways) || [];
+    mpCwTables().forEach(t => {
+      t.innerHTML = rows.map((c, i) =>
+        '<tr><th>' + escapeHtml(c.col || ('COL ' + (i + 1))) + '</th>'
+        + '<td contenteditable spellcheck="false" data-cw="' + i + '">' + escapeHtml(c.value) + '</td>'
+        + '<td class="act mp-screen-only"><button type="button" data-rm="' + i + '" title="Remove this colorway">×</button></td></tr>').join('');
     });
-    menu.addEventListener('click', e => {
-      if (!mpSketchOpen) return;
-      if (e.target.closest('[data-mp-sk-upload]')) { filePick.click(); return; }
-      if (e.target.closest('[data-mp-sk-remove]')) {
-        const [variant, i] = mpSketchOpen.split(':');
-        mpSetSketch(variant, +i, null);
-      }
-    });
-    /* stopPropagation keeps the app's document-level paste router from also
-       adopting the image as a Board sketch. */
-    menu.addEventListener('paste', e => {
-      if (!mpSketchOpen || !e.clipboardData) return;
-      const it = Array.from(e.clipboardData.items)
-        .find(x => x.kind === 'file' && /^image\//i.test(x.type));
-      if (!it) return;
-      const f = it.getAsFile();
-      if (!f) return;
-      e.preventDefault();
-      e.stopPropagation();
-      applyFile(f, mpSketchOpen);
-    });
-    menu.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { mpCloseSketchMenu(); return; }
-      if (e.key !== 'Tab') e.stopPropagation();
-    });
-    return menu;
+    mpRenderColorMenu();   // keeps the "already used" marks in the picker honest
   }
 
-  function mpOpenSketchMenu(ref, box) {
-    mpCloseFldMenu();
+  /* Every token of the query has to appear somewhere in the entry, so
+     "14-38 lilac" and "lilac 14-38" both find 14-3812 TCX Lilac Mist. */
+  function mpColorMatches(name, query) {
+    const s = String(name).toLowerCase();
+    return query.every(t => s.includes(t));
+  }
+
+  function mpRenderColorMenu() {
+    if (!mpColorMenu) return;
+    const box = mpColorMenu.querySelector('.cm-list');
+    const foot = mpColorMenu.querySelector('.cm-foot');
+    const raw = (mpColorMenu.querySelector('.cm-q').value || '').trim();
+    const query = raw.toLowerCase().split(/\s+/).filter(Boolean);
+    const lib = (state.mainPage && state.mainPage.colorLibrary) || [];
+    const used = new Set(((state.mainPage && state.mainPage.colorways) || [])
+      .map(c => String(c.value || '').toLowerCase()));
+    const hits = lib.map((c, i) => ({ c, i })).filter(h => mpColorMatches(h.c.name, query));
+    box.innerHTML = hits.map(({ c, i }) =>
+      '<button type="button" data-color-choice="' + i + '"'
+      + (used.has(String(c.name).toLowerCase()) ? ' class="cm-on" title="Already in the colorway list"' : '') + '>'
+      + '<span class="mp-chip" style="--chip:' + escapeHtml(c.hex || 'transparent') + '"></span>'
+      + '<span class="cm-name">' + escapeHtml(c.name || 'TBC') + '</span></button>').join('')
+      // anything not on the house list can still be added by hand
+      || (raw
+        ? '<button type="button" class="cm-new" data-color-free>'
+          + '<span class="mp-chip" style="--chip:transparent"></span>'
+          + '<span class="cm-name">＋ Add “' + escapeHtml(raw) + '” (off the master list)</span></button>'
+        : '<div class="cm-empty">No colour matches</div>');
+    foot.textContent = raw
+      ? hits.length + '/' + lib.length + ' colours match · Enter picks the first'
+      : lib.length + ' colours in the Color Master List · type to search';
+  }
+
+  function mpAddColor(choice) {
+    const mp = ensureMainPage();
+    const picked = choice || { name: 'TBC', hex: '' };
+    mp.colorways.push({
+      col: 'COL ' + (mp.colorways.length + 1),
+      value: picked.name || 'TBC',
+      hex: picked.hex || '',
+    });
     if (mpColorWrap) mpColorWrap.classList.remove('open');
-    mpSketchOpen = ref;
-    const menu = mpSketchMenuEl();
-    menu.hidden = false;
-    menu.tabIndex = -1;   // focusable, so the paste event targets the menu
-    const r = box.getBoundingClientRect();
-    menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 260)) + 'px';
-    menu.style.top = Math.min(r.bottom + 4, window.innerHeight - 110) + 'px';
-    menu.focus();
+    if (mpColorMenu) mpColorMenu.querySelector('.cm-q').value = '';
+    mpRenderCw();
+    pushHistoryIfChanged();
+    showToast('Added ' + mp.colorways[mp.colorways.length - 1].col + ': ' + (picked.name || 'TBC'));
   }
 
-  function mpCloseSketchMenu() {
-    const menu = document.getElementById('mpSketchMenu');
-    if (menu) menu.hidden = true;
-    mpSketchOpen = null;
+  /* US-072/ADR 0041: BOM table columns now read state.mainPage.colorways
+     directly (col/value), so removing a colorway does change what BOM
+     shows — but col labels are renumbered below, and a BOM row's
+     cwOverride is keyed by col label, not by a stable colorway id, so an
+     override keyed 'COL 2' stays orphaned under the old label if a
+     colorway ahead of it is removed. Accepted limitation: no remap pass
+     exists, same as this function never remapped anything before BOM
+     existed. */
+  function mpRemoveColor(i) {
+    const mp = ensureMainPage();
+    if (!mp.colorways[i]) return;
+    mp.colorways.splice(i, 1);
+    mp.colorways.forEach((c, j) => { c.col = 'COL ' + (j + 1); });
+    mpRenderCw();
+    pushHistoryIfChanged();
+  }
+
+  // ---- src/ui/main-page.js ----
+// MAIN PAGE sheet: state owner + DOM wiring (US-068, ADR 0037).
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Rebuilt on this tool's primitives from the tech pack's mod-main module —
+// the Pack.* runtime does not exist here (ADR 0037). This part seeds and
+// migrates state.mainPage, renders the sheet, and binds every delegated
+// event; the pieces it composes live in the sibling parts loaded before it:
+// main-page-data.js (rosters, Color Master List), main-page-sketches.js
+// (version sketches), main-page-fields.js (field table + suggestion picker),
+// main-page-colorways.js (colorway rows + colour picker).
+//
+// Style metadata only: no anchor, no POM, no view, so detection never reads
+// it. state.mainPage is seeded lazily by ensureMainPage() so state.js does
+// not carry 47 colour rows.
+
+  function mpIsoToday() {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+
+  /* Composite kept in sync from the parts, never typed directly. Empty parts
+     drop out, so a breakdown with only a prefix reads "LiftyBliss" and not
+     "LiftyBliss ·  · ". */
+  function mpBreakdownValue(parts) {
+    return MP_BREAKDOWN_PARTS
+      .map(p => String((parts || {})[p.key] || '').trim())
+      .filter(Boolean)
+      .join(MP_BREAKDOWN_SEP);
+  }
+
+  function mpSyncBreakdown(field) {
+    if (!field) return;
+    field.value = mpBreakdownValue(field.parts);
+  }
+
+  /* A project saved before US-080 has one free-text breakdown value. It
+     becomes the prefix — the historical packs put the range name there — and
+     the placeholder 'TBC' is dropped rather than carried into a sub-cell. */
+  function mpEnsureBreakdown(mp) {
+    const i = mp.fields.findIndex(f => /Style No Breakdown/i.test((f && f.label) || ''));
+    if (i === -1) return;
+    const f = mp.fields[i];
+    if (!f.parts || typeof f.parts !== 'object') {
+      const legacy = String(f.value || '').trim();
+      f.parts = {
+        prefix: /^tbc$/i.test(legacy) ? '' : legacy,
+        category: '',
+        rangeNo: '',
+      };
+    }
+    MP_BREAKDOWN_PARTS.forEach(p => {
+      if (typeof f.parts[p.key] !== 'string') f.parts[p.key] = '';
+    });
+    mpSyncBreakdown(f);
+  }
+
+  // Seeds state.mainPage in place and migrates a project saved against an
+  // older colour library. Safe to call repeatedly.
+  function ensureMainPage() {
+    const mp = state.mainPage && typeof state.mainPage === 'object'
+      ? state.mainPage
+      : (state.mainPage = {});
+    if (!Array.isArray(mp.fields) || !mp.fields.length) {
+      mp.fields = MP_DEFAULT_FIELDS.map(f => ({ ...f }));
+    }
+    /* Appended, not inserted by index: labels are editable, so a project can
+       carry a reordered or renamed roster and there is no position to trust
+       beyond "not present yet". */
+    if (!mp.fields.some(f => /^Block Reference\b/i.test(String((f && f.label) || '').trim()))) {
+      mp.fields.push({ ...MP_DEFAULT_FIELDS[MP_DEFAULT_FIELDS.length - 1] });
+    }
+    mpEnsureBreakdown(mp);
+    if (!mp.sketches || typeof mp.sketches !== 'object') mp.sketches = {};
+    MP_SKETCH_VARIANTS.forEach(v => {
+      const slots = Array.isArray(mp.sketches[v]) ? mp.sketches[v] : [];
+      mp.sketches[v] = MP_SKETCH_SLOTS.map((_, i) => {
+        const s = slots[i];
+        return s && typeof s === 'object' && s.id
+          ? { id: String(s.id), aspect: Math.max(0.01, Number(s.aspect) || 1) }
+          : null;
+      });
+    });
+    const brand = mp.fields.find(f => /^\s*Brand\b/i.test(f.label || ''));
+    if (brand) brand.value = 'Crossian';
+    const created = mp.fields.find(f => /Tech Pack Creation date/i.test(f.label || ''));
+    if (created && !/^\d{4}-\d{2}-\d{2}$/.test(String(created.value || '').trim())) {
+      created.value = mpIsoToday();
+    }
+    if (!mp.fieldExtra || typeof mp.fieldExtra !== 'object') mp.fieldExtra = {};
+    if (!Array.isArray(mp.colorways) || !mp.colorways.length) {
+      mp.colorways = [
+        { col: 'COL 1', value: 'Default White', hex: mpShadeOf('Default White') },
+        { col: 'COL 2', value: 'Default Black', hex: mpShadeOf('Default Black') },
+      ];
+    }
+    if (mp.colorLibId !== MP_COLOR_LIB_ID || !Array.isArray(mp.colorLibrary)) {
+      mp.colorLibrary = mpDefaultColorLibrary();
+      mp.colorLibId = MP_COLOR_LIB_ID;
+    }
+    if (typeof mp.provenance !== 'string') mp.provenance = '';
+    mpResolveSpecs();
+    return mp;
+  }
+
+  function renderMainPage() {
+    if (!state.mainPage) return;
+    mpRenderFields();
+    mpRenderCw();
+    mpRenderSketches();
+    const prov = document.getElementById('mp-provenance');
+    if (prov && prov !== document.activeElement) prov.textContent = state.mainPage.provenance || '';
   }
 
   /* ---- Wiring ------------------------------------------------------------ */
@@ -10065,9 +10149,16 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     }
 ];
 
-  // ---- src/ui/construction.js ----
-// Construction working sheets (US-078, ADR 0045).
+  // ---- src/ui/construction-state.js ----
+// Construction working sheets (US-078, ADR 0045) — schema constants, module
+// view/selection state, state.construction seeding/normalization, the legacy
+// notes[] -> rows/callouts[] migration, and project serialize/load.
 // Source part for app.js. Run `npm run build` after editing.
+//
+// Sibling parts: construction-images.js (working-board image management),
+// construction-canvas.js (leader-line geometry/hit-testing/drawing),
+// construction-rows.js (editable row table + phrase picker),
+// construction.js (top-level orchestration and DOM wiring).
 //
 // state.construction is:
 // {
@@ -10111,29 +10202,6 @@ const CONSTRUCTION_GENERATED_PHRASES = [
   let ccSelectedCalloutId = null;
   let ccSelectedImageId = null;
   let ccTool = 'select';
-  let ccDrag = null;
-  let ccPanelLayouts = {};
-  let ccBoxCache = {};
-  let ccPhraseRowId = null;
-  let ccPhraseHits = [];
-  const ccImageDataById = new Map();
-  const ccImageElementById = new Map();
-
-  const CONSTRUCTION_PHRASES = (function () {
-    const seen = new Set();
-    const out = [];
-    function add(text, extra) {
-      const clean = String(text || '').trim();
-      const key = clean.toLowerCase();
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      out.push(Object.assign({ text: clean }, extra || {}));
-    }
-    CONSTRUCTION_STARTER_PHRASES.forEach(p => add(p.text, { favorite: !!p.favorite }));
-    CONSTRUCTION_TERM_LIBRARY.forEach(t => add(t.en));
-    CONSTRUCTION_GENERATED_PHRASES.forEach(p => add(p.text));
-    return out;
-  })();
 
   function ccSheetKey(value) {
     return String(value || ccSheet).toLowerCase() === 'lace' ? 'lace' : 'solid';
@@ -10380,41 +10448,19 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     return JSON.stringify(comparable) !== JSON.stringify(ccExpectedSeedRows());
   }
 
-  function ccRows(sheet) {
-    const key = ccSheetKey(sheet);
-    const rows = ensureConstruction().rows.filter(row => row.sheet === key);
-    return rows.slice().sort((a, b) => {
-      const va = CC_VIEWS.indexOf(a.view), vb = CC_VIEWS.indexOf(b.view);
-      if (va !== vb) return va - vb;
-      return ensureConstruction().rows.indexOf(a) - ensureConstruction().rows.indexOf(b);
-    });
-  }
+  // ---- src/ui/construction-images.js ----
+// Construction working sheets (US-078, ADR 0045) — working-board image
+// management: lookup, reflow, upload/paste, zoom, delete, and the bitmap
+// stores that live outside history state.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Image bytes live outside history state (ccImageDataById/ccImageElementById)
+// and are injected only for save/autosave, matching BOM's image ownership
+// model. See construction-state.js for the state.construction schema and the
+// serialize/load round trip that reads these maps.
 
-  function ccRowsForView(view, sheet) {
-    const key = ccViewKey(view);
-    return ccRows(sheet).filter(row => row.view === key);
-  }
-
-  function ccRowById(id) {
-    return ensureConstruction().rows.find(row => row.id === id) || null;
-  }
-
-  function ccRowSeq(id, sheet) {
-    const index = ccRows(sheet).findIndex(row => row.id === id);
-    return index === -1 ? '' : String(index + 1);
-  }
-
-  function ccCalloutForRow(rowId) {
-    return ensureConstruction().callouts.find(callout => callout.rowId === rowId) || null;
-  }
-
-  function ccVisibleCallouts() {
-    return ensureConstruction().callouts.filter(callout => callout.sheet === ccSheet);
-  }
-
-  function ccSelectedCallout() {
-    return ccVisibleCallouts().find(callout => callout.id === ccSelectedCalloutId) || null;
-  }
+  const ccImageDataById = new Map();
+  const ccImageElementById = new Map();
 
   function ccImages(sheet, view) {
     return ensureConstruction().images[ccSheetKey(sheet)][ccViewKey(view)];
@@ -10521,120 +10567,6 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     pushHistoryIfChanged();
   }
 
-  function ccAddRow(view) {
-    const row = {
-      id: state.idCounter++, sheet: ccSheet, view: ccViewKey(view), area: 'CUP', detail: '',
-    };
-    ensureConstruction().rows.push(row);
-    ccSelectedRowId = row.id;
-    ccActiveView = row.view;
-    renderConstruction();
-    pushHistoryIfChanged();
-  }
-
-  function ccDeleteRow(rowId) {
-    const cc = ensureConstruction();
-    const index = cc.rows.findIndex(row => row.id === rowId);
-    if (index === -1) return;
-    const callout = ccCalloutForRow(rowId);
-    cc.rows.splice(index, 1);
-    if (callout) cc.callouts = cc.callouts.filter(item => item.id !== callout.id);
-    if (ccSelectedRowId === rowId) ccSelectedRowId = null;
-    if (callout && ccSelectedCalloutId === callout.id) ccSelectedCalloutId = null;
-    if (ccTool === 'leader' && !ccSelectedCallout()) ccTool = 'select';
-    renderConstruction();
-    pushHistoryIfChanged();
-    showToast('Construction row deleted · Ctrl/Cmd+Z to undo');
-  }
-
-  function ccMoveRowView(row, nextView) {
-    const view = ccViewKey(nextView);
-    if (!row || row.view === view) return;
-    const callout = ccCalloutForRow(row.id);
-    if (callout) {
-      state.construction.callouts = state.construction.callouts.filter(item => item.id !== callout.id);
-      if (ccSelectedCalloutId === callout.id) ccSelectedCalloutId = null;
-    }
-    row.view = view;
-    ccActiveView = view;
-    if (ccTool === 'leader') ccTool = 'select';
-    renderConstruction();
-    pushHistoryIfChanged();
-    showToast(callout ? 'Row moved to ' + view.toUpperCase() + '; old-view callout removed · Undo restores both' : 'Row moved to ' + view.toUpperCase());
-  }
-
-  function ccMissingRows() {
-    return ccRows(ccSheet).filter(row => !ccCalloutForRow(row.id));
-  }
-
-  function ccNextMissingRow(afterId) {
-    const rows = ccRows(ccSheet);
-    const start = Math.max(-1, rows.findIndex(row => row.id === afterId));
-    for (let step = 1; step <= rows.length; step += 1) {
-      const row = rows[(start + step) % rows.length];
-      if (!ccCalloutForRow(row.id)) return row;
-    }
-    return null;
-  }
-
-  function ccArmRowCallout(rowId) {
-    const row = ccRowById(rowId);
-    if (!row || row.sheet !== ccSheet) return;
-    ccSelectedRowId = row.id;
-    ccActiveView = row.view;
-    const callout = ccCalloutForRow(row.id);
-    if (callout) {
-      ccSelectedCalloutId = callout.id;
-      ccSelectedImageId = null;
-      ccSetTool('select');
-      showToast('Selected the existing callout for Construction row ' + ccRowSeq(row.id));
-    } else {
-      ccSelectedCalloutId = null;
-      ccSelectedImageId = null;
-      ccSetTool('callout');
-      showToast('Click an image in ' + row.view.toUpperCase() + ' to place row ' + ccRowSeq(row.id));
-    }
-    renderConstruction();
-  }
-
-  function ccStartCalloutTool(preferredRowId) {
-    const missing = ccMissingRows();
-    if (!missing.length) {
-      ccSetTool('select');
-      showToast('Every Construction row on this sheet already has a callout');
-      return;
-    }
-    const row = missing.find(item => item.id === preferredRowId)
-      || missing.find(item => item.id === ccSelectedRowId)
-      || missing[0];
-    ccSelectedRowId = row.id;
-    ccSelectedCalloutId = null;
-    ccSelectedImageId = null;
-    ccActiveView = row.view;
-    ccSetTool('callout');
-    renderConstruction();
-  }
-
-  function ccSetTool(tool) {
-    if (!['select', 'callout', 'leader'].includes(tool)) tool = 'select';
-    if (tool === 'leader' && !ccSelectedCallout()) {
-      showToast('Select a Construction callout before adding leaders');
-      tool = 'select';
-    }
-    ccTool = tool;
-    ccSyncUi();
-  }
-
-  function ccDeleteSelectedCallout() {
-    const callout = ccSelectedCallout();
-    if (!callout) return;
-    state.construction.callouts = state.construction.callouts.filter(item => item.id !== callout.id);
-    ccSelectedCalloutId = null;
-    if (ccTool === 'leader') ccTool = 'select';
-    renderConstruction();
-    pushHistoryIfChanged();
-  }
-
   function ccImageBounds(sheet, view) {
     const images = ccImages(sheet, view);
     if (!images.length) return { x: 0, y: 0, width: 1, height: 1 };
@@ -10644,6 +10576,33 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     const maxY = Math.max(...images.map(image => image.y + image.height));
     return { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
   }
+
+  function ccImageAt(view, worldPoint) {
+    const images = ccImages(ccSheet, view);
+    for (let i = images.length - 1; i >= 0; i -= 1) {
+      const image = images[i];
+      if (worldPoint.x >= image.x && worldPoint.x <= image.x + image.width
+        && worldPoint.y >= image.y && worldPoint.y <= image.y + image.height) return image;
+    }
+    return null;
+  }
+
+  // ---- src/ui/construction-canvas.js ----
+// Construction working sheets (US-078, ADR 0045) — the leader-line annotation
+// engine: panel layout, world/canvas geometry, hit-testing, callout and leader
+// placement, drawing, the offscreen sheet renderer, and canvas pointer drag.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// BOM's Material Key carries a deliberate fork of this engine under a bm*
+// prefix (ADR 0041): the two are kept as parallel files so drift between them
+// is a one-file diff. Do not merge them.
+//
+// Callout number/area/detail are derived live from the owning row (see
+// construction-rows.js); only label and target geometry is edited here.
+
+  let ccDrag = null;
+  let ccPanelLayouts = {};
+  let ccBoxCache = {};
 
   function ccBuildPanelLayout(view, x, y, width, height) {
     const content = { x: x + 12, y: y + 36, width: width - 24, height: height - 48 };
@@ -10681,16 +10640,6 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     return CC_VIEWS.map(view => ccPanelLayouts[view]).find(layout => layout
       && point.x >= layout.x && point.x <= layout.x + layout.width
       && point.y >= layout.y && point.y <= layout.y + layout.height) || null;
-  }
-
-  function ccImageAt(view, worldPoint) {
-    const images = ccImages(ccSheet, view);
-    for (let i = images.length - 1; i >= 0; i -= 1) {
-      const image = images[i];
-      if (worldPoint.x >= image.x && worldPoint.x <= image.x + image.width
-        && worldPoint.y >= image.y && worldPoint.y <= image.y + image.height) return image;
-    }
-    return null;
   }
 
   function ccDistanceToSegment(point, a, b) {
@@ -10995,6 +10944,251 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     return canvas;
   }
 
+  function ccEventPoint(event, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  function ccOnPointerDown(event) {
+    const canvas = document.getElementById('constructionCanvas');
+    if (!canvas) return;
+    const point = ccEventPoint(event, canvas);
+    const layout = ccPanelAt(point);
+    if (!layout) return;
+    ccActiveView = layout.view;
+    const world = ccCanvasToWorld(layout, point);
+    if (ccTool === 'callout') { ccCreateCalloutAt(layout, world); return; }
+    if (ccTool === 'leader') { ccAddLeaderAt(layout, world); return; }
+    const hit = ccHitTest(point);
+    if (hit) {
+      ccSelectedCalloutId = hit.callout.id;
+      ccSelectedRowId = hit.callout.rowId;
+      ccSelectedImageId = null;
+      if (hit.part !== 'line') ccDrag = { kind: 'callout', hit };
+      renderConstruction();
+      event.preventDefault();
+      return;
+    }
+    const image = ccImageAt(layout.view, world);
+    if (image) {
+      ccSelectedImageId = image.id;
+      ccSelectedCalloutId = null;
+      ccDrag = { kind: 'image', image, layout, prev: world };
+    } else {
+      ccSelectedImageId = null;
+      ccSelectedCalloutId = null;
+    }
+    renderConstruction();
+  }
+
+  function ccOnPointerMove(event) {
+    if (!ccDrag) return;
+    const canvas = document.getElementById('constructionCanvas');
+    if (!canvas) return;
+    const point = ccEventPoint(event, canvas);
+    if (ccDrag.kind === 'callout') {
+      const hit = ccDrag.hit;
+      const world = ccCanvasToWorld(hit.layout, point);
+      const norm = ccNormalize(hit.image, world);
+      if (hit.part === 'anchor') hit.callout.targets[hit.anchorIndex] = norm;
+      else if (hit.part === 'label') hit.callout.textPos = norm;
+    } else if (ccDrag.kind === 'image') {
+      const world = ccCanvasToWorld(ccDrag.layout, point);
+      ccDrag.image.x += world.x - ccDrag.prev.x;
+      ccDrag.image.y += world.y - ccDrag.prev.y;
+      ccDrag.prev = world;
+    }
+    ccDrawCanvas();
+  }
+
+  function ccOnPointerUp() {
+    if (!ccDrag) return;
+    ccDrag = null;
+    pushHistoryIfChanged();
+  }
+
+  // ---- src/ui/construction-rows.js ----
+// Construction working sheets (US-078, ADR 0045) — row/callout lookup
+// accessors, row CRUD, the "arm the next missing row" callout workflow, the
+// editable row table markup, and the construction-phrase quick picker.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Must load after construction-phrase-data.js: CONSTRUCTION_PHRASES below is
+// built by an IIFE that runs at load time over that file's three arrays.
+//
+// One row owns at most one callout. Callout number/area/detail are derived
+// live from the row; only label and target geometry (construction-canvas.js)
+// is independently edited.
+
+  let ccPhraseRowId = null;
+  let ccPhraseHits = [];
+
+  const CONSTRUCTION_PHRASES = (function () {
+    const seen = new Set();
+    const out = [];
+    function add(text, extra) {
+      const clean = String(text || '').trim();
+      const key = clean.toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(Object.assign({ text: clean }, extra || {}));
+    }
+    CONSTRUCTION_STARTER_PHRASES.forEach(p => add(p.text, { favorite: !!p.favorite }));
+    CONSTRUCTION_TERM_LIBRARY.forEach(t => add(t.en));
+    CONSTRUCTION_GENERATED_PHRASES.forEach(p => add(p.text));
+    return out;
+  })();
+
+  function ccRows(sheet) {
+    const key = ccSheetKey(sheet);
+    const rows = ensureConstruction().rows.filter(row => row.sheet === key);
+    return rows.slice().sort((a, b) => {
+      const va = CC_VIEWS.indexOf(a.view), vb = CC_VIEWS.indexOf(b.view);
+      if (va !== vb) return va - vb;
+      return ensureConstruction().rows.indexOf(a) - ensureConstruction().rows.indexOf(b);
+    });
+  }
+
+  function ccRowsForView(view, sheet) {
+    const key = ccViewKey(view);
+    return ccRows(sheet).filter(row => row.view === key);
+  }
+
+  function ccRowById(id) {
+    return ensureConstruction().rows.find(row => row.id === id) || null;
+  }
+
+  function ccRowSeq(id, sheet) {
+    const index = ccRows(sheet).findIndex(row => row.id === id);
+    return index === -1 ? '' : String(index + 1);
+  }
+
+  function ccCalloutForRow(rowId) {
+    return ensureConstruction().callouts.find(callout => callout.rowId === rowId) || null;
+  }
+
+  function ccVisibleCallouts() {
+    return ensureConstruction().callouts.filter(callout => callout.sheet === ccSheet);
+  }
+
+  function ccSelectedCallout() {
+    return ccVisibleCallouts().find(callout => callout.id === ccSelectedCalloutId) || null;
+  }
+
+  function ccAddRow(view) {
+    const row = {
+      id: state.idCounter++, sheet: ccSheet, view: ccViewKey(view), area: 'CUP', detail: '',
+    };
+    ensureConstruction().rows.push(row);
+    ccSelectedRowId = row.id;
+    ccActiveView = row.view;
+    renderConstruction();
+    pushHistoryIfChanged();
+  }
+
+  function ccDeleteRow(rowId) {
+    const cc = ensureConstruction();
+    const index = cc.rows.findIndex(row => row.id === rowId);
+    if (index === -1) return;
+    const callout = ccCalloutForRow(rowId);
+    cc.rows.splice(index, 1);
+    if (callout) cc.callouts = cc.callouts.filter(item => item.id !== callout.id);
+    if (ccSelectedRowId === rowId) ccSelectedRowId = null;
+    if (callout && ccSelectedCalloutId === callout.id) ccSelectedCalloutId = null;
+    if (ccTool === 'leader' && !ccSelectedCallout()) ccTool = 'select';
+    renderConstruction();
+    pushHistoryIfChanged();
+    showToast('Construction row deleted · Ctrl/Cmd+Z to undo');
+  }
+
+  function ccMoveRowView(row, nextView) {
+    const view = ccViewKey(nextView);
+    if (!row || row.view === view) return;
+    const callout = ccCalloutForRow(row.id);
+    if (callout) {
+      state.construction.callouts = state.construction.callouts.filter(item => item.id !== callout.id);
+      if (ccSelectedCalloutId === callout.id) ccSelectedCalloutId = null;
+    }
+    row.view = view;
+    ccActiveView = view;
+    if (ccTool === 'leader') ccTool = 'select';
+    renderConstruction();
+    pushHistoryIfChanged();
+    showToast(callout ? 'Row moved to ' + view.toUpperCase() + '; old-view callout removed · Undo restores both' : 'Row moved to ' + view.toUpperCase());
+  }
+
+  function ccMissingRows() {
+    return ccRows(ccSheet).filter(row => !ccCalloutForRow(row.id));
+  }
+
+  function ccNextMissingRow(afterId) {
+    const rows = ccRows(ccSheet);
+    const start = Math.max(-1, rows.findIndex(row => row.id === afterId));
+    for (let step = 1; step <= rows.length; step += 1) {
+      const row = rows[(start + step) % rows.length];
+      if (!ccCalloutForRow(row.id)) return row;
+    }
+    return null;
+  }
+
+  function ccArmRowCallout(rowId) {
+    const row = ccRowById(rowId);
+    if (!row || row.sheet !== ccSheet) return;
+    ccSelectedRowId = row.id;
+    ccActiveView = row.view;
+    const callout = ccCalloutForRow(row.id);
+    if (callout) {
+      ccSelectedCalloutId = callout.id;
+      ccSelectedImageId = null;
+      ccSetTool('select');
+      showToast('Selected the existing callout for Construction row ' + ccRowSeq(row.id));
+    } else {
+      ccSelectedCalloutId = null;
+      ccSelectedImageId = null;
+      ccSetTool('callout');
+      showToast('Click an image in ' + row.view.toUpperCase() + ' to place row ' + ccRowSeq(row.id));
+    }
+    renderConstruction();
+  }
+
+  function ccStartCalloutTool(preferredRowId) {
+    const missing = ccMissingRows();
+    if (!missing.length) {
+      ccSetTool('select');
+      showToast('Every Construction row on this sheet already has a callout');
+      return;
+    }
+    const row = missing.find(item => item.id === preferredRowId)
+      || missing.find(item => item.id === ccSelectedRowId)
+      || missing[0];
+    ccSelectedRowId = row.id;
+    ccSelectedCalloutId = null;
+    ccSelectedImageId = null;
+    ccActiveView = row.view;
+    ccSetTool('callout');
+    renderConstruction();
+  }
+
+  function ccSetTool(tool) {
+    if (!['select', 'callout', 'leader'].includes(tool)) tool = 'select';
+    if (tool === 'leader' && !ccSelectedCallout()) {
+      showToast('Select a Construction callout before adding leaders');
+      tool = 'select';
+    }
+    ccTool = tool;
+    ccSyncUi();
+  }
+
+  function ccDeleteSelectedCallout() {
+    const callout = ccSelectedCallout();
+    if (!callout) return;
+    state.construction.callouts = state.construction.callouts.filter(item => item.id !== callout.id);
+    ccSelectedCalloutId = null;
+    if (ccTool === 'leader') ccTool = 'select';
+    renderConstruction();
+    pushHistoryIfChanged();
+  }
+
   function ccAreaOptions(selected) {
     return CC_AREAS.map(area => '<option value="' + area + '"' + (area === selected ? ' selected' : '') + '>' + escapeHtml(CC_AREA_LABELS[area]) + '</option>').join('');
   }
@@ -11074,6 +11268,18 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     pushHistoryIfChanged();
   }
 
+  // ---- src/ui/construction.js ----
+// Construction working sheets (US-078, ADR 0045) — top-level orchestration:
+// toolbar/tool UI sync, the page render entry point, and DOM wiring.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// The rest of the page lives in sibling parts, all loaded before this one:
+// construction-state.js (schema constants, state.construction seeding,
+// legacy migration, project serialize/load), construction-images.js
+// (working-board image management), construction-canvas.js (leader-line
+// geometry, hit-testing, drawing, pointer drag), construction-rows.js
+// (row CRUD, row table markup, phrase picker).
+
   function ccSyncUi() {
     document.querySelectorAll('[data-cc-sheet]').forEach(button => {
       button.setAttribute('aria-pressed', String(button.dataset.ccSheet === ccSheet));
@@ -11123,69 +11329,6 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     ccDrawCanvas();
     ccRenderTable();
     ccSyncUi();
-  }
-
-  function ccEventPoint(event, canvas) {
-    const rect = canvas.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-  }
-
-  function ccOnPointerDown(event) {
-    const canvas = document.getElementById('constructionCanvas');
-    if (!canvas) return;
-    const point = ccEventPoint(event, canvas);
-    const layout = ccPanelAt(point);
-    if (!layout) return;
-    ccActiveView = layout.view;
-    const world = ccCanvasToWorld(layout, point);
-    if (ccTool === 'callout') { ccCreateCalloutAt(layout, world); return; }
-    if (ccTool === 'leader') { ccAddLeaderAt(layout, world); return; }
-    const hit = ccHitTest(point);
-    if (hit) {
-      ccSelectedCalloutId = hit.callout.id;
-      ccSelectedRowId = hit.callout.rowId;
-      ccSelectedImageId = null;
-      if (hit.part !== 'line') ccDrag = { kind: 'callout', hit };
-      renderConstruction();
-      event.preventDefault();
-      return;
-    }
-    const image = ccImageAt(layout.view, world);
-    if (image) {
-      ccSelectedImageId = image.id;
-      ccSelectedCalloutId = null;
-      ccDrag = { kind: 'image', image, layout, prev: world };
-    } else {
-      ccSelectedImageId = null;
-      ccSelectedCalloutId = null;
-    }
-    renderConstruction();
-  }
-
-  function ccOnPointerMove(event) {
-    if (!ccDrag) return;
-    const canvas = document.getElementById('constructionCanvas');
-    if (!canvas) return;
-    const point = ccEventPoint(event, canvas);
-    if (ccDrag.kind === 'callout') {
-      const hit = ccDrag.hit;
-      const world = ccCanvasToWorld(hit.layout, point);
-      const norm = ccNormalize(hit.image, world);
-      if (hit.part === 'anchor') hit.callout.targets[hit.anchorIndex] = norm;
-      else if (hit.part === 'label') hit.callout.textPos = norm;
-    } else if (ccDrag.kind === 'image') {
-      const world = ccCanvasToWorld(ccDrag.layout, point);
-      ccDrag.image.x += world.x - ccDrag.prev.x;
-      ccDrag.image.y += world.y - ccDrag.prev.y;
-      ccDrag.prev = world;
-    }
-    ccDrawCanvas();
-  }
-
-  function ccOnPointerUp() {
-    if (!ccDrag) return;
-    ccDrag = null;
-    pushHistoryIfChanged();
   }
 
   function initConstruction() {
@@ -11630,18 +11773,14 @@ const BOM_MATERIAL_LIBRARY = [
   },
 ];
 
-  // ---- src/ui/bom.js ----
-// BOM page: editable material table + material-key canvas annotation
-// (US-072, ADR 0041). Source part for app.js. Run `npm run build` after
-// editing.
-//
-// Rebuilt on this tool's primitives from the sibling tech-pack project's
-// mod-bom module — that project has its own globals/closures with no shared
-// module, so this is a fork, not a link (same pattern as MAIN PAGE/
-// Construction, ADR 0037/0039). Static suggestion data is carried across
-// verbatim in bom-material-data.js (BOM_MATERIAL_LIBRARY, 27 entries mined
-// from 1,748 historical BOM records) — that file must load before this one
-// (see scripts/source-parts.mjs).
+  // ---- src/ui/bom-state.js ----
+// BOM page — schema constants, seeding, project persistence, session UI
+// state, and row CRUD/numbering for state.bom (US-072, ADR 0041). Source
+// part for app.js. Run `npm run build` after editing. Loads first of the
+// bom-* parts; siblings are bom-images.js (Material Key image board),
+// bom-materials.js (material-suggestion engine + per-row photo popover),
+// bom-canvas.js (Material Key leader-line engine), bom-table.js (factory
+// table + print sheets) and bom.js (initBom DOM wiring).
 //
 // A row is { id, section:'FABRIC'|'TRIM', scope:'BOTH'|'SOLID'|'LACE',
 // cells:{description, areaOfUse, supplier, article, width, size,
@@ -11655,26 +11794,6 @@ const BOM_MATERIAL_LIBRARY = [
 // — same convention as Construction's `[data-cc-variant]` (ADR 0040). `#` is
 // computed live from render order (FABRIC rows then TRIM rows), never
 // stored — same non-goal as Construction's seq.
-//
-// A callout is { id, rowId, imageId, variant, targets:[{nx,ny}, ...],
-// textPos:{nx,ny} } — the "material key" annotation, placed on a BOM-owned
-// image for that variant. It deliberately reuses Construction's exact
-// multi-anchor/edge-leader-line/arrowhead/double-click-delete geometry,
-// forked (not shared) under a bm* prefix, per this codebase's
-// duplicate-over-premature-abstraction convention — there is no existing
-// shared leader-line module to extract into. A callout's label text is
-// derived live from its linked row's current number + description
-// (`N. {description}`), never stored, matching how BOM row numbers are
-// computed.
-//
-// Colorway columns finally consume state.mainPage.colorways — ADR 0037
-// named this "knowingly inert" pending exactly this feature.
-//
-// The material-suggestion picker is a side-panel searchable list (mirroring
-// Construction's phrase quick-list, ADR 0039), not the reference tool's
-// per-cell floating popover. Picking a material always sets the selected
-// row's description, and pre-fills areaOfUse/supplier/article/width/size
-// only into cells the TD has not yet typed into — never overwrites.
 //
 // Dropped by ADR 0041: AI translation, bilingual cells, per-row reference
 // photo + asset-management catalog matching, auto-draft-from-Construction,
@@ -11801,13 +11920,6 @@ const BOM_MATERIAL_LIBRARY = [
   let bmSelectedImageId = null;
   let bmDrag = null;             // callout anchor/label or BOM image drag
   let bmCanvasView = { offX: 0, offY: 0, scale: 1 };
-
-  // Bitmap bytes deliberately live outside state.bom. History snapshots clone
-  // state.bom frequently; embedding base64 there would duplicate every BOM
-  // image for every cell edit. Project save injects the bytes, project load
-  // extracts them again (the same split used by Board images/imageDataById).
-  const bmImageDataById = new Map();
-  const bmImageElementById = new Map();
 
   function bmVariantKey(variant) {
     return String(variant || bmVariant).toLowerCase() === 'lace' ? 'lace' : 'solid';
@@ -12091,6 +12203,139 @@ const BOM_MATERIAL_LIBRARY = [
     return cw.value || '';
   }
 
+  // ---- src/ui/bom-images.js ----
+// BOM page — Material Key image board: the per-variant image records, their
+// bitmap-byte stores, and upload/paste/reflow/zoom/delete (US-072, ADR
+// 0041). Source part for app.js. Run `npm run build` after editing. Loads
+// after bom-state.js (ensureBom/bmVariantImages) and before bom-canvas.js,
+// which draws these images and hit-tests against them. Mirrors
+// construction-images.js one-for-one — the two boards are a deliberate fork,
+// not shared code.
+
+  // Bitmap bytes deliberately live outside state.bom. History snapshots clone
+  // state.bom frequently; embedding base64 there would duplicate every BOM
+  // image for every cell edit. Project save injects the bytes, project load
+  // extracts them again (the same split used by Board images/imageDataById).
+  const bmImageDataById = new Map();
+  const bmImageElementById = new Map();
+
+  function bmImageById(id, variant) {
+    return bmVariantImages(variant).find(im => im.id === id) || null;
+  }
+
+  function bmImageBounds(variant) {
+    const images = bmVariantImages(variant);
+    if (!images.length) return { x: 0, y: 0, width: 1, height: 1 };
+    const minX = Math.min(...images.map(im => im.x));
+    const minY = Math.min(...images.map(im => im.y));
+    const maxX = Math.max(...images.map(im => im.x + im.width));
+    const maxY = Math.max(...images.map(im => im.y + im.height));
+    return { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
+  }
+
+  function bmReflowImages(variant) {
+    const images = bmVariantImages(variant);
+    if (!images.length) return;
+    const commonHeight = 300;
+    const gap = 30;
+    let x = 0;
+    images.forEach(image => {
+      image.height = commonHeight;
+      image.width = commonHeight * (image.aspect || 1);
+      image.x = x;
+      image.y = 0;
+      x += image.width + gap;
+    });
+  }
+
+  async function bmAddImagesFromDataURLs(dataURLs, variant) {
+    const key = bmVariantKey(variant);
+    const images = bmVariantImages(key);
+    let added = 0;
+    for (const dataURL of dataURLs || []) {
+      if (!dataURL) continue;
+      const img = await loadImageFromDataURL(dataURL);
+      const id = state.idCounter++;
+      const aspect = img.height > 0 ? img.width / img.height : 1;
+      images.push({ id, x: 0, y: 0, width: 300 * aspect, height: 300, aspect, locked: false });
+      bmImageDataById.set(id, dataURL);
+      bmImageElementById.set(id, img);
+      added += 1;
+    }
+    if (!added) return 0;
+    bmReflowImages(key);
+    bmSelectedImageId = null;
+    bmSelectedCalloutId = null;
+    if (bmTool === 'leader') bmTool = 'select';
+    renderBom();
+    pushHistoryIfChanged();
+    showToast(added === 1
+      ? '1 image added to the ' + key.toUpperCase() + ' Material Key.'
+      : added + ' images added to the ' + key.toUpperCase() + ' Material Key.');
+    return added;
+  }
+
+  async function bmAddImageFiles(files, variant) {
+    const imageFiles = Array.from(files || []).filter(file => file && /^image\//i.test(file.type || ''));
+    if (!imageFiles.length) {
+      showToast('Add PNG, JPEG, or WebP images to the Material Key.');
+      return 0;
+    }
+    const dataURLs = [];
+    for (const file of imageFiles) dataURLs.push(await blobToDataURL(file));
+    return bmAddImagesFromDataURLs(dataURLs, variant);
+  }
+
+  function bmDeleteSelectedImage() {
+    const image = bmImageById(bmSelectedImageId);
+    if (!image) { showToast('Select a Material Key image first.'); return; }
+    const linked = bmVisibleCallouts().filter(callout => callout.imageId === image.id);
+    if (linked.length && !window.confirm(
+      'Delete this image and its ' + linked.length + ' linked material callout(s)?\n\nUndo restores both.'
+    )) return;
+    const images = bmVariantImages();
+    images.splice(images.indexOf(image), 1);
+    if (linked.length) {
+      const ids = new Set(linked.map(callout => callout.id));
+      state.bom.callouts = state.bom.callouts.filter(callout => !ids.has(callout.id));
+    }
+    bmSelectedImageId = null;
+    bmSelectedCalloutId = null;
+    bmReflowImages();
+    renderBom();
+    pushHistoryIfChanged();
+  }
+
+  function bmZoomSelectedImage(factor) {
+    const image = bmImageById(bmSelectedImageId);
+    if (!image) { showToast('Select a Material Key image first.'); return; }
+    const nextWidth = clamp(image.width * factor, 60, 1800);
+    const nextHeight = nextWidth / (image.aspect || (image.width / image.height) || 1);
+    const cx = image.x + image.width / 2;
+    const cy = image.y + image.height / 2;
+    image.width = nextWidth;
+    image.height = nextHeight;
+    image.x = cx - nextWidth / 2;
+    image.y = cy - nextHeight / 2;
+    renderBom();
+    pushHistoryIfChanged();
+  }
+
+  // ---- src/ui/bom-materials.js ----
+// BOM page — material-suggestion engine (library lookup, fill-empty-only
+// autofill, floating in-cell ▾ dropdown, side-panel search list) plus the
+// per-row material photo popover (US-072, ADR 0041). Source part for
+// app.js. Run `npm run build` after editing. Static suggestion data lives in
+// bom-material-data.js (BOM_MATERIAL_LIBRARY), which must load before this
+// part; state.bom shape and bmRowById come from bom-state.js (see
+// scripts/source-parts.mjs).
+//
+// The material-suggestion picker is a side-panel searchable list (mirroring
+// Construction's phrase quick-list, ADR 0039), not the reference tool's
+// per-cell floating popover. Picking a material always sets the selected
+// row's description, and pre-fills areaOfUse/supplier/article/width/size
+// only into cells the TD has not yet typed into — never overwrites.
+
   function bmMaterialMatches(m, tokens) {
     const s = m.name.toLowerCase();
     return tokens.every(t => s.includes(t));
@@ -12340,109 +12585,65 @@ const BOM_MATERIAL_LIBRARY = [
     bmPhotoOpenRow = null;
   }
 
+  function bmRenderMaterialPanel() {
+    const empty = document.getElementById('bomMatEmpty');
+    const panel = document.getElementById('bomMatPanel');
+    if (!empty || !panel) return;
+    const row = bmSelectedRowId ? bmRowById(bmSelectedRowId) : null;
+    if (!row) {
+      empty.hidden = false;
+      panel.hidden = true;
+      return;
+    }
+    empty.hidden = true;
+    panel.hidden = false;
+    const label = document.getElementById('bomMatRowLabel');
+    if (label) {
+      const seq = bmRowSeq(row.id, bmVariant);
+      label.textContent = (seq ? seq + '. ' : '') + (row.cells.description || '(empty description)');
+    }
+    bmRenderMaterialList();
+  }
+
+  function bmRenderMaterialList() {
+    const box = document.getElementById('bomMatList');
+    if (!box) return;
+    const tokens = bmSearchText.toLowerCase().split(/\s+/).filter(Boolean);
+    const hits = tokens.length
+      ? BOM_MATERIAL_LIBRARY.filter(m => bmMaterialMatches(m, tokens))
+      : BOM_MATERIAL_LIBRARY;
+    bmMaterialHits = hits.slice(0, 60);
+    box.innerHTML = bmMaterialHits.map((m, i) =>
+      '<button type="button" data-bom-mat="' + i + '">' + escapeHtml(m.name)
+      + '<span class="bm-mat-section">' + escapeHtml(m.section) + '</span></button>').join('')
+      || '<div class="bm-mat-empty">No material matches — type your own description in the row</div>';
+  }
+
+  // ---- src/ui/bom-canvas.js ----
+// BOM page — Material Key leader-line canvas engine: callout lookup,
+// geometry, hit-testing, placement/drag, drawing, the offscreen render the
+// tech-pack Excel export reuses (bmRenderMatkeyToCanvas), and the canvas
+// pointer handlers (US-072, ADR 0041). Source part for app.js. Run
+// `npm run build` after editing. Loads after bom-state.js and
+// bom-images.js; bom-table.js's renderBom drives it.
+//
+// This is the deliberate bm*-prefixed fork of construction-canvas.js —
+// keeping the two filenames parallel is the point: it makes "diff the two
+// forks for drift" a one-file comparison. It is NOT an invitation to merge
+// them (see the callout note below).
+//
+// A callout is { id, rowId, imageId, variant, targets:[{nx,ny}, ...],
+// textPos:{nx,ny} } — the "material key" annotation, placed on a BOM-owned
+// image for that variant. It deliberately reuses Construction's exact
+// multi-anchor/edge-leader-line/arrowhead/double-click-delete geometry,
+// forked (not shared) under a bm* prefix, per this codebase's
+// duplicate-over-premature-abstraction convention — there is no existing
+// shared leader-line module to extract into. A callout's label text is
+// derived live from its linked row's current number + description
+// (`N. {description}`), never stored, matching how BOM row numbers are
+// computed.
+
   /* ---- Material-key annotation engine (forked from construction.js) ------ */
-
-  function bmImageById(id, variant) {
-    return bmVariantImages(variant).find(im => im.id === id) || null;
-  }
-
-  function bmImageBounds(variant) {
-    const images = bmVariantImages(variant);
-    if (!images.length) return { x: 0, y: 0, width: 1, height: 1 };
-    const minX = Math.min(...images.map(im => im.x));
-    const minY = Math.min(...images.map(im => im.y));
-    const maxX = Math.max(...images.map(im => im.x + im.width));
-    const maxY = Math.max(...images.map(im => im.y + im.height));
-    return { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
-  }
-
-  function bmReflowImages(variant) {
-    const images = bmVariantImages(variant);
-    if (!images.length) return;
-    const commonHeight = 300;
-    const gap = 30;
-    let x = 0;
-    images.forEach(image => {
-      image.height = commonHeight;
-      image.width = commonHeight * (image.aspect || 1);
-      image.x = x;
-      image.y = 0;
-      x += image.width + gap;
-    });
-  }
-
-  async function bmAddImagesFromDataURLs(dataURLs, variant) {
-    const key = bmVariantKey(variant);
-    const images = bmVariantImages(key);
-    let added = 0;
-    for (const dataURL of dataURLs || []) {
-      if (!dataURL) continue;
-      const img = await loadImageFromDataURL(dataURL);
-      const id = state.idCounter++;
-      const aspect = img.height > 0 ? img.width / img.height : 1;
-      images.push({ id, x: 0, y: 0, width: 300 * aspect, height: 300, aspect, locked: false });
-      bmImageDataById.set(id, dataURL);
-      bmImageElementById.set(id, img);
-      added += 1;
-    }
-    if (!added) return 0;
-    bmReflowImages(key);
-    bmSelectedImageId = null;
-    bmSelectedCalloutId = null;
-    if (bmTool === 'leader') bmTool = 'select';
-    renderBom();
-    pushHistoryIfChanged();
-    showToast(added === 1
-      ? '1 image added to the ' + key.toUpperCase() + ' Material Key.'
-      : added + ' images added to the ' + key.toUpperCase() + ' Material Key.');
-    return added;
-  }
-
-  async function bmAddImageFiles(files, variant) {
-    const imageFiles = Array.from(files || []).filter(file => file && /^image\//i.test(file.type || ''));
-    if (!imageFiles.length) {
-      showToast('Add PNG, JPEG, or WebP images to the Material Key.');
-      return 0;
-    }
-    const dataURLs = [];
-    for (const file of imageFiles) dataURLs.push(await blobToDataURL(file));
-    return bmAddImagesFromDataURLs(dataURLs, variant);
-  }
-
-  function bmDeleteSelectedImage() {
-    const image = bmImageById(bmSelectedImageId);
-    if (!image) { showToast('Select a Material Key image first.'); return; }
-    const linked = bmVisibleCallouts().filter(callout => callout.imageId === image.id);
-    if (linked.length && !window.confirm(
-      'Delete this image and its ' + linked.length + ' linked material callout(s)?\n\nUndo restores both.'
-    )) return;
-    const images = bmVariantImages();
-    images.splice(images.indexOf(image), 1);
-    if (linked.length) {
-      const ids = new Set(linked.map(callout => callout.id));
-      state.bom.callouts = state.bom.callouts.filter(callout => !ids.has(callout.id));
-    }
-    bmSelectedImageId = null;
-    bmSelectedCalloutId = null;
-    bmReflowImages();
-    renderBom();
-    pushHistoryIfChanged();
-  }
-
-  function bmZoomSelectedImage(factor) {
-    const image = bmImageById(bmSelectedImageId);
-    if (!image) { showToast('Select a Material Key image first.'); return; }
-    const nextWidth = clamp(image.width * factor, 60, 1800);
-    const nextHeight = nextWidth / (image.aspect || (image.width / image.height) || 1);
-    const cx = image.x + image.width / 2;
-    const cy = image.y + image.height / 2;
-    image.width = nextWidth;
-    image.height = nextHeight;
-    image.x = cx - nextWidth / 2;
-    image.y = cy - nextHeight / 2;
-    renderBom();
-    pushHistoryIfChanged();
-  }
 
   function bmVisibleCallouts() {
     const callouts = (state.bom && state.bom.callouts) || [];
@@ -12740,6 +12941,287 @@ const BOM_MATERIAL_LIBRARY = [
     }
   }
 
+  function bmDrawCanvas() {
+    const canvas = document.getElementById('bomMatkeyCanvas');
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    bmDrawCanvasInto(canvas, rect.width, rect.height, dpr);
+  }
+
+  // Draw the active variant's Material Key (images + callouts) into any
+  // canvas at a given CSS size and pixel scale. Extracted from bmDrawCanvas
+  // (US-079) so the tech-pack Excel export can render a chosen variant
+  // offscreen through the same drawing code the live Material Key uses.
+  function bmDrawCanvasInto(canvas, cssWidth, cssHeight, pixelScale) {
+    const w = Math.max(1, Math.round(cssWidth * pixelScale));
+    const h = Math.max(1, Math.round(cssHeight * pixelScale));
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(pixelScale, 0, 0, pixelScale, 0, 0);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    const images = bmVariantImages();
+    if (!images.length) {
+      ctx.fillStyle = '#8a8f9a';
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Paste, drop, or add images to this ' + bmVariant.toUpperCase() + ' Material Key.', cssWidth / 2, cssHeight / 2);
+      bmCanvasView = { offX: cssWidth / 2, offY: cssHeight / 2, scale: 1 };
+      return;
+    }
+
+    const bounds = bmImageBounds();
+    const pad = 40;
+    const scale = Math.min(
+      (cssWidth - pad * 2) / bounds.width,
+      (cssHeight - pad * 2) / bounds.height,
+      4
+    );
+    const offX = (cssWidth - bounds.width * scale) / 2 - bounds.x * scale;
+    const offY = (cssHeight - bounds.height * scale) / 2 - bounds.y * scale;
+    bmCanvasView = { offX, offY, scale };
+
+    ctx.save();
+    ctx.translate(offX, offY);
+    ctx.scale(scale, scale);
+    images.forEach(image => {
+      const img = bmImageRuntime(image.id);
+      if (img) ctx.drawImage(img, image.x, image.y, image.width, image.height);
+      if (image.id === bmSelectedImageId) {
+        ctx.strokeStyle = '#356dff';
+        ctx.lineWidth = 2 / scale;
+        ctx.strokeRect(image.x, image.y, image.width, image.height);
+      }
+    });
+    ctx.restore();
+
+    bmVisibleCallouts().forEach(c => bmDrawCallout(ctx, c, c.id === bmSelectedCalloutId));
+  }
+
+  // Offscreen render of ONE variant's Material Key for the tech-pack Excel
+  // export (US-079). Swaps the module view state so the shared draw code
+  // targets the requested variant with no selection chrome, and restores it
+  // in finally — bmCanvasView is the live canvas's hit-test mapping and must
+  // never be left pointing at the offscreen render.
+  function bmRenderMatkeyToCanvas(variant, cssWidth, cssHeight, pixelScale) {
+    const saved = {
+      variant: bmVariant, callout: bmSelectedCalloutId,
+      image: bmSelectedImageId, view: bmCanvasView,
+    };
+    const canvas = document.createElement('canvas');
+    try {
+      bmVariant = bmVariantKey(variant);
+      bmSelectedCalloutId = null;
+      bmSelectedImageId = null;
+      bmDrawCanvasInto(canvas, cssWidth, cssHeight, pixelScale || 1);
+    } finally {
+      bmVariant = saved.variant;
+      bmSelectedCalloutId = saved.callout;
+      bmSelectedImageId = saved.image;
+      bmCanvasView = saved.view;
+    }
+    return canvas;
+  }
+
+  function bmLabelBox(ctx, label, text, isSelected) {
+    ctx.font = (isSelected ? 'bold ' : '') + '12px sans-serif';
+    const w = ctx.measureText(text).width;
+    return { x: label.x - 4, y: label.y - 9, width: w + 8, height: 18 };
+  }
+
+  function bmEdgeToward(box, ax, ay) {
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    const dx = ax - cx, dy = ay - cy;
+    if (Math.abs(dx) < box.width / 2 && Math.abs(dy) < box.height / 2) return null;
+    const tx = dx !== 0 ? (box.width / 2) / Math.abs(dx) : 1e9;
+    const ty = dy !== 0 ? (box.height / 2) / Math.abs(dy) : 1e9;
+    const t = Math.min(tx, ty);
+    return { x: cx + dx * t, y: cy + dy * t };
+  }
+
+  function bmDrawArrowHead(ctx, from, to, color) {
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(to.x - BM_ARROW_SIZE * Math.cos(angle - Math.PI / 6), to.y - BM_ARROW_SIZE * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(to.x - BM_ARROW_SIZE * Math.cos(angle + Math.PI / 6), to.y - BM_ARROW_SIZE * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function bmDrawCallout(ctx, c, isSelected) {
+    const im = bmImageById(c.imageId);
+    if (!im) return;
+    const label = bmWorldToCanvas(bmWorldOf(im, c.textPos));
+    const orphan = !bmRowById(c.rowId);
+    const color = orphan ? BM_ORPHAN_COLOR : BM_CALLOUT_COLOR;
+    const text = bmCalloutLabelText(c);
+    const box = bmLabelBox(ctx, label, text, isSelected);
+    const targets = c.targets || [];
+    const seq = bmRowBase(c.rowId, bmVariant);
+
+    ctx.save();
+    targets.forEach((t, i) => {
+      const pin = bmWorldToCanvas(bmWorldOf(im, t));
+      const edge = bmEdgeToward(box, pin.x, pin.y);
+      const from = edge || { x: label.x, y: label.y };
+      ctx.strokeStyle = color;
+      ctx.lineWidth = isSelected ? 2.5 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(pin.x, pin.y);
+      ctx.stroke();
+      bmDrawArrowHead(ctx, from, pin, color);
+      if (i === 0) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(pin.x, pin.y, BM_PIN_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(seq || '?'), pin.x, pin.y + 0.5);
+      } else {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(pin.x, pin.y, BM_ANCHOR_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    });
+
+    ctx.font = (isSelected ? 'bold ' : '') + '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    if (isSelected) {
+      ctx.strokeStyle = color;
+      ctx.setLineDash([3, 2]);
+      ctx.strokeRect(box.x, box.y, box.width, box.height);
+      ctx.setLineDash([]);
+    }
+    ctx.fillStyle = orphan ? BM_ORPHAN_COLOR : '#111';
+    ctx.fillText(text, label.x, label.y);
+    ctx.restore();
+  }
+
+  function bmRenderCalloutSidePanel() {
+    const empty = document.getElementById('bomMkSideEmpty');
+    const panel = document.getElementById('bomMkSideCallout');
+    if (!empty || !panel) return;
+    const c = bmSelectedCallout();
+    if (!c) {
+      empty.hidden = false;
+      panel.hidden = true;
+      return;
+    }
+    empty.hidden = true;
+    panel.hidden = false;
+    const seqEl = document.getElementById('bomMkSideSeq');
+    if (seqEl) seqEl.textContent = String(bmRowSeq(c.rowId, bmVariant) || '?');
+    const rowSelect = document.getElementById('bomMkRowSelect');
+    if (rowSelect && rowSelect !== document.activeElement) {
+      const rows = bmVisibleRows(bmVariant);
+      const orphan = !rows.some(r => r.id === c.rowId);
+      rowSelect.innerHTML = (orphan
+        ? '<option value="" selected disabled>? deleted BOM row — pick a row to relink</option>'
+        : '')
+        + rows.map(r => {
+          const seq = bmRowSeq(r.id, bmVariant);
+          const occupied = bmCalloutForRow(r.id, bmVariant);
+          const disabled = occupied && occupied.id !== c.id;
+          return '<option value="' + r.id + '"' + (!orphan && r.id === c.rowId ? ' selected' : '')
+            + (disabled ? ' disabled' : '') + '>'
+            + seq + '. ' + escapeHtml(r.cells.description || '(empty)') + '</option>';
+        }).join('');
+    }
+  }
+
+  function bmOnPointerDown(e) {
+    if (!state.bom) return;
+    const canvas = document.getElementById('bomMatkeyCanvas');
+    if (!canvas) return;
+    const pt = bmCanvasPointFromEvent(e, canvas);
+    if (bmTool === 'callout') { bmCreateCalloutAt(pt); return; }
+    if (bmTool === 'leader') { bmAddArrowAt(pt); return; }
+    const hit = bmHitTest(pt);
+    if (hit) {
+      bmSelectedCalloutId = hit.callout.id;
+      bmSelectedRowId = hit.callout.rowId;
+      bmSelectedImageId = null;
+      bmDrag = hit.part === 'line' ? null
+        : { callout: hit.callout, part: hit.part, anchorIndex: hit.anchorIndex, imageRec: hit.imageRec };
+      renderBom();
+      e.preventDefault();
+      return;
+    }
+    const image = bmImageAt(pt);
+    if (image) {
+      bmSelectedCalloutId = null;
+      bmSelectedImageId = image.id;
+      bmDrag = {
+        part: 'image', imageRec: image,
+        startX: pt.x, startY: pt.y, originX: image.x, originY: image.y,
+      };
+      renderBom();
+      e.preventDefault();
+      return;
+    }
+    bmSelectedCalloutId = null;
+    bmSelectedImageId = null;
+    renderBom();
+  }
+
+  function bmOnPointerMove(e) {
+    if (!bmDrag) return;
+    const canvas = document.getElementById('bomMatkeyCanvas');
+    if (!canvas) return;
+    const pt = bmCanvasPointFromEvent(e, canvas);
+    if (bmDrag.part === 'image') {
+      if (!bmDrag.imageRec.locked) {
+        bmDrag.imageRec.x = bmDrag.originX + pt.x - bmDrag.startX;
+        bmDrag.imageRec.y = bmDrag.originY + pt.y - bmDrag.startY;
+      }
+    } else {
+      const norm = bmNormalize(bmDrag.imageRec, pt);
+      if (bmDrag.part === 'anchor') bmDrag.callout.targets[bmDrag.anchorIndex] = norm;
+      else bmDrag.callout.textPos = norm;
+    }
+    bmDrawCanvas();
+  }
+
+  function bmOnPointerUp() {
+    if (!bmDrag) return;
+    bmDrag = null;
+    pushHistoryIfChanged();
+  }
+
+  function bmOnDoubleClick(e) {
+    if (bmTool !== 'select') return;
+    const canvas = document.getElementById('bomMatkeyCanvas');
+    if (!canvas) return;
+    bmDeleteAnchorAt(bmCanvasPointFromEvent(e, canvas));
+  }
+
+  // ---- src/ui/bom-table.js ----
+// BOM page — factory-format table + print-sheet rendering, including the
+// bilingual header, the material-key SVG markup and bmPrintSheetHtml, which
+// the tech-pack workbook export reads directly (US-072/US-073/US-079, ADR
+// 0041). Source part for app.js. Run `npm run build` after editing. Loads
+// after bom-state.js, bom-images.js, bom-materials.js and bom-canvas.js —
+// renderBom here drives bmRenderTable, bmDrawCanvas, bmRenderCalloutSidePanel
+// and bmSyncToolUi.
+//
+// Colorway columns finally consume state.mainPage.colorways — ADR 0037
+// named this "knowingly inert" pending exactly this feature.
+
   function bmSyncVariantTabs() {
     document.querySelectorAll('[data-bom-variant]').forEach(btn => {
       btn.setAttribute('aria-pressed', String(btn.dataset.bomVariant === bmVariant));
@@ -12972,313 +13454,30 @@ const BOM_MATERIAL_LIBRARY = [
       + '<td class="bm-num">' + seq + '</td>' + cells + photoCell + cw + act + '</tr>';
   }
 
-  function bmRenderMaterialPanel() {
-    const empty = document.getElementById('bomMatEmpty');
-    const panel = document.getElementById('bomMatPanel');
-    if (!empty || !panel) return;
-    const row = bmSelectedRowId ? bmRowById(bmSelectedRowId) : null;
-    if (!row) {
-      empty.hidden = false;
-      panel.hidden = true;
-      return;
-    }
-    empty.hidden = true;
-    panel.hidden = false;
-    const label = document.getElementById('bomMatRowLabel');
-    if (label) {
-      const seq = bmRowSeq(row.id, bmVariant);
-      label.textContent = (seq ? seq + '. ' : '') + (row.cells.description || '(empty description)');
-    }
-    bmRenderMaterialList();
-  }
-
-  function bmRenderMaterialList() {
-    const box = document.getElementById('bomMatList');
-    if (!box) return;
-    const tokens = bmSearchText.toLowerCase().split(/\s+/).filter(Boolean);
-    const hits = tokens.length
-      ? BOM_MATERIAL_LIBRARY.filter(m => bmMaterialMatches(m, tokens))
-      : BOM_MATERIAL_LIBRARY;
-    bmMaterialHits = hits.slice(0, 60);
-    box.innerHTML = bmMaterialHits.map((m, i) =>
-      '<button type="button" data-bom-mat="' + i + '">' + escapeHtml(m.name)
-      + '<span class="bm-mat-section">' + escapeHtml(m.section) + '</span></button>').join('')
-      || '<div class="bm-mat-empty">No material matches — type your own description in the row</div>';
-  }
-
-  function bmDrawCanvas() {
-    const canvas = document.getElementById('bomMatkeyCanvas');
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    bmDrawCanvasInto(canvas, rect.width, rect.height, dpr);
-  }
-
-  // Draw the active variant's Material Key (images + callouts) into any
-  // canvas at a given CSS size and pixel scale. Extracted from bmDrawCanvas
-  // (US-079) so the tech-pack Excel export can render a chosen variant
-  // offscreen through the same drawing code the live Material Key uses.
-  function bmDrawCanvasInto(canvas, cssWidth, cssHeight, pixelScale) {
-    const w = Math.max(1, Math.round(cssWidth * pixelScale));
-    const h = Math.max(1, Math.round(cssHeight * pixelScale));
-    if (canvas.width !== w) canvas.width = w;
-    if (canvas.height !== h) canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(pixelScale, 0, 0, pixelScale, 0, 0);
-    ctx.clearRect(0, 0, cssWidth, cssHeight);
-
-    const images = bmVariantImages();
-    if (!images.length) {
-      ctx.fillStyle = '#8a8f9a';
-      ctx.font = '13px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Paste, drop, or add images to this ' + bmVariant.toUpperCase() + ' Material Key.', cssWidth / 2, cssHeight / 2);
-      bmCanvasView = { offX: cssWidth / 2, offY: cssHeight / 2, scale: 1 };
-      return;
-    }
-
-    const bounds = bmImageBounds();
-    const pad = 40;
-    const scale = Math.min(
-      (cssWidth - pad * 2) / bounds.width,
-      (cssHeight - pad * 2) / bounds.height,
-      4
-    );
-    const offX = (cssWidth - bounds.width * scale) / 2 - bounds.x * scale;
-    const offY = (cssHeight - bounds.height * scale) / 2 - bounds.y * scale;
-    bmCanvasView = { offX, offY, scale };
-
-    ctx.save();
-    ctx.translate(offX, offY);
-    ctx.scale(scale, scale);
-    images.forEach(image => {
-      const img = bmImageRuntime(image.id);
-      if (img) ctx.drawImage(img, image.x, image.y, image.width, image.height);
-      if (image.id === bmSelectedImageId) {
-        ctx.strokeStyle = '#356dff';
-        ctx.lineWidth = 2 / scale;
-        ctx.strokeRect(image.x, image.y, image.width, image.height);
-      }
-    });
-    ctx.restore();
-
-    bmVisibleCallouts().forEach(c => bmDrawCallout(ctx, c, c.id === bmSelectedCalloutId));
-  }
-
-  // Offscreen render of ONE variant's Material Key for the tech-pack Excel
-  // export (US-079). Swaps the module view state so the shared draw code
-  // targets the requested variant with no selection chrome, and restores it
-  // in finally — bmCanvasView is the live canvas's hit-test mapping and must
-  // never be left pointing at the offscreen render.
-  function bmRenderMatkeyToCanvas(variant, cssWidth, cssHeight, pixelScale) {
-    const saved = {
-      variant: bmVariant, callout: bmSelectedCalloutId,
-      image: bmSelectedImageId, view: bmCanvasView,
-    };
-    const canvas = document.createElement('canvas');
-    try {
-      bmVariant = bmVariantKey(variant);
-      bmSelectedCalloutId = null;
-      bmSelectedImageId = null;
-      bmDrawCanvasInto(canvas, cssWidth, cssHeight, pixelScale || 1);
-    } finally {
-      bmVariant = saved.variant;
-      bmSelectedCalloutId = saved.callout;
-      bmSelectedImageId = saved.image;
-      bmCanvasView = saved.view;
-    }
-    return canvas;
-  }
-
-  function bmLabelBox(ctx, label, text, isSelected) {
-    ctx.font = (isSelected ? 'bold ' : '') + '12px sans-serif';
-    const w = ctx.measureText(text).width;
-    return { x: label.x - 4, y: label.y - 9, width: w + 8, height: 18 };
-  }
-
-  function bmEdgeToward(box, ax, ay) {
-    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
-    const dx = ax - cx, dy = ay - cy;
-    if (Math.abs(dx) < box.width / 2 && Math.abs(dy) < box.height / 2) return null;
-    const tx = dx !== 0 ? (box.width / 2) / Math.abs(dx) : 1e9;
-    const ty = dy !== 0 ? (box.height / 2) / Math.abs(dy) : 1e9;
-    const t = Math.min(tx, ty);
-    return { x: cx + dx * t, y: cy + dy * t };
-  }
-
-  function bmDrawArrowHead(ctx, from, to, color) {
-    const angle = Math.atan2(to.y - from.y, to.x - from.x);
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(to.x, to.y);
-    ctx.lineTo(to.x - BM_ARROW_SIZE * Math.cos(angle - Math.PI / 6), to.y - BM_ARROW_SIZE * Math.sin(angle - Math.PI / 6));
-    ctx.lineTo(to.x - BM_ARROW_SIZE * Math.cos(angle + Math.PI / 6), to.y - BM_ARROW_SIZE * Math.sin(angle + Math.PI / 6));
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-
-  function bmDrawCallout(ctx, c, isSelected) {
-    const im = bmImageById(c.imageId);
-    if (!im) return;
-    const label = bmWorldToCanvas(bmWorldOf(im, c.textPos));
-    const orphan = !bmRowById(c.rowId);
-    const color = orphan ? BM_ORPHAN_COLOR : BM_CALLOUT_COLOR;
-    const text = bmCalloutLabelText(c);
-    const box = bmLabelBox(ctx, label, text, isSelected);
-    const targets = c.targets || [];
-    const seq = bmRowBase(c.rowId, bmVariant);
-
-    ctx.save();
-    targets.forEach((t, i) => {
-      const pin = bmWorldToCanvas(bmWorldOf(im, t));
-      const edge = bmEdgeToward(box, pin.x, pin.y);
-      const from = edge || { x: label.x, y: label.y };
-      ctx.strokeStyle = color;
-      ctx.lineWidth = isSelected ? 2.5 : 1.5;
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(pin.x, pin.y);
-      ctx.stroke();
-      bmDrawArrowHead(ctx, from, pin, color);
-      if (i === 0) {
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(pin.x, pin.y, BM_PIN_RADIUS, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 11px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(String(seq || '?'), pin.x, pin.y + 0.5);
-      } else {
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(pin.x, pin.y, BM_ANCHOR_RADIUS, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-    });
-
-    ctx.font = (isSelected ? 'bold ' : '') + '12px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    if (isSelected) {
-      ctx.strokeStyle = color;
-      ctx.setLineDash([3, 2]);
-      ctx.strokeRect(box.x, box.y, box.width, box.height);
-      ctx.setLineDash([]);
-    }
-    ctx.fillStyle = orphan ? BM_ORPHAN_COLOR : '#111';
-    ctx.fillText(text, label.x, label.y);
-    ctx.restore();
-  }
-
-  function bmRenderCalloutSidePanel() {
-    const empty = document.getElementById('bomMkSideEmpty');
-    const panel = document.getElementById('bomMkSideCallout');
-    if (!empty || !panel) return;
-    const c = bmSelectedCallout();
-    if (!c) {
-      empty.hidden = false;
-      panel.hidden = true;
-      return;
-    }
-    empty.hidden = true;
-    panel.hidden = false;
-    const seqEl = document.getElementById('bomMkSideSeq');
-    if (seqEl) seqEl.textContent = String(bmRowSeq(c.rowId, bmVariant) || '?');
-    const rowSelect = document.getElementById('bomMkRowSelect');
-    if (rowSelect && rowSelect !== document.activeElement) {
-      const rows = bmVisibleRows(bmVariant);
-      const orphan = !rows.some(r => r.id === c.rowId);
-      rowSelect.innerHTML = (orphan
-        ? '<option value="" selected disabled>? deleted BOM row — pick a row to relink</option>'
-        : '')
-        + rows.map(r => {
-          const seq = bmRowSeq(r.id, bmVariant);
-          const occupied = bmCalloutForRow(r.id, bmVariant);
-          const disabled = occupied && occupied.id !== c.id;
-          return '<option value="' + r.id + '"' + (!orphan && r.id === c.rowId ? ' selected' : '')
-            + (disabled ? ' disabled' : '') + '>'
-            + seq + '. ' + escapeHtml(r.cells.description || '(empty)') + '</option>';
-        }).join('');
-    }
-  }
+  // ---- src/ui/bom.js ----
+// BOM page: editable material table + material-key canvas annotation
+// (US-072, ADR 0041). Source part for app.js. Run `npm run build` after
+// editing.
+//
+// Rebuilt on this tool's primitives from the sibling tech-pack project's
+// mod-bom module — that project has its own globals/closures with no shared
+// module, so this is a fork, not a link (same pattern as MAIN PAGE/
+// Construction, ADR 0037/0039). Static suggestion data is carried across
+// verbatim in bom-material-data.js (BOM_MATERIAL_LIBRARY, 27 entries mined
+// from 1,748 historical BOM records) — that file must load before this one
+// (see scripts/source-parts.mjs).
+//
+// This part is now the page's DOM wiring only (initBom); it loads last of
+// the bom-* parts. The rest of the page lives in bom-state.js (schema,
+// seeding, persistence, row CRUD/numbering), bom-images.js (Material Key
+// image board), bom-materials.js (suggestion engine + per-row photo
+// popover), bom-canvas.js (Material Key leader-line engine) and
+// bom-table.js (factory table + print sheets).
 
   /* ---- Wiring --------------------------------------------------------------- */
   // Page open/close belongs to page-nav.js's setActivePage('bom' | 'board' |
   // 'mainpage' | 'construction') — the BOM page is a peer page, not a modal
   // this file owns the visibility of.
-
-  function bmOnPointerDown(e) {
-    if (!state.bom) return;
-    const canvas = document.getElementById('bomMatkeyCanvas');
-    if (!canvas) return;
-    const pt = bmCanvasPointFromEvent(e, canvas);
-    if (bmTool === 'callout') { bmCreateCalloutAt(pt); return; }
-    if (bmTool === 'leader') { bmAddArrowAt(pt); return; }
-    const hit = bmHitTest(pt);
-    if (hit) {
-      bmSelectedCalloutId = hit.callout.id;
-      bmSelectedRowId = hit.callout.rowId;
-      bmSelectedImageId = null;
-      bmDrag = hit.part === 'line' ? null
-        : { callout: hit.callout, part: hit.part, anchorIndex: hit.anchorIndex, imageRec: hit.imageRec };
-      renderBom();
-      e.preventDefault();
-      return;
-    }
-    const image = bmImageAt(pt);
-    if (image) {
-      bmSelectedCalloutId = null;
-      bmSelectedImageId = image.id;
-      bmDrag = {
-        part: 'image', imageRec: image,
-        startX: pt.x, startY: pt.y, originX: image.x, originY: image.y,
-      };
-      renderBom();
-      e.preventDefault();
-      return;
-    }
-    bmSelectedCalloutId = null;
-    bmSelectedImageId = null;
-    renderBom();
-  }
-
-  function bmOnPointerMove(e) {
-    if (!bmDrag) return;
-    const canvas = document.getElementById('bomMatkeyCanvas');
-    if (!canvas) return;
-    const pt = bmCanvasPointFromEvent(e, canvas);
-    if (bmDrag.part === 'image') {
-      if (!bmDrag.imageRec.locked) {
-        bmDrag.imageRec.x = bmDrag.originX + pt.x - bmDrag.startX;
-        bmDrag.imageRec.y = bmDrag.originY + pt.y - bmDrag.startY;
-      }
-    } else {
-      const norm = bmNormalize(bmDrag.imageRec, pt);
-      if (bmDrag.part === 'anchor') bmDrag.callout.targets[bmDrag.anchorIndex] = norm;
-      else bmDrag.callout.textPos = norm;
-    }
-    bmDrawCanvas();
-  }
-
-  function bmOnPointerUp() {
-    if (!bmDrag) return;
-    bmDrag = null;
-    pushHistoryIfChanged();
-  }
-
-  function bmOnDoubleClick(e) {
-    if (bmTool !== 'select') return;
-    const canvas = document.getElementById('bomMatkeyCanvas');
-    if (!canvas) return;
-    bmDeleteAnchorAt(bmCanvasPointFromEvent(e, canvas));
-  }
 
   function initBom() {
     ensureBom();
@@ -14079,10 +14278,88 @@ const BOM_MATERIAL_LIBRARY = [
     }
   }
 
+  // ---- src/ui/label-editor.js ----
+// Editable callout labels: positions a floating textarea (el.labelEditor)
+// over a canvas-space point, then commits or cancels the edit — firing the
+// Phase 2/3 learning-sample hook on commit. worldToScreen, the canvas ->
+// screen coordinate helper it needs, lives here and is shared with the
+// renderers. The two el.labelEditor listeners are wired in bindUI()
+// (src/ui/bindings.js).
+// Source part for app.js. Run `npm run build` after editing.
+
+  function worldToScreen(x, y) {
+    return { x: x * state.zoom + state.panX, y: y * state.zoom + state.panY };
+  }
+
+  // ---- Editable labels ----
+  function openLabelEditor(id) {
+    const ann = getAnnotationById(id);
+    if (!ann) return;
+    state.editingLabelId = id;
+    const screen = worldToScreen(ann.label.x, ann.label.y);
+    el.labelEditor.style.display = 'block';
+    el.labelEditor.style.left = screen.x + 'px';
+    el.labelEditor.style.top = screen.y + 'px';
+    el.labelEditor.style.color = getAnnotationColor(ann);
+    el.labelEditor.value = getLabelText(ann);
+    requestRender();
+    requestAnimationFrame(() => {
+      el.labelEditor.focus();
+      el.labelEditor.select();
+    });
+  }
+
+  function onLabelEditorKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitLabelEditor();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelLabelEditor();
+    }
+    e.stopPropagation();
+  }
+
+  function commitLabelEditor() {
+    const id = state.editingLabelId;
+    if (id == null) return;
+    const ann = getAnnotationById(id);
+    state.editingLabelId = null;
+    el.labelEditor.style.display = 'none';
+    if (ann) {
+      const raw = el.labelEditor.value.trim();
+      const next = raw === '' ? null : raw;
+      if (ann.text !== next) {
+        ann.text = next;
+        pushHistoryIfChanged();
+      }
+      // Phase 2/3 learning hook. POM 1–5 record silently. POM 6+ with
+      // no confirmed meaning surface a one-click picker. Unknown labels
+      // and re-commits without endpoint changes return 'skipped'.
+      const evalResult = evaluateManualPomSample(ann);
+      if (evalResult.status === 'recorded') {
+        showToast('POM ' + ann.learnSamplePom + ' learning sample saved');
+        updateUI();
+      }
+    }
+    updateUI();
+    requestRender();
+  }
+
+  function cancelLabelEditor() {
+    state.editingLabelId = null;
+    el.labelEditor.style.display = 'none';
+    updateUI();
+    requestRender();
+  }
+
   // ---- src/ui/bindings.js ----
 // Top-level UI bindings: bindUI() wires the toolbar, dropdowns, file
 // inputs, the canvas, the label editor, and keyboard shortcuts. Tool and
-// style setters live here next to the bindings that drive them.
+// style setters live here next to the bindings that drive them, as do the
+// two calibration commands (setScaleFromSelection / clearScale) their
+// toolbar buttons invoke. The label editor the keydown/blur listeners point
+// at is implemented in src/ui/label-editor.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   function bindUI() {
@@ -14385,68 +14662,26 @@ const BOM_MATERIAL_LIBRARY = [
     requestRender();
   }
 
-  function worldToScreen(x, y) {
-    return { x: x * state.zoom + state.panX, y: y * state.zoom + state.panY };
-  }
-
-  // ---- Editable labels ----
-  function openLabelEditor(id) {
-    const ann = getAnnotationById(id);
-    if (!ann) return;
-    state.editingLabelId = id;
-    const screen = worldToScreen(ann.label.x, ann.label.y);
-    el.labelEditor.style.display = 'block';
-    el.labelEditor.style.left = screen.x + 'px';
-    el.labelEditor.style.top = screen.y + 'px';
-    el.labelEditor.style.color = getAnnotationColor(ann);
-    el.labelEditor.value = getLabelText(ann);
-    requestRender();
-    requestAnimationFrame(() => {
-      el.labelEditor.focus();
-      el.labelEditor.select();
-    });
-  }
-
-  function onLabelEditorKeyDown(e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      commitLabelEditor();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      cancelLabelEditor();
+  // ---- Calibration ----
+  function setScaleFromSelection() {
+    const ann = getSelectedAnnotation();
+    if (!ann) {
+      showToast('Select a line first, then click Set Scale to calibrate by its real length.');
+      return;
     }
-    e.stopPropagation();
-  }
-
-  function commitLabelEditor() {
-    const id = state.editingLabelId;
-    if (id == null) return;
-    const ann = getAnnotationById(id);
-    state.editingLabelId = null;
-    el.labelEditor.style.display = 'none';
-    if (ann) {
-      const raw = el.labelEditor.value.trim();
-      const next = raw === '' ? null : raw;
-      if (ann.text !== next) {
-        ann.text = next;
-        pushHistoryIfChanged();
-      }
-      // Phase 2/3 learning hook. POM 1–5 record silently. POM 6+ with
-      // no confirmed meaning surface a one-click picker. Unknown labels
-      // and re-commits without endpoint changes return 'skipped'.
-      const evalResult = evaluateManualPomSample(ann);
-      if (evalResult.status === 'recorded') {
-        showToast('POM ' + ann.learnSamplePom + ' learning sample saved');
-        updateUI();
-      }
+    const px = lineLength(ann);
+    if (px <= 0) {
+      showToast('That line is too short to calibrate.');
+      return;
     }
-    updateUI();
-    requestRender();
+    openScaleDialog(px);
   }
 
-  function cancelLabelEditor() {
-    state.editingLabelId = null;
-    el.labelEditor.style.display = 'none';
+  function clearScale() {
+    if (state.calibration.unitsPerPx == null) return;
+    state.calibration = { unitsPerPx: null, unit: state.calibration.unit };
+    pushHistoryIfChanged();
+    showToast('Scale cleared. Values are now manual only.');
     updateUI();
     requestRender();
   }
@@ -16265,17 +16500,17 @@ const BOM_MATERIAL_LIBRARY = [
     return Array.isArray(lineClipboard) ? lineClipboard.length > 0 : lineClipboard != null;
   }
 
-  // ---- src/manual/interactions.js ----
-// Mouse/keyboard interactions, selection helpers, draw/drag/erase
-// dispatch. Source part for app.js. Run `npm run build` after editing.
+  // ---- src/manual/selection.js ----
+// Manual-mode selection model: what is currently picked on the board.
+// Source part for app.js. Run `npm run build` after editing.
 //
-// onMouseDown/Move/Up own the canvas pointer state, including pan, draw,
-// erase, anchor drag, image drag, and label drag. setSelection is the
-// single funnel for switching what is selected (annotation, image, or
-// nothing) so the spec panel, tool defaults, and label editor stay in
-// sync. handleDrawToolClick implements the click-twice-to-draw flow,
-// including the extension-line detection that splits a near-collinear
-// follow-up click into its own POM annotation.
+// setSelection is the single funnel for switching what is selected
+// (annotation, image, or nothing) so the spec panel, tool defaults, and
+// label editor stay in sync. The image and annotation multi-selection
+// helpers (Cmd/Ctrl+click, Shift+click, marquee rect hit-testing,
+// Cmd/Ctrl+A) derive their sets through the current primary selection.
+// Pointer dispatch lives in pointer-events.js; keyboard routing in
+// keyboard-shortcuts.js.
 
 function setSelection(kind, id) {
     state.selection = kind && id != null ? { kind, id } : { kind: null, id: null };
@@ -16538,6 +16773,19 @@ function setSelection(kind, id) {
       ? `Locked all ${state.images.length} image${state.images.length === 1 ? '' : 's'}.`
       : `Unlocked all ${state.images.length} image${state.images.length === 1 ? '' : 's'}.`);
   }
+
+  // ---- src/manual/pointer-events.js ----
+// Manual-mode canvas pointer state machine: mouse down/move/up dispatch,
+// the drag-session starters, and the per-frame drag geometry.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// onMouseDown/Move/Up own the canvas pointer state, including pan, draw,
+// erase, anchor drag, image drag, and label drag. The start* helpers open a
+// tracked interaction for each gesture; dragHandle/moveAnnotation are the
+// shared per-frame geometry, also used by the keyboard nudge in
+// line-nudge.js. Selection state lives in selection.js; the tool state
+// machines (eraser, click-to-draw) in canvas-tools.js; touch/pen input
+// routes into these same handlers from touch-input.js.
 
   function onMouseDown(e) {
     // Commit any pending keyboard nudge burst first, so the drag that starts
@@ -16950,6 +17198,195 @@ function setSelection(kind, id) {
     requestRender(); // drop gesture-scoped visuals (US-029 readout)
   }
 
+  function startPanInteraction(e) {
+    const startScreen = getMousePos(e);
+    state.interaction = {
+      type: 'pan',
+      startScreen,
+      startPan: { x: state.panX, y: state.panY },
+      changed: false,
+    };
+    document.body.classList.add('grabbing');
+  }
+
+function beginTrackedInteraction(type, payload) {
+  state.interaction = {
+    type,
+    changed: false,
+    beforeFingerprint: snapshotFingerprint(makeSnapshot()),
+    ...payload,
+  };
+}
+
+function startAnnotationDrag(id, world) {
+  // Move every selected line together (Shift+click / marquee group), or just
+  // this one when it isn't part of a multi-selection.
+  const selected = getSelectedAnnotationIds();
+  const groupIds = (selected.length > 1 && selected.includes(id)) ? selected.slice() : [id];
+  beginTrackedInteraction('drag-annotation', { id, prevWorld: world, groupIds });
+}
+
+function startMarquee(world, additive) {
+  beginTrackedInteraction('marquee', {
+    startWorld: { x: world.x, y: world.y },
+    currentWorld: { x: world.x, y: world.y },
+    additive: !!additive,
+    moved: false,
+  });
+}
+
+function startLabelDrag(id, world) {
+  beginTrackedInteraction('drag-label', { id, prevWorld: world });
+}
+
+function startHandleDrag(id, part, world) {
+  // Keep the keyboard nudge aimed at the handle the TD last grabbed, so a
+  // rough drag can be finished with arrow keys without pressing Tab.
+  if (part !== 'label' && state.selection.kind === 'annotation' && state.selection.id === id) {
+    state.selection.part = part;
+  }
+  beginTrackedInteraction('drag-handle', { id, part, prevWorld: world });
+}
+
+function startImageDrag(id, world) {
+  // Move every selected image together (Cmd/Ctrl+click multi-selection), or
+  // just the clicked one when nothing else is selected. Locked images never
+  // move. Each moving image carries the POM lines that sit on it; the combined
+  // set is de-duplicated so a line is never nudged twice.
+  const selected = getSelectedImageIds();
+  const movingIds = (selected.length > 1 ? selected : [id])
+    .filter((imgId) => { const im = getImageById(imgId); return im && !im.locked; });
+  if (!movingIds.includes(id)) movingIds.push(id);
+  const annIdSet = new Set();
+  for (const imgId of movingIds) {
+    const im = getImageById(imgId);
+    if (!im) continue;
+    for (const ann of getAnnotationsOnImage(im)) annIdSet.add(ann.id);
+  }
+  beginTrackedInteraction('drag-image', {
+    id,
+    prevWorld: world,
+    imageIds: movingIds,
+    groupedAnnotationIds: Array.from(annIdSet),
+  });
+}
+
+function startImageResize(id, corner) {
+  const image = getImageById(id);
+  if (!image) return;
+  beginTrackedInteraction('drag-image-resize', {
+    id,
+    corner,
+    anchor: getOppositeImageCorner(image, corner),
+    aspect: image.width / Math.max(1, image.height),
+  });
+}
+
+// Group resize: 2+ selected photos scale together about the opposite corner of the
+// GROUP's bounding box, so their relative sizes and spacing are preserved. Returns
+// true when it claimed the click. A locked image in the selection blocks it (same
+// rule as single-image resize). Anchors/drafts/erase strokes are stored normalized
+// to their own image, so they follow each photo without extra work.
+function startGroupResizeIfHandleHit(world) {
+  const images = getSelectedImages();
+  if (!images || images.length <= 1) return false;
+  if (images.some(im => im.locked)) return false;
+  const box = getImagesGroupBox(images);
+  if (!box) return false;
+  const hit = hitTestSelectedImageHandles(world, box);
+  if (!hit) return false;
+  beginTrackedInteraction('drag-images-resize', {
+    corner: hit.corner,
+    anchor: getOppositeImageCorner(box, hit.corner),
+    box,
+    // Snapshot every member up front: scaling must be computed from the ORIGINAL
+    // geometry each frame, or repeated relative scaling compounds and drifts.
+    start: images.map(im => ({ id: im.id, x: im.x, y: im.y, width: im.width, height: im.height })),
+  });
+  return true;
+}
+
+// Uniform scale factor from the group's anchor corner to the cursor. Driven by the
+// dominant axis so a diagonal drag feels like the single-image resize, and floored
+// so no member can collapse below the 48px minimum used for one image.
+function resizeImagesFromCorner(interaction, world) {
+  const { anchor, box, start } = interaction;
+  if (!anchor || !box || !Array.isArray(start) || !start.length) return;
+  const spanX = Math.abs(box.x + (box.x + box.width) - 2 * anchor.x) || box.width;
+  const spanY = Math.abs(box.y + (box.y + box.height) - 2 * anchor.y) || box.height;
+  const rawW = Math.abs(world.x - anchor.x);
+  const rawH = Math.abs(world.y - anchor.y);
+  const sx = spanX > 0 ? rawW / spanX : 1;
+  const sy = spanY > 0 ? rawH / spanY : 1;
+  let scale = Math.max(sx, sy);
+  if (!Number.isFinite(scale) || scale <= 0) return;
+  const MIN_IMAGE_SIZE = 48;
+  const smallest = start.reduce((m, s) => Math.min(m, s.width, s.height), Infinity);
+  if (Number.isFinite(smallest) && smallest > 0) {
+    scale = Math.max(scale, MIN_IMAGE_SIZE / smallest);
+  }
+  for (const s of start) {
+    const image = getImageById(s.id);
+    if (!image) continue;
+    image.x = anchor.x + (s.x - anchor.x) * scale;
+    image.y = anchor.y + (s.y - anchor.y) * scale;
+    image.width = s.width * scale;
+    image.height = s.height * scale;
+  }
+}
+
+  function dragHandle(ann, part, world, prevWorld) {
+    const dx = world.x - prevWorld.x;
+    const dy = world.y - prevWorld.y;
+
+    const moveBy = (p) => { if (p) { p.x += dx; p.y += dy; } };
+
+    if (part === 'start') {
+      ann.start = clonePoint(world);
+      // An anchor carries its own handle(s) rigidly, like a pen tool, so the
+      // curve near it keeps its shape while the anchor moves.
+      moveBy(ann.control1);
+    } else if (part === 'end') {
+      ann.end = clonePoint(world);
+      moveBy(ann.control2);
+    } else if (part === 'midPoint' && ann.type === 'curved') {
+      // The middle is a real anchor now: move it and BOTH its handles together
+      // so the whole joint slides and the two segments follow.
+      ann.midPoint = clonePoint(world);
+      moveBy(ann.midHandleIn);
+      moveBy(ann.midHandleOut);
+    } else if (part === 'control1' && ann.type === 'curved' && ann.control1) {
+      ann.control1 = clonePoint(world); // start handle — bends segment 1 only
+    } else if (part === 'control2' && ann.type === 'curved' && ann.control2) {
+      ann.control2 = clonePoint(world); // end handle — bends segment 2 only
+    } else if (part === 'midHandleIn' && ann.type === 'curved' && ann.midHandleIn) {
+      ann.midHandleIn = clonePoint(world); // middle handle toward the start
+    } else if (part === 'midHandleOut' && ann.type === 'curved' && ann.midHandleOut) {
+      ann.midHandleOut = clonePoint(world); // middle handle toward the end
+    }
+
+    if (!ann.labelManual) {
+      ann.label = computeDefaultLabelPosition(ann);
+    }
+  }
+
+  function moveAnnotation(ann, dx, dy) {
+    ann.start.x += dx; ann.start.y += dy;
+    ann.end.x += dx; ann.end.y += dy;
+    for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
+      if (ann[key]) { ann[key].x += dx; ann[key].y += dy; }
+    }
+    ann.label.x += dx; ann.label.y += dy;
+  }
+
+  // ---- src/manual/touch-input.js ----
+// Manual-mode touch/pen input layer (US-036). Source part for app.js.
+// Run `npm run build` after editing.
+//
+// Translates pointer events into the SAME mouse handlers in
+// pointer-events.js, and owns the pinch-zoom / tap / double-tap gesture
+// state plus the wheel handler.
+
 // ---- US-036: touch layer -----------------------------------------------
 // Touch (and pen) input arrives as pointer events and routes into the SAME
 // mouse handlers, so every gesture rule (selection, drag semantics, one
@@ -17077,6 +17514,350 @@ function onWheel(e) {
   const factor = Math.exp(-normalizeWheelDelta(e) * sensitivity);
   zoomAtScreenPoint(state.zoom * factor, mouse.x, mouse.y);
 }
+
+  // ---- src/manual/canvas-tools.js ----
+// Manual-mode canvas tool state machines: the eraser and the click-to-draw
+// flow. Source part for app.js. Run `npm run build` after editing.
+//
+// Both are invoked from onMouseDown (pointer-events.js) and each owns one
+// state.*Session field. handleDrawToolClick implements the
+// click-twice-to-draw flow, including the extension-line detection that
+// splits a near-collinear follow-up click into its own POM annotation.
+
+  // ---- Eraser ----
+  // Strokes live in image-local pixel coordinates so they automatically follow
+  // their parent image when it is moved or resized. Rendering clips to the
+  // image rect so strokes never bleed onto the white canvas background.
+  function beginEraseStroke(world) {
+    const imageHit = hitTestImages(world);
+    if (!imageHit) return;
+    const image = getImageById(imageHit.id);
+    if (!image || !image.img) return;
+    const local = worldToImageLocal(image, world);
+    // brushSize is user-facing world pixels; convert to image-local px so the
+    // stroke visually keeps that width regardless of the image's natural
+    // resolution, and also scales correctly if the image is resized later.
+    const naturalW = image.img.naturalWidth || image.width;
+    const localSize = state.brushSize * (naturalW / image.width);
+    state.eraseSession = {
+      imageId: image.id,
+      size: localSize,
+      points: [local],
+    };
+    updateUI();
+    requestRender();
+  }
+
+  function appendErasePoint(world) {
+    const session = state.eraseSession;
+    if (!session) return;
+    const image = getImageById(session.imageId);
+    if (!image || !image.img) return;
+    const local = worldToImageLocal(image, world);
+    const last = session.points[session.points.length - 1];
+    const dx = local.x - last.x;
+    const dy = local.y - last.y;
+    // 2px (image-local) threshold trims jitter without losing curve fidelity
+    if (dx * dx + dy * dy < 4) return;
+    session.points.push(local);
+    requestRender();
+  }
+
+  function commitEraseStroke() {
+    const session = state.eraseSession;
+    state.eraseSession = null;
+    if (!session || !session.points.length) {
+      updateUI();
+      requestRender();
+      return;
+    }
+    state.eraseStrokes.push({
+      id: state.idCounter++,
+      imageId: session.imageId,
+      size: session.size,
+      points: session.points,
+    });
+    pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+  }
+
+  function worldToImageLocal(image, world) {
+    const naturalW = image.img.naturalWidth || image.width;
+    const naturalH = image.img.naturalHeight || image.height;
+    return {
+      x: (world.x - image.x) * (naturalW / image.width),
+      y: (world.y - image.y) * (naturalH / image.height),
+    };
+  }
+
+  function handleDrawToolClick(world) {
+    // Extension follow-up: a straight line was just committed and the tool is
+    // offering an optional collinear dashed extension. A click within the axis
+    // snap zone commits it as its own annotation (separate seq number); a click
+    // off-axis falls through and starts a fresh straight line at this point.
+    if (state.drawSession && state.drawSession.type === 'extension-followup') {
+      const proj = projectionOnAxis(world, state.drawSession.prevEnd, state.drawSession.prevDir);
+      if (proj.qualifies) {
+        const tip = {
+          x: state.drawSession.prevEnd.x + state.drawSession.prevDir.x * proj.distance,
+          y: state.drawSession.prevEnd.y + state.drawSession.prevDir.y * proj.distance,
+        };
+        const ann = createStraightAnnotation(
+          state.drawSession.prevEnd,
+          tip,
+          'dashed',
+          state.drawSession.color,
+          'single',
+          state.drawSession.lineWidth,
+        );
+        state.annotations.push(ann);
+        state.selection = { kind: 'annotation', id: ann.id };
+        state.nextSequence += 1;
+        state.drawSession = null;
+        pushHistoryIfChanged();
+        updateUI();
+        requestRender();
+        return;
+      }
+      // Off-axis click — drop follow-up and treat as start of a new line.
+      state.drawSession = null;
+    }
+
+    if (!state.drawSession) {
+      state.drawSession = {
+        type: state.tool,
+        style: state.drawStyle,
+        color: state.drawColor,
+        arrowType: state.arrowType,
+        lineWidth: state.lineWidth,
+        start: world,
+        current: world,
+      };
+      updateUI();
+      requestRender();
+      return;
+    }
+
+    // Curved lines take THREE clicks: start, middle, end. The middle click
+    // records the point the curve must pass through; the curve is committed on
+    // the third click. (Straight lines stay two clicks.)
+    if (state.drawSession.type === 'curved') {
+      const sess = state.drawSession;
+      if (sess.mid == null) {
+        if (distance(sess.start, world) < (4 / state.zoom)) return;
+        sess.mid = clonePoint(world);
+        sess.current = clonePoint(world);
+        updateUI();
+        requestRender();
+        return;
+      }
+      if (distance(sess.mid, world) < (4 / state.zoom)) return;
+      const curveAnn = createCurvedAnnotation(sess.start, world, sess.style, sess.color, sess.arrowType, sess.lineWidth, sess.mid);
+      state.annotations.push(curveAnn);
+      state.selection = { kind: 'annotation', id: curveAnn.id };
+      state.nextSequence += 1;
+      state.drawSession = null;
+      pushHistoryIfChanged();
+      updateUI();
+      requestRender();
+      return;
+    }
+
+    const start = state.drawSession.start;
+    const end = world;
+    const drawSettings = state.drawSession;
+    if (distance(start, end) < (4 / state.zoom)) {
+      return;
+    }
+
+    if (state.tool === 'straight') {
+      const ann = createStraightAnnotation(start, end, drawSettings.style, drawSettings.color, drawSettings.arrowType, drawSettings.lineWidth);
+      state.annotations.push(ann);
+      state.selection = { kind: 'annotation', id: ann.id };
+      state.nextSequence += 1;
+
+      // Stay armed for an optional collinear dashed extension. The next click
+      // along the line's axis commits a separate annotation with its own seq;
+      // a click off-axis (or Esc / tool change) drops this state and starts a
+      // fresh line. Only armed for solid lines in measurement (POM) mode —
+      // not when drawing stitch styles where dashed has a different meaning.
+      if (!isStitchMode() && drawSettings.style === 'solid') {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const len = Math.max(0.0001, Math.hypot(dx, dy));
+        state.drawSession = {
+          type: 'extension-followup',
+          color: drawSettings.color,
+          lineWidth: drawSettings.lineWidth,
+          prevEnd: clonePoint(end),
+          prevDir: { x: dx / len, y: dy / len },
+          current: clonePoint(end),
+        };
+      } else {
+        state.drawSession = null;
+      }
+
+      pushHistoryIfChanged();
+      updateUI();
+      requestRender();
+      return;
+    }
+  }
+
+  // Project `world` onto the axis defined by `origin` + `dir` (unit vector).
+  // Returns the signed forward distance, the perpendicular distance, and a
+  // boolean that's true iff the cursor is in the extension snap zone
+  // (positive forward distance, perpendicular within tolerance).
+  function projectionOnAxis(world, origin, dir) {
+    const dx = world.x - origin.x;
+    const dy = world.y - origin.y;
+    const distance = dx * dir.x + dy * dir.y;
+    const perpX = dx - distance * dir.x;
+    const perpY = dy - distance * dir.y;
+    const perp = Math.hypot(perpX, perpY);
+    const minDist = 4 / state.zoom;
+    const maxPerp = 30 / state.zoom;
+    return { distance, perp, qualifies: distance > minDist && perp <= maxPerp };
+  }
+
+  // ---- src/manual/line-nudge.js ----
+// Manual-mode keyboard line nudge (US-027). Source part for app.js.
+// Run `npm run build` after editing.
+//
+// Arrow keys move the selected line — or just its active point, cycled with
+// Tab — by one source-image pixel. Reuses dragHandle/moveAnnotation from
+// pointer-events.js so curve semantics match a mouse drag; the key routing
+// itself lives in keyboard-shortcuts.js.
+
+  // ---- US-027: arrow-key nudge for Manual-Mode lines ------------------------
+  // Mirrors the Auto-Mode anchor nudge: arrows move one source-image pixel
+  // (Shift = 10), and rapid keystrokes form one "nudge session" that pushes a
+  // single history entry LINE_NUDGE_COMMIT_MS after the last keystroke — the
+  // same one-commit-per-drag contract the mouse path follows. Tab cycles the
+  // active part; with no part active the whole line moves.
+  const LINE_NUDGE_COMMIT_MS = 700;
+  let lineNudgeSession = null; // { annId, timer }
+
+  // Ring order: the main points first (the common Tab targets), then the
+  // bend handles (US-030) in geometric order start-side → end-side. Only
+  // parts the annotation actually has are included, so single-segment
+  // curves and straight lines get shorter rings automatically.
+  function lineNudgeParts(ann) {
+    const parts = [null, 'start'];
+    if (ann.type === 'curved') {
+      if (ann.midPoint) parts.push('midPoint');
+      parts.push('end');
+      if (ann.control1) parts.push('control1');
+      if (ann.midHandleIn) parts.push('midHandleIn');
+      if (ann.midHandleOut) parts.push('midHandleOut');
+      if (ann.control2) parts.push('control2');
+    } else {
+      parts.push('end');
+    }
+    return parts;
+  }
+
+  function nudgePartLabel(part) {
+    if (part === 'start') return 'start point';
+    if (part === 'midPoint') return 'mid point';
+    if (part === 'end') return 'end point';
+    if (part === 'control1') return 'start bend handle';
+    if (part === 'control2') return 'end bend handle';
+    if (part === 'midHandleIn') return 'mid bend handle (start side)';
+    if (part === 'midHandleOut') return 'mid bend handle (end side)';
+    return 'whole line';
+  }
+
+  function cycleNudgePart(ann, dir) {
+    const parts = lineNudgeParts(ann);
+    const idx = parts.indexOf(state.selection.part || null);
+    const next = parts[(idx + dir + parts.length) % parts.length];
+    state.selection.part = next;
+    // Live status — latest wins; queueing stale part names after a Tab
+    // burst would mislead (US-032).
+    showToast('Arrows move the ' + nudgePartLabel(next) + '.', { replace: true });
+    updateUI();
+    requestRender();
+  }
+
+  // World-units-per-source-pixel for the image under the line's midpoint —
+  // the same association rule as getAnnotationsOnImage. Off-image lines fall
+  // back to one screen pixel so the nudge always does something visible.
+  function lineNudgeWorldStep(ann) {
+    const mid = { x: (ann.start.x + ann.end.x) / 2, y: (ann.start.y + ann.end.y) / 2 };
+    const hit = hitTestImages(mid);
+    const image = hit ? getImageById(hit.id) : null;
+    if (image && image.img && image.img.naturalWidth && image.width) {
+      return image.width / image.img.naturalWidth;
+    }
+    return 1 / state.zoom;
+  }
+
+  function nudgeSelectedAnnotation(dxPx, dyPx) {
+    const ann = getSelectedAnnotation();
+    if (!ann) return false;
+    const stepWorld = lineNudgeWorldStep(ann);
+    const dx = dxPx * stepWorld;
+    const dy = dyPx * stepWorld;
+    if (lineNudgeSession && lineNudgeSession.annId !== ann.id) {
+      flushLineNudgeSession();
+    }
+    if (!lineNudgeSession) {
+      lineNudgeSession = { annId: ann.id, timer: null };
+    }
+    const part = state.selection.part;
+    const point = part === 'start' ? ann.start
+      : part === 'end' ? ann.end
+        : part ? ann[part] : null;
+    if (part && point) {
+      // Route through dragHandle so curve semantics (endpoint carrying its
+      // control, mid point carrying both mid handles) match a mouse drag.
+      const prev = clonePoint(point);
+      dragHandle(ann, part, { x: prev.x + dx, y: prev.y + dy }, prev);
+    } else {
+      moveAnnotation(ann, dx, dy);
+    }
+    if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
+    if (lineNudgeSession.timer) clearTimeout(lineNudgeSession.timer);
+    lineNudgeSession.timer = setTimeout(flushLineNudgeSession, LINE_NUDGE_COMMIT_MS);
+    refreshMeasuredValueForAnnotation(ann.id); // US-028: live Value cell
+    requestRender();
+    return true;
+  }
+
+  // Lets the renderer show the adjustment readout (US-029) while a nudge
+  // burst is still open, without reaching into the session object.
+  function isLineNudgeActive(annId) {
+    return !!(lineNudgeSession && lineNudgeSession.annId === annId);
+  }
+
+  function flushLineNudgeSession() {
+    const session = lineNudgeSession;
+    lineNudgeSession = null;
+    if (!session) return;
+    if (session.timer) clearTimeout(session.timer);
+    const ann = getAnnotationById(session.annId);
+    pushHistoryIfChanged();
+    requestRender(); // drop the on-canvas readout now that the burst committed
+    // Same learning capture as a committed mouse drag on an applied draft.
+    if (state.appMode === 'manual' && ann && isAutoDraft(ann)) {
+      const evalResult = evaluateManualPomSample(ann, { allowAuto: true });
+      if (evalResult.status === 'recorded') {
+        showToast('POM ' + evalResult.pom + ' learning sample saved from TD edit.');
+        updateUI();
+      }
+    }
+  }
+
+  // ---- src/manual/keyboard-shortcuts.js ----
+// Manual-mode keyboard shortcut router. Source part for app.js.
+// Run `npm run build` after editing.
+//
+// onKeyDown is the flat if-chain for every board shortcut (undo/redo,
+// save/open, arrow nudges, tool picks, board clears, exports, Escape); it
+// calls into selection.js, canvas-tools.js, line-nudge.js and the auto/
+// render/ clusters. onKeyUp only releases the space-pan modifier.
 
   function onKeyDown(e) {
     const target = e.target;
@@ -17383,505 +18164,6 @@ function onWheel(e) {
       document.body.classList.remove('space-pan');
       document.body.classList.remove('grabbing');
     }
-  }
-
-  function startPanInteraction(e) {
-    const startScreen = getMousePos(e);
-    state.interaction = {
-      type: 'pan',
-      startScreen,
-      startPan: { x: state.panX, y: state.panY },
-      changed: false,
-    };
-    document.body.classList.add('grabbing');
-  }
-
-function beginTrackedInteraction(type, payload) {
-  state.interaction = {
-    type,
-    changed: false,
-    beforeFingerprint: snapshotFingerprint(makeSnapshot()),
-    ...payload,
-  };
-}
-
-function startAnnotationDrag(id, world) {
-  // Move every selected line together (Shift+click / marquee group), or just
-  // this one when it isn't part of a multi-selection.
-  const selected = getSelectedAnnotationIds();
-  const groupIds = (selected.length > 1 && selected.includes(id)) ? selected.slice() : [id];
-  beginTrackedInteraction('drag-annotation', { id, prevWorld: world, groupIds });
-}
-
-function startMarquee(world, additive) {
-  beginTrackedInteraction('marquee', {
-    startWorld: { x: world.x, y: world.y },
-    currentWorld: { x: world.x, y: world.y },
-    additive: !!additive,
-    moved: false,
-  });
-}
-
-function startLabelDrag(id, world) {
-  beginTrackedInteraction('drag-label', { id, prevWorld: world });
-}
-
-function startHandleDrag(id, part, world) {
-  // Keep the keyboard nudge aimed at the handle the TD last grabbed, so a
-  // rough drag can be finished with arrow keys without pressing Tab.
-  if (part !== 'label' && state.selection.kind === 'annotation' && state.selection.id === id) {
-    state.selection.part = part;
-  }
-  beginTrackedInteraction('drag-handle', { id, part, prevWorld: world });
-}
-
-function startImageDrag(id, world) {
-  // Move every selected image together (Cmd/Ctrl+click multi-selection), or
-  // just the clicked one when nothing else is selected. Locked images never
-  // move. Each moving image carries the POM lines that sit on it; the combined
-  // set is de-duplicated so a line is never nudged twice.
-  const selected = getSelectedImageIds();
-  const movingIds = (selected.length > 1 ? selected : [id])
-    .filter((imgId) => { const im = getImageById(imgId); return im && !im.locked; });
-  if (!movingIds.includes(id)) movingIds.push(id);
-  const annIdSet = new Set();
-  for (const imgId of movingIds) {
-    const im = getImageById(imgId);
-    if (!im) continue;
-    for (const ann of getAnnotationsOnImage(im)) annIdSet.add(ann.id);
-  }
-  beginTrackedInteraction('drag-image', {
-    id,
-    prevWorld: world,
-    imageIds: movingIds,
-    groupedAnnotationIds: Array.from(annIdSet),
-  });
-}
-
-function startImageResize(id, corner) {
-  const image = getImageById(id);
-  if (!image) return;
-  beginTrackedInteraction('drag-image-resize', {
-    id,
-    corner,
-    anchor: getOppositeImageCorner(image, corner),
-    aspect: image.width / Math.max(1, image.height),
-  });
-}
-
-// Group resize: 2+ selected photos scale together about the opposite corner of the
-// GROUP's bounding box, so their relative sizes and spacing are preserved. Returns
-// true when it claimed the click. A locked image in the selection blocks it (same
-// rule as single-image resize). Anchors/drafts/erase strokes are stored normalized
-// to their own image, so they follow each photo without extra work.
-function startGroupResizeIfHandleHit(world) {
-  const images = getSelectedImages();
-  if (!images || images.length <= 1) return false;
-  if (images.some(im => im.locked)) return false;
-  const box = getImagesGroupBox(images);
-  if (!box) return false;
-  const hit = hitTestSelectedImageHandles(world, box);
-  if (!hit) return false;
-  beginTrackedInteraction('drag-images-resize', {
-    corner: hit.corner,
-    anchor: getOppositeImageCorner(box, hit.corner),
-    box,
-    // Snapshot every member up front: scaling must be computed from the ORIGINAL
-    // geometry each frame, or repeated relative scaling compounds and drifts.
-    start: images.map(im => ({ id: im.id, x: im.x, y: im.y, width: im.width, height: im.height })),
-  });
-  return true;
-}
-
-// Uniform scale factor from the group's anchor corner to the cursor. Driven by the
-// dominant axis so a diagonal drag feels like the single-image resize, and floored
-// so no member can collapse below the 48px minimum used for one image.
-function resizeImagesFromCorner(interaction, world) {
-  const { anchor, box, start } = interaction;
-  if (!anchor || !box || !Array.isArray(start) || !start.length) return;
-  const spanX = Math.abs(box.x + (box.x + box.width) - 2 * anchor.x) || box.width;
-  const spanY = Math.abs(box.y + (box.y + box.height) - 2 * anchor.y) || box.height;
-  const rawW = Math.abs(world.x - anchor.x);
-  const rawH = Math.abs(world.y - anchor.y);
-  const sx = spanX > 0 ? rawW / spanX : 1;
-  const sy = spanY > 0 ? rawH / spanY : 1;
-  let scale = Math.max(sx, sy);
-  if (!Number.isFinite(scale) || scale <= 0) return;
-  const MIN_IMAGE_SIZE = 48;
-  const smallest = start.reduce((m, s) => Math.min(m, s.width, s.height), Infinity);
-  if (Number.isFinite(smallest) && smallest > 0) {
-    scale = Math.max(scale, MIN_IMAGE_SIZE / smallest);
-  }
-  for (const s of start) {
-    const image = getImageById(s.id);
-    if (!image) continue;
-    image.x = anchor.x + (s.x - anchor.x) * scale;
-    image.y = anchor.y + (s.y - anchor.y) * scale;
-    image.width = s.width * scale;
-    image.height = s.height * scale;
-  }
-}
-
-  // ---- Eraser ----
-  // Strokes live in image-local pixel coordinates so they automatically follow
-  // their parent image when it is moved or resized. Rendering clips to the
-  // image rect so strokes never bleed onto the white canvas background.
-  function beginEraseStroke(world) {
-    const imageHit = hitTestImages(world);
-    if (!imageHit) return;
-    const image = getImageById(imageHit.id);
-    if (!image || !image.img) return;
-    const local = worldToImageLocal(image, world);
-    // brushSize is user-facing world pixels; convert to image-local px so the
-    // stroke visually keeps that width regardless of the image's natural
-    // resolution, and also scales correctly if the image is resized later.
-    const naturalW = image.img.naturalWidth || image.width;
-    const localSize = state.brushSize * (naturalW / image.width);
-    state.eraseSession = {
-      imageId: image.id,
-      size: localSize,
-      points: [local],
-    };
-    updateUI();
-    requestRender();
-  }
-
-  function appendErasePoint(world) {
-    const session = state.eraseSession;
-    if (!session) return;
-    const image = getImageById(session.imageId);
-    if (!image || !image.img) return;
-    const local = worldToImageLocal(image, world);
-    const last = session.points[session.points.length - 1];
-    const dx = local.x - last.x;
-    const dy = local.y - last.y;
-    // 2px (image-local) threshold trims jitter without losing curve fidelity
-    if (dx * dx + dy * dy < 4) return;
-    session.points.push(local);
-    requestRender();
-  }
-
-  function commitEraseStroke() {
-    const session = state.eraseSession;
-    state.eraseSession = null;
-    if (!session || !session.points.length) {
-      updateUI();
-      requestRender();
-      return;
-    }
-    state.eraseStrokes.push({
-      id: state.idCounter++,
-      imageId: session.imageId,
-      size: session.size,
-      points: session.points,
-    });
-    pushHistoryIfChanged();
-    updateUI();
-    requestRender();
-  }
-
-  function worldToImageLocal(image, world) {
-    const naturalW = image.img.naturalWidth || image.width;
-    const naturalH = image.img.naturalHeight || image.height;
-    return {
-      x: (world.x - image.x) * (naturalW / image.width),
-      y: (world.y - image.y) * (naturalH / image.height),
-    };
-  }
-
-  function handleDrawToolClick(world) {
-    // Extension follow-up: a straight line was just committed and the tool is
-    // offering an optional collinear dashed extension. A click within the axis
-    // snap zone commits it as its own annotation (separate seq number); a click
-    // off-axis falls through and starts a fresh straight line at this point.
-    if (state.drawSession && state.drawSession.type === 'extension-followup') {
-      const proj = projectionOnAxis(world, state.drawSession.prevEnd, state.drawSession.prevDir);
-      if (proj.qualifies) {
-        const tip = {
-          x: state.drawSession.prevEnd.x + state.drawSession.prevDir.x * proj.distance,
-          y: state.drawSession.prevEnd.y + state.drawSession.prevDir.y * proj.distance,
-        };
-        const ann = createStraightAnnotation(
-          state.drawSession.prevEnd,
-          tip,
-          'dashed',
-          state.drawSession.color,
-          'single',
-          state.drawSession.lineWidth,
-        );
-        state.annotations.push(ann);
-        state.selection = { kind: 'annotation', id: ann.id };
-        state.nextSequence += 1;
-        state.drawSession = null;
-        pushHistoryIfChanged();
-        updateUI();
-        requestRender();
-        return;
-      }
-      // Off-axis click — drop follow-up and treat as start of a new line.
-      state.drawSession = null;
-    }
-
-    if (!state.drawSession) {
-      state.drawSession = {
-        type: state.tool,
-        style: state.drawStyle,
-        color: state.drawColor,
-        arrowType: state.arrowType,
-        lineWidth: state.lineWidth,
-        start: world,
-        current: world,
-      };
-      updateUI();
-      requestRender();
-      return;
-    }
-
-    // Curved lines take THREE clicks: start, middle, end. The middle click
-    // records the point the curve must pass through; the curve is committed on
-    // the third click. (Straight lines stay two clicks.)
-    if (state.drawSession.type === 'curved') {
-      const sess = state.drawSession;
-      if (sess.mid == null) {
-        if (distance(sess.start, world) < (4 / state.zoom)) return;
-        sess.mid = clonePoint(world);
-        sess.current = clonePoint(world);
-        updateUI();
-        requestRender();
-        return;
-      }
-      if (distance(sess.mid, world) < (4 / state.zoom)) return;
-      const curveAnn = createCurvedAnnotation(sess.start, world, sess.style, sess.color, sess.arrowType, sess.lineWidth, sess.mid);
-      state.annotations.push(curveAnn);
-      state.selection = { kind: 'annotation', id: curveAnn.id };
-      state.nextSequence += 1;
-      state.drawSession = null;
-      pushHistoryIfChanged();
-      updateUI();
-      requestRender();
-      return;
-    }
-
-    const start = state.drawSession.start;
-    const end = world;
-    const drawSettings = state.drawSession;
-    if (distance(start, end) < (4 / state.zoom)) {
-      return;
-    }
-
-    if (state.tool === 'straight') {
-      const ann = createStraightAnnotation(start, end, drawSettings.style, drawSettings.color, drawSettings.arrowType, drawSettings.lineWidth);
-      state.annotations.push(ann);
-      state.selection = { kind: 'annotation', id: ann.id };
-      state.nextSequence += 1;
-
-      // Stay armed for an optional collinear dashed extension. The next click
-      // along the line's axis commits a separate annotation with its own seq;
-      // a click off-axis (or Esc / tool change) drops this state and starts a
-      // fresh line. Only armed for solid lines in measurement (POM) mode —
-      // not when drawing stitch styles where dashed has a different meaning.
-      if (!isStitchMode() && drawSettings.style === 'solid') {
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-        const len = Math.max(0.0001, Math.hypot(dx, dy));
-        state.drawSession = {
-          type: 'extension-followup',
-          color: drawSettings.color,
-          lineWidth: drawSettings.lineWidth,
-          prevEnd: clonePoint(end),
-          prevDir: { x: dx / len, y: dy / len },
-          current: clonePoint(end),
-        };
-      } else {
-        state.drawSession = null;
-      }
-
-      pushHistoryIfChanged();
-      updateUI();
-      requestRender();
-      return;
-    }
-  }
-
-  // Project `world` onto the axis defined by `origin` + `dir` (unit vector).
-  // Returns the signed forward distance, the perpendicular distance, and a
-  // boolean that's true iff the cursor is in the extension snap zone
-  // (positive forward distance, perpendicular within tolerance).
-  function projectionOnAxis(world, origin, dir) {
-    const dx = world.x - origin.x;
-    const dy = world.y - origin.y;
-    const distance = dx * dir.x + dy * dir.y;
-    const perpX = dx - distance * dir.x;
-    const perpY = dy - distance * dir.y;
-    const perp = Math.hypot(perpX, perpY);
-    const minDist = 4 / state.zoom;
-    const maxPerp = 30 / state.zoom;
-    return { distance, perp, qualifies: distance > minDist && perp <= maxPerp };
-  }
-
-
-  function dragHandle(ann, part, world, prevWorld) {
-    const dx = world.x - prevWorld.x;
-    const dy = world.y - prevWorld.y;
-
-    const moveBy = (p) => { if (p) { p.x += dx; p.y += dy; } };
-
-    if (part === 'start') {
-      ann.start = clonePoint(world);
-      // An anchor carries its own handle(s) rigidly, like a pen tool, so the
-      // curve near it keeps its shape while the anchor moves.
-      moveBy(ann.control1);
-    } else if (part === 'end') {
-      ann.end = clonePoint(world);
-      moveBy(ann.control2);
-    } else if (part === 'midPoint' && ann.type === 'curved') {
-      // The middle is a real anchor now: move it and BOTH its handles together
-      // so the whole joint slides and the two segments follow.
-      ann.midPoint = clonePoint(world);
-      moveBy(ann.midHandleIn);
-      moveBy(ann.midHandleOut);
-    } else if (part === 'control1' && ann.type === 'curved' && ann.control1) {
-      ann.control1 = clonePoint(world); // start handle — bends segment 1 only
-    } else if (part === 'control2' && ann.type === 'curved' && ann.control2) {
-      ann.control2 = clonePoint(world); // end handle — bends segment 2 only
-    } else if (part === 'midHandleIn' && ann.type === 'curved' && ann.midHandleIn) {
-      ann.midHandleIn = clonePoint(world); // middle handle toward the start
-    } else if (part === 'midHandleOut' && ann.type === 'curved' && ann.midHandleOut) {
-      ann.midHandleOut = clonePoint(world); // middle handle toward the end
-    }
-
-    if (!ann.labelManual) {
-      ann.label = computeDefaultLabelPosition(ann);
-    }
-  }
-
-  // ---- US-027: arrow-key nudge for Manual-Mode lines ------------------------
-  // Mirrors the Auto-Mode anchor nudge: arrows move one source-image pixel
-  // (Shift = 10), and rapid keystrokes form one "nudge session" that pushes a
-  // single history entry LINE_NUDGE_COMMIT_MS after the last keystroke — the
-  // same one-commit-per-drag contract the mouse path follows. Tab cycles the
-  // active part; with no part active the whole line moves.
-  const LINE_NUDGE_COMMIT_MS = 700;
-  let lineNudgeSession = null; // { annId, timer }
-
-  // Ring order: the main points first (the common Tab targets), then the
-  // bend handles (US-030) in geometric order start-side → end-side. Only
-  // parts the annotation actually has are included, so single-segment
-  // curves and straight lines get shorter rings automatically.
-  function lineNudgeParts(ann) {
-    const parts = [null, 'start'];
-    if (ann.type === 'curved') {
-      if (ann.midPoint) parts.push('midPoint');
-      parts.push('end');
-      if (ann.control1) parts.push('control1');
-      if (ann.midHandleIn) parts.push('midHandleIn');
-      if (ann.midHandleOut) parts.push('midHandleOut');
-      if (ann.control2) parts.push('control2');
-    } else {
-      parts.push('end');
-    }
-    return parts;
-  }
-
-  function nudgePartLabel(part) {
-    if (part === 'start') return 'start point';
-    if (part === 'midPoint') return 'mid point';
-    if (part === 'end') return 'end point';
-    if (part === 'control1') return 'start bend handle';
-    if (part === 'control2') return 'end bend handle';
-    if (part === 'midHandleIn') return 'mid bend handle (start side)';
-    if (part === 'midHandleOut') return 'mid bend handle (end side)';
-    return 'whole line';
-  }
-
-  function cycleNudgePart(ann, dir) {
-    const parts = lineNudgeParts(ann);
-    const idx = parts.indexOf(state.selection.part || null);
-    const next = parts[(idx + dir + parts.length) % parts.length];
-    state.selection.part = next;
-    // Live status — latest wins; queueing stale part names after a Tab
-    // burst would mislead (US-032).
-    showToast('Arrows move the ' + nudgePartLabel(next) + '.', { replace: true });
-    updateUI();
-    requestRender();
-  }
-
-  // World-units-per-source-pixel for the image under the line's midpoint —
-  // the same association rule as getAnnotationsOnImage. Off-image lines fall
-  // back to one screen pixel so the nudge always does something visible.
-  function lineNudgeWorldStep(ann) {
-    const mid = { x: (ann.start.x + ann.end.x) / 2, y: (ann.start.y + ann.end.y) / 2 };
-    const hit = hitTestImages(mid);
-    const image = hit ? getImageById(hit.id) : null;
-    if (image && image.img && image.img.naturalWidth && image.width) {
-      return image.width / image.img.naturalWidth;
-    }
-    return 1 / state.zoom;
-  }
-
-  function nudgeSelectedAnnotation(dxPx, dyPx) {
-    const ann = getSelectedAnnotation();
-    if (!ann) return false;
-    const stepWorld = lineNudgeWorldStep(ann);
-    const dx = dxPx * stepWorld;
-    const dy = dyPx * stepWorld;
-    if (lineNudgeSession && lineNudgeSession.annId !== ann.id) {
-      flushLineNudgeSession();
-    }
-    if (!lineNudgeSession) {
-      lineNudgeSession = { annId: ann.id, timer: null };
-    }
-    const part = state.selection.part;
-    const point = part === 'start' ? ann.start
-      : part === 'end' ? ann.end
-        : part ? ann[part] : null;
-    if (part && point) {
-      // Route through dragHandle so curve semantics (endpoint carrying its
-      // control, mid point carrying both mid handles) match a mouse drag.
-      const prev = clonePoint(point);
-      dragHandle(ann, part, { x: prev.x + dx, y: prev.y + dy }, prev);
-    } else {
-      moveAnnotation(ann, dx, dy);
-    }
-    if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
-    if (lineNudgeSession.timer) clearTimeout(lineNudgeSession.timer);
-    lineNudgeSession.timer = setTimeout(flushLineNudgeSession, LINE_NUDGE_COMMIT_MS);
-    refreshMeasuredValueForAnnotation(ann.id); // US-028: live Value cell
-    requestRender();
-    return true;
-  }
-
-  // Lets the renderer show the adjustment readout (US-029) while a nudge
-  // burst is still open, without reaching into the session object.
-  function isLineNudgeActive(annId) {
-    return !!(lineNudgeSession && lineNudgeSession.annId === annId);
-  }
-
-  function flushLineNudgeSession() {
-    const session = lineNudgeSession;
-    lineNudgeSession = null;
-    if (!session) return;
-    if (session.timer) clearTimeout(session.timer);
-    const ann = getAnnotationById(session.annId);
-    pushHistoryIfChanged();
-    requestRender(); // drop the on-canvas readout now that the burst committed
-    // Same learning capture as a committed mouse drag on an applied draft.
-    if (state.appMode === 'manual' && ann && isAutoDraft(ann)) {
-      const evalResult = evaluateManualPomSample(ann, { allowAuto: true });
-      if (evalResult.status === 'recorded') {
-        showToast('POM ' + evalResult.pom + ' learning sample saved from TD edit.');
-        updateUI();
-      }
-    }
-  }
-
-  function moveAnnotation(ann, dx, dy) {
-    ann.start.x += dx; ann.start.y += dy;
-    ann.end.x += dx; ann.end.y += dy;
-    for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
-      if (ann[key]) { ann[key].x += dx; ann[key].y += dy; }
-    }
-    ann.label.x += dx; ann.label.y += dy;
   }
 
   // ---- src/manual/format.js ----
