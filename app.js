@@ -205,7 +205,10 @@
   }
 
   // ---- src/state.js ----
-// State, constants, DOM handles, initialization, URL demo bootstrap.
+// Core app state shape: shared constants, the RULES-derived POM/anchor
+// aliases, and the `state` object itself. DOM handles live in dom-refs.js,
+// boot sequencing in bootstrap.js, URL-driven test/demo bootstrap in
+// dev/url-bootstrap.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   const LINE_COLORS = {
@@ -238,182 +241,6 @@
   const MAX_LINE_WIDTH = 16;
   const ZOOM_SENSITIVITY = 0.0018;
   const PRECISE_ZOOM_SENSITIVITY = 0.00105;
-
-  const el = {
-    canvas: document.getElementById('boardCanvas'),
-    boardCard: document.getElementById('boardCard'),
-    boardEmptyImport: document.getElementById('boardEmptyImport'),
-    boardEmptyAdd: document.getElementById('boardEmptyAdd'),
-    addImageBtn: document.getElementById('addImageBtn'),
-    imageFileInput: document.getElementById('imageFileInput'),
-    helpBtn: document.getElementById('helpBtn'),
-    toolSelect: document.getElementById('toolSelect'),
-    toolStraight: document.getElementById('toolStraight'),
-    toolCurved: document.getElementById('toolCurved'),
-    toolEraser: document.getElementById('toolEraser'),
-    lineStyleControl: document.getElementById('lineStyleControl'),
-    stitchesBtn: document.getElementById('stitchesBtn'),
-    stitchesBtnLabel: document.getElementById('stitchesBtnLabel'),
-    stitchesMenu: document.getElementById('stitchesMenu'),
-    styleOptionBtns: Array.from(document.querySelectorAll('.style-option')),
-    lineWidthChip: document.getElementById('lineWidthChip'),
-    lineWidthInput: document.getElementById('lineWidthInput'),
-    brushSizeChip: document.getElementById('brushSizeChip'),
-    brushSizeInput: document.getElementById('brushSizeInput'),
-    arrowDoubleBtn: document.getElementById('arrowDoubleBtn'),
-    arrowSingleBtn: document.getElementById('arrowSingleBtn'),
-    arrowNoneBtn: document.getElementById('arrowNoneBtn'),
-    colorRedBtn: document.getElementById('colorRedBtn'),
-    colorBlueBtn: document.getElementById('colorBlueBtn'),
-    colorBlackBtn: document.getElementById('colorBlackBtn'),
-    colorWhiteBtn: document.getElementById('colorWhiteBtn'),
-    undoBtn: document.getElementById('undoBtn'),
-    redoBtn: document.getElementById('redoBtn'),
-    copyLineBtn: document.getElementById('copyLineBtn'),
-    pasteLineBtn: document.getElementById('pasteLineBtn'),
-    reflectLineBtn: document.getElementById('reflectLineBtn'),
-    deleteBtn: document.getElementById('deleteBtn'),
-    clearBtn: document.getElementById('clearBtn'),
-    lockImageBtn: document.getElementById('lockImageBtn'),
-    lockImageLabel: document.getElementById('lockImageLabel'),
-    lockImageIco: document.getElementById('lockImageIco'),
-    fitBtn: document.getElementById('fitBtn'),
-    togglePanelBtn: document.getElementById('togglePanelBtn'),
-    toggleLabelsBtn: document.getElementById('toggleLabelsBtn'),
-    workspace: document.querySelector('.workspace'),
-    setScaleBtn: document.getElementById('setScaleBtn'),
-    clearScaleBtn: document.getElementById('clearScaleBtn'),
-    sizeRunBtn: document.getElementById('sizeRunBtn'),
-    gradingBtn: document.getElementById('gradingBtn'),
-    exportPdfBtn: document.getElementById('exportPdfBtn'),
-    exportExcelBtn: document.getElementById('exportExcelBtn'),
-    copyImageBtn: document.getElementById('copyImageBtn'),
-    importPptxBtn: document.getElementById('importPptxBtn'),
-    pptxFileInput: document.getElementById('pptxFileInput'),
-    saveProjectBtn: document.getElementById('saveProjectBtn'),
-    openProjectBtn: document.getElementById('openProjectBtn'),
-    libraryBtn: document.getElementById('libraryBtn'),
-    projectFileInput: document.getElementById('projectFileInput'),
-    labelEditor: document.getElementById('labelEditor'),
-    specBody: document.getElementById('specBody'),
-    specEmpty: document.getElementById('specEmpty'),
-    specCal: document.getElementById('specCal'),
-    toolStatus: document.getElementById('toolStatus'),
-    imageStatus: document.getElementById('imageStatus'),
-    countStatus: document.getElementById('countStatus'),
-    toast: document.getElementById('toast'),
-    modeManualBtn: document.getElementById('modeManualBtn'),
-    modeAutoBtn: document.getElementById('modeAutoBtn'),
-    autoModeBar: document.getElementById('autoModeBar'),
-    autoDetectBtn: document.getElementById('autoDetectBtn'),
-    autoResetAnchorsBtn: document.getElementById('autoResetAnchorsBtn'),
-    autoManageAnchorsBtn: document.getElementById('autoManageAnchorsBtn'),
-    anchorManagerPanel: document.getElementById('anchorManagerPanel'),
-    anchorManagerBody: document.getElementById('anchorManagerBody'),
-    anchorManagerCount: document.getElementById('anchorManagerCount'),
-    anchorManagerCloseBtn: document.getElementById('anchorManagerCloseBtn'),
-    anchorManagerHideAllBtn: document.getElementById('anchorManagerHideAllBtn'),
-    anchorManagerShowAllBtn: document.getElementById('anchorManagerShowAllBtn'),
-    autoGenerateBtn: document.getElementById('autoGenerateBtn'),
-    autoApproveBtn: document.getElementById('autoApproveBtn'),
-    autoReviewOnlyBtn: document.getElementById('autoReviewOnlyBtn'),
-    autoApplyBtn: document.getElementById('autoApplyBtn'),
-    autoDiscardBtn: document.getElementById('autoDiscardBtn'),
-    autoResetBoardBtn: document.getElementById('autoResetBoardBtn'),
-    autoLearnToggleBtn: document.getElementById('autoLearnToggleBtn'),
-    autoLearnChip: document.getElementById('autoLearnChip'),
-    autoAcceptanceChip: document.getElementById('autoAcceptanceChip'),
-    autoLearnMenuWrap: document.getElementById('autoLearnMenuWrap'),
-    autoLearnMenuBtn: document.getElementById('autoLearnMenuBtn'),
-    autoLearnMenuList: document.getElementById('autoLearnMenuList'),
-    viewLearningDataItem: document.getElementById('viewLearningDataItem'),
-    resetResidualsItem: document.getElementById('resetResidualsItem'),
-    resetMeaningsCurrentItem: document.getElementById('resetMeaningsCurrentItem'),
-    resetMeaningsAllItem: document.getElementById('resetMeaningsAllItem'),
-    learningToolbarBtn: document.getElementById('learningToolbarBtn'),
-    learningToolbarChip: document.getElementById('learningToolbarChip'),
-    autoStatusChip: document.getElementById('autoStatusChip'),
-    autoStepIndicator: document.getElementById('autoStepIndicator'),
-    visionEngineChip: document.getElementById('visionEngineChip'),
-    styleIdInput: document.getElementById('styleIdInput'),
-  };
-
-  let ctx = el.canvas.getContext('2d');
-
-  // Image pixel data is stored once per image id here, so history snapshots can
-  // reference images by id instead of carrying (and re-serializing) base64 copies.
-  const imageDataById = new Map();
-
-  // ---- Grade rules v2 container (US-011) ----------------------------------
-  // One persisted object holds every TD grading override:
-  //   steps        — v1 constant-step overrides { [pom]: {step, hold} }
-  //                  (step in the project unit, as the Size Run dialog wrote)
-  //   alpha, depth — per-POM per-size delta overrides { [pom]: {[size]: Δ} },
-  //                  stored in INCHES (unit-independent, converted at use like
-  //                  the built-ins). Written by the Grading dialog (S3).
-  //   depthOffsets — the former state.depthRules { [pom]: {offset} } (project
-  //                  unit), absorbed here so one field persists all grading.
-  function makeEmptyGradeRulesV2() {
-    return { version: 2, steps: {}, alpha: {}, depth: {}, depthOffsets: {} };
-  }
-
-  // Lossless upgrade of persisted grading state to the v2 container.
-  // Accepts: a v2 container (returned normalized), a v1 map of
-  // { [pom]: {step, hold} } entries, or null/garbage (fresh container).
-  // legacyDepthRules is the old separate state.depthRules field from
-  // pre-US-011 files; it folds into depthOffsets.
-  function migrateGradeRulesV2(raw, legacyDepthRules) {
-    const out = makeEmptyGradeRulesV2();
-    if (raw && typeof raw === 'object') {
-      if (raw.version === 2) {
-        for (const k of ['steps', 'alpha', 'depth', 'depthOffsets']) {
-          if (raw[k] && typeof raw[k] === 'object') out[k] = JSON.parse(JSON.stringify(raw[k]));
-        }
-      } else {
-        // v1: version-less map of per-POM {step, hold} overrides.
-        for (const key of Object.keys(raw)) {
-          const e = raw[key];
-          if (e && typeof e === 'object' && ('step' in e || 'hold' in e)) {
-            out.steps[key] = { ...e };
-          }
-        }
-      }
-    }
-    if (legacyDepthRules && typeof legacyDepthRules === 'object') {
-      for (const key of Object.keys(legacyDepthRules)) {
-        const e = legacyDepthRules[key];
-        if (e && typeof e === 'object' && e.offset != null && out.depthOffsets[key] == null) {
-          out.depthOffsets[key] = { ...e };
-        }
-      }
-    }
-    return out;
-  }
-
-  // Custom POM registry lookup (US-011 S4). Custom POMs (17+) live in
-  // state.customPoms — never in the 18-POM rule JSON (ADR 0018).
-  function customPomEntry(pomKey) {
-    const key = String(pomKey == null ? '' : pomKey).trim();
-    if (!key) return null;
-    return (state.customPoms || []).find(p => String(p.pom) === key) || null;
-  }
-
-  // Next free custom POM number: one past the highest of 16 and any
-  // existing custom or annotation label number.
-  function nextCustomPomNumber() {
-    // Core template now reserves 1..18 (US-037: neckline 17, armhole 18);
-    // custom POMs start at 19. See ADR 0032.
-    let max = 18;
-    for (const p of state.customPoms || []) {
-      const n = Number(p.pom);
-      if (Number.isFinite(n) && n > max) max = n;
-    }
-    for (const ann of state.annotations || []) {
-      const n = Number(ann.text != null ? ann.text : NaN);
-      if (Number.isFinite(n) && n > max) max = n;
-    }
-    return max + 1;
-  }
 
   const state = {
     tool: 'select',
@@ -605,177 +432,188 @@
     };
   }
 
-  function init() {
-    // S1: start watching the vendored OpenCV build immediately (fire and
-    // forget) so the WASM compiles while the TD is still adding the sketch,
-    // and the readiness chip never stalls silently on the first Detect.
-    warmupVisionEngine();
-    bindUI();
-    initMainPage();
-    initConstruction();
-    initBom();
-    initPreviewPage();
-    initPageNav();
-    // Auto-only build: boot straight into Auto Mode (sets body class,
-    // status chip, and locks manual editing paths).
-    setAppMode('auto');
-    resizeCanvas();
-    seedHistory();
-    updateUI();
-    render();
-    maybeShowGroundTruthLabeler();
-    // Ground-truth labeling (?label=1) is an ephemeral, one-image-per-URL flow:
-    // don't autosave it or offer to restore a prior label session, which would
-    // pop a "Recovered work" modal over the board on every reload.
-    const labeling = new URLSearchParams(window.location.search).get('label') === '1';
-    if (!labeling) armAutosave();
-    void loadProjectFromUrl()
-      .then(() => (labeling ? null : maybeOfferAutosaveRestore()))
-      .then(() => maybeAutoDraftFromUrl());
+  // ---- src/dom-refs.js ----
+// DOM element handle registry.
+// Source part for app.js. Run `npm run build` after editing.
+
+  const el = {
+    canvas: document.getElementById('boardCanvas'),
+    boardCard: document.getElementById('boardCard'),
+    boardEmptyImport: document.getElementById('boardEmptyImport'),
+    boardEmptyAdd: document.getElementById('boardEmptyAdd'),
+    addImageBtn: document.getElementById('addImageBtn'),
+    imageFileInput: document.getElementById('imageFileInput'),
+    helpBtn: document.getElementById('helpBtn'),
+    toolSelect: document.getElementById('toolSelect'),
+    toolStraight: document.getElementById('toolStraight'),
+    toolCurved: document.getElementById('toolCurved'),
+    toolEraser: document.getElementById('toolEraser'),
+    lineStyleControl: document.getElementById('lineStyleControl'),
+    stitchesBtn: document.getElementById('stitchesBtn'),
+    stitchesBtnLabel: document.getElementById('stitchesBtnLabel'),
+    stitchesMenu: document.getElementById('stitchesMenu'),
+    styleOptionBtns: Array.from(document.querySelectorAll('.style-option')),
+    lineWidthChip: document.getElementById('lineWidthChip'),
+    lineWidthInput: document.getElementById('lineWidthInput'),
+    brushSizeChip: document.getElementById('brushSizeChip'),
+    brushSizeInput: document.getElementById('brushSizeInput'),
+    arrowDoubleBtn: document.getElementById('arrowDoubleBtn'),
+    arrowSingleBtn: document.getElementById('arrowSingleBtn'),
+    arrowNoneBtn: document.getElementById('arrowNoneBtn'),
+    colorRedBtn: document.getElementById('colorRedBtn'),
+    colorBlueBtn: document.getElementById('colorBlueBtn'),
+    colorBlackBtn: document.getElementById('colorBlackBtn'),
+    colorWhiteBtn: document.getElementById('colorWhiteBtn'),
+    undoBtn: document.getElementById('undoBtn'),
+    redoBtn: document.getElementById('redoBtn'),
+    copyLineBtn: document.getElementById('copyLineBtn'),
+    pasteLineBtn: document.getElementById('pasteLineBtn'),
+    reflectLineBtn: document.getElementById('reflectLineBtn'),
+    deleteBtn: document.getElementById('deleteBtn'),
+    clearBtn: document.getElementById('clearBtn'),
+    lockImageBtn: document.getElementById('lockImageBtn'),
+    lockImageLabel: document.getElementById('lockImageLabel'),
+    lockImageIco: document.getElementById('lockImageIco'),
+    fitBtn: document.getElementById('fitBtn'),
+    togglePanelBtn: document.getElementById('togglePanelBtn'),
+    toggleLabelsBtn: document.getElementById('toggleLabelsBtn'),
+    workspace: document.querySelector('.workspace'),
+    setScaleBtn: document.getElementById('setScaleBtn'),
+    clearScaleBtn: document.getElementById('clearScaleBtn'),
+    sizeRunBtn: document.getElementById('sizeRunBtn'),
+    gradingBtn: document.getElementById('gradingBtn'),
+    exportPdfBtn: document.getElementById('exportPdfBtn'),
+    exportExcelBtn: document.getElementById('exportExcelBtn'),
+    copyImageBtn: document.getElementById('copyImageBtn'),
+    importPptxBtn: document.getElementById('importPptxBtn'),
+    pptxFileInput: document.getElementById('pptxFileInput'),
+    saveProjectBtn: document.getElementById('saveProjectBtn'),
+    openProjectBtn: document.getElementById('openProjectBtn'),
+    libraryBtn: document.getElementById('libraryBtn'),
+    projectFileInput: document.getElementById('projectFileInput'),
+    labelEditor: document.getElementById('labelEditor'),
+    specBody: document.getElementById('specBody'),
+    specEmpty: document.getElementById('specEmpty'),
+    specCal: document.getElementById('specCal'),
+    toolStatus: document.getElementById('toolStatus'),
+    imageStatus: document.getElementById('imageStatus'),
+    countStatus: document.getElementById('countStatus'),
+    toast: document.getElementById('toast'),
+    modeManualBtn: document.getElementById('modeManualBtn'),
+    modeAutoBtn: document.getElementById('modeAutoBtn'),
+    autoModeBar: document.getElementById('autoModeBar'),
+    autoDetectBtn: document.getElementById('autoDetectBtn'),
+    autoResetAnchorsBtn: document.getElementById('autoResetAnchorsBtn'),
+    autoManageAnchorsBtn: document.getElementById('autoManageAnchorsBtn'),
+    anchorManagerPanel: document.getElementById('anchorManagerPanel'),
+    anchorManagerBody: document.getElementById('anchorManagerBody'),
+    anchorManagerCount: document.getElementById('anchorManagerCount'),
+    anchorManagerCloseBtn: document.getElementById('anchorManagerCloseBtn'),
+    anchorManagerHideAllBtn: document.getElementById('anchorManagerHideAllBtn'),
+    anchorManagerShowAllBtn: document.getElementById('anchorManagerShowAllBtn'),
+    autoGenerateBtn: document.getElementById('autoGenerateBtn'),
+    autoApproveBtn: document.getElementById('autoApproveBtn'),
+    autoReviewOnlyBtn: document.getElementById('autoReviewOnlyBtn'),
+    autoApplyBtn: document.getElementById('autoApplyBtn'),
+    autoDiscardBtn: document.getElementById('autoDiscardBtn'),
+    autoResetBoardBtn: document.getElementById('autoResetBoardBtn'),
+    autoLearnToggleBtn: document.getElementById('autoLearnToggleBtn'),
+    autoLearnChip: document.getElementById('autoLearnChip'),
+    autoAcceptanceChip: document.getElementById('autoAcceptanceChip'),
+    autoLearnMenuWrap: document.getElementById('autoLearnMenuWrap'),
+    autoLearnMenuBtn: document.getElementById('autoLearnMenuBtn'),
+    autoLearnMenuList: document.getElementById('autoLearnMenuList'),
+    viewLearningDataItem: document.getElementById('viewLearningDataItem'),
+    resetResidualsItem: document.getElementById('resetResidualsItem'),
+    resetMeaningsCurrentItem: document.getElementById('resetMeaningsCurrentItem'),
+    resetMeaningsAllItem: document.getElementById('resetMeaningsAllItem'),
+    learningToolbarBtn: document.getElementById('learningToolbarBtn'),
+    learningToolbarChip: document.getElementById('learningToolbarChip'),
+    autoStatusChip: document.getElementById('autoStatusChip'),
+    autoStepIndicator: document.getElementById('autoStepIndicator'),
+    visionEngineChip: document.getElementById('visionEngineChip'),
+    styleIdInput: document.getElementById('styleIdInput'),
+  };
+
+  let ctx = el.canvas.getContext('2d');
+
+  // Image pixel data is stored once per image id here, so history snapshots can
+  // reference images by id instead of carrying (and re-serializing) base64 copies.
+  const imageDataById = new Map();
+
+  // ---- src/project/grade-rules.js ----
+// Grade-rules v2 data model + custom-POM registry lookup.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // ---- Grade rules v2 container (US-011) ----------------------------------
+  // One persisted object holds every TD grading override:
+  //   steps        — v1 constant-step overrides { [pom]: {step, hold} }
+  //                  (step in the project unit, as the Size Run dialog wrote)
+  //   alpha, depth — per-POM per-size delta overrides { [pom]: {[size]: Δ} },
+  //                  stored in INCHES (unit-independent, converted at use like
+  //                  the built-ins). Written by the Grading dialog (S3).
+  //   depthOffsets — the former state.depthRules { [pom]: {offset} } (project
+  //                  unit), absorbed here so one field persists all grading.
+  function makeEmptyGradeRulesV2() {
+    return { version: 2, steps: {}, alpha: {}, depth: {}, depthOffsets: {} };
   }
 
-  // S1: watch the real OpenCV backend's readiness and mirror it into
-  // state.visionEngine for the toolbar chip. Does not restart the polling —
-  // opencv_real_api.js already began watching when its script loaded; this
-  // just observes the same promise. Best-effort: any failure means the app
-  // keeps working on the FreeOpenCVAPI fallback exactly as before.
-  function warmupVisionEngine() {
-    const real = typeof window !== 'undefined' ? window.RealOpenCVAPI : null;
-    if (FORCE_FREE_CV || !real || typeof real.whenReady !== 'function') {
-      state.visionEngine = 'unavailable';
-      return;
-    }
-    if (typeof real.isReady === 'function' && real.isReady()) {
-      state.visionEngine = 'ready';
-      return;
-    }
-    state.visionEngine = 'warming';
-    real.whenReady()
-      .then((ready) => {
-        state.visionEngine = ready ? 'ready' : 'unavailable';
-        updateUI();
-      })
-      .catch(() => {
-        state.visionEngine = 'unavailable';
-        updateUI();
-      });
-  }
-
-  // Ground-truth labeling helper: ?label=1 shows a floating "Save Ground
-  // Truth" button. The TD runs Detect Sketch, drags anchors to the correct
-  // positions, then clicks Save to download a JSON file for the accuracy
-  // harness (scripts/accuracy-tests.mjs). Hidden unless the param is present,
-  // so it never touches the normal toolbar layout.
-  function maybeShowGroundTruthLabeler() {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('label') !== '1') return;
-    const btn = document.createElement('button');
-    btn.id = 'gtLabelBtn';
-    btn.type = 'button';
-    btn.textContent = '💾 Save Ground Truth';
-    btn.style.cssText = [
-      'position:fixed', 'left:12px', 'bottom:12px', 'z-index:9999',
-      'padding:8px 12px', 'background:#b3005a', 'color:#fff', 'border:none',
-      'border-radius:6px', 'font:13px system-ui,sans-serif', 'cursor:pointer',
-      'box-shadow:0 2px 8px rgba(0,0,0,.3)',
-    ].join(';');
-    btn.addEventListener('click', () => {
-      if (state.appMode !== 'auto' || !state.autoMode.anchors.length) {
-        showToast('Switch to Auto Mode, run Detect Sketch, and correct the anchors first.', 4200);
-        return;
+  // Lossless upgrade of persisted grading state to the v2 container.
+  // Accepts: a v2 container (returned normalized), a v1 map of
+  // { [pom]: {step, hold} } entries, or null/garbage (fresh container).
+  // legacyDepthRules is the old separate state.depthRules field from
+  // pre-US-011 files; it folds into depthOffsets.
+  function migrateGradeRulesV2(raw, legacyDepthRules) {
+    const out = makeEmptyGradeRulesV2();
+    if (raw && typeof raw === 'object') {
+      if (raw.version === 2) {
+        for (const k of ['steps', 'alpha', 'depth', 'depthOffsets']) {
+          if (raw[k] && typeof raw[k] === 'object') out[k] = JSON.parse(JSON.stringify(raw[k]));
+        }
+      } else {
+        // v1: version-less map of per-POM {step, hold} overrides.
+        for (const key of Object.keys(raw)) {
+          const e = raw[key];
+          if (e && typeof e === 'object' && ('step' in e || 'hold' in e)) {
+            out.steps[key] = { ...e };
+          }
+        }
       }
-      const suggested = (window.__braGroundTruthName || 'sketch.jpg') + '.json';
-      const name = window.prompt(
-        'Ground-truth file name (match the image, e.g. demo1.jpg.json):',
-        suggested
-      );
-      if (!name) return;
-      downloadGroundTruth(name);
-    });
-    document.body.appendChild(btn);
-
-    // Convenience for building the accuracy corpus: ?label=1&image=demo/demo1.jpg
-    // auto-loads that image, runs Detect Sketch, and pre-fills the save file
-    // name — so labeling a corpus is "open URL → drag the wrong anchors → Save",
-    // one image per URL. Absent the param, the manual add-image flow is unchanged.
-    const imagePath = params.get('image');
-    if (imagePath) void autoLoadLabelImage(imagePath);
-  }
-
-  // Fetch a same-origin image, put it on the board, and run Detect Sketch so the
-  // detector's seeded anchors are ready for the TD to correct. Used only by the
-  // ?label=1&image= labeling flow above. Best-effort: on any failure it falls
-  // back to the manual add-image path with a toast.
-  async function autoLoadLabelImage(imagePath) {
-    try {
-      const res = await fetch(encodeURI(imagePath), { cache: 'no-store' });
-      if (!res.ok) throw new Error('fetch ' + res.status);
-      const blob = await res.blob();
-      const dataURL = await new Promise((ok, no) => {
-        const r = new FileReader();
-        r.onload = () => ok(String(r.result || ''));
-        r.onerror = () => no(new Error('read failed'));
-        r.readAsDataURL(blob);
-      });
-      setAppMode('auto');
-      await addImagesFromDataURLs([dataURL]);
-      await new Promise((r) => setTimeout(r, 80));
-      const sourceImage = state.images[state.images.length - 1] || null;
-      if (!sourceImage) throw new Error('image did not load');
-      state.selection = { kind: 'image', id: sourceImage.id };
-      window.__braGroundTruthName = imagePath.split('/').pop();
-      await runOfflineDetection();
-      updateUI();
-      render();
-      const n = state.autoMode.anchors.length;
-      showToast('Loaded ' + window.__braGroundTruthName + ' — ' + n
-        + ' anchors detected. Click "Fit", drag any anchors that are off, then Save Ground Truth.', 6000);
-    } catch (err) {
-      console.error('[Ground Truth] auto-load failed:', err);
-      showToast('Could not auto-load ' + imagePath + ' — add it manually, then Detect Sketch.', 5200);
     }
-  }
-
-  async function loadProjectFromUrl() {
-    const projectUrl = new URLSearchParams(window.location.search).get('project');
-    if (!projectUrl) return;
-    try {
-      const response = await fetch(projectUrl, { cache: 'no-store' });
-      if (!response.ok) throw new Error('Could not load project');
-      await loadProject(await response.json());
-      showToast('Draft project loaded.');
-    } catch (error) {
-      console.error(error);
-      showToast('Could not load the draft project.', 4200);
-    }
-  }
-
-  // Demo helper: ?autoDraft=1 drives Auto Mode → Detect Sketch → Generate POM
-  // Drafts on whatever image is on the board after load. Lets the demo flow be
-  // shared as a URL without manual clicking. No-op when the param is absent.
-  async function maybeAutoDraftFromUrl() {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('autoDraft') !== '1') return;
-    const waitForImage = async () => {
-      for (let i = 0; i < 50; i += 1) {
-        const img = pickAutoSourceImage();
-        if (img && img.img && img.img.complete) return img;
-        await new Promise((r) => setTimeout(r, 100));
+    if (legacyDepthRules && typeof legacyDepthRules === 'object') {
+      for (const key of Object.keys(legacyDepthRules)) {
+        const e = legacyDepthRules[key];
+        if (e && typeof e === 'object' && e.offset != null && out.depthOffsets[key] == null) {
+          out.depthOffsets[key] = { ...e };
+        }
       }
-      return null;
-    };
-    const sourceImage = await waitForImage();
-    if (!sourceImage) {
-      showToast('autoDraft: no source image found.', 4200);
-      return;
     }
-    setAppMode('auto');
-    await runOfflineDetection();
-    if (state.autoMode.status !== 'detected') {
-      showToast('autoDraft: detection did not complete.', 4200);
-      return;
+    return out;
+  }
+
+  // Custom POM registry lookup (US-011 S4). Custom POMs (17+) live in
+  // state.customPoms — never in the 18-POM rule JSON (ADR 0018).
+  function customPomEntry(pomKey) {
+    const key = String(pomKey == null ? '' : pomKey).trim();
+    if (!key) return null;
+    return (state.customPoms || []).find(p => String(p.pom) === key) || null;
+  }
+
+  // Next free custom POM number: one past the highest of 16 and any
+  // existing custom or annotation label number.
+  function nextCustomPomNumber() {
+    // Core template now reserves 1..18 (US-037: neckline 17, armhole 18);
+    // custom POMs start at 19. See ADR 0032.
+    let max = 18;
+    for (const p of state.customPoms || []) {
+      const n = Number(p.pom);
+      if (Number.isFinite(n) && n > max) max = n;
     }
-    generatePOMDraftsFromAnchors();
+    for (const ann of state.annotations || []) {
+      const n = Number(ann.text != null ? ann.text : NaN);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+    return max + 1;
   }
 
   // ---- src/auto/telemetry/session-stats.js ----
@@ -2062,88 +1900,187 @@
     });
   }
 
-  // ---- src/ui/dialogs/learning-data-dialog.js ----
-// Transparent Learning panel (read-only TD review).
-// Reads from summarizeLearningStore + summarizeMeaningStore +
-// summarizeStyleEvidence + listStyleEvidence. Renders a top summary plus
-// a tabbed body: Style Evidence, Learning Corrections, POM Meanings.
-// No mutations — Reset and Manage Meanings live in the Auto Mode Manage
-// menu and stay there. Opens regardless of mode so the TD can audit prior
-// calibration before switching into Auto Mode.
+  // ---- src/ui/dialogs/learning-data-shared.js ----
+// Transparent Learning panel: pure formatting helpers reused across the
+// telemetry, corrections, meanings and evidence tabs.
 // Source part for app.js. Run `npm run build` after editing.
 
-  function openLearningDataDialog() {
-    const learning = (typeof summarizeLearningStore === 'function') ? summarizeLearningStore() : null;
-    const meanings = (typeof summarizeMeaningStore === 'function') ? summarizeMeaningStore() : null;
-    const styleId = (typeof currentStyleId === 'function') ? currentStyleId() : null;
-    const evidence = (typeof summarizeStyleEvidence === 'function' && styleId != null)
-      ? summarizeStyleEvidence(styleId)
-      : null;
-    const evidenceRecords = (typeof listStyleEvidence === 'function' && styleId != null)
-      ? listStyleEvidence(styleId)
-      : [];
-    const telemetry = (typeof getAutoTelemetryReport === 'function')
-      ? getAutoTelemetryReport(10)
-      : null;
-
-    const dialog = buildDialog({
-      title: 'Learning data',
-      sub: 'What the tool has learned from your corrections.',
-    });
-    dialog.panel.classList.add('ld-wide');
-
-    const body = document.createElement('div');
-    body.className = 'dialog-body learning-data-body';
-
-    body.appendChild(buildLearningTopSummary(learning, meanings, evidence));
-
-    const tabs = buildLearningTabs([
-      {
-        id: 'evidence',
-        label: 'Style Evidence',
-        count: evidence ? evidence.pomRowCount : 0,
-        build: () => buildLearningEvidenceSection(evidence, evidenceRecords, meanings),
-      },
-      {
-        id: 'corrections',
-        label: 'Learning Corrections',
-        count: learning ? learning.rows.length : 0,
-        build: () => buildLearningAnchorSection(learning),
-      },
-      {
-        id: 'meanings',
-        label: 'POM Meanings',
-        count: meanings ? meanings.currentRows.length : 0,
-        build: () => buildLearningMeaningsSection(meanings),
-      },
-      {
-        id: 'telemetry',
-        label: 'Telemetry',
-        count: telemetry ? telemetry.count : 0,
-        build: () => buildLearningTelemetrySection(telemetry),
-      },
-    ]);
-    body.appendChild(tabs);
-
-    dialog.panel.appendChild(body);
-
-    const footer = document.createElement('div');
-    footer.className = 'picker-footer';
-    const note = document.createElement('span');
-    note.className = 'learning-data-foot-note';
-    note.textContent = 'Use the Manage menu to reset calibration or edit POM meanings.';
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'picker-btn primary';
-    closeBtn.textContent = 'Close';
-    closeBtn.addEventListener('click', dialog.close);
-    footer.appendChild(note);
-    footer.appendChild(closeBtn);
-    dialog.panel.appendChild(footer);
-
-    dialog.open();
-    closeBtn.focus();
+  function td(text, className) {
+    const cell = document.createElement('td');
+    if (className) cell.className = className;
+    cell.textContent = text == null ? '' : String(text);
+    return cell;
   }
+
+  // ---- Formatters -----------------------------------------------------
+  function formatEvidenceTimestamp(iso, withTime) {
+    if (!iso) return '';
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return '';
+    const d = new Date(t);
+    const pad = (n) => String(n).padStart(2, '0');
+    const date = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    if (!withTime) return date;
+    return date + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function buildSummaryCard({ label, value, tone }) {
+    const card = document.createElement('div');
+    card.className = 'ld-card';
+    const labelEl = document.createElement('div');
+    labelEl.className = 'ld-card-label';
+    labelEl.textContent = label;
+    const valueEl = document.createElement('div');
+    valueEl.className = 'ld-card-value' + (tone ? ' ' + tone : '');
+    valueEl.textContent = value;
+    card.appendChild(labelEl);
+    card.appendChild(valueEl);
+    return card;
+  }
+
+  function statusLabelForRow(status) {
+    switch (status) {
+      case 'active': return 'Active';
+      case 'needs-more-samples': return 'Needs more samples';
+      case 'large-correction': return 'Large correction';
+      case 'conflicting': return 'Conflicting';
+      case 'empty': return 'Empty';
+      default: return status;
+    }
+  }
+
+  // Spread/MAD as a percentage of image dimension — mirrors how the
+  // median dx/dy column is displayed so the TD can compare magnitudes
+  // at a glance.
+  function formatLearningSpread(value) {
+    const num = Math.abs(Number(value) || 0);
+    const pct = num * 100;
+    return '±' + pct.toFixed(1) + '%';
+  }
+
+  function formatLearningDelta(value) {
+    const num = Number(value) || 0;
+    const pct = num * 100;
+    const sign = pct > 0 ? '+' : (pct < 0 ? '' : ' ');
+    return sign + pct.toFixed(1) + '%';
+  }
+
+  function formatViewRole(viewRole) {
+    if (!viewRole) return '—';
+    const map = {
+      front: 'Front',
+      back: 'Back',
+      side: 'Side',
+      inside: 'Inside',
+      detail: 'Detail',
+    };
+    return map[String(viewRole).toLowerCase()] || String(viewRole);
+  }
+
+  function formatEvidenceSourceKind(kind) {
+    if (!kind) return null;
+    switch (kind) {
+      case 'td-edited-auto-line': return 'Auto + TD edit';
+      case 'manual-confirmed-line': return 'Manual confirm';
+      case 'td-deleted-auto-line': return 'Auto removed';
+      default: return kind;
+    }
+  }
+
+  function formatTelemetryDuration(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    if (n < 1000) return Math.round(n) + 'ms';
+    return (n / 1000).toFixed(n < 10000 ? 1 : 0) + 's';
+  }
+
+  function formatTelemetryNumber(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? String(Math.round(n * 10) / 10) : '—';
+  }
+
+  // ---- src/ui/dialogs/learning-data-tabs.js ----
+// Transparent Learning panel: generic reusable tab-shell widget — not
+// learning-specific at all, it just takes {id,label,count,build} defs.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // ---- Tab shell ------------------------------------------------------
+  // Tabs are built lazily — each panel's content is constructed once on
+  // first activation so revisiting a tab doesn't lose the expanded-row
+  // state from the previous visit.
+  function buildLearningTabs(defs) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ld-tab-shell';
+
+    const bar = document.createElement('div');
+    bar.className = 'ld-tabs';
+    bar.setAttribute('role', 'tablist');
+
+    const panels = document.createElement('div');
+    panels.className = 'ld-tab-panels';
+
+    const built = new Map();
+    const buttons = [];
+    const panelEls = [];
+
+    defs.forEach((def, idx) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ld-tab';
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-controls', 'ld-tab-panel-' + def.id);
+      btn.id = 'ld-tab-' + def.id;
+      btn.dataset.tab = def.id;
+
+      const labelEl = document.createElement('span');
+      labelEl.textContent = def.label;
+      btn.appendChild(labelEl);
+      if (Number.isFinite(def.count)) {
+        const badge = document.createElement('span');
+        badge.className = 'ld-tab-badge';
+        badge.textContent = String(def.count);
+        btn.appendChild(badge);
+      }
+      bar.appendChild(btn);
+      buttons.push(btn);
+
+      const panel = document.createElement('div');
+      panel.className = 'ld-tab-panel';
+      panel.setAttribute('role', 'tabpanel');
+      panel.id = 'ld-tab-panel-' + def.id;
+      panel.setAttribute('aria-labelledby', 'ld-tab-' + def.id);
+      panels.appendChild(panel);
+      panelEls.push(panel);
+
+      btn.addEventListener('click', () => activate(idx));
+    });
+
+    function activate(activeIdx) {
+      for (let i = 0; i < buttons.length; i++) {
+        const isActive = i === activeIdx;
+        buttons[i].classList.toggle('is-active', isActive);
+        buttons[i].setAttribute('aria-selected', isActive ? 'true' : 'false');
+        buttons[i].tabIndex = isActive ? 0 : -1;
+        panelEls[i].classList.toggle('is-active', isActive);
+        if (isActive && !built.has(i)) {
+          const content = defs[i].build();
+          if (content) panelEls[i].appendChild(content);
+          built.set(i, true);
+        }
+      }
+    }
+
+    wrap.appendChild(bar);
+    wrap.appendChild(panels);
+    activate(0);
+    return wrap;
+  }
+
+  // ---- src/ui/dialogs/learning-data-telemetry.js ----
+// Transparent Learning panel: Telemetry tab — reaches into
+// getAutoTelemetryReport/getAutoTelemetryLog from src/auto/telemetry/*
+// rather than the learning/meaning/evidence stores the other tabs use.
+// Source part for app.js. Run `npm run build` after editing.
 
   // ---- Telemetry ------------------------------------------------------
   function buildLearningTelemetrySection(telemetry) {
@@ -2253,6 +2190,11 @@
     downloadBlob(blob, 'auto-telemetry-log.json');
   }
 
+  // ---- src/ui/dialogs/learning-data-summary.js ----
+// Transparent Learning panel: always-visible top summary strip above the
+// tabs.
+// Source part for app.js. Run `npm run build` after editing.
+
   // ---- Top summary ----------------------------------------------------
   // Five focused fields TDs use to gauge style readiness at a glance.
   // confirmedLinePomCount counts POMs with at least one confirmed line
@@ -2331,91 +2273,9 @@
     return best > 0 ? new Date(best).toISOString() : null;
   }
 
-  function buildSummaryCard({ label, value, tone }) {
-    const card = document.createElement('div');
-    card.className = 'ld-card';
-    const labelEl = document.createElement('div');
-    labelEl.className = 'ld-card-label';
-    labelEl.textContent = label;
-    const valueEl = document.createElement('div');
-    valueEl.className = 'ld-card-value' + (tone ? ' ' + tone : '');
-    valueEl.textContent = value;
-    card.appendChild(labelEl);
-    card.appendChild(valueEl);
-    return card;
-  }
-
-  // ---- Tab shell ------------------------------------------------------
-  // Tabs are built lazily — each panel's content is constructed once on
-  // first activation so revisiting a tab doesn't lose the expanded-row
-  // state from the previous visit.
-  function buildLearningTabs(defs) {
-    const wrap = document.createElement('div');
-    wrap.className = 'ld-tab-shell';
-
-    const bar = document.createElement('div');
-    bar.className = 'ld-tabs';
-    bar.setAttribute('role', 'tablist');
-
-    const panels = document.createElement('div');
-    panels.className = 'ld-tab-panels';
-
-    const built = new Map();
-    const buttons = [];
-    const panelEls = [];
-
-    defs.forEach((def, idx) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'ld-tab';
-      btn.setAttribute('role', 'tab');
-      btn.setAttribute('aria-controls', 'ld-tab-panel-' + def.id);
-      btn.id = 'ld-tab-' + def.id;
-      btn.dataset.tab = def.id;
-
-      const labelEl = document.createElement('span');
-      labelEl.textContent = def.label;
-      btn.appendChild(labelEl);
-      if (Number.isFinite(def.count)) {
-        const badge = document.createElement('span');
-        badge.className = 'ld-tab-badge';
-        badge.textContent = String(def.count);
-        btn.appendChild(badge);
-      }
-      bar.appendChild(btn);
-      buttons.push(btn);
-
-      const panel = document.createElement('div');
-      panel.className = 'ld-tab-panel';
-      panel.setAttribute('role', 'tabpanel');
-      panel.id = 'ld-tab-panel-' + def.id;
-      panel.setAttribute('aria-labelledby', 'ld-tab-' + def.id);
-      panels.appendChild(panel);
-      panelEls.push(panel);
-
-      btn.addEventListener('click', () => activate(idx));
-    });
-
-    function activate(activeIdx) {
-      for (let i = 0; i < buttons.length; i++) {
-        const isActive = i === activeIdx;
-        buttons[i].classList.toggle('is-active', isActive);
-        buttons[i].setAttribute('aria-selected', isActive ? 'true' : 'false');
-        buttons[i].tabIndex = isActive ? 0 : -1;
-        panelEls[i].classList.toggle('is-active', isActive);
-        if (isActive && !built.has(i)) {
-          const content = defs[i].build();
-          if (content) panelEls[i].appendChild(content);
-          built.set(i, true);
-        }
-      }
-    }
-
-    wrap.appendChild(bar);
-    wrap.appendChild(panels);
-    activate(0);
-    return wrap;
-  }
+  // ---- src/ui/dialogs/learning-data-corrections.js ----
+// Transparent Learning panel: Learning Corrections (anchor calibration) tab.
+// Source part for app.js. Run `npm run build` after editing.
 
   // ---- Learning Corrections (anchor calibration) ----------------------
   function buildLearningAnchorSection(learning) {
@@ -2502,6 +2362,10 @@
     return section;
   }
 
+  // ---- src/ui/dialogs/learning-data-meanings.js ----
+// Transparent Learning panel: POM Meanings tab.
+// Source part for app.js. Run `npm run build` after editing.
+
   // ---- POM Meanings ---------------------------------------------------
   function buildLearningMeaningsSection(meanings) {
     const section = document.createElement('div');
@@ -2583,11 +2447,15 @@
     return section;
   }
 
-  // ---- Style Evidence -------------------------------------------------
-  // Improved columns: POM, Status, Meaning, View, Evidence Source, Records,
-  // Last Saved. Each POM row is expandable to show the individual records
-  // (id, timestamp, source, view) — TDs can audit exactly what was saved
-  // without diving into localStorage.
+  // ---- src/ui/dialogs/learning-data-evidence.js ----
+// Transparent Learning panel: Style Evidence tab, incl. expandable
+// per-record detail rows.
+// Improved columns: POM, Status, Meaning, View, Evidence Source, Records,
+// Last Saved. Each POM row is expandable to show the individual records
+// (id, timestamp, source, view) — TDs can audit exactly what was saved
+// without diving into localStorage.
+// Source part for app.js. Run `npm run build` after editing.
+
   function buildLearningEvidenceSection(evidence, records, meanings) {
     const section = document.createElement('div');
     section.className = 'ld-section';
@@ -2735,28 +2603,6 @@
     return chip;
   }
 
-  function formatViewRole(viewRole) {
-    if (!viewRole) return '—';
-    const map = {
-      front: 'Front',
-      back: 'Back',
-      side: 'Side',
-      inside: 'Inside',
-      detail: 'Detail',
-    };
-    return map[String(viewRole).toLowerCase()] || String(viewRole);
-  }
-
-  function formatEvidenceSourceKind(kind) {
-    if (!kind) return null;
-    switch (kind) {
-      case 'td-edited-auto-line': return 'Auto + TD edit';
-      case 'manual-confirmed-line': return 'Manual confirm';
-      case 'td-deleted-auto-line': return 'Auto removed';
-      default: return kind;
-    }
-  }
-
   function formatEvidenceSource(primarySource, records) {
     const kinds = new Set();
     if (primarySource) kinds.add(primarySource);
@@ -2837,62 +2683,437 @@
     dl.appendChild(dd);
   }
 
-  // ---- Formatters -----------------------------------------------------
-  function formatEvidenceTimestamp(iso, withTime) {
-    if (!iso) return '';
-    const t = Date.parse(iso);
-    if (!Number.isFinite(t)) return '';
-    const d = new Date(t);
+  // ---- src/ui/dialogs/learning-data-dialog.js ----
+// Transparent Learning panel (read-only TD review).
+// Reads from summarizeLearningStore + summarizeMeaningStore +
+// summarizeStyleEvidence + listStyleEvidence. Renders a top summary plus
+// a tabbed body: Style Evidence, Learning Corrections, POM Meanings.
+// No mutations — Reset and Manage Meanings live in the Auto Mode Manage
+// menu and stay there. Opens regardless of mode so the TD can audit prior
+// calibration before switching into Auto Mode.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// This is the orchestrator only — it wires the 4 tab defs to their build()
+// functions. The shared formatters live in learning-data-shared.js; the
+// generic tab-shell widget lives in learning-data-tabs.js; each tab's body
+// lives in its own file: learning-data-telemetry.js, learning-data-summary.js,
+// learning-data-corrections.js, learning-data-meanings.js,
+// learning-data-evidence.js.
+
+  function openLearningDataDialog() {
+    const learning = (typeof summarizeLearningStore === 'function') ? summarizeLearningStore() : null;
+    const meanings = (typeof summarizeMeaningStore === 'function') ? summarizeMeaningStore() : null;
+    const styleId = (typeof currentStyleId === 'function') ? currentStyleId() : null;
+    const evidence = (typeof summarizeStyleEvidence === 'function' && styleId != null)
+      ? summarizeStyleEvidence(styleId)
+      : null;
+    const evidenceRecords = (typeof listStyleEvidence === 'function' && styleId != null)
+      ? listStyleEvidence(styleId)
+      : [];
+    const telemetry = (typeof getAutoTelemetryReport === 'function')
+      ? getAutoTelemetryReport(10)
+      : null;
+
+    const dialog = buildDialog({
+      title: 'Learning data',
+      sub: 'What the tool has learned from your corrections.',
+    });
+    dialog.panel.classList.add('ld-wide');
+
+    const body = document.createElement('div');
+    body.className = 'dialog-body learning-data-body';
+
+    body.appendChild(buildLearningTopSummary(learning, meanings, evidence));
+
+    const tabs = buildLearningTabs([
+      {
+        id: 'evidence',
+        label: 'Style Evidence',
+        count: evidence ? evidence.pomRowCount : 0,
+        build: () => buildLearningEvidenceSection(evidence, evidenceRecords, meanings),
+      },
+      {
+        id: 'corrections',
+        label: 'Learning Corrections',
+        count: learning ? learning.rows.length : 0,
+        build: () => buildLearningAnchorSection(learning),
+      },
+      {
+        id: 'meanings',
+        label: 'POM Meanings',
+        count: meanings ? meanings.currentRows.length : 0,
+        build: () => buildLearningMeaningsSection(meanings),
+      },
+      {
+        id: 'telemetry',
+        label: 'Telemetry',
+        count: telemetry ? telemetry.count : 0,
+        build: () => buildLearningTelemetrySection(telemetry),
+      },
+    ]);
+    body.appendChild(tabs);
+
+    dialog.panel.appendChild(body);
+
+    const footer = document.createElement('div');
+    footer.className = 'picker-footer';
+    const note = document.createElement('span');
+    note.className = 'learning-data-foot-note';
+    note.textContent = 'Use the Manage menu to reset calibration or edit POM meanings.';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'picker-btn primary';
+    closeBtn.textContent = 'Close';
+    closeBtn.addEventListener('click', dialog.close);
+    footer.appendChild(note);
+    footer.appendChild(closeBtn);
+    dialog.panel.appendChild(footer);
+
+    dialog.open();
+    closeBtn.focus();
+  }
+
+  // ---- src/ui/dialogs/library-shared.js ----
+// Library dialog: cross-view grouping/formatting helpers used by BOTH the
+// "By Style" card grid and the "By Save" flat list.
+// Source part for app.js. Run `npm run build` after editing.
+
+  function groupLibraryEntriesByStyle(entries) {
+    const byStyle = new Map();
+    entries.forEach(entry => {
+      const key = entry.styleId || '';
+      if (!byStyle.has(key)) byStyle.set(key, []);
+      byStyle.get(key).push(entry);
+    });
+    const groups = [];
+    byStyle.forEach((items, styleId) => {
+      items.sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+      groups.push({ styleId, entries: items, latestSavedAt: items[0] ? items[0].savedAt : '' });
+    });
+    groups.sort((a, b) => {
+      if (!a.styleId && b.styleId) return 1;
+      if (a.styleId && !b.styleId) return -1;
+      return (b.latestSavedAt || '').localeCompare(a.latestSavedAt || '');
+    });
+    return groups;
+  }
+
+  function countDistinctStyles(entries) {
+    const seen = new Set();
+    entries.forEach(e => seen.add(e.styleId || ''));
+    return seen.size;
+  }
+
+  function formatLibraryDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
     const pad = (n) => String(n).padStart(2, '0');
-    const date = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-    if (!withTime) return date;
-    return date + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+      + '  ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
 
-  function td(text, className) {
-    const cell = document.createElement('td');
-    if (className) cell.className = className;
-    cell.textContent = text == null ? '' : String(text);
-    return cell;
+  function buildBadge(text, bg, fg) {
+    const el = document.createElement('span');
+    el.textContent = text;
+    el.style.fontSize = '11px';
+    el.style.fontWeight = '600';
+    el.style.padding = '2px 8px';
+    el.style.borderRadius = '999px';
+    el.style.background = bg;
+    el.style.color = fg;
+    return el;
   }
 
-  function statusLabelForRow(status) {
-    switch (status) {
-      case 'active': return 'Active';
-      case 'needs-more-samples': return 'Needs more samples';
-      case 'large-correction': return 'Large correction';
-      case 'conflicting': return 'Conflicting';
-      case 'empty': return 'Empty';
-      default: return status;
+  // ---- src/ui/dialogs/library-list-view.js ----
+// Library dialog: "By Save" flat-list rendering — every snapshot is its own
+// row, grouped under a per-style header.
+// Source part for app.js. Run `npm run build` after editing.
+
+  function renderLibraryList(container, entries, handlers) {
+    container.innerHTML = '';
+    if (!entries.length) {
+      const empty = document.createElement('div');
+      empty.style.padding = '32px 16px';
+      empty.style.textAlign = 'center';
+      empty.style.color = 'var(--muted)';
+      empty.style.fontSize = '13px';
+      empty.textContent = 'No projects saved yet. Use Save to archive the current board.';
+      container.appendChild(empty);
+      return;
     }
+    const groups = groupLibraryEntriesByStyle(entries);
+    groups.forEach(group => {
+      const header = document.createElement('div');
+      header.style.padding = '8px 12px';
+      header.style.background = '#f1f1f4';
+      header.style.borderTop = '1px solid #e6e6ea';
+      header.style.borderBottom = '1px solid #e6e6ea';
+      header.style.fontSize = '12px';
+      header.style.fontWeight = '600';
+      header.style.color = 'var(--text)';
+      header.textContent = (group.styleId || '(no style code)')
+        + '   ·   ' + group.entries.length + ' save' + (group.entries.length === 1 ? '' : 's');
+      container.appendChild(header);
+      group.entries.forEach(entry => {
+        container.appendChild(buildLibraryRow(entry, handlers));
+      });
+    });
   }
 
-  // Spread/MAD as a percentage of image dimension — mirrors how the
-  // median dx/dy column is displayed so the TD can compare magnitudes
-  // at a glance.
-  function formatLearningSpread(value) {
-    const num = Math.abs(Number(value) || 0);
-    const pct = num * 100;
-    return '±' + pct.toFixed(1) + '%';
+  function buildLibraryRow(entry, handlers) {
+    const row = document.createElement('div');
+    row.className = 'library-row';
+    row.style.display = 'flex';
+    row.style.gap = '12px';
+    row.style.alignItems = 'center';
+    row.style.padding = '10px 12px';
+    row.style.borderBottom = '1px solid #ececf0';
+    row.style.background = '#fff';
+
+    const thumb = document.createElement('div');
+    thumb.style.width = '64px';
+    thumb.style.height = '64px';
+    thumb.style.flex = '0 0 64px';
+    thumb.style.borderRadius = '6px';
+    thumb.style.border = '1px solid #e0e0e6';
+    thumb.style.background = '#f5f5f7 center/contain no-repeat';
+    thumb.style.overflow = 'hidden';
+    if (entry.thumbnailDataURL) {
+      thumb.style.backgroundImage = 'url("' + entry.thumbnailDataURL.replace(/"/g, '%22') + '")';
+    } else {
+      thumb.style.display = 'flex';
+      thumb.style.alignItems = 'center';
+      thumb.style.justifyContent = 'center';
+      thumb.style.color = '#9ca3af';
+      thumb.style.fontSize = '11px';
+      thumb.textContent = 'no image';
+    }
+    row.appendChild(thumb);
+
+    const info = document.createElement('div');
+    info.style.flex = '1';
+    info.style.minWidth = '0';
+
+    const title = document.createElement('div');
+    title.style.fontSize = '13px';
+    title.style.fontWeight = '600';
+    title.style.color = 'var(--text)';
+    title.textContent = entry.styleId || '(no style code)';
+    info.appendChild(title);
+
+    const date = document.createElement('div');
+    date.style.fontSize = '12px';
+    date.style.color = 'var(--muted)';
+    date.textContent = formatLibraryDate(entry.savedAt);
+    info.appendChild(date);
+
+    const counts = document.createElement('div');
+    counts.style.fontSize = '11.5px';
+    counts.style.color = 'var(--muted)';
+    counts.style.marginTop = '2px';
+    const parts = [];
+    parts.push((entry.annotationCount || 0) + ' line' + (entry.annotationCount === 1 ? '' : 's'));
+    parts.push((entry.imageCount || 0) + ' image' + (entry.imageCount === 1 ? '' : 's'));
+    if (entry.confirmedPomCount) parts.push(entry.confirmedPomCount + ' confirmed POM' + (entry.confirmedPomCount === 1 ? '' : 's'));
+    counts.textContent = parts.join('  ·  ');
+    info.appendChild(counts);
+
+    row.appendChild(info);
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.gap = '6px';
+    actions.style.flex = '0 0 auto';
+
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'picker-btn primary';
+    openBtn.textContent = 'Open';
+    openBtn.style.fontSize = '12px';
+    openBtn.style.padding = '5px 12px';
+    openBtn.addEventListener('click', () => handlers.onOpen(entry));
+
+    const downloadBtn = document.createElement('button');
+    downloadBtn.type = 'button';
+    downloadBtn.className = 'picker-btn';
+    downloadBtn.textContent = 'JSON';
+    downloadBtn.title = 'Download this snapshot as a .json file';
+    downloadBtn.style.fontSize = '12px';
+    downloadBtn.style.padding = '5px 10px';
+    downloadBtn.addEventListener('click', () => handlers.onDownload(entry));
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'picker-btn';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.style.fontSize = '12px';
+    deleteBtn.style.padding = '5px 10px';
+    deleteBtn.style.color = '#b91c1c';
+    deleteBtn.addEventListener('click', () => handlers.onDelete(entry));
+
+    actions.appendChild(openBtn);
+    actions.appendChild(downloadBtn);
+    actions.appendChild(deleteBtn);
+    row.appendChild(actions);
+
+    return row;
   }
 
-  function formatLearningDelta(value) {
-    const num = Number(value) || 0;
-    const pct = num * 100;
-    const sign = pct > 0 ? '+' : (pct < 0 ? '' : ' ');
-    return sign + pct.toFixed(1) + '%';
+  // ---- src/ui/dialogs/library-grid-view.js ----
+// Library dialog: "By Style" card-grid rendering — one card per styleId,
+// aggregated counts + evidence/meaning badges.
+// Source part for app.js. Run `npm run build` after editing.
+
+  function renderStyleGridView(container, entries, handlers) {
+    container.innerHTML = '';
+    if (!entries.length) {
+      const empty = document.createElement('div');
+      empty.style.padding = '32px 16px';
+      empty.style.textAlign = 'center';
+      empty.style.color = 'var(--muted)';
+      empty.style.fontSize = '13px';
+      empty.textContent = 'No styles yet. Save the current board to start building the library.';
+      container.appendChild(empty);
+      return;
+    }
+    const groups = groupLibraryEntriesByStyle(entries);
+    groups.forEach(group => {
+      container.appendChild(buildStyleCard(group, handlers));
+    });
   }
 
-  function formatTelemetryDuration(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return '—';
-    if (n < 1000) return Math.round(n) + 'ms';
-    return (n / 1000).toFixed(n < 10000 ? 1 : 0) + 's';
+  function styleMemoryBadges(styleId) {
+    let evidenceCount = 0;
+    let meaningCount = 0;
+    if (styleId && typeof summarizeStyleEvidence === 'function') {
+      try {
+        const s = summarizeStyleEvidence(styleId);
+        evidenceCount = (s && s.totalRecords) || 0;
+      } catch (err) { /* memory store may be uninitialized in test contexts */ }
+    }
+    if (styleId && typeof listConfirmedMeanings === 'function') {
+      try {
+        meaningCount = (listConfirmedMeanings(styleId) || []).length;
+      } catch (err) { /* same as above */ }
+    }
+    return { evidenceCount, meaningCount };
   }
 
-  function formatTelemetryNumber(value) {
-    const n = Number(value);
-    return Number.isFinite(n) ? String(Math.round(n * 10) / 10) : '—';
+  function buildStyleCard(group, handlers) {
+    const styleId = group.styleId;
+    const latest = group.entries[0] || null;
+    const saveCount = group.entries.length;
+    const totalLines = group.entries.reduce((sum, e) => sum + (e.annotationCount || 0), 0);
+    const totalImages = group.entries.reduce((sum, e) => sum + (e.imageCount || 0), 0);
+    const totalConfirmedPoms = group.entries.reduce((sum, e) => sum + (e.confirmedPomCount || 0), 0);
+    const { evidenceCount, meaningCount } = styleMemoryBadges(styleId);
+
+    const row = document.createElement('div');
+    row.className = 'library-style-card';
+    row.style.display = 'flex';
+    row.style.gap = '14px';
+    row.style.alignItems = 'stretch';
+    row.style.padding = '12px 14px';
+    row.style.borderBottom = '1px solid #ececf0';
+    row.style.background = '#fff';
+
+    const thumb = document.createElement('div');
+    thumb.style.width = '88px';
+    thumb.style.height = '88px';
+    thumb.style.flex = '0 0 88px';
+    thumb.style.borderRadius = '8px';
+    thumb.style.border = '1px solid #e0e0e6';
+    thumb.style.background = '#f5f5f7 center/contain no-repeat';
+    thumb.style.overflow = 'hidden';
+    const cover = latest && latest.thumbnailDataURL;
+    if (cover) {
+      thumb.style.backgroundImage = 'url("' + cover.replace(/"/g, '%22') + '")';
+    } else {
+      thumb.style.display = 'flex';
+      thumb.style.alignItems = 'center';
+      thumb.style.justifyContent = 'center';
+      thumb.style.color = '#9ca3af';
+      thumb.style.fontSize = '11px';
+      thumb.textContent = 'no image';
+    }
+    row.appendChild(thumb);
+
+    const info = document.createElement('div');
+    info.style.flex = '1';
+    info.style.minWidth = '0';
+    info.style.display = 'flex';
+    info.style.flexDirection = 'column';
+    info.style.justifyContent = 'space-between';
+
+    const title = document.createElement('div');
+    title.style.fontSize = '14px';
+    title.style.fontWeight = '600';
+    title.style.color = 'var(--text)';
+    title.textContent = styleId || '(no style code)';
+    info.appendChild(title);
+
+    const lastSeen = document.createElement('div');
+    lastSeen.style.fontSize = '12px';
+    lastSeen.style.color = 'var(--muted)';
+    lastSeen.textContent = 'Last saved: ' + formatLibraryDate(latest && latest.savedAt);
+    info.appendChild(lastSeen);
+
+    const counts = document.createElement('div');
+    counts.style.fontSize = '11.5px';
+    counts.style.color = 'var(--muted)';
+    const countParts = [
+      saveCount + ' save' + (saveCount === 1 ? '' : 's'),
+      totalLines + ' line' + (totalLines === 1 ? '' : 's'),
+      totalImages + ' image' + (totalImages === 1 ? '' : 's'),
+    ];
+    if (totalConfirmedPoms) countParts.push(totalConfirmedPoms + ' confirmed POM' + (totalConfirmedPoms === 1 ? '' : 's'));
+    counts.textContent = countParts.join('  ·  ');
+    info.appendChild(counts);
+
+    if (styleId && (evidenceCount > 0 || meaningCount > 0)) {
+      const badges = document.createElement('div');
+      badges.style.display = 'flex';
+      badges.style.gap = '6px';
+      badges.style.marginTop = '4px';
+      badges.style.flexWrap = 'wrap';
+      if (meaningCount > 0) badges.appendChild(buildBadge(meaningCount + ' meaning' + (meaningCount === 1 ? '' : 's'), '#dbeafe', '#1e40af'));
+      if (evidenceCount > 0) badges.appendChild(buildBadge(evidenceCount + ' evidence', '#dcfce7', '#166534'));
+      info.appendChild(badges);
+    }
+    row.appendChild(info);
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.flexDirection = 'column';
+    actions.style.gap = '6px';
+    actions.style.justifyContent = 'center';
+    actions.style.flex = '0 0 auto';
+
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'picker-btn primary';
+    openBtn.textContent = 'Open latest';
+    openBtn.style.fontSize = '12px';
+    openBtn.style.padding = '5px 12px';
+    openBtn.disabled = !latest;
+    openBtn.addEventListener('click', () => {
+      if (latest) handlers.onOpen(latest);
+    });
+
+    const viewSavesBtn = document.createElement('button');
+    viewSavesBtn.type = 'button';
+    viewSavesBtn.className = 'picker-btn';
+    viewSavesBtn.textContent = saveCount > 1 ? 'View ' + saveCount + ' saves' : 'View saves';
+    viewSavesBtn.style.fontSize = '12px';
+    viewSavesBtn.style.padding = '5px 10px';
+    viewSavesBtn.addEventListener('click', () => handlers.onViewSaves(styleId));
+
+    actions.appendChild(openBtn);
+    actions.appendChild(viewSavesBtn);
+    row.appendChild(actions);
+
+    return row;
   }
 
   // ---- src/ui/dialogs/library-dialog.js ----
@@ -2907,6 +3128,12 @@
 // Opening a snapshot reuses the existing loadProject() flow, so a re-save
 // creates a new entry (append history), matching the user's chosen
 // "keep history" behavior.
+//
+// This is the stateful dialog controller only (tabs, filter, refresh, the
+// async open/delete/download handlers). The cross-view grouping/formatting
+// helpers live in library-shared.js; the "By Save" flat-list rendering lives
+// in library-list-view.js; the "By Style" card-grid rendering lives in
+// library-grid-view.js.
 
   function openLibraryDialog() {
     const dialog = buildDialog({
@@ -3159,340 +3386,12 @@
     refresh();
   }
 
-  function renderLibraryList(container, entries, handlers) {
-    container.innerHTML = '';
-    if (!entries.length) {
-      const empty = document.createElement('div');
-      empty.style.padding = '32px 16px';
-      empty.style.textAlign = 'center';
-      empty.style.color = 'var(--muted)';
-      empty.style.fontSize = '13px';
-      empty.textContent = 'No projects saved yet. Use Save to archive the current board.';
-      container.appendChild(empty);
-      return;
-    }
-    const groups = groupLibraryEntriesByStyle(entries);
-    groups.forEach(group => {
-      const header = document.createElement('div');
-      header.style.padding = '8px 12px';
-      header.style.background = '#f1f1f4';
-      header.style.borderTop = '1px solid #e6e6ea';
-      header.style.borderBottom = '1px solid #e6e6ea';
-      header.style.fontSize = '12px';
-      header.style.fontWeight = '600';
-      header.style.color = 'var(--text)';
-      header.textContent = (group.styleId || '(no style code)')
-        + '   ·   ' + group.entries.length + ' save' + (group.entries.length === 1 ? '' : 's');
-      container.appendChild(header);
-      group.entries.forEach(entry => {
-        container.appendChild(buildLibraryRow(entry, handlers));
-      });
-    });
-  }
-
-  function groupLibraryEntriesByStyle(entries) {
-    const byStyle = new Map();
-    entries.forEach(entry => {
-      const key = entry.styleId || '';
-      if (!byStyle.has(key)) byStyle.set(key, []);
-      byStyle.get(key).push(entry);
-    });
-    const groups = [];
-    byStyle.forEach((items, styleId) => {
-      items.sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
-      groups.push({ styleId, entries: items, latestSavedAt: items[0] ? items[0].savedAt : '' });
-    });
-    groups.sort((a, b) => {
-      if (!a.styleId && b.styleId) return 1;
-      if (a.styleId && !b.styleId) return -1;
-      return (b.latestSavedAt || '').localeCompare(a.latestSavedAt || '');
-    });
-    return groups;
-  }
-
-  function buildLibraryRow(entry, handlers) {
-    const row = document.createElement('div');
-    row.className = 'library-row';
-    row.style.display = 'flex';
-    row.style.gap = '12px';
-    row.style.alignItems = 'center';
-    row.style.padding = '10px 12px';
-    row.style.borderBottom = '1px solid #ececf0';
-    row.style.background = '#fff';
-
-    const thumb = document.createElement('div');
-    thumb.style.width = '64px';
-    thumb.style.height = '64px';
-    thumb.style.flex = '0 0 64px';
-    thumb.style.borderRadius = '6px';
-    thumb.style.border = '1px solid #e0e0e6';
-    thumb.style.background = '#f5f5f7 center/contain no-repeat';
-    thumb.style.overflow = 'hidden';
-    if (entry.thumbnailDataURL) {
-      thumb.style.backgroundImage = 'url("' + entry.thumbnailDataURL.replace(/"/g, '%22') + '")';
-    } else {
-      thumb.style.display = 'flex';
-      thumb.style.alignItems = 'center';
-      thumb.style.justifyContent = 'center';
-      thumb.style.color = '#9ca3af';
-      thumb.style.fontSize = '11px';
-      thumb.textContent = 'no image';
-    }
-    row.appendChild(thumb);
-
-    const info = document.createElement('div');
-    info.style.flex = '1';
-    info.style.minWidth = '0';
-
-    const title = document.createElement('div');
-    title.style.fontSize = '13px';
-    title.style.fontWeight = '600';
-    title.style.color = 'var(--text)';
-    title.textContent = entry.styleId || '(no style code)';
-    info.appendChild(title);
-
-    const date = document.createElement('div');
-    date.style.fontSize = '12px';
-    date.style.color = 'var(--muted)';
-    date.textContent = formatLibraryDate(entry.savedAt);
-    info.appendChild(date);
-
-    const counts = document.createElement('div');
-    counts.style.fontSize = '11.5px';
-    counts.style.color = 'var(--muted)';
-    counts.style.marginTop = '2px';
-    const parts = [];
-    parts.push((entry.annotationCount || 0) + ' line' + (entry.annotationCount === 1 ? '' : 's'));
-    parts.push((entry.imageCount || 0) + ' image' + (entry.imageCount === 1 ? '' : 's'));
-    if (entry.confirmedPomCount) parts.push(entry.confirmedPomCount + ' confirmed POM' + (entry.confirmedPomCount === 1 ? '' : 's'));
-    counts.textContent = parts.join('  ·  ');
-    info.appendChild(counts);
-
-    row.appendChild(info);
-
-    const actions = document.createElement('div');
-    actions.style.display = 'flex';
-    actions.style.gap = '6px';
-    actions.style.flex = '0 0 auto';
-
-    const openBtn = document.createElement('button');
-    openBtn.type = 'button';
-    openBtn.className = 'picker-btn primary';
-    openBtn.textContent = 'Open';
-    openBtn.style.fontSize = '12px';
-    openBtn.style.padding = '5px 12px';
-    openBtn.addEventListener('click', () => handlers.onOpen(entry));
-
-    const downloadBtn = document.createElement('button');
-    downloadBtn.type = 'button';
-    downloadBtn.className = 'picker-btn';
-    downloadBtn.textContent = 'JSON';
-    downloadBtn.title = 'Download this snapshot as a .json file';
-    downloadBtn.style.fontSize = '12px';
-    downloadBtn.style.padding = '5px 10px';
-    downloadBtn.addEventListener('click', () => handlers.onDownload(entry));
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'picker-btn';
-    deleteBtn.textContent = 'Delete';
-    deleteBtn.style.fontSize = '12px';
-    deleteBtn.style.padding = '5px 10px';
-    deleteBtn.style.color = '#b91c1c';
-    deleteBtn.addEventListener('click', () => handlers.onDelete(entry));
-
-    actions.appendChild(openBtn);
-    actions.appendChild(downloadBtn);
-    actions.appendChild(deleteBtn);
-    row.appendChild(actions);
-
-    return row;
-  }
-
-  function countDistinctStyles(entries) {
-    const seen = new Set();
-    entries.forEach(e => seen.add(e.styleId || ''));
-    return seen.size;
-  }
-
-  function renderStyleGridView(container, entries, handlers) {
-    container.innerHTML = '';
-    if (!entries.length) {
-      const empty = document.createElement('div');
-      empty.style.padding = '32px 16px';
-      empty.style.textAlign = 'center';
-      empty.style.color = 'var(--muted)';
-      empty.style.fontSize = '13px';
-      empty.textContent = 'No styles yet. Save the current board to start building the library.';
-      container.appendChild(empty);
-      return;
-    }
-    const groups = groupLibraryEntriesByStyle(entries);
-    groups.forEach(group => {
-      container.appendChild(buildStyleCard(group, handlers));
-    });
-  }
-
-  function styleMemoryBadges(styleId) {
-    let evidenceCount = 0;
-    let meaningCount = 0;
-    if (styleId && typeof summarizeStyleEvidence === 'function') {
-      try {
-        const s = summarizeStyleEvidence(styleId);
-        evidenceCount = (s && s.totalRecords) || 0;
-      } catch (err) { /* memory store may be uninitialized in test contexts */ }
-    }
-    if (styleId && typeof listConfirmedMeanings === 'function') {
-      try {
-        meaningCount = (listConfirmedMeanings(styleId) || []).length;
-      } catch (err) { /* same as above */ }
-    }
-    return { evidenceCount, meaningCount };
-  }
-
-  function buildStyleCard(group, handlers) {
-    const styleId = group.styleId;
-    const latest = group.entries[0] || null;
-    const saveCount = group.entries.length;
-    const totalLines = group.entries.reduce((sum, e) => sum + (e.annotationCount || 0), 0);
-    const totalImages = group.entries.reduce((sum, e) => sum + (e.imageCount || 0), 0);
-    const totalConfirmedPoms = group.entries.reduce((sum, e) => sum + (e.confirmedPomCount || 0), 0);
-    const { evidenceCount, meaningCount } = styleMemoryBadges(styleId);
-
-    const row = document.createElement('div');
-    row.className = 'library-style-card';
-    row.style.display = 'flex';
-    row.style.gap = '14px';
-    row.style.alignItems = 'stretch';
-    row.style.padding = '12px 14px';
-    row.style.borderBottom = '1px solid #ececf0';
-    row.style.background = '#fff';
-
-    const thumb = document.createElement('div');
-    thumb.style.width = '88px';
-    thumb.style.height = '88px';
-    thumb.style.flex = '0 0 88px';
-    thumb.style.borderRadius = '8px';
-    thumb.style.border = '1px solid #e0e0e6';
-    thumb.style.background = '#f5f5f7 center/contain no-repeat';
-    thumb.style.overflow = 'hidden';
-    const cover = latest && latest.thumbnailDataURL;
-    if (cover) {
-      thumb.style.backgroundImage = 'url("' + cover.replace(/"/g, '%22') + '")';
-    } else {
-      thumb.style.display = 'flex';
-      thumb.style.alignItems = 'center';
-      thumb.style.justifyContent = 'center';
-      thumb.style.color = '#9ca3af';
-      thumb.style.fontSize = '11px';
-      thumb.textContent = 'no image';
-    }
-    row.appendChild(thumb);
-
-    const info = document.createElement('div');
-    info.style.flex = '1';
-    info.style.minWidth = '0';
-    info.style.display = 'flex';
-    info.style.flexDirection = 'column';
-    info.style.justifyContent = 'space-between';
-
-    const title = document.createElement('div');
-    title.style.fontSize = '14px';
-    title.style.fontWeight = '600';
-    title.style.color = 'var(--text)';
-    title.textContent = styleId || '(no style code)';
-    info.appendChild(title);
-
-    const lastSeen = document.createElement('div');
-    lastSeen.style.fontSize = '12px';
-    lastSeen.style.color = 'var(--muted)';
-    lastSeen.textContent = 'Last saved: ' + formatLibraryDate(latest && latest.savedAt);
-    info.appendChild(lastSeen);
-
-    const counts = document.createElement('div');
-    counts.style.fontSize = '11.5px';
-    counts.style.color = 'var(--muted)';
-    const countParts = [
-      saveCount + ' save' + (saveCount === 1 ? '' : 's'),
-      totalLines + ' line' + (totalLines === 1 ? '' : 's'),
-      totalImages + ' image' + (totalImages === 1 ? '' : 's'),
-    ];
-    if (totalConfirmedPoms) countParts.push(totalConfirmedPoms + ' confirmed POM' + (totalConfirmedPoms === 1 ? '' : 's'));
-    counts.textContent = countParts.join('  ·  ');
-    info.appendChild(counts);
-
-    if (styleId && (evidenceCount > 0 || meaningCount > 0)) {
-      const badges = document.createElement('div');
-      badges.style.display = 'flex';
-      badges.style.gap = '6px';
-      badges.style.marginTop = '4px';
-      badges.style.flexWrap = 'wrap';
-      if (meaningCount > 0) badges.appendChild(buildBadge(meaningCount + ' meaning' + (meaningCount === 1 ? '' : 's'), '#dbeafe', '#1e40af'));
-      if (evidenceCount > 0) badges.appendChild(buildBadge(evidenceCount + ' evidence', '#dcfce7', '#166534'));
-      info.appendChild(badges);
-    }
-    row.appendChild(info);
-
-    const actions = document.createElement('div');
-    actions.style.display = 'flex';
-    actions.style.flexDirection = 'column';
-    actions.style.gap = '6px';
-    actions.style.justifyContent = 'center';
-    actions.style.flex = '0 0 auto';
-
-    const openBtn = document.createElement('button');
-    openBtn.type = 'button';
-    openBtn.className = 'picker-btn primary';
-    openBtn.textContent = 'Open latest';
-    openBtn.style.fontSize = '12px';
-    openBtn.style.padding = '5px 12px';
-    openBtn.disabled = !latest;
-    openBtn.addEventListener('click', () => {
-      if (latest) handlers.onOpen(latest);
-    });
-
-    const viewSavesBtn = document.createElement('button');
-    viewSavesBtn.type = 'button';
-    viewSavesBtn.className = 'picker-btn';
-    viewSavesBtn.textContent = saveCount > 1 ? 'View ' + saveCount + ' saves' : 'View saves';
-    viewSavesBtn.style.fontSize = '12px';
-    viewSavesBtn.style.padding = '5px 10px';
-    viewSavesBtn.addEventListener('click', () => handlers.onViewSaves(styleId));
-
-    actions.appendChild(openBtn);
-    actions.appendChild(viewSavesBtn);
-    row.appendChild(actions);
-
-    return row;
-  }
-
-  function buildBadge(text, bg, fg) {
-    const el = document.createElement('span');
-    el.textContent = text;
-    el.style.fontSize = '11px';
-    el.style.fontWeight = '600';
-    el.style.padding = '2px 8px';
-    el.style.borderRadius = '999px';
-    el.style.background = bg;
-    el.style.color = fg;
-    return el;
-  }
-
-  function formatLibraryDate(iso) {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return iso;
-    const pad = (n) => String(n).padStart(2, '0');
-    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
-      + '  ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-  }
-
-  // ---- src/ui/dialogs/size-run-dialog.js ----
-// Size-run grading dialog: grade the base spec into a full size run.
-// Additive and offline — reads each POM's base value (its Size L, else the
-// calibrated measured value), applies a per-POM per-size-step increment, and
-// renders a POM x size grid the TD can copy. Grade rules live in
-// state.gradeRules (persisted + undoable); NOTHING here touches the rule JSON.
+  // ---- src/ui/dialogs/grading-rules-model.js ----
+// Shared grade-rule domain model: base sizes, the house default step table,
+// and the pure functions that turn a base value + rule into a graded run.
+// Used by both size-run-dialog.js (read-only preview) and grading-dialog.js
+// (per-size edit). Grade rules live in state.gradeRules (persisted +
+// undoable); NOTHING here touches the rule JSON.
 // Source part for app.js. Run `npm run build` after editing.
 
   const GRADE_SIZES = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
@@ -3564,6 +3463,18 @@
     const baseIdx = GRADE_SIZES.indexOf(GRADE_BASE_SIZE);
     return GRADE_SIZES.map((_, i) => (rule.hold ? base : base + (i - baseIdx) * rule.step));
   }
+
+  // ---- src/ui/dialogs/size-run-dialog.js ----
+// Size-run grading dialog: grade the base spec into a full size run.
+// Additive and offline — reads each POM's base value (its Size L, else the
+// calibrated measured value), applies a per-POM per-size-step increment, and
+// renders a POM x size grid the TD can copy. Grade rules live in
+// state.gradeRules (persisted + undoable); NOTHING here touches the rule JSON.
+// The grade-rule domain model (GRADE_SIZES, GRADE_BASE_SIZE,
+// HOUSE_GRADE_INCHES, inchesToUnit, getGradeRule, gradeBaseValue,
+// gradedRunForPom) lives in grading-rules-model.js, shared with
+// grading-dialog.js.
+// Source part for app.js. Run `npm run build` after editing.
 
   function pomDisplayName(pomKey) {
     const entry = POM_TEMPLATE && POM_TEMPLATE[String(pomKey)];
@@ -14680,15 +14591,14 @@ const BOM_MATERIAL_LIBRARY = [
     await restoreSnapshot(next.snapshot);
   }
 
-  // ---- src/project/project-io.js ----
-// Save and open .json project files.
+  // ---- src/project/project-save.js ----
+// Save a .json project file: serialize, write to disk, archive to the
+// library. Opening a saved file is project-load.js.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // buildProjectSnapshot serializes board state into the on-disk project
-// format. loadProject restores that snapshot, including image pixel data,
-// and seeds a fresh history stack. Unapplied Auto Mode drafts are never
-// persisted; the open/save flow prompts the TD to apply, discard, or
-// cancel before replacing the board.
+// format. Unapplied Auto Mode drafts are never persisted; the save flow
+// prompts the TD to apply, discard, or cancel before writing.
 
   function buildProjectSnapshot() {
     return {
@@ -14819,6 +14729,16 @@ const BOM_MATERIAL_LIBRARY = [
     const pad = (value) => String(value).padStart(2, '0');
     return 'bra-sketch-project-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' + pad(now.getHours()) + pad(now.getMinutes()) + '.json';
   }
+
+  // ---- src/project/project-load.js ----
+// Open a .json project file: file-input handling, then restore it onto the
+// board. Saving is project-save.js.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// loadProject restores a saved snapshot, including image pixel data, and
+// seeds a fresh history stack. Unapplied Auto Mode drafts are never
+// silently dropped; the open flow prompts the TD to apply, discard, or
+// cancel before replacing the board.
 
   function onProjectFileChosen(e) {
     const input = e.target;
@@ -15134,6 +15054,36 @@ const BOM_MATERIAL_LIBRARY = [
     try { localStorage.removeItem(AUTOSAVE_KEY); } catch (_) { /* ignore */ }
   }
 
+  // beforeunload guard. Setting event.returnValue to any string triggers
+  // Chrome/Safari/Firefox's built-in "Reload site?" prompt. We only wire
+  // it up when there is actually work on the board, and the message is
+  // ignored by modern browsers anyway (they show a generic warning) —
+  // what matters is that the confirm dialog appears at all.
+  let beforeUnloadGuardInstalled = false;
+  function installBeforeUnloadGuard() {
+    if (beforeUnloadGuardInstalled || typeof window === 'undefined') return;
+    beforeUnloadGuardInstalled = true;
+    window.addEventListener('beforeunload', (event) => {
+      // Flush any pending autosave so the very latest edit persists even
+      // when the user forces a reload after a UI freeze.
+      try { flushAutosave(); } catch (_) { /* best effort */ }
+      if (!hasUnsavedWork()) return;
+      event.preventDefault();
+      event.returnValue = '';
+      return '';
+    });
+  }
+
+  // ---- src/ui/dialogs/autosave-restore-banner.js ----
+// Autosave restore banner: the hand-rolled floating UI that offers to
+// restore a recovered autosave record after a crash or accidental reload.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Split out of src/project/autosave.js: this is presentation only (DOM
+// construction for the banner and its Restore/Discard buttons). The
+// persistence engine it reads from (readAutosave/clearAutosave/
+// suspendAutosave/resumeAutosave/hasUnsavedWork) stays in autosave.js.
+
   function describeAutosaveRecord(record) {
     if (!record || !record.snapshot || !record.snapshot.state) return '';
     const s = record.snapshot.state;
@@ -15247,26 +15197,6 @@ const BOM_MATERIAL_LIBRARY = [
 
     banner.appendChild(btnRow);
     document.body.appendChild(banner);
-  }
-
-  // beforeunload guard. Setting event.returnValue to any string triggers
-  // Chrome/Safari/Firefox's built-in "Reload site?" prompt. We only wire
-  // it up when there is actually work on the board, and the message is
-  // ignored by modern browsers anyway (they show a generic warning) —
-  // what matters is that the confirm dialog appears at all.
-  let beforeUnloadGuardInstalled = false;
-  function installBeforeUnloadGuard() {
-    if (beforeUnloadGuardInstalled || typeof window === 'undefined') return;
-    beforeUnloadGuardInstalled = true;
-    window.addEventListener('beforeunload', (event) => {
-      // Flush any pending autosave so the very latest edit persists even
-      // when the user forces a reload after a UI freeze.
-      try { flushAutosave(); } catch (_) { /* best effort */ }
-      if (!hasUnsavedWork()) return;
-      event.preventDefault();
-      event.returnValue = '';
-      return '';
-    });
   }
 
   // ---- src/project/project-library.js ----
@@ -15472,52 +15402,242 @@ const BOM_MATERIAL_LIBRARY = [
     };
   }
 
-  // ---- src/import/pptx.js ----
-// PowerPoint (.pptx) import: ZIP parsing, slide picture extraction, picker UI.
-// Source part for app.js. Run `npm run build` after editing.
+  // ---- src/import/zip-reader.js ----
+// Minimal, dependency-free ZIP reader (central directory + DEFLATE via
+// DecompressionStream). Source part for app.js. Run `npm run build` after
+// editing.
 //
-// A .pptx is a ZIP container with one xml per slide and embedded media under
-// ppt/media/. extractSlidesFromPptx pulls the largest pictures from each
-// slide (skipping tiny logo/icon art), groupEntriesBySlide collapses them
-// into per-page rows, and openPptxPicker lets the TD choose which pages to
-// import. The ZIP reader at the bottom is hand-rolled so the app stays
-// dependency-free.
+// Fully generic — no pptx-specific or app-specific (state/el) references.
+// Split out of src/import/pptx.js so it can be reused by any future
+// ZIP-container import (e.g. .docx) and reasoned about independently of
+// OOXML/slide parsing. Must load before src/import/pptx-xml.js and
+// src/import/pptx.js, both of which call into it.
 
-  async function onPptxFileChosen(e) {
-    const input = e.target;
-    const file = input.files && input.files[0];
-    input.value = '';
-    if (!file) return;
-    await processPptxFile(file);
+  function parseZip(buffer) {
+    const dv = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+    let eocd = -1;
+    for (let i = buffer.byteLength - 22; i >= 0; i -= 1) {
+      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('Not a valid ZIP/.pptx file');
+    const count = dv.getUint16(eocd + 10, true);
+    let p = dv.getUint32(eocd + 16, true);
+    const entries = {};
+    for (let n = 0; n < count; n += 1) {
+      if (dv.getUint32(p, true) !== 0x02014b50) break;
+      const method = dv.getUint16(p + 10, true);
+      const compSize = dv.getUint32(p + 20, true);
+      const nameLen = dv.getUint16(p + 28, true);
+      const extraLen = dv.getUint16(p + 30, true);
+      const commentLen = dv.getUint16(p + 32, true);
+      const localOffset = dv.getUint32(p + 42, true);
+      const name = utf8Decode(bytes.subarray(p + 46, p + 46 + nameLen));
+      entries[name] = { method, compSize, localOffset };
+      p += 46 + nameLen + extraLen + commentLen;
+    }
+    return { dv, bytes, entries, _cache: {} };
   }
 
-  async function processPptxFile(file) {
-    el.importPptxBtn.disabled = true;
-    const prevLabel = el.importPptxBtn.textContent;
-    el.importPptxBtn.textContent = 'Importing…';
+  function entryCompressedBytes(zip, name) {
+    const e = zip.entries[name];
+    if (!e) return null;
+    const lo = e.localOffset;
+    if (zip.dv.getUint32(lo, true) !== 0x04034b50) return null;
+    const nameLen = zip.dv.getUint16(lo + 26, true);
+    const extraLen = zip.dv.getUint16(lo + 28, true);
+    const start = lo + 30 + nameLen + extraLen;
+    return { method: e.method, data: zip.bytes.subarray(start, start + e.compSize) };
+  }
+
+  async function readZipEntryBytes(zip, name) {
+    const raw = entryCompressedBytes(zip, name);
+    if (!raw) return null;
+    if (raw.method === 0) return raw.data;
+    if (raw.method === 8) return await inflateRaw(raw.data);
+    throw new Error('Unsupported ZIP compression method ' + raw.method);
+  }
+
+  async function readZipEntryText(zip, name) {
+    const bytes = await readZipEntryBytes(zip, name);
+    return bytes ? utf8Decode(bytes) : '';
+  }
+
+  async function inflateRaw(bytes) {
+    const ds = new DecompressionStream('deflate-raw');
+    const stream = new Response(bytes).body.pipeThrough(ds);
+    const ab = await new Response(stream).arrayBuffer();
+    return new Uint8Array(ab);
+  }
+
+  function utf8Decode(bytes) {
+    return new TextDecoder('utf-8').decode(bytes);
+  }
+
+  function bytesToBase64(bytes) {
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  // ---- src/import/pptx-xml.js ----
+// PowerPoint (.pptx) OOXML/slide-XML parsing: pulls picture entries out of
+// the slide and relationship XML. Source part for app.js. Run
+// `npm run build` after editing.
+//
+// Split out of src/import/pptx.js. Domain logic specific to PowerPoint's
+// XML schema, distinct from the generic ZIP layer below it
+// (src/import/zip-reader.js, which it calls into) and the picker UI above
+// it (src/ui/dialogs/pptx-picker-dialog.js). Must load after
+// src/import/zip-reader.js.
+
+  // A .pptx is a ZIP container. Parse it natively and pull one or more
+  // picture images per slide, in slide order, skipping tiny logo/icon art.
+  // Returns slide-tagged entries [{slide, dataURL}] so the import picker can
+  // show which page each image came from.
+  async function extractSlidesFromPptx(buffer) {
+    const zip = parseZip(buffer);
+    const slideArea = await readSlideArea(zip);
+    const minArea = slideArea ? slideArea * 0.03 : 0;
+
+    const slideNames = Object.keys(zip.entries)
+      .filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+      .sort((a, b) => slideNumber(a) - slideNumber(b));
+
+    const entries = [];
+    const seenTargets = new Set();
+
+    for (const slideName of slideNames) {
+      const xmlText = await readZipEntryText(zip, slideName);
+      if (!xmlText) continue;
+      const relsName = slideName.replace(/slides\/(slide\d+\.xml)$/, 'slides/_rels/$1.rels');
+      const relsText = await readZipEntryText(zip, relsName);
+      const relMap = parseRels(relsText);
+      const slide = slideNumber(slideName);
+
+      const picks = pickSlidePictures(xmlText, relMap, slideName, minArea);
+      for (const target of picks) {
+        if (seenTargets.has(target)) continue;
+        seenTargets.add(target);
+        const dataURL = await mediaTargetToDataURL(zip, target);
+        if (dataURL) entries.push({ slide, dataURL });
+      }
+    }
+
+    // Fallback: deck stores images outside <p:pic> (e.g. backgrounds) — grab raw media.
+    if (!entries.length) {
+      const mediaNames = Object.keys(zip.entries)
+        .filter(name => /^ppt\/media\/[^/]+\.(png|jpe?g|gif|bmp)$/i.test(name))
+        .sort((a, b) => slideNumber(a) - slideNumber(b));
+      let i = 1;
+      for (const name of mediaNames) {
+        const dataURL = await mediaTargetToDataURL(zip, name);
+        if (dataURL) entries.push({ slide: i++, dataURL });
+      }
+    }
+    return entries;
+  }
+
+  function slideNumber(name) {
+    const m = name.match(/(\d+)\D*$/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  async function readSlideArea(zip) {
     try {
-      const buffer = await file.arrayBuffer();
-      const entries = await extractSlidesFromPptx(buffer);
-      if (!entries.length) {
-        showToast('No usable sketch images were found in that deck.', 4200);
-        return;
-      }
-      // Group images by their source slide so each picker choice is a whole
-      // page: a slide with several pictures imports all of them together.
-      const pages = groupEntriesBySlide(entries);
-      if (pages.length === 1) {
-        await addImagesFromDataURLs(pages[0].dataURLs);
-        return;
-      }
-      openPptxPicker(pages);
-    } catch (error) {
-      console.error(error);
-      showToast('Could not read that .pptx file. It may be corrupt or use an unsupported format.', 4600);
-    } finally {
-      el.importPptxBtn.disabled = false;
-      el.importPptxBtn.textContent = prevLabel;
+      if (!zip.entries['ppt/presentation.xml']) return 0;
+      const text = await readZipEntryText(zip, 'ppt/presentation.xml');
+      if (!text) return 0;
+      const doc = new DOMParser().parseFromString(text, 'application/xml');
+      const sz = doc.getElementsByTagName('p:sldSz')[0] || doc.getElementsByTagName('sldSz')[0];
+      if (!sz) return 0;
+      const cx = parseFloat(sz.getAttribute('cx') || '0');
+      const cy = parseFloat(sz.getAttribute('cy') || '0');
+      return cx > 0 && cy > 0 ? cx * cy : 0;
+    } catch (_) {
+      return 0;
     }
   }
+
+  function parseRels(relsText) {
+    const map = {};
+    if (!relsText) return map;
+    const doc = new DOMParser().parseFromString(relsText, 'application/xml');
+    const rels = doc.getElementsByTagName('Relationship');
+    for (const rel of Array.from(rels)) {
+      const id = rel.getAttribute('Id');
+      const target = rel.getAttribute('Target');
+      if (id && target) map[id] = target;
+    }
+    return map;
+  }
+
+  function pickSlidePictures(xmlText, relMap, slideName, minArea) {
+    const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+    const pics = Array.from(doc.getElementsByTagName('p:pic'));
+    const results = [];
+    let largest = null;
+    let largestArea = -1;
+
+    for (const pic of pics) {
+      const blip = pic.getElementsByTagName('a:blip')[0];
+      if (!blip) continue;
+      const embed = blip.getAttribute('r:embed') || blip.getAttribute('embed');
+      if (!embed || !relMap[embed]) continue;
+      const target = resolveRelTarget(relMap[embed], slideName);
+      if (!target) continue;
+
+      let area = 0;
+      for (const ext of Array.from(pic.getElementsByTagName('a:ext'))) {
+        const cx = parseFloat(ext.getAttribute('cx') || '0');
+        const cy = parseFloat(ext.getAttribute('cy') || '0');
+        area = Math.max(area, cx * cy);
+      }
+      if (area > largestArea) { largestArea = area; largest = target; }
+      if (minArea && area && area < minArea) continue;
+      results.push(target);
+    }
+
+    // Never drop a slide entirely: if everything was filtered out, keep its biggest picture.
+    if (!results.length && largest) results.push(largest);
+    return results;
+  }
+
+  function resolveRelTarget(target, slideName) {
+    if (/^https?:/i.test(target)) return null;
+    const baseDir = slideName.replace(/\/[^/]*$/, '/');
+    const parts = (baseDir + target).split('/');
+    const stack = [];
+    for (const part of parts) {
+      if (part === '..') stack.pop();
+      else if (part !== '.' && part !== '') stack.push(part);
+    }
+    return stack.join('/');
+  }
+
+  async function mediaTargetToDataURL(zip, target) {
+    const ext = (target.split('.').pop() || '').toLowerCase();
+    const mime = {
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      gif: 'image/gif', bmp: 'image/bmp',
+    }[ext];
+    if (!mime) return null; // emf/wmf/svg etc. can't be drawn to canvas reliably
+    const bytes = await readZipEntryBytes(zip, target);
+    if (!bytes) return null;
+    return 'data:' + mime + ';base64,' + bytesToBase64(bytes);
+  }
+
+  // ---- src/ui/dialogs/pptx-picker-dialog.js ----
+// PowerPoint (.pptx) import picker: a modal that previews every page found
+// in a deck and lets the user choose which ones to add to the board.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Split out of src/import/pptx.js. A self-contained thumbnail-grid dialog
+// with no ZIP or OOXML knowledge — only needs page data
+// ({slide, dataURLs}), addImagesFromDataURLs, and showToast.
 
   // Collapse per-image entries [{slide, dataURL}] into per-page groups
   // [{slide, dataURLs:[...]}], preserving slide order, so a slide that holds
@@ -15679,212 +15799,49 @@ const BOM_MATERIAL_LIBRARY = [
     document.body.appendChild(overlay);
   }
 
-  // A .pptx is a ZIP container. Parse it natively and pull one or more
-  // picture images per slide, in slide order, skipping tiny logo/icon art.
-  // Returns slide-tagged entries [{slide, dataURL}] so the import picker can
-  // show which page each image came from.
-  async function extractSlidesFromPptx(buffer) {
-    const zip = parseZip(buffer);
-    const slideArea = await readSlideArea(zip);
-    const minArea = slideArea ? slideArea * 0.03 : 0;
+  // ---- src/import/pptx.js ----
+// PowerPoint (.pptx) import: orchestration glue between the file input, the
+// slide parser, and the picker dialog.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// The ZIP container reader lives in zip-reader.js (hand-rolled, dependency-
+// free), slide/picture extraction in pptx-xml.js, and the picker UI the TD
+// uses to choose which pages to import in ui/dialogs/pptx-picker-dialog.js.
 
-    const slideNames = Object.keys(zip.entries)
-      .filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name))
-      .sort((a, b) => slideNumber(a) - slideNumber(b));
-
-    const entries = [];
-    const seenTargets = new Set();
-
-    for (const slideName of slideNames) {
-      const xmlText = await readZipEntryText(zip, slideName);
-      if (!xmlText) continue;
-      const relsName = slideName.replace(/slides\/(slide\d+\.xml)$/, 'slides/_rels/$1.rels');
-      const relsText = await readZipEntryText(zip, relsName);
-      const relMap = parseRels(relsText);
-      const slide = slideNumber(slideName);
-
-      const picks = pickSlidePictures(xmlText, relMap, slideName, minArea);
-      for (const target of picks) {
-        if (seenTargets.has(target)) continue;
-        seenTargets.add(target);
-        const dataURL = await mediaTargetToDataURL(zip, target);
-        if (dataURL) entries.push({ slide, dataURL });
-      }
-    }
-
-    // Fallback: deck stores images outside <p:pic> (e.g. backgrounds) — grab raw media.
-    if (!entries.length) {
-      const mediaNames = Object.keys(zip.entries)
-        .filter(name => /^ppt\/media\/[^/]+\.(png|jpe?g|gif|bmp)$/i.test(name))
-        .sort((a, b) => slideNumber(a) - slideNumber(b));
-      let i = 1;
-      for (const name of mediaNames) {
-        const dataURL = await mediaTargetToDataURL(zip, name);
-        if (dataURL) entries.push({ slide: i++, dataURL });
-      }
-    }
-    return entries;
+  async function onPptxFileChosen(e) {
+    const input = e.target;
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    await processPptxFile(file);
   }
 
-  function slideNumber(name) {
-    const m = name.match(/(\d+)\D*$/);
-    return m ? parseInt(m[1], 10) : 0;
-  }
-
-  async function readSlideArea(zip) {
+  async function processPptxFile(file) {
+    el.importPptxBtn.disabled = true;
+    const prevLabel = el.importPptxBtn.textContent;
+    el.importPptxBtn.textContent = 'Importing…';
     try {
-      if (!zip.entries['ppt/presentation.xml']) return 0;
-      const text = await readZipEntryText(zip, 'ppt/presentation.xml');
-      if (!text) return 0;
-      const doc = new DOMParser().parseFromString(text, 'application/xml');
-      const sz = doc.getElementsByTagName('p:sldSz')[0] || doc.getElementsByTagName('sldSz')[0];
-      if (!sz) return 0;
-      const cx = parseFloat(sz.getAttribute('cx') || '0');
-      const cy = parseFloat(sz.getAttribute('cy') || '0');
-      return cx > 0 && cy > 0 ? cx * cy : 0;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  function parseRels(relsText) {
-    const map = {};
-    if (!relsText) return map;
-    const doc = new DOMParser().parseFromString(relsText, 'application/xml');
-    const rels = doc.getElementsByTagName('Relationship');
-    for (const rel of Array.from(rels)) {
-      const id = rel.getAttribute('Id');
-      const target = rel.getAttribute('Target');
-      if (id && target) map[id] = target;
-    }
-    return map;
-  }
-
-  function pickSlidePictures(xmlText, relMap, slideName, minArea) {
-    const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-    const pics = Array.from(doc.getElementsByTagName('p:pic'));
-    const results = [];
-    let largest = null;
-    let largestArea = -1;
-
-    for (const pic of pics) {
-      const blip = pic.getElementsByTagName('a:blip')[0];
-      if (!blip) continue;
-      const embed = blip.getAttribute('r:embed') || blip.getAttribute('embed');
-      if (!embed || !relMap[embed]) continue;
-      const target = resolveRelTarget(relMap[embed], slideName);
-      if (!target) continue;
-
-      let area = 0;
-      for (const ext of Array.from(pic.getElementsByTagName('a:ext'))) {
-        const cx = parseFloat(ext.getAttribute('cx') || '0');
-        const cy = parseFloat(ext.getAttribute('cy') || '0');
-        area = Math.max(area, cx * cy);
+      const buffer = await file.arrayBuffer();
+      const entries = await extractSlidesFromPptx(buffer);
+      if (!entries.length) {
+        showToast('No usable sketch images were found in that deck.', 4200);
+        return;
       }
-      if (area > largestArea) { largestArea = area; largest = target; }
-      if (minArea && area && area < minArea) continue;
-      results.push(target);
+      // Group images by their source slide so each picker choice is a whole
+      // page: a slide with several pictures imports all of them together.
+      const pages = groupEntriesBySlide(entries);
+      if (pages.length === 1) {
+        await addImagesFromDataURLs(pages[0].dataURLs);
+        return;
+      }
+      openPptxPicker(pages);
+    } catch (error) {
+      console.error(error);
+      showToast('Could not read that .pptx file. It may be corrupt or use an unsupported format.', 4600);
+    } finally {
+      el.importPptxBtn.disabled = false;
+      el.importPptxBtn.textContent = prevLabel;
     }
-
-    // Never drop a slide entirely: if everything was filtered out, keep its biggest picture.
-    if (!results.length && largest) results.push(largest);
-    return results;
-  }
-
-  function resolveRelTarget(target, slideName) {
-    if (/^https?:/i.test(target)) return null;
-    const baseDir = slideName.replace(/\/[^/]*$/, '/');
-    const parts = (baseDir + target).split('/');
-    const stack = [];
-    for (const part of parts) {
-      if (part === '..') stack.pop();
-      else if (part !== '.' && part !== '') stack.push(part);
-    }
-    return stack.join('/');
-  }
-
-  async function mediaTargetToDataURL(zip, target) {
-    const ext = (target.split('.').pop() || '').toLowerCase();
-    const mime = {
-      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-      gif: 'image/gif', bmp: 'image/bmp',
-    }[ext];
-    if (!mime) return null; // emf/wmf/svg etc. can't be drawn to canvas reliably
-    const bytes = await readZipEntryBytes(zip, target);
-    if (!bytes) return null;
-    return 'data:' + mime + ';base64,' + bytesToBase64(bytes);
-  }
-
-  // Minimal ZIP reader (central directory + DEFLATE via DecompressionStream).
-
-  function parseZip(buffer) {
-    const dv = new DataView(buffer);
-    const bytes = new Uint8Array(buffer);
-    let eocd = -1;
-    for (let i = buffer.byteLength - 22; i >= 0; i -= 1) {
-      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
-    }
-    if (eocd < 0) throw new Error('Not a valid ZIP/.pptx file');
-    const count = dv.getUint16(eocd + 10, true);
-    let p = dv.getUint32(eocd + 16, true);
-    const entries = {};
-    for (let n = 0; n < count; n += 1) {
-      if (dv.getUint32(p, true) !== 0x02014b50) break;
-      const method = dv.getUint16(p + 10, true);
-      const compSize = dv.getUint32(p + 20, true);
-      const nameLen = dv.getUint16(p + 28, true);
-      const extraLen = dv.getUint16(p + 30, true);
-      const commentLen = dv.getUint16(p + 32, true);
-      const localOffset = dv.getUint32(p + 42, true);
-      const name = utf8Decode(bytes.subarray(p + 46, p + 46 + nameLen));
-      entries[name] = { method, compSize, localOffset };
-      p += 46 + nameLen + extraLen + commentLen;
-    }
-    return { dv, bytes, entries, _cache: {} };
-  }
-
-  function entryCompressedBytes(zip, name) {
-    const e = zip.entries[name];
-    if (!e) return null;
-    const lo = e.localOffset;
-    if (zip.dv.getUint32(lo, true) !== 0x04034b50) return null;
-    const nameLen = zip.dv.getUint16(lo + 26, true);
-    const extraLen = zip.dv.getUint16(lo + 28, true);
-    const start = lo + 30 + nameLen + extraLen;
-    return { method: e.method, data: zip.bytes.subarray(start, start + e.compSize) };
-  }
-
-  async function readZipEntryBytes(zip, name) {
-    const raw = entryCompressedBytes(zip, name);
-    if (!raw) return null;
-    if (raw.method === 0) return raw.data;
-    if (raw.method === 8) return await inflateRaw(raw.data);
-    throw new Error('Unsupported ZIP compression method ' + raw.method);
-  }
-
-  async function readZipEntryText(zip, name) {
-    const bytes = await readZipEntryBytes(zip, name);
-    return bytes ? utf8Decode(bytes) : '';
-  }
-
-  async function inflateRaw(bytes) {
-    const ds = new DecompressionStream('deflate-raw');
-    const stream = new Response(bytes).body.pipeThrough(ds);
-    const ab = await new Response(stream).arrayBuffer();
-    return new Uint8Array(ab);
-  }
-
-  function utf8Decode(bytes) {
-    return new TextDecoder('utf-8').decode(bytes);
-  }
-
-  function bytesToBase64(bytes) {
-    let binary = '';
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-    }
-    return btoa(binary);
   }
 
   // ---- src/manual/annotations.js ----
@@ -31232,7 +31189,7 @@ function getAnnotationsOnImage(image) {
   }
 
   // Trigger an in-browser download of the current ground truth. Used by the
-  // ?label=1 labeling button (see maybeShowGroundTruthLabeler in state.js).
+  // ?label=1 labeling button (see maybeShowGroundTruthLabeler in src/dev/url-bootstrap.js).
   function downloadGroundTruth(imageName) {
     if (!state.autoMode.anchors.length) {
       showToast('No anchors to save. Run Detect Sketch and correct the anchors first.', 4200);
@@ -35355,6 +35312,188 @@ function requestRender() {
     const screen = worldToScreen(ann.label.x, ann.label.y);
     el.labelEditor.style.left = screen.x + 'px';
     el.labelEditor.style.top = screen.y + 'px';
+  }
+
+  // ---- src/bootstrap.js ----
+// App bootstrap sequencing: init() and the vision-engine warm-up watcher.
+// Source part for app.js. Run `npm run build` after editing.
+
+  function init() {
+    // S1: start watching the vendored OpenCV build immediately (fire and
+    // forget) so the WASM compiles while the TD is still adding the sketch,
+    // and the readiness chip never stalls silently on the first Detect.
+    warmupVisionEngine();
+    bindUI();
+    initMainPage();
+    initConstruction();
+    initBom();
+    initPreviewPage();
+    initPageNav();
+    // Auto-only build: boot straight into Auto Mode (sets body class,
+    // status chip, and locks manual editing paths).
+    setAppMode('auto');
+    resizeCanvas();
+    seedHistory();
+    updateUI();
+    render();
+    maybeShowGroundTruthLabeler();
+    // Ground-truth labeling (?label=1) is an ephemeral, one-image-per-URL flow:
+    // don't autosave it or offer to restore a prior label session, which would
+    // pop a "Recovered work" modal over the board on every reload.
+    const labeling = new URLSearchParams(window.location.search).get('label') === '1';
+    if (!labeling) armAutosave();
+    void loadProjectFromUrl()
+      .then(() => (labeling ? null : maybeOfferAutosaveRestore()))
+      .then(() => maybeAutoDraftFromUrl());
+  }
+
+  // S1: watch the real OpenCV backend's readiness and mirror it into
+  // state.visionEngine for the toolbar chip. Does not restart the polling —
+  // opencv_real_api.js already began watching when its script loaded; this
+  // just observes the same promise. Best-effort: any failure means the app
+  // keeps working on the FreeOpenCVAPI fallback exactly as before.
+  function warmupVisionEngine() {
+    const real = typeof window !== 'undefined' ? window.RealOpenCVAPI : null;
+    if (FORCE_FREE_CV || !real || typeof real.whenReady !== 'function') {
+      state.visionEngine = 'unavailable';
+      return;
+    }
+    if (typeof real.isReady === 'function' && real.isReady()) {
+      state.visionEngine = 'ready';
+      return;
+    }
+    state.visionEngine = 'warming';
+    real.whenReady()
+      .then((ready) => {
+        state.visionEngine = ready ? 'ready' : 'unavailable';
+        updateUI();
+      })
+      .catch(() => {
+        state.visionEngine = 'unavailable';
+        updateUI();
+      });
+  }
+
+  // ---- src/dev/url-bootstrap.js ----
+// URL-query-param test/demo boot paths: ground-truth labeling, URL project
+// load, and URL auto-draft demo automation.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // Ground-truth labeling helper: ?label=1 shows a floating "Save Ground
+  // Truth" button. The TD runs Detect Sketch, drags anchors to the correct
+  // positions, then clicks Save to download a JSON file for the accuracy
+  // harness (scripts/accuracy-tests.mjs). Hidden unless the param is present,
+  // so it never touches the normal toolbar layout.
+  function maybeShowGroundTruthLabeler() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('label') !== '1') return;
+    const btn = document.createElement('button');
+    btn.id = 'gtLabelBtn';
+    btn.type = 'button';
+    btn.textContent = '💾 Save Ground Truth';
+    btn.style.cssText = [
+      'position:fixed', 'left:12px', 'bottom:12px', 'z-index:9999',
+      'padding:8px 12px', 'background:#b3005a', 'color:#fff', 'border:none',
+      'border-radius:6px', 'font:13px system-ui,sans-serif', 'cursor:pointer',
+      'box-shadow:0 2px 8px rgba(0,0,0,.3)',
+    ].join(';');
+    btn.addEventListener('click', () => {
+      if (state.appMode !== 'auto' || !state.autoMode.anchors.length) {
+        showToast('Switch to Auto Mode, run Detect Sketch, and correct the anchors first.', 4200);
+        return;
+      }
+      const suggested = (window.__braGroundTruthName || 'sketch.jpg') + '.json';
+      const name = window.prompt(
+        'Ground-truth file name (match the image, e.g. demo1.jpg.json):',
+        suggested
+      );
+      if (!name) return;
+      downloadGroundTruth(name);
+    });
+    document.body.appendChild(btn);
+
+    // Convenience for building the accuracy corpus: ?label=1&image=demo/demo1.jpg
+    // auto-loads that image, runs Detect Sketch, and pre-fills the save file
+    // name — so labeling a corpus is "open URL → drag the wrong anchors → Save",
+    // one image per URL. Absent the param, the manual add-image flow is unchanged.
+    const imagePath = params.get('image');
+    if (imagePath) void autoLoadLabelImage(imagePath);
+  }
+
+  // Fetch a same-origin image, put it on the board, and run Detect Sketch so the
+  // detector's seeded anchors are ready for the TD to correct. Used only by the
+  // ?label=1&image= labeling flow above. Best-effort: on any failure it falls
+  // back to the manual add-image path with a toast.
+  async function autoLoadLabelImage(imagePath) {
+    try {
+      const res = await fetch(encodeURI(imagePath), { cache: 'no-store' });
+      if (!res.ok) throw new Error('fetch ' + res.status);
+      const blob = await res.blob();
+      const dataURL = await new Promise((ok, no) => {
+        const r = new FileReader();
+        r.onload = () => ok(String(r.result || ''));
+        r.onerror = () => no(new Error('read failed'));
+        r.readAsDataURL(blob);
+      });
+      setAppMode('auto');
+      await addImagesFromDataURLs([dataURL]);
+      await new Promise((r) => setTimeout(r, 80));
+      const sourceImage = state.images[state.images.length - 1] || null;
+      if (!sourceImage) throw new Error('image did not load');
+      state.selection = { kind: 'image', id: sourceImage.id };
+      window.__braGroundTruthName = imagePath.split('/').pop();
+      await runOfflineDetection();
+      updateUI();
+      render();
+      const n = state.autoMode.anchors.length;
+      showToast('Loaded ' + window.__braGroundTruthName + ' — ' + n
+        + ' anchors detected. Click "Fit", drag any anchors that are off, then Save Ground Truth.', 6000);
+    } catch (err) {
+      console.error('[Ground Truth] auto-load failed:', err);
+      showToast('Could not auto-load ' + imagePath + ' — add it manually, then Detect Sketch.', 5200);
+    }
+  }
+
+  async function loadProjectFromUrl() {
+    const projectUrl = new URLSearchParams(window.location.search).get('project');
+    if (!projectUrl) return;
+    try {
+      const response = await fetch(projectUrl, { cache: 'no-store' });
+      if (!response.ok) throw new Error('Could not load project');
+      await loadProject(await response.json());
+      showToast('Draft project loaded.');
+    } catch (error) {
+      console.error(error);
+      showToast('Could not load the draft project.', 4200);
+    }
+  }
+
+  // Demo helper: ?autoDraft=1 drives Auto Mode → Detect Sketch → Generate POM
+  // Drafts on whatever image is on the board after load. Lets the demo flow be
+  // shared as a URL without manual clicking. No-op when the param is absent.
+  async function maybeAutoDraftFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('autoDraft') !== '1') return;
+    const waitForImage = async () => {
+      for (let i = 0; i < 50; i += 1) {
+        const img = pickAutoSourceImage();
+        if (img && img.img && img.img.complete) return img;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      return null;
+    };
+    const sourceImage = await waitForImage();
+    if (!sourceImage) {
+      showToast('autoDraft: no source image found.', 4200);
+      return;
+    }
+    setAppMode('auto');
+    await runOfflineDetection();
+    if (state.autoMode.status !== 'detected') {
+      showToast('autoDraft: detection did not complete.', 4200);
+      return;
+    }
+    generatePOMDraftsFromAnchors();
   }
 
 

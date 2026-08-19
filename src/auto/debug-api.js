@@ -38,7 +38,7 @@
   }
 
   // Trigger an in-browser download of the current ground truth. Used by the
-  // ?label=1 labeling button (see maybeShowGroundTruthLabeler in state.js).
+  // ?label=1 labeling button (see maybeShowGroundTruthLabeler in src/dev/url-bootstrap.js).
   function downloadGroundTruth(imageName) {
     if (!state.autoMode.anchors.length) {
       showToast('No anchors to save. Run Detect Sketch and correct the anchors first.', 4200);
