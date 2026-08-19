@@ -142,9 +142,6 @@
       ANCHOR_SCHEMA: anchors.map(anchor => Object.assign({}, anchor)),
       AUTO_TEMPLATE_VERSION: version.template_version || 'unknown-template',
       AUTO_RULE_VERSION: version.rule_version || 'unknown-rules',
-      AUTO_ANCHOR_VERSION: version.anchor_version || 'unknown-anchors',
-      AUTO_SUGGESTIONS_VERSION: (sizeLSuggestions && sizeLSuggestions.suggestions_version)
-        || version.suggestions_version || 'none',
     });
   }
 
@@ -3545,15 +3542,6 @@
       hold: override.hold != null ? !!override.hold : !!house.hold,
       overridden: true,
     };
-  }
-
-  function setGradeRule(pomKey, patch) {
-    const key = String(pomKey);
-    if (!state.gradeRules || state.gradeRules.version !== 2) {
-      state.gradeRules = migrateGradeRulesV2(state.gradeRules, null);
-    }
-    state.gradeRules.steps[key] = Object.assign({}, state.gradeRules.steps[key] || {}, patch);
-    pushHistoryIfChanged();
   }
 
   // Base value for a POM: explicit Size L wins; else the calibrated measured
@@ -11779,7 +11767,9 @@ const BOM_MATERIAL_LIBRARY = [
 //
 // Dropped by ADR 0041: AI translation, bilingual cells, per-row reference
 // photo + asset-management catalog matching, auto-draft-from-Construction,
-// split-row (size-run pairing), floating per-cell SuggMenu popover.
+// floating per-cell SuggMenu popover. Split-row (size-run pairing) was
+// dropped here too but reintroduced by the US-072 follow-up — see
+// bmSplitRow below.
 
   const BM_SCHEMA_VERSION = 2;
   const BM_SECTIONS = ['FABRIC', 'TRIM'];
@@ -25939,8 +25929,8 @@ function getAnnotationsOnImage(image) {
     // POM 6 rescue: when the direct CF-seam detector missed (no cradleCfTop)
     // but the bottom-cup cradle seam WAS found (cradleCupTop — the POM 7 top),
     // extend that detected seam horizontally to the CF axis as an APPROXIMATE
-    // POM 6 top. It seeds low-confidence + reviewRequired (see confByKind /
-    // sourceByKind below) so the TD still verifies; this only replaces a hard
+    // POM 6 top. It seeds low-confidence + reviewRequired (the landmark QA
+    // layer downstream tags it accordingly) so the TD still verifies; this only replaces a hard
     // REVIEW_ONLY demotion with a reviewable starting line, and degrades
     // gracefully — POM 6 stays REVIEW_ONLY when cradleCupTop is also missing.
     // No rule-JSON change: cf-bottom still derives onto the band line via the
@@ -28497,12 +28487,17 @@ function getAnnotationsOnImage(image) {
     };
   }
 
-  // Keep Auto Mode POM 1/2/3/4 drafts geometrically tied to the band/chest
-  // anchors while the TD is dragging. POM 1 follows band-{left,right}; POM 3
-  // follows chest-{left,right}; POMs 2 and 4 are dashed extensions that
-  // always read as 1/5 the length of their parent. Called from the
-  // drag-anchor mouse-move loop; runs only if drafts exist for the
-  // affected POMs.
+  // Keep Auto Mode POM 1/2/3/4/16 drafts geometrically tied to their anchors
+  // while the TD is dragging. POM 1 follows band-{left,right}; POM 3 follows
+  // chest-{left,right}; POMs 2 and 4 are dashed extensions that always read
+  // as 1/5 the length of their parent; POM 16 follows apex-{left,right}
+  // (US-085 — without this, correcting a mis-detected apex anchor by hand
+  // left POM 16's line drawn at the old, pre-drag position, the same
+  // "anchors right, line wrong" symptom ADR 0049 fixed for band/chest, but
+  // for a manual correction instead of a seeding fallback). Called from the
+  // drag-anchor mouse-move loop; runs only if drafts exist for the affected
+  // POMs. Other POMs' drafts still don't live-sync — a TD must re-generate
+  // after moving those anchors.
   function syncBandChestDraftsFromAnchors(movedAnchorKind) {
     if (state.appMode !== 'auto') return;
     const drafts = state.autoMode && state.autoMode.draftAnnotations;
@@ -28510,7 +28505,9 @@ function getAnnotationsOnImage(image) {
     const relevant = movedAnchorKind === 'band-left'
       || movedAnchorKind === 'band-right'
       || movedAnchorKind === 'chest-left'
-      || movedAnchorKind === 'chest-right';
+      || movedAnchorKind === 'chest-right'
+      || movedAnchorKind === 'apex-left'
+      || movedAnchorKind === 'apex-right';
     if (!relevant) return;
 
     const anchors = state.autoMode.anchors || [];
@@ -28520,6 +28517,8 @@ function getAnnotationsOnImage(image) {
     const bandR = byKind['band-right'];
     const chestL = byKind['chest-left'];
     const chestR = byKind['chest-right'];
+    const apexL = byKind['apex-left'];
+    const apexR = byKind['apex-right'];
 
     const det = state.autoMode && state.autoMode.detection;
     const sourceImage = det
@@ -28549,6 +28548,51 @@ function getAnnotationsOnImage(image) {
       const pom3Length = chestR.x - chestL.x;
       const ext4End = { x: clamp01(chestR.x + pom3Length / 5), y: chestR.y };
       updateLine(findDraft('4'), chestR, ext4End);
+    }
+    if (apexL && apexR) {
+      const draft16 = findDraft('16');
+      // POM 16 doesn't use the plain updateLine helper above: unlike
+      // band/chest it is NOT forced level onto one anchor (ADR 0049 /
+      // US-084 — the apex pair is legitimately allowed to sit at different
+      // heights), so the line's own credibility can change as the TD drags
+      // an anchor, and drawability must flip between DRAWABLE and
+      // REVIEW_ONLY live rather than staying frozen. updateLine's "never
+      // touch a REVIEW_ONLY draft" rule would defeat exactly the case this
+      // exists for: un-REVIEW-ONLY-ing POM 16 IS the point of the TD's fix.
+      if (draft16) {
+        // Keep this in lockstep with APEX_MAX_SLANT in
+        // buildPOMFixtureFromAnchors (this file) and APEX_SLANT_LIMIT in
+        // src/auto-detection.js — contract E4 guards all three from
+        // drifting apart.
+        const APEX_MAX_SLANT = 0.06;
+        const apexSpanX = Math.abs(apexR.x - apexL.x);
+        const apexDy = Math.abs(apexR.y - apexL.y);
+        const apexSlant = apexSpanX > 0 ? apexDy / apexSpanX : Infinity;
+        if (apexSlant <= APEX_MAX_SLANT) {
+          const apexMidY = (apexL.y + apexR.y) / 2;
+          const newStart = toWorld({ x: apexL.x, y: apexMidY });
+          const newEnd = toWorld({ x: apexR.x, y: apexMidY });
+          if (newStart) draft16.start = newStart;
+          if (newEnd) draft16.end = newEnd;
+          draft16.drawability = 'DRAWABLE';
+          draft16.confidence = 'medium';
+          draft16.uncertainty = null;
+        } else {
+          // validate-fixture.js requires REVIEW_ONLY rows to carry null
+          // geometry ("must have null geometry") — leaving the pre-drag
+          // start/end in place would both violate that and silently draw a
+          // stale line under a "review only" label instead of no line.
+          draft16.start = null;
+          draft16.end = null;
+          draft16.drawability = 'REVIEW_ONLY';
+          draft16.confidence = 'low';
+          draft16.uncertainty = 'The two apex joins were detected ' + apexDy.toFixed(3)
+            + ' apart vertically over a ' + apexSpanX.toFixed(3) + ' span (slant '
+            + apexSlant.toFixed(3) + ', limit ' + APEX_MAX_SLANT
+            + ') — too steep for an apex-to-apex measurement, so one side is very'
+            + ' likely mis-detected. Place the apex anchors and re-generate.';
+        }
+      }
     }
   }
 

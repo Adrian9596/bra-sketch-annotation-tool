@@ -95,8 +95,8 @@
     // POM 6 rescue: when the direct CF-seam detector missed (no cradleCfTop)
     // but the bottom-cup cradle seam WAS found (cradleCupTop — the POM 7 top),
     // extend that detected seam horizontally to the CF axis as an APPROXIMATE
-    // POM 6 top. It seeds low-confidence + reviewRequired (see confByKind /
-    // sourceByKind below) so the TD still verifies; this only replaces a hard
+    // POM 6 top. It seeds low-confidence + reviewRequired (the landmark QA
+    // layer downstream tags it accordingly) so the TD still verifies; this only replaces a hard
     // REVIEW_ONLY demotion with a reviewable starting line, and degrades
     // gracefully — POM 6 stays REVIEW_ONLY when cradleCupTop is also missing.
     // No rule-JSON change: cf-bottom still derives onto the band line via the

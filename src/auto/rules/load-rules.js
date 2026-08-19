@@ -135,9 +135,6 @@
       ANCHOR_SCHEMA: anchors.map(anchor => Object.assign({}, anchor)),
       AUTO_TEMPLATE_VERSION: version.template_version || 'unknown-template',
       AUTO_RULE_VERSION: version.rule_version || 'unknown-rules',
-      AUTO_ANCHOR_VERSION: version.anchor_version || 'unknown-anchors',
-      AUTO_SUGGESTIONS_VERSION: (sizeLSuggestions && sizeLSuggestions.suggestions_version)
-        || version.suggestions_version || 'none',
     });
   }
 

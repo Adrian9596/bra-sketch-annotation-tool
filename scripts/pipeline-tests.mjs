@@ -893,12 +893,13 @@ function buildSyntheticNoBottomCupInkAnalysis(width, height) {
   };
 }
 
-// Synthetic fixture for the user-reported false-positive case: the sketch
-// has cup outlines (so a cradle row is detected) AND a band line, but NO
-// explicit POM 7 vertical line on the cup side. Previously the detector
-// would seed cradle-cup-* anchors from the row-only evidence and POM 7
-// would draw. With the column-ink check it must reject and demote POM 7
-// to REVIEW_ONLY.
+// Synthetic STRUCTURE-ONLY fixture: the sketch has cup outlines (so a
+// cup-bottom arc is traceable and a cradle row is detected) AND a band line,
+// but NO drawn POM 7 vertical line on the cup side. Since ADR 0022 this is
+// the arc-tier case: the detector commits POM 7 on the traced cup-bottom arc
+// at tier 'arc' (source seamArc, low confidence, reviewRequired) instead of
+// demoting to REVIEW_ONLY. The anti-spoofing guard lives in the TIER: this
+// structure ink must never be accepted at a trusted tier ('strong'/'seam').
 function buildSyntheticCupNoPom7InkAnalysis(width, height) {
   const total = width * height;
   const mask = new Uint8Array(total);
@@ -961,7 +962,8 @@ function buildSyntheticCupNoPom7InkAnalysis(width, height) {
   }
   // INTENTIONALLY OMITTED: the POM 7 vertical line between the cup-bottom
   // and the band baseline. The column between rows must be empty so the
-  // detector's column-ink check rejects.
+  // detector's column-ink check rejects the trusted tiers — leaving only the
+  // ADR 0022 arc tier to commit from the traced cup-bottom structure.
   void cradleY; void cradleThickness;
 
   return {
@@ -1145,13 +1147,16 @@ console.log('\nstage: POM 7 absent — no cradle seam at bottom cup, POM 7 REVIE
     `end=${pom8 && JSON.stringify(pom8.end)}`);
 }
 
-// ---- Test 10: POM 7 ABSENT (cup outlines but no POM 7 line) ----
-// This is the user-reported false-positive case. The sketch has cup
-// outlines (cradle row is detected) AND a band line, but no explicit
-// POM 7 vertical line on the cup side. Previously the detector seeded
-// cradle-cup-* anchors from row-only evidence and POM 7 drew. With the
-// column-ink check the detector must reject and demote POM 7.
-console.log('\nstage: POM 7 absent — cup outlines + band but no POM 7 vertical line');
+// ---- Test 10: POM 7 STRUCTURE-ONLY — arc tier drafts for review ----
+// The sketch has cup outlines (a traceable cup-bottom arc + detected cradle
+// row) AND a band line, but no drawn POM 7 vertical line on the cup side.
+// Since ADR 0022 the trusted tiers still reject (no vertical ink), and the
+// arc tier commits instead: cradle-cup-* seed from the traced cup-bottom arc
+// as source 'seamArc' / low confidence / reviewRequired, and POM 7 draws a
+// vertical review line down to the band. The hard guards are the TIER and
+// its isolation: arc evidence must never be promoted to 'strong'/'seam',
+// never feed the cupModel, and never fire the POM 6 CF projection.
+console.log('\nstage: POM 7 structure-only — cup outlines + band, no POM 7 line → arc tier');
 {
   const W = 640, H = 480;
   const analysis = buildSyntheticCupNoPom7InkAnalysis(W, H);
@@ -1163,27 +1168,80 @@ console.log('\nstage: POM 7 absent — cup outlines + band but no POM 7 vertical
   check('band row IS detected',
     detection.bandY != null && detection.bandY > 0,
     `bandY=${detection.bandY}`);
-  check('detection.cradleCupTop is null (no vertical POM 7 ink)',
-    detection.cradleCupTop == null,
+  check('detection.cradleCupTop populated from the traced cup-bottom arc',
+    detection.cradleCupTop
+      && Number.isFinite(detection.cradleCupTop.x)
+      && Number.isFinite(detection.cradleCupTop.y),
     `cradleCupTop=${JSON.stringify(detection.cradleCupTop)}`);
-  check('detection.cradleCupBottom is null',
-    detection.cradleCupBottom == null,
+  check('detection.cradleCupBottom populated',
+    detection.cradleCupBottom
+      && Number.isFinite(detection.cradleCupBottom.x)
+      && Number.isFinite(detection.cradleCupBottom.y),
     `cradleCupBottom=${JSON.stringify(detection.cradleCupBottom)}`);
-  check('cradleCupMissingReason mentions vertical / POM 7',
-    typeof detection.cradleCupMissingReason === 'string'
-      && /vertical|pom 7/i.test(detection.cradleCupMissingReason),
-    `reason=${detection.cradleCupMissingReason}`);
+  check('commit tier is "arc" — NOT a trusted tier (anti-spoofing guard)',
+    detection.cradleCupTier === 'arc',
+    `cradleCupTier=${detection.cradleCupTier}`);
 
   const sourceImage = { id: 'cup-no-pom7-fixture', width: W, height: H };
   const anchors = pipeline.seedAnchorsFromDetection(detection, sourceImage, { skipLearning: true });
   const cradleCupTopAnchor = anchors.find(a => a.kind === 'cradle-cup-top');
   const cradleCupBotAnchor = anchors.find(a => a.kind === 'cradle-cup-bottom');
-  check('cradle-cup-top anchor NOT seeded (no POM 7 evidence)',
-    cradleCupTopAnchor === undefined,
-    `cradleCupTopAnchor=${JSON.stringify(cradleCupTopAnchor)}`);
-  check('cradle-cup-bottom anchor NOT seeded',
-    cradleCupBotAnchor === undefined,
-    `cradleCupBotAnchor=${JSON.stringify(cradleCupBotAnchor)}`);
+  check('cradle-cup-top anchor seeded (arc tier)', !!cradleCupTopAnchor,
+    `anchorKinds=${anchors.map(a => a.kind).join(',')}`);
+  check('cradle-cup-bottom anchor seeded', !!cradleCupBotAnchor);
+  check('cradle-cup-top source is seamArc',
+    cradleCupTopAnchor && cradleCupTopAnchor.source === 'seamArc',
+    `source=${cradleCupTopAnchor && cradleCupTopAnchor.source}`);
+  check('cradle-cup-bottom source is seamArc',
+    cradleCupBotAnchor && cradleCupBotAnchor.source === 'seamArc',
+    `source=${cradleCupBotAnchor && cradleCupBotAnchor.source}`);
+  check('cradle-cup-top confidence is low',
+    cradleCupTopAnchor && cradleCupTopAnchor.confidence === 'low',
+    `confidence=${cradleCupTopAnchor && cradleCupTopAnchor.confidence}`);
+  check('cradle-cup-bottom confidence is low',
+    cradleCupBotAnchor && cradleCupBotAnchor.confidence === 'low',
+    `confidence=${cradleCupBotAnchor && cradleCupBotAnchor.confidence}`);
+  check('cradle-cup-top is reviewRequired',
+    cradleCupTopAnchor && cradleCupTopAnchor.reviewRequired === true,
+    `reviewRequired=${cradleCupTopAnchor && cradleCupTopAnchor.reviewRequired}`);
+  check('cradle-cup-bottom is reviewRequired',
+    cradleCupBotAnchor && cradleCupBotAnchor.reviewRequired === true,
+    `reviewRequired=${cradleCupBotAnchor && cradleCupBotAnchor.reviewRequired}`);
+  check('cradle-cup-top carries an arc-tier QA note asking the TD to verify',
+    cradleCupTopAnchor && Array.isArray(cradleCupTopAnchor.qaNotes)
+      && cradleCupTopAnchor.qaNotes.some(n => /arc-tier/i.test(n) && /verify/i.test(n)),
+    `qaNotes=${cradleCupTopAnchor && JSON.stringify(cradleCupTopAnchor.qaNotes)}`);
+
+  // Isolation guards (ADR 0022 trust allowlist): the arc commit is
+  // review-grade POM 7 evidence ONLY.
+  check('cupModel does NOT take its bottom from the arc commit (bottomFromSeam stays false)',
+    !detection.cupModel || detection.cupModel.bottomFromSeam !== true,
+    `bottomFromSeam=${detection.cupModel && detection.cupModel.bottomFromSeam}`);
+  // Cup-SIDE picker isolation (2026-08-19 follow-up G1). buildCupModel zeroes
+  // seamSide unless the tier is trusted ('strong'/'seam'), so with an arc
+  // commit the side may only come from apex evidence or the default-left
+  // fallback. The seam-driven branches stamp a distinctive sideReason
+  // ("cup-bottom seam confirms …" / "cup side taken from POM 7 cup-bottom
+  // seam") — if a future change lets tier 'arc' steer the side picker, the
+  // reason flips to seam phrasing and this guard goes red even while
+  // bottomFromSeam stays false.
+  check('cupModel present (side-picker isolation check is not vacuous)',
+    !!detection.cupModel,
+    `cupModel=${detection.cupModel == null ? 'null' : 'present'}`);
+  check('cup-side picker ignores the arc commit (side from apex/default, never the arc seam side)',
+    detection.cupModel
+      && typeof detection.cupModel.sideReason === 'string'
+      && /apex|default left cup/i.test(detection.cupModel.sideReason)
+      && !/seam confirms|taken from POM 7/i.test(detection.cupModel.sideReason),
+    `side=${detection.cupModel && detection.cupModel.side} sideReason=${detection.cupModel && detection.cupModel.sideReason}`);
+  const cradleCfTopAnchor = anchors.find(a => a.kind === 'cradle-cf-top');
+  check('POM 6 CF projection (seamProjected) does NOT fire from the arc tier',
+    !cradleCfTopAnchor || cradleCfTopAnchor.source !== 'seamProjected',
+    `cradle-cf-top source=${cradleCfTopAnchor && cradleCfTopAnchor.source}`);
+  check('no anchor outside cradle-cup-* carries the seamArc source',
+    anchors.every(a => a.source !== 'seamArc'
+      || a.kind === 'cradle-cup-top' || a.kind === 'cradle-cup-bottom'),
+    `seamArcKinds=${anchors.filter(a => a.source === 'seamArc').map(a => a.kind).join(',')}`);
 
   const fixture = pipeline.buildPOMFixtureFromAnchors(anchors, detection);
   const pom5 = fixture.annotations.find(r => r.pom === '5');
@@ -1191,13 +1249,23 @@ console.log('\nstage: POM 7 absent — cup outlines + band but no POM 7 vertical
   const pom7 = fixture.annotations.find(r => r.pom === '7');
   const pom8 = fixture.annotations.find(r => r.pom === '8');
 
-  check('POM 7 is REVIEW_ONLY (no fabricated line)',
-    pom7 && pom7.drawability === 'REVIEW_ONLY',
+  check('POM 7 is DRAWABLE (arc tier draws a review line)',
+    pom7 && pom7.drawability === 'DRAWABLE',
     `drawability=${pom7 && pom7.drawability}`);
-  check('POM 7 has null start', pom7 && pom7.start == null,
-    `start=${pom7 && JSON.stringify(pom7.start)}`);
-  check('POM 7 has null end', pom7 && pom7.end == null,
-    `end=${pom7 && JSON.stringify(pom7.end)}`);
+  check('POM 7 has valid start + end', pom7 && pom7.start && pom7.end,
+    `start=${pom7 && JSON.stringify(pom7.start)} end=${pom7 && JSON.stringify(pom7.end)}`);
+  check('POM 7 is vertical (start.x === end.x)',
+    pom7 && pom7.start && pom7.end && Math.abs(pom7.start.x - pom7.end.x) < 1e-9,
+    `start.x=${pom7 && pom7.start && pom7.start.x} end.x=${pom7 && pom7.end && pom7.end.x}`);
+  check('POM 7 start sits on the traced cup-bottom arc point',
+    pom7 && pom7.start && detection.cradleCupTop
+      && Math.abs(pom7.start.y - detection.cradleCupTop.y) < 0.02,
+    `pom7.start.y=${pom7 && pom7.start && pom7.start.y} arcY=${detection.cradleCupTop && detection.cradleCupTop.y}`);
+  check('POM 7 end sits on the band baseline',
+    pom7 && pom7.end
+      && detection.bandY != null
+      && Math.abs(pom7.end.y - detection.bandY) < 0.04,
+    `pom7.end.y=${pom7 && pom7.end && pom7.end.y} bandY=${detection.bandY}`);
   check('POM 5 unaffected', pom5 && pom5.start && pom5.end,
     `pom5=${JSON.stringify(pom5 && { start: pom5.start, end: pom5.end })}`);
   // POM 8 = cf-top → cradle-cf-top. Same situation as Test 8: cup-ellipse

@@ -3,7 +3,7 @@
 Auto-first drafting tool for bra technical sketches. This is a focused fork of
 the "How to measure1" Bra Measurement Assistant: the same offline detection
 engine and POM drafting pipeline. The app boots straight into **Auto Mode**,
-which is the priority — the auto pass detects the sketch and generates the 16
+which is the priority — the auto pass detects the sketch and generates the 18
 POM lines. After the lines are applied it hands off to **Manual Mode** so the
 technical designer can make the small fixes auto can't get perfect. Manual is
 the correction step, not a blank-canvas drawing tool, and the app never boots
@@ -14,7 +14,7 @@ into it on a fresh sketch (see
 
 - **Why / goals:** [`PROJECT_CHARTER.md`](PROJECT_CHARTER.md)
 - **Architecture / project map:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
-- **The 16 POMs:** [`POMS_CONTRACT.md`](POMS_CONTRACT.md)
+- **The 18 POMs:** [`POMS_CONTRACT.md`](POMS_CONTRACT.md)
 - **Tests:** [`TESTING.md`](TESTING.md)
 - **Working context (agents):** [`CLAUDE.md`](CLAUDE.md) · [`AGENTS.md`](AGENTS.md)
 
@@ -24,7 +24,7 @@ into it on a fresh sketch (see
 2. Click **Detect** — local offline vision estimates views, landmarks, and
    seeds draggable anchors. No cloud/API dependency.
 3. Drag anchors to correct them if needed (**Reset Anchors** re-seeds).
-4. Click **Generate Drafts** — the 16 POM lines are generated from the anchors
+4. Click **Generate Drafts** — the 18 POM lines are generated from the anchors
    and applied to the project immediately; no per-row approval step.
    Review-only rows (no reliable line) are dropped with a note.
 5. On Apply the app switches to **Manual Mode** to correct the applied lines:

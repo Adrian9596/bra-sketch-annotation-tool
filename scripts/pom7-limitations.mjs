@@ -2,8 +2,16 @@
 // Synthetic diagnostic matrix for POM 7.
 //
 // This is intentionally separate from pipeline-tests:
-// - hard guards fail only for clear regressions, such as drawing POM 7 when
-//   no vertical POM 7 ink exists.
+// - hard guards assert `<drawability>@<tier>` per case. Since ADR 0022 a
+//   structure-only sketch (no drawn POM 7 line) is still DRAWABLE — but ONLY
+//   at the review-grade 'arc' tier. The regression the guards catch is a
+//   PROMOTION: ink accepted at a tier it did not earn. Only 'strong'/'seam'
+//   are trusted tiers — they alone feed the cupModel and the POM 6 CF
+//   projection (the trustedSeamTier allowlist in src/auto-detection.js and
+//   cradleCfFromCupSeam in src/auto/anchors/seed-anchors.js). 'guide'
+//   (ADR 0021) is review-grade like 'arc' and feeds NEITHER — but it asserts
+//   a real drawn (sparse dashed) line, so structure-only or decorative ink
+//   surfacing at 'guide' is still a mis-tier regression.
 // - known weak spots are reported as LIMITATION so they can guide the next
 //   detector improvement without making CI red.
 //

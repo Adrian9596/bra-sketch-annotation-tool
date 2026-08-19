@@ -45,7 +45,9 @@
 //
 // Dropped by ADR 0041: AI translation, bilingual cells, per-row reference
 // photo + asset-management catalog matching, auto-draft-from-Construction,
-// split-row (size-run pairing), floating per-cell SuggMenu popover.
+// floating per-cell SuggMenu popover. Split-row (size-run pairing) was
+// dropped here too but reintroduced by the US-072 follow-up — see
+// bmSplitRow below.
 
   const BM_SCHEMA_VERSION = 2;
   const BM_SECTIONS = ['FABRIC', 'TRIM'];

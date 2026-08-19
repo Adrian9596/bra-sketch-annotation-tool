@@ -54,15 +54,6 @@
     };
   }
 
-  function setGradeRule(pomKey, patch) {
-    const key = String(pomKey);
-    if (!state.gradeRules || state.gradeRules.version !== 2) {
-      state.gradeRules = migrateGradeRulesV2(state.gradeRules, null);
-    }
-    state.gradeRules.steps[key] = Object.assign({}, state.gradeRules.steps[key] || {}, patch);
-    pushHistoryIfChanged();
-  }
-
   // Base value for a POM: explicit Size L wins; else the calibrated measured
   // length of its drawn line; else null (nothing to grade from).
   function gradeBaseValue(pomKey, annByPom) {

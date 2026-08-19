@@ -48,8 +48,6 @@ function readRuleFixture() {
     ANCHOR_SCHEMA: anchorSchema.anchors.map((a) => Object.assign({}, a)),
     AUTO_TEMPLATE_VERSION: version.template_version,
     AUTO_RULE_VERSION: version.rule_version,
-    AUTO_ANCHOR_VERSION: version.anchor_version,
-    AUTO_SUGGESTIONS_VERSION: 'none',
   });
 }
 
