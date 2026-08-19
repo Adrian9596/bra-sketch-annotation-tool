@@ -15844,18 +15844,15 @@ const BOM_MATERIAL_LIBRARY = [
     }
   }
 
-  // ---- src/manual/annotations.js ----
-// Annotation lifecycle helpers: create / delete / clear / copy / paste /
-// reflect, plus default-label placement and label-collision nudging.
+  // ---- src/manual/annotation-factory.js ----
+// Annotation factory: pure builders for constructing a new annotation record
+// and its default label position. createStraightAnnotation and
+// computeDefaultLabelPosition are the canonical builders used by the drawing
+// flow and the clipboard (src/manual/annotation-clipboard.js).
+// Label-collision nudging lives in src/manual/label-layout.js; delete/clear
+// lifecycle lives in src/manual/annotation-lifecycle.js; copy/paste/reflect
+// lives in src/manual/annotation-clipboard.js.
 // Source part for app.js. Run `npm run build` after editing.
-//
-// createStraightAnnotation and computeDefaultLabelPosition are the
-// canonical builders used by the drawing flow and the clipboard. The
-// clipboard itself (lineClipboard) is a module-scope template that
-// survives undo/redo and is not snapshotted. reflectSelectedAnnotation
-// uses the detected view box (when present) to mirror across the local
-// front/back column instead of the whole image, so a front-view line
-// stays in the front view.
 
   function createStraightAnnotation(start, end, style, color = 'red', arrowType = 'double', lineWidth = DEFAULT_LINE_WIDTH) {
     const id = state.idCounter++;
@@ -15914,6 +15911,16 @@ const BOM_MATERIAL_LIBRARY = [
       y: point.y + Math.sin(angle - Math.PI / 2) * offset
     };
   }
+
+  // ---- src/manual/label-layout.js ----
+// Label-collision-avoidance physics loop for numbered callouts. Called from
+// the manual annotation flow and also from src/auto/drafts/generate-pom-fixture.js
+// and draft-actions.js, so nudgeAutoLabelsToAvoidCollisions must keep its name
+// exactly. Sibling files: annotation builders live in
+// src/manual/annotation-factory.js; delete/clear lifecycle lives in
+// src/manual/annotation-lifecycle.js; copy/paste/reflect lives in
+// src/manual/annotation-clipboard.js.
+// Source part for app.js. Run `npm run build` after editing.
 
   // Numbered callouts cluster at the bra center-front: POMs 1, 5, 6, 7, 8 all
   // fall in the same vertical strip. Nudge labels apart along each line's
@@ -15982,6 +15989,15 @@ const BOM_MATERIAL_LIBRARY = [
       if (!moved) break;
     }
   }
+
+  // ---- src/manual/annotation-lifecycle.js ----
+// Destructive board-mutation lifecycle: deleteImageById (purges Auto Mode
+// anchors/drafts/detection for a removed photo), deleteSelected, and
+// clearAllAnnotations. Sibling files: annotation builders live in
+// src/manual/annotation-factory.js; label-collision nudging lives in
+// src/manual/label-layout.js; copy/paste/reflect lives in
+// src/manual/annotation-clipboard.js.
+// Source part for app.js. Run `npm run build` after editing.
 
   // Remove one image and purge everything tied to it (erase strokes, and in
   // Auto Mode its anchors / drafts / detection or aux view — US-052). Returns
@@ -16072,6 +16088,19 @@ const BOM_MATERIAL_LIBRARY = [
     updateUI();
     requestRender();
   }
+
+  // ---- src/manual/annotation-clipboard.js ----
+// Line clipboard feature: copy / paste / reflect(mirror) a line, plus the
+// module-scope lineClipboard template that deliberately survives undo/redo
+// and is not snapshotted in history. reflectSelectedAnnotation uses the
+// detected view box (when present) to mirror across the local front/back
+// column instead of the whole image, so a front-view line stays in the front
+// view. Must load after src/manual/annotation-factory.js (uses
+// computeDefaultLabelPosition). Sibling files: annotation builders live in
+// src/manual/annotation-factory.js; label-collision nudging lives in
+// src/manual/label-layout.js; delete/clear lifecycle lives in
+// src/manual/annotation-lifecycle.js.
+// Source part for app.js. Run `npm run build` after editing.
 
   // Module-scope clipboard — survives undo/redo and isn't snapshotted in
   // history. Paste always builds a fresh annotation off this template.
@@ -18147,15 +18176,16 @@ function getAnnotationsOnImage(image) {
     });
   }
 
-  // ---- src/manual-tools.js ----
-// Manual mode: the remaining utilities that the extracted UI / interactions /
-// annotation / project / import / render modules depend on. The pure
-// format / style / viewport / image-record helper groups now live alongside
-// in src/manual/{format,style,viewport,image-records}.js; what remains here
-// is the big UI status updater plus paste / drag-drop wiring and a handful
-// of POM/annotation helpers that still touch global state directly.
+  // ---- src/manual/ui-status.js ----
+// Manual mode UI status sync: updateUI() is the single largest DOM-sync
+// surface in the app — nearly every mutation in the codebase ends by calling
+// it, and it touches ~50+ el.* toolbar/status references. AUTO_STATUS_COPY,
+// autoStepStates, and updateAutoModeUI are Auto-Mode-specific toolbar/status
+// wiring, kept here only because updateUI() calls updateAutoModeUI().
+// Sibling files: paste / drag-drop image import lives in
+// src/manual/image-import.js; POM/annotation lookup helpers live in
+// src/manual/annotation-lookup.js.
 // Source part for app.js. Run `npm run build` after editing.
-
 
   function updateUI() {
     el.toolSelect.classList.toggle('active', state.tool === 'select');
@@ -18477,32 +18507,15 @@ function getAnnotationsOnImage(image) {
     }
   }
 
-  function clone(value) {
-    return value == null ? value : JSON.parse(JSON.stringify(value));
-  }
-
-  function inferNextIdCounter() {
-    let max = 0;
-    for (const ann of state.annotations) max = Math.max(max, Number(ann.id) || 0);
-    for (const image of state.images) max = Math.max(max, Number(image.id) || 0);
-    for (const draft of state.autoMode.draftAnnotations) max = Math.max(max, Number(draft.id) || 0);
-    // BOM rows/callouts/groupIds draw from the same counter (and since
-    // US-074 every project has seeded rows) — skipping them here would let a
-    // project file with a missing idCounter re-issue their ids to new
-    // rows/images and corrupt id-keyed lookups like bmRowById.
-    if (state.bom) {
-      for (const row of state.bom.rows || []) {
-        max = Math.max(max, Number(row.id) || 0, Number(row.groupId) || 0);
-      }
-      for (const c of state.bom.callouts || []) max = Math.max(max, Number(c.id) || 0);
-      const bomImages = state.bom.images || {};
-      for (const image of [...(bomImages.solid || []), ...(bomImages.lace || [])]) {
-        max = Math.max(max, Number(image.id) || 0);
-      }
-    }
-    return max + 1;
-  }
-
+  // ---- src/manual/image-import.js ----
+// Manual mode image import pipeline: clipboard paste (onPasteEvent),
+// addImagesFromDataURLs, the file-input picker (onImageFileChosen), and
+// drag-and-drop (setupDragAndDrop, handleDroppedFiles). Must load after
+// src/manual/image-records.js (uses createImageRecord, blobToDataURL,
+// loadImageFromDataURL). Sibling files: the big UI status updater lives in
+// src/manual/ui-status.js; POM/annotation lookup helpers live in
+// src/manual/annotation-lookup.js.
+// Source part for app.js. Run `npm run build` after editing.
 
   async function onPasteEvent(e) {
     // Text fields keep native text paste. BOM photo popovers handle their own
@@ -18649,6 +18662,41 @@ function getAnnotationsOnImage(image) {
     if (!imageFiles.length && !pptxFiles.length) {
       showToast('Drop an image or a .pptx file to add it to the board.', 3600);
     }
+  }
+
+  // ---- src/manual/annotation-lookup.js ----
+// Manual mode POM/annotation lookup & predicate helpers, plus small pure
+// state utilities (clone, inferNextIdCounter): annotationCrossesViews,
+// getLabelText, lineLength, getPomInfo, getAnnotationById, isAutoDraft,
+// isReviewOnlyDraft, createUniqueAnnotationId, getImageById. Sibling files:
+// the big UI status updater lives in src/manual/ui-status.js; paste /
+// drag-drop image import lives in src/manual/image-import.js.
+// Source part for app.js. Run `npm run build` after editing.
+
+  function clone(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+  }
+
+  function inferNextIdCounter() {
+    let max = 0;
+    for (const ann of state.annotations) max = Math.max(max, Number(ann.id) || 0);
+    for (const image of state.images) max = Math.max(max, Number(image.id) || 0);
+    for (const draft of state.autoMode.draftAnnotations) max = Math.max(max, Number(draft.id) || 0);
+    // BOM rows/callouts/groupIds draw from the same counter (and since
+    // US-074 every project has seeded rows) — skipping them here would let a
+    // project file with a missing idCounter re-issue their ids to new
+    // rows/images and corrupt id-keyed lookups like bmRowById.
+    if (state.bom) {
+      for (const row of state.bom.rows || []) {
+        max = Math.max(max, Number(row.id) || 0, Number(row.groupId) || 0);
+      }
+      for (const c of state.bom.callouts || []) max = Math.max(max, Number(c.id) || 0);
+      const bomImages = state.bom.images || {};
+      for (const image of [...(bomImages.solid || []), ...(bomImages.lace || [])]) {
+        max = Math.max(max, Number(image.id) || 0);
+      }
+    }
+    return max + 1;
   }
 
   // True when start/end land in different detected view boxes (front vs back).
@@ -29754,41 +29802,6 @@ function getAnnotationsOnImage(image) {
     updateUI();
   }
 
-  // Reset POM meanings only. 'current' wipes the current style bucket
-  // ({styleId} or default), 'all' wipes every style + custom meanings.
-  // Calibration residuals are untouched.
-  function resetPomMeanings(scope) {
-    const styleId = currentStyleId();
-    if (scope === 'all') {
-      let total = 0;
-      for (const sid in meaningStore.styles) {
-        total += Object.keys(meaningStore.styles[sid].pomMeanings || {}).length;
-      }
-      const customCount = Object.keys(meaningStore.customMeanings || {}).length;
-      if (total === 0 && customCount === 0) {
-        showToast('No POM meanings confirmed yet.');
-        return;
-      }
-      if (!window.confirm('Forget every confirmed POM meaning across every style code, plus ' + customCount + ' custom measurement(s)? This cannot be undone.')) return;
-      clearMeaningStore('all');
-      showToast('All POM meanings forgotten.');
-    } else {
-      const bucket = getStyleBucket(styleId, false);
-      const count = bucket ? Object.keys(bucket.pomMeanings).length : 0;
-      if (count === 0) {
-        showToast(styleId === DEFAULT_STYLE_ID
-          ? 'No POM meanings confirmed for the default bucket yet.'
-          : 'No POM meanings confirmed for style "' + styleId + '" yet.');
-        return;
-      }
-      const label = styleId === DEFAULT_STYLE_ID ? 'the default bucket' : 'style "' + styleId + '"';
-      if (!window.confirm('Forget ' + count + ' confirmed POM meaning(s) for ' + label + '?')) return;
-      clearMeaningStore('current');
-      showToast('POM meanings forgotten for ' + label + '.');
-    }
-    updateUI();
-  }
-
   // Apply the median residual to every anchor in-place. Called by
   // seedAnchorsFromDetection so every code path that re-seeds anchors
   // (Detect Sketch, Reset Anchors) gets the same treatment.
@@ -29832,6 +29845,98 @@ function getAnnotationsOnImage(image) {
     }
     return anchors;
   }
+
+  // Transparent Learning panel feed. Aggregates the per-bucket residual
+  // store into rows the Learning Data modal can render directly without
+  // having to know the persisted shape. The status field encodes the
+  // same activation / clamp thresholds used by getAnchorBias:
+  //   - 'active'              : >= LEARNING_MIN_SAMPLES samples, normal bias
+  //   - 'needs-more-samples'  : 1..LEARNING_MIN_SAMPLES-1 samples
+  //   - 'large-correction'    : active AND median delta hit the clamp limit
+  //   - 'conflicting'         : active but spread dwarfs the median; bias
+  //                             is softly down-weighted at apply time
+  function summarizeLearningStore() {
+    const buckets = (learningStore && learningStore.buckets) || {};
+    const rows = [];
+    let totalSamples = 0;
+    // Phase 8: corrections by suspected pipeline stage. Samples recorded
+    // before stage attribution existed have no stage field — counted as
+    // 'unattributed' so the totals still reconcile.
+    const stageCounts = {};
+    for (const key of Object.keys(buckets)) {
+      const bucket = buckets[key] || [];
+      const n = bucket.length;
+      totalSamples += n;
+      for (const r of bucket) {
+        const stage = r && r.stage ? r.stage : 'unattributed';
+        stageCounts[stage] = (stageCounts[stage] || 0) + 1;
+      }
+      const pipe = key.indexOf('|');
+      const kind = pipe >= 0 ? key.slice(0, pipe) : key;
+      const viewRole = pipe >= 0 ? key.slice(pipe + 1) : '';
+      const dxs = bucket.map(r => Number(r.dx) || 0);
+      const dys = bucket.map(r => Number(r.dy) || 0);
+      const medianDx = n ? medianOf(dxs) : 0;
+      const medianDy = n ? medianOf(dys) : 0;
+      const madDx = n ? madOf(dxs, medianDx) : 0;
+      const madDy = n ? madOf(dys, medianDy) : 0;
+      const lastTs = n ? bucket.reduce((m, r) => Math.max(m, Number(r.ts) || 0), 0) : 0;
+      const conflicting = isBucketConflicting(bucket, medianDx, medianDy);
+      let status;
+      if (n === 0) status = 'empty';
+      else if (n < LEARNING_MIN_SAMPLES) status = 'needs-more-samples';
+      else {
+        const clamped = Math.abs(medianDx) >= LEARNING_CLAMP - 1e-6
+          || Math.abs(medianDy) >= LEARNING_CLAMP - 1e-6;
+        if (clamped) status = 'large-correction';
+        else if (conflicting) status = 'conflicting';
+        else status = 'active';
+      }
+      rows.push({ key, kind, viewRole, samples: n, medianDx, medianDy, madDx, madDy, lastTs, status });
+    }
+    rows.sort((a, b) => {
+      if (a.viewRole !== b.viewRole) return a.viewRole < b.viewRole ? -1 : 1;
+      return a.kind < b.kind ? -1 : (a.kind > b.kind ? 1 : 0);
+    });
+
+    const paramSamples = (learningStore && learningStore.paramSamples) || {};
+    const params = {};
+    let totalParamSamples = 0;
+    for (const name of Object.keys(paramSamples)) {
+      const count = (paramSamples[name] || []).length;
+      params[name] = count;
+      totalParamSamples += count;
+    }
+
+    return {
+      enabled: isLearningEnabled(),
+      totalSamples,
+      bucketCount: rows.length,
+      activeBucketCount: rows.filter(r => r.status === 'active' || r.status === 'large-correction' || r.status === 'conflicting').length,
+      needsMoreCount: rows.filter(r => r.status === 'needs-more-samples').length,
+      largeCorrectionCount: rows.filter(r => r.status === 'large-correction').length,
+      conflictingCount: rows.filter(r => r.status === 'conflicting').length,
+      minSamples: LEARNING_MIN_SAMPLES,
+      clampLimit: LEARNING_CLAMP,
+      outlierLimit: LEARNING_OUTLIER_LIMIT,
+      stageCounts,
+      paramSampleCounts: params,
+      totalParamSamples,
+      rows,
+    };
+  }
+
+  // ---- src/auto/learning/shadow-detection.js ----
+// Shared shadow-detection utilities: a per-image cache of a raw (unbiased)
+// re-detection, plus the small geometry/label helpers built on top of it.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// These are low-level helpers consumed by meaning-commit.js (and, through
+// it, by meaning-store.js's ranking heuristics) — not calibration math, so
+// they live apart from src/auto/learning/calibration-store.js even though
+// they originally accreted there. calibration-store.js keeps the residual
+// buckets and bias math; meaning-store.js keeps the POM-meaning catalog;
+// meaning-commit.js is the workflow that spans all three.
 
   // =============================================================
   // Phase 2 + Phase 3: Manual Mode silently teaches Auto Mode.
@@ -29929,95 +30034,19 @@ function getAnnotationsOnImage(image) {
     manualLearnCache.clear();
   }
 
-  // Transparent Learning panel feed. Aggregates the per-bucket residual
-  // store into rows the Learning Data modal can render directly without
-  // having to know the persisted shape. The status field encodes the
-  // same activation / clamp thresholds used by getAnchorBias:
-  //   - 'active'              : >= LEARNING_MIN_SAMPLES samples, normal bias
-  //   - 'needs-more-samples'  : 1..LEARNING_MIN_SAMPLES-1 samples
-  //   - 'large-correction'    : active AND median delta hit the clamp limit
-  //   - 'conflicting'         : active but spread dwarfs the median; bias
-  //                             is softly down-weighted at apply time
-  function summarizeLearningStore() {
-    const buckets = (learningStore && learningStore.buckets) || {};
-    const rows = [];
-    let totalSamples = 0;
-    // Phase 8: corrections by suspected pipeline stage. Samples recorded
-    // before stage attribution existed have no stage field — counted as
-    // 'unattributed' so the totals still reconcile.
-    const stageCounts = {};
-    for (const key of Object.keys(buckets)) {
-      const bucket = buckets[key] || [];
-      const n = bucket.length;
-      totalSamples += n;
-      for (const r of bucket) {
-        const stage = r && r.stage ? r.stage : 'unattributed';
-        stageCounts[stage] = (stageCounts[stage] || 0) + 1;
-      }
-      const pipe = key.indexOf('|');
-      const kind = pipe >= 0 ? key.slice(0, pipe) : key;
-      const viewRole = pipe >= 0 ? key.slice(pipe + 1) : '';
-      const dxs = bucket.map(r => Number(r.dx) || 0);
-      const dys = bucket.map(r => Number(r.dy) || 0);
-      const medianDx = n ? medianOf(dxs) : 0;
-      const medianDy = n ? medianOf(dys) : 0;
-      const madDx = n ? madOf(dxs, medianDx) : 0;
-      const madDy = n ? madOf(dys, medianDy) : 0;
-      const lastTs = n ? bucket.reduce((m, r) => Math.max(m, Number(r.ts) || 0), 0) : 0;
-      const conflicting = isBucketConflicting(bucket, medianDx, medianDy);
-      let status;
-      if (n === 0) status = 'empty';
-      else if (n < LEARNING_MIN_SAMPLES) status = 'needs-more-samples';
-      else {
-        const clamped = Math.abs(medianDx) >= LEARNING_CLAMP - 1e-6
-          || Math.abs(medianDy) >= LEARNING_CLAMP - 1e-6;
-        if (clamped) status = 'large-correction';
-        else if (conflicting) status = 'conflicting';
-        else status = 'active';
-      }
-      rows.push({ key, kind, viewRole, samples: n, medianDx, medianDy, madDx, madDy, lastTs, status });
-    }
-    rows.sort((a, b) => {
-      if (a.viewRole !== b.viewRole) return a.viewRole < b.viewRole ? -1 : 1;
-      return a.kind < b.kind ? -1 : (a.kind > b.kind ? 1 : 0);
-    });
-
-    const paramSamples = (learningStore && learningStore.paramSamples) || {};
-    const params = {};
-    let totalParamSamples = 0;
-    for (const name of Object.keys(paramSamples)) {
-      const count = (paramSamples[name] || []).length;
-      params[name] = count;
-      totalParamSamples += count;
-    }
-
-    return {
-      enabled: isLearningEnabled(),
-      totalSamples,
-      bucketCount: rows.length,
-      activeBucketCount: rows.filter(r => r.status === 'active' || r.status === 'large-correction' || r.status === 'conflicting').length,
-      needsMoreCount: rows.filter(r => r.status === 'needs-more-samples').length,
-      largeCorrectionCount: rows.filter(r => r.status === 'large-correction').length,
-      conflictingCount: rows.filter(r => r.status === 'conflicting').length,
-      minSamples: LEARNING_MIN_SAMPLES,
-      clampLimit: LEARNING_CLAMP,
-      outlierLimit: LEARNING_OUTLIER_LIMIT,
-      stageCounts,
-      paramSampleCounts: params,
-      totalParamSamples,
-      rows,
-    };
-  }
-
   // ---- src/auto/learning/meaning-store.js ----
-// POM-meaning catalog, style-scoped confirmation store, manual learning
-// dedup hash, and meaning-priority ranking. Source part for app.js.
-// Run `npm run build` after editing.
+// POM-meaning catalog and style-scoped confirmation store. Source part
+// for app.js. Run `npm run build` after editing.
 //
 // The meaning store is keyed by style id (per-project Style code). POMs
 // 1/3/5 are fixed and resolve via POM_FIXED_MEANINGS; POMs 6+ resolve via
-// each style bucket. evaluateManualPomSample is the single funnel between
-// manual labelling and the meaning popover.
+// each style bucket. The ranking heuristics and the manual-line-to-meaning
+// commit workflow (including evaluateManualPomSample, the single funnel
+// between manual labelling and the meaning popover) live in the sibling
+// src/auto/learning/meaning-commit.js, which loads after this file.
+// resetPomMeanings lives here (not in calibration-store.js) because it
+// only touches this file's own meaningStore/getStyleBucket/clearMeaningStore
+// state.
 
   // ---- Phase 3: meaning catalog + confirmation store -----------------
 
@@ -30187,6 +30216,100 @@ function getAnnotationsOnImage(image) {
     }
     saveMeaningStore();
   }
+
+  // Reset POM meanings only. 'current' wipes the current style bucket
+  // ({styleId} or default), 'all' wipes every style + custom meanings.
+  // Calibration residuals are untouched.
+  function resetPomMeanings(scope) {
+    const styleId = currentStyleId();
+    if (scope === 'all') {
+      let total = 0;
+      for (const sid in meaningStore.styles) {
+        total += Object.keys(meaningStore.styles[sid].pomMeanings || {}).length;
+      }
+      const customCount = Object.keys(meaningStore.customMeanings || {}).length;
+      if (total === 0 && customCount === 0) {
+        showToast('No POM meanings confirmed yet.');
+        return;
+      }
+      if (!window.confirm('Forget every confirmed POM meaning across every style code, plus ' + customCount + ' custom measurement(s)? This cannot be undone.')) return;
+      clearMeaningStore('all');
+      showToast('All POM meanings forgotten.');
+    } else {
+      const bucket = getStyleBucket(styleId, false);
+      const count = bucket ? Object.keys(bucket.pomMeanings).length : 0;
+      if (count === 0) {
+        showToast(styleId === DEFAULT_STYLE_ID
+          ? 'No POM meanings confirmed for the default bucket yet.'
+          : 'No POM meanings confirmed for style "' + styleId + '" yet.');
+        return;
+      }
+      const label = styleId === DEFAULT_STYLE_ID ? 'the default bucket' : 'style "' + styleId + '"';
+      if (!window.confirm('Forget ' + count + ' confirmed POM meaning(s) for ' + label + '?')) return;
+      clearMeaningStore('current');
+      showToast('POM meanings forgotten for ' + label + '.');
+    }
+    updateUI();
+  }
+
+  // Transparent Learning panel feed. Collapses the style-scoped meaning
+  // store into a shape the Learning Data modal can render directly.
+  // Fixed POMs (1/3/5) are always included so the panel shows the full
+  // resolved catalog instead of just style-confirmed POMs.
+  function summarizeMeaningStore() {
+    const styleId = currentStyleId();
+    const currentRows = [];
+    const fixedCatalog = {};
+    for (const pom of Object.keys(POM_FIXED_MEANINGS)) {
+      fixedCatalog[pom] = getCatalogEntry(POM_FIXED_MEANINGS[pom]);
+    }
+    for (const pom of Object.keys(POM_FIXED_MEANINGS)) {
+      const meaning = fixedCatalog[pom];
+      if (!meaning) continue;
+      currentRows.push({ pom, meaning, source: 'fixed' });
+    }
+    for (const row of listConfirmedMeanings(styleId)) {
+      currentRows.push({ pom: row.pom, meaning: row.meaning, source: 'confirmed' });
+    }
+    currentRows.sort((a, b) => Number(a.pom) - Number(b.pom));
+
+    const styles = [];
+    let totalConfirmed = 0;
+    for (const sid of Object.keys(meaningStore.styles)) {
+      const count = Object.keys(meaningStore.styles[sid].pomMeanings || {}).length;
+      totalConfirmed += count;
+      styles.push({ styleId: sid, confirmedCount: count });
+    }
+    styles.sort((a, b) => {
+      if (a.styleId === DEFAULT_STYLE_ID) return -1;
+      if (b.styleId === DEFAULT_STYLE_ID) return 1;
+      return a.styleId < b.styleId ? -1 : (a.styleId > b.styleId ? 1 : 0);
+    });
+
+    return {
+      currentStyleId: styleId,
+      currentStyleIsDefault: styleId === DEFAULT_STYLE_ID,
+      defaultStyleId: DEFAULT_STYLE_ID,
+      fixedPomCount: Object.keys(POM_FIXED_MEANINGS).length,
+      confirmedForCurrent: listConfirmedMeanings(styleId).length,
+      totalConfirmed,
+      customCount: Object.keys(meaningStore.customMeanings || {}).length,
+      knownStyles: styles,
+      currentRows,
+    };
+  }
+
+  // ---- src/auto/learning/meaning-commit.js ----
+// Manual-line-to-meaning commit workflow: ranking heuristics for a freshly
+// drawn manual line, the dedup hash, and the funnel that resolves a TD's
+// manual POM label into a recorded calibration residual. Source part for
+// app.js. Run `npm run build` after editing.
+//
+// This is the one workflow in the learning cluster that spans all three
+// stores: it reads the catalog from src/auto/learning/meaning-store.js,
+// runs shadow re-detection via src/auto/learning/shadow-detection.js, and
+// records residuals through src/auto/learning/calibration-store.js's
+// recordAnchorResidual. It must load after all three.
 
   // Recency-decayed usage weight. A meaning confirmed yesterday should
   // outrank one that was confirmed 200 times two years ago but never
@@ -30367,53 +30490,6 @@ function getAnnotationsOnImage(image) {
     return applyMeaningSample(evalResult.ann, evalResult.image, evalResult.pom, meaning, evalResult.hash);
   }
 
-  // Transparent Learning panel feed. Collapses the style-scoped meaning
-  // store into a shape the Learning Data modal can render directly.
-  // Fixed POMs (1/3/5) are always included so the panel shows the full
-  // resolved catalog instead of just style-confirmed POMs.
-  function summarizeMeaningStore() {
-    const styleId = currentStyleId();
-    const currentRows = [];
-    const fixedCatalog = {};
-    for (const pom of Object.keys(POM_FIXED_MEANINGS)) {
-      fixedCatalog[pom] = getCatalogEntry(POM_FIXED_MEANINGS[pom]);
-    }
-    for (const pom of Object.keys(POM_FIXED_MEANINGS)) {
-      const meaning = fixedCatalog[pom];
-      if (!meaning) continue;
-      currentRows.push({ pom, meaning, source: 'fixed' });
-    }
-    for (const row of listConfirmedMeanings(styleId)) {
-      currentRows.push({ pom: row.pom, meaning: row.meaning, source: 'confirmed' });
-    }
-    currentRows.sort((a, b) => Number(a.pom) - Number(b.pom));
-
-    const styles = [];
-    let totalConfirmed = 0;
-    for (const sid of Object.keys(meaningStore.styles)) {
-      const count = Object.keys(meaningStore.styles[sid].pomMeanings || {}).length;
-      totalConfirmed += count;
-      styles.push({ styleId: sid, confirmedCount: count });
-    }
-    styles.sort((a, b) => {
-      if (a.styleId === DEFAULT_STYLE_ID) return -1;
-      if (b.styleId === DEFAULT_STYLE_ID) return 1;
-      return a.styleId < b.styleId ? -1 : (a.styleId > b.styleId ? 1 : 0);
-    });
-
-    return {
-      currentStyleId: styleId,
-      currentStyleIsDefault: styleId === DEFAULT_STYLE_ID,
-      defaultStyleId: DEFAULT_STYLE_ID,
-      fixedPomCount: Object.keys(POM_FIXED_MEANINGS).length,
-      confirmedForCurrent: listConfirmedMeanings(styleId).length,
-      totalConfirmed,
-      customCount: Object.keys(meaningStore.customMeanings || {}).length,
-      knownStyles: styles,
-      currentRows,
-    };
-  }
-
   // TD typed a brand-new measurement name. We auto-detect the anchor
   // pair from the manual line itself, register it as a custom meaning,
   // pin POM N to it, then record the sample.
@@ -30427,10 +30503,10 @@ function getAnnotationsOnImage(image) {
     return applyMeaningSample(evalResult.ann, evalResult.image, evalResult.pom, meaning, evalResult.hash);
   }
 
-  // ---- src/auto/learning/style-evidence-store.js ----
-// Style-scoped evidence store: TD-confirmed POM lines and anchors a
-// project can reuse next time the same style is detected. Source part
-// for app.js. Run `npm run build` after editing.
+  // ---- src/auto/learning/style-evidence-record.js ----
+// Style-scoped evidence store: the durable storage layer for TD-confirmed
+// POM lines and anchors a project can reuse next time the same style is
+// detected. Source part for app.js. Run `npm run build` after editing.
 //
 // Separate from bra.learning.v1 (residual buckets) and bra.pomMeanings.v1
 // (POM→meaning catalog) on purpose: residuals are statistical, meanings
@@ -30440,6 +30516,11 @@ function getAnnotationsOnImage(image) {
 // Coordinates in stored records are normalized to the source image's
 // displayed bbox (same scheme as anchors / manual learn residuals), so
 // evidence survives zoom, pan, and image resizing.
+//
+// This file is schema + CRUD only. Save-time candidate scanning of the
+// live project lives in the sibling src/auto/learning/style-evidence-capture.js;
+// generate-time reuse of stored evidence to bias/veto fresh drafts lives in
+// src/auto/learning/style-evidence-reuse.js. Both load after this file.
 
   const STYLE_EVIDENCE_KEY = 'bra.styleEvidence.v1';
   const STYLE_EVIDENCE_VERSION = 1;
@@ -30704,20 +30785,44 @@ function getAnnotationsOnImage(image) {
     return true;
   }
 
-  // ---- Phase 2: evidence capture from TD-edited Auto lines ----------
-  //
-  // collectStyleEvidenceCandidates scans the current project annotations
-  // and picks rows the save flow can offer to remember for next time:
-  //
-  //   - auto === true          (line came out of Auto Mode, not a sketch)
-  //   - tdEdited === true      (the TD actually moved it after applying)
-  //   - drawability !== REVIEW_ONLY
-  //   - has start + end + a numeric POM (seq or label)
-  //   - sourceImageId resolves to a currently loaded image
-  //
-  // Output is a list of normalized records the same shape addStyleEvidence
-  // accepts. Nothing is written to storage here — the save dialog runs the
-  // commit step after the TD confirms.
+  // Wipe evidence for one style, or every style. Kept separate from the
+  // residual / meaning resets so a TD can prune evidence without losing
+  // the calibration medians or POM-meaning catalog.
+  function clearStyleEvidence(scope, styleId) {
+    if (scope === 'all') {
+      styleEvidenceStore = emptyStyleEvidenceStore();
+    } else if (styleId && styleEvidenceStore.styles[styleId]) {
+      delete styleEvidenceStore.styles[styleId];
+    } else {
+      return false;
+    }
+    saveStyleEvidenceStore();
+    return true;
+  }
+
+  // ---- src/auto/learning/style-evidence-capture.js ----
+// Style evidence: save-time candidate capture from the live project.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// The durable store schema and CRUD (addStyleEvidence, listStyleEvidence,
+// etc.) live in the sibling src/auto/learning/style-evidence-record.js,
+// which loads before this file. Generate-time reuse of stored evidence to
+// bias/veto fresh drafts lives in src/auto/learning/style-evidence-reuse.js.
+//
+// ---- Phase 2: evidence capture from TD-edited Auto lines ----------
+//
+// collectStyleEvidenceCandidates scans the current project annotations
+// and picks rows the save flow can offer to remember for next time:
+//
+//   - auto === true          (line came out of Auto Mode, not a sketch)
+//   - tdEdited === true      (the TD actually moved it after applying)
+//   - drawability !== REVIEW_ONLY
+//   - has start + end + a numeric POM (seq or label)
+//   - sourceImageId resolves to a currently loaded image
+//
+// Output is a list of normalized records the same shape addStyleEvidence
+// accepts. Nothing is written to storage here — the save dialog runs the
+// commit step after the TD confirms.
 
   function evidenceSourceForAnnotation(ann) {
     if (!ann) return null;
@@ -30968,6 +31073,16 @@ function getAnnotationsOnImage(image) {
     return written;
   }
 
+  // ---- src/auto/learning/style-evidence-reuse.js ----
+// Style evidence: generate-time reuse of stored evidence to bias or veto
+// freshly generated drafts. Source part for app.js. Run `npm run build`
+// after editing.
+//
+// The durable store schema and CRUD (listStyleEvidence, etc.) live in the
+// sibling src/auto/learning/style-evidence-record.js, which loads before
+// this file. Save-time candidate capture from the live project lives in
+// src/auto/learning/style-evidence-capture.js.
+
   function latestEvidenceByPom(styleId) {
     const out = new Map();
     for (const rec of listStyleEvidence(styleId)) {
@@ -31133,29 +31248,20 @@ function getAnnotationsOnImage(image) {
     return changed;
   }
 
-  // Wipe evidence for one style, or every style. Kept separate from the
-  // residual / meaning resets so a TD can prune evidence without losing
-  // the calibration medians or POM-meaning catalog.
-  function clearStyleEvidence(scope, styleId) {
-    if (scope === 'all') {
-      styleEvidenceStore = emptyStyleEvidenceStore();
-    } else if (styleId && styleEvidenceStore.styles[styleId]) {
-      delete styleEvidenceStore.styles[styleId];
-    } else {
-      return false;
-    }
-    saveStyleEvidenceStore();
-    return true;
-  }
-
-  // ---- src/auto/debug-api.js ----
-// Debug / introspection APIs for offline tooling. Source part for app.js.
-// Run `npm run build` after editing.
+  // ---- src/auto/debug-export.js ----
+// Debug / introspection export builders for offline tooling. Source part
+// for app.js. Run `npm run build` after editing.
 //
 // exportGroundTruth/downloadGroundTruth emit a normalized anchor JSON for
 // scripts/accuracy-tests.mjs. buildCvDebugExport/downloadCvDebugExport
 // dump the intermediate CV pipeline state captured by runOfflineDetection
 // when window.__braAutoModeDebug.cv.setEnabled(true) is on (or ?cvDebug=1).
+// buildStageDebugSummary is the per-pipeline-stage read-only projection
+// used by the Engineering Workflow debug view.
+//
+// The window.__braAutoModeDebug facade that wires these onto the by-name
+// test-suite contract lives in the sibling src/auto/debug-api.js, which
+// loads after this file.
 
   // -------- Ground-truth labeling export (accuracy harness) --------
   //
@@ -31601,6 +31707,21 @@ function getAnnotationsOnImage(image) {
       notes,
     };
   }
+
+  // ---- src/auto/debug-api.js ----
+// Debug / introspection API facade for offline tooling: the single
+// window.__braAutoModeDebug object literal, wiring together functions
+// defined throughout the rest of the bundle by name. Source part for
+// app.js. Run `npm run build` after editing.
+//
+// The export builders this facade calls (exportGroundTruth/downloadGroundTruth,
+// buildCvDebugExport/downloadCvDebugExport, buildStageDebugSummary) live in
+// the sibling src/auto/debug-export.js, which loads before this file.
+//
+// window.__braAutoModeDebug is a by-NAME contract with the headless test
+// suites (smoke, golden, invariants, contract, learning-tests, evidence-tests,
+// junction-tests, pipeline-tests, and others) — every key/method name here
+// must stay character-for-character identical even as implementations move.
 
   if (typeof window !== 'undefined') {
     window.__braAutoModeDebug = {
@@ -32382,15 +32503,11 @@ function makeExportFileName() {
     return copyCanvas;
   }
 
-  // ---- src/render/export-xlsx.js ----
-// Export Excel: write the Measurement Spec as a single offline .xlsx —
-// title band, styleId + date, one row per visible POM (EN + 中文 + TOL;
-// lines hidden via the review × toggle are omitted entirely), the full
-// 15-column graded size run (alpha S–5XL from base L, depth M2–5XL2 from
-// base L2), and the annotated board embedded as a PNG below the table.
-// No library, no template, no network (offline invariant). The ZIP writer
-// is the write-side mirror of the reader in src/import/pptx.js.
-// Source part for app.js. Run `npm run build` after editing.
+  // ---- src/render/export-xlsx-grading.js ----
+// Export Excel — grading math: the 15-size run (8 alpha + 7 depth columns)
+// and the per-POM delta tables that grade a proto's Size L measurement
+// across the full run. Source part for app.js. Run `npm run build` after
+// editing.
 //
 // Grading follows `Grading rules.md` (from SC.xlsx, Crossian standard):
 // two anchored runs — alpha graded from the proto's Size L via per-size
@@ -32400,6 +32517,10 @@ function makeExportFileName() {
 // model in both tiers (the Size Run dialog's model), so the dialog and
 // the export can never disagree about an overridden POM. Held POMs stay
 // flat across all 15 columns. NOTHING here touches the rule JSON.
+//
+// The generic OOXML+ZIP writer lives in the sibling xlsx-writer.js; the
+// single-sheet Measurement Spec export lives in export-spec-xlsx.js; the
+// 6-sheet tech-pack workbook lives in export-techpack-xlsx.js.
 
   // The 15-size run from the export mock: 8 alpha + 7 depth columns. Kept as
   // data so switching a style to another membership (e.g. the 18-size run, or
@@ -32572,9 +32693,22 @@ function makeExportFileName() {
     });
   }
 
-  // ---- Offline .xlsx writer (ZIP, method 0 = STORE) ----
+  // ---- src/render/xlsx-writer.js ----
+// Export Excel — generic OOXML/SpreadsheetML + ZIP toolkit: a hand-written
+// offline ZIP (STORE method) writer and the low-level cell/style/sheet XML
+// builders shared by every .xlsx export in this app. Source part for
+// app.js. Run `npm run build` after editing. The ZIP writer is the
+// write-side mirror of the reader in src/import/pptx.js.
+//
+// None of this knows about POMs, grading, or bra-specific sheets — the
+// grading math lives in the sibling export-xlsx-grading.js (which loads
+// before this file); the single-sheet Measurement Spec export lives in
+// export-spec-xlsx.js; the 6-sheet tech-pack workbook lives in
+// export-techpack-xlsx.js.
 
   const SPEC_XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+  // ---- Offline .xlsx writer (ZIP, method 0 = STORE) ----
 
   const CRC32_TABLE = (() => {
     const table = new Uint32Array(256);
@@ -32855,10 +32989,24 @@ function makeExportFileName() {
       + '</xdr:wsDr>';
   }
 
-  // Assemble every workbook part and ZIP them. `image` is optional
-  // ({ bytes, width, height }); without it the sheet is table-only.
-  // `now` feeds the header date and the ZIP timestamps — pass a fixed date
-  // to get byte-identical output (determinism tests).
+  // ---- src/render/export-spec-xlsx.js ----
+// Export Excel — the single-sheet 'Measurement Spec' export: title band,
+// styleId + date, one row per visible POM (EN + 中文 + TOL; lines hidden
+// via the review × toggle are omitted entirely), the full 15-column graded
+// size run (alpha S–5XL from base L, depth M2–5XL2 from base L2), and the
+// annotated board embedded as a PNG below the table. No library, no
+// template, no network (offline invariant). Source part for app.js. Run
+// `npm run build` after editing.
+//
+// buildSpecSheetRows is deliberately the single shared source of truth
+// between this export and buildPomSheetPart in the sibling
+// export-techpack-xlsx.js (US-079: "one builder, two entry points, so the
+// two exports can never disagree"). It is defined exactly once, here, and
+// called from export-techpack-xlsx.js, which loads after this file.
+//
+// Grading math lives in export-xlsx-grading.js; the generic OOXML+ZIP
+// toolkit lives in xlsx-writer.js — both load before this file.
+
   // The POM keys the spec actually emits, in row order. Extracted from
   // buildSpecWorkbookXlsx (US-079) so the Preview & Export page's spec-table
   // replica and the tech-pack workbook share the exact same visibility rules.
@@ -33105,6 +33253,20 @@ function makeExportFileName() {
       showToast('Excel export failed. Please try again after reducing image size.', 4200);
     }
   }
+
+  // ---- src/render/export-techpack-xlsx.js ----
+// Export Excel — the 6-sheet tech-pack workbook (US-079, ADR 0046): one
+// worksheet per enabled Preview & Export sheet, in the preview's fixed
+// order. MAIN PAGE and the two BOM sheets are real cells; the two
+// Construction sheets and every board/photo/material-key image are
+// embedded PNGs. The POM sheet reuses buildSpecSheetRows (defined in the
+// sibling export-spec-xlsx.js, which loads before this file) — the exact
+// grid the Board "Export Excel" button writes, which stays untouched.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Grading math lives in export-xlsx-grading.js; the generic OOXML+ZIP
+// toolkit lives in xlsx-writer.js — both load before this file, as does
+// export-spec-xlsx.js.
 
   // ---- Tech-pack multi-sheet workbook (US-079, ADR 0046) ----
   //
@@ -34198,67 +34360,17 @@ function makeExportFileName() {
     ctx.restore();
   }
 
-  // ---- src/render/render-auto-overlay.js ----
-// Auto Mode overlay rendering: draft annotation drawing, detection
-// bounding boxes / axes / view boxes, and the draggable anchor pins.
-// Source part for app.js. Run `npm run build` after editing.
+  // ---- src/render/detection-overlay.js ----
+// Auto Mode detection overlay: the read-only diagnostic layer showing the
+// detector's bbox, axis, band, chest, cradle, side seams, apex points,
+// strap/back-center markers, corner labels, an optional junction/endpoint
+// debug layer, and the quality badge. Source part for app.js. Run
+// `npm run build` after editing.
 //
-// drawAutoDraftAnnotation renders a Auto Mode draft with a halo + reduced
-// alpha so the TD can distinguish it from committed work. drawAnchors
-// draws the per-anchor pins; anchorLabelOffsetX/Y bias the pin label so
-// labels don't pile on top of the anchor or sketch features.
-
-  function drawAutoDraftAnnotation(ann, withLabel = true) {
-    if (isReviewOnlyDraft(ann)) return;
-    if (!ann.start || !ann.end) return;
-    ctx.save();
-    // Drafts are drawn with reduced opacity and a halo so they read as
-    // proposed (not yet committed) lines.
-    const isSelected = state.selection.kind === 'draft' && state.selection.id === ann.id;
-    const haloColor = ann.tdApproved ? '#16a34a' : '#f59e0b';
-    ctx.save();
-    ctx.globalAlpha = 0.35;
-    ctx.strokeStyle = haloColor;
-    ctx.lineWidth = (getLineWidth(ann) + 5) / state.zoom;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.setLineDash([]);
-    drawAnnotationPath(ann);
-    ctx.stroke();
-    ctx.restore();
-
-    drawLineCore(ann, ann.tdApproved ? 0.95 : 0.7);
-
-    if (withLabel) drawAutoDraftLabel(ann);
-    ctx.restore();
-  }
-
-  // Draft POM number, drawn in the label pass (after all lines + anchors) so it
-  // is never covered by a later draft line or an anchor — see render().
-  function drawAutoDraftLabel(ann) {
-    if (isReviewOnlyDraft(ann)) return;
-    if (!ann.start || !ann.end) return;
-    if (!labelsVisible() || !ann.label) return;
-    const isSelected = state.selection.kind === 'draft' && state.selection.id === ann.id;
-    drawLabel(ann.label, getLabelText(ann), isSelected, 1, getAnnotationColor(ann));
-  }
-
-  function hitTestAutoDraftAnnotations(world) {
-    const drafts = state.autoMode.draftAnnotations;
-    for (let i = drafts.length - 1; i >= 0; i -= 1) {
-      const ann = drafts[i];
-      if (isReviewOnlyDraft(ann)) continue;
-      if (isDraftHidden(ann.id)) continue;
-      if (!ann.start || !ann.end) continue;
-      if (ann.label && pointInLabelBounds(world, ann.label, getLabelText(ann), 8 / state.zoom)) {
-        return { id: ann.id, part: 'label' };
-      }
-      if (isPointNearAnnotation(world, ann, 8 / state.zoom)) {
-        return { id: ann.id, part: 'body' };
-      }
-    }
-    return null;
-  }
+// drawDetectionOverlay draws all of it in one pass, anchored to its source
+// image via normalized [0,1] detection coordinates so it survives pans,
+// zooms, and image resizes. Draft-line rendering and the draggable anchor
+// pins (what a TD actually drags) live in the sibling anchor-pins.js.
 
   // Draw the offline detection result (bbox + axis + bottom band + optional
   // chest line) anchored to its source image. All detection coordinates are
@@ -34594,6 +34706,73 @@ function makeExportFileName() {
     }
 
     ctx.restore();
+  }
+
+  // ---- src/render/anchor-pins.js ----
+// Auto Mode draft line rendering + its dedicated label pass + hit-testing,
+// and the draggable anchor pins (what a TD actually drags to correct
+// detection). Source part for app.js. Run `npm run build` after editing.
+//
+// drawAutoDraftAnnotation renders a Auto Mode draft with a halo + reduced
+// alpha so the TD can distinguish it from committed work. drawAnchors
+// draws the per-anchor pins; anchorLabelOffsetX/Y bias the pin label so
+// labels don't pile on top of the anchor or sketch features. The read-only
+// detection diagnostic overlay (bbox/axis/band/cradle/etc.) lives in the
+// sibling detection-overlay.js.
+//
+// hitTestAutoDraftAnnotations is called from src/manual/interactions.js,
+// so this file must still load before that interaction file.
+
+  function drawAutoDraftAnnotation(ann, withLabel = true) {
+    if (isReviewOnlyDraft(ann)) return;
+    if (!ann.start || !ann.end) return;
+    ctx.save();
+    // Drafts are drawn with reduced opacity and a halo so they read as
+    // proposed (not yet committed) lines.
+    const isSelected = state.selection.kind === 'draft' && state.selection.id === ann.id;
+    const haloColor = ann.tdApproved ? '#16a34a' : '#f59e0b';
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = haloColor;
+    ctx.lineWidth = (getLineWidth(ann) + 5) / state.zoom;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.setLineDash([]);
+    drawAnnotationPath(ann);
+    ctx.stroke();
+    ctx.restore();
+
+    drawLineCore(ann, ann.tdApproved ? 0.95 : 0.7);
+
+    if (withLabel) drawAutoDraftLabel(ann);
+    ctx.restore();
+  }
+
+  // Draft POM number, drawn in the label pass (after all lines + anchors) so it
+  // is never covered by a later draft line or an anchor — see render().
+  function drawAutoDraftLabel(ann) {
+    if (isReviewOnlyDraft(ann)) return;
+    if (!ann.start || !ann.end) return;
+    if (!labelsVisible() || !ann.label) return;
+    const isSelected = state.selection.kind === 'draft' && state.selection.id === ann.id;
+    drawLabel(ann.label, getLabelText(ann), isSelected, 1, getAnnotationColor(ann));
+  }
+
+  function hitTestAutoDraftAnnotations(world) {
+    const drafts = state.autoMode.draftAnnotations;
+    for (let i = drafts.length - 1; i >= 0; i -= 1) {
+      const ann = drafts[i];
+      if (isReviewOnlyDraft(ann)) continue;
+      if (isDraftHidden(ann.id)) continue;
+      if (!ann.start || !ann.end) continue;
+      if (ann.label && pointInLabelBounds(world, ann.label, getLabelText(ann), 8 / state.zoom)) {
+        return { id: ann.id, part: 'label' };
+      }
+      if (isPointNearAnnotation(world, ann, 8 / state.zoom)) {
+        return { id: ann.id, part: 'body' };
+      }
+    }
+    return null;
   }
 
   function drawAnchors() {
@@ -35043,16 +35222,16 @@ function makeExportFileName() {
     drawLabel(temp.label, seq, false, 0.9, getAnnotationColor(temp));
   }
 
-  // ---- src/render/render-loop.js ----
-// Render scheduling + the main draw loop, viewport math, and label
-// editor positioning. Source part for app.js. Run `npm run build`
-// after editing.
+  // ---- src/render/viewport.js ----
+// Pointer/viewport math + double-click dispatch. Source part for app.js.
+// Run `npm run build` after editing.
 //
-// requestRender batches into rAF so multiple state mutations in one tick
-// turn into a single repaint. render() is the only place the canvas is
-// transformed (pan + zoom) and walks every layer in z order: images,
-// erase strokes, drafts (Auto Mode), committed annotations, selection
-// helpers, detection overlay, anchors, label editor positioning.
+// getMousePos/screenToWorld/getViewportRect/normalizeWheelDelta/
+// zoomAtScreenPoint are the coordinate-space conversions used throughout
+// the render/interaction code; onDoubleClick is the double-click input
+// handler (select annotation / fit image / fit-all). The draw loop itself
+// (render(), requestRender(), etc.) lives in the sibling render-loop.js,
+// which loads after this file.
 
   function getMousePos(e) {
     // Read the live rect for pointer input. Mode/toolbars can change the
@@ -35113,6 +35292,21 @@ function onDoubleClick(e) {
   }
   fitSelectionOrAll();
 }
+
+  // ---- src/render/render-loop.js ----
+// Render scheduling + the main draw loop, and label editor positioning.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// requestRender batches into rAF so multiple state mutations in one tick
+// turn into a single repaint. render() is the only place the canvas is
+// transformed (pan + zoom) and walks every layer in z order: images,
+// erase strokes, drafts (Auto Mode), committed annotations, selection
+// helpers, detection overlay, anchors, label editor positioning.
+//
+// Pointer/viewport math (getMousePos, screenToWorld, getViewportRect,
+// normalizeWheelDelta, zoomAtScreenPoint) and the double-click handler
+// (onDoubleClick) live in the sibling viewport.js, which loads before
+// this file.
 
 function requestRender() {
     if (state.rafPending) return;

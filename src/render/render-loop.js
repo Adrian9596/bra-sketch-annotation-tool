@@ -1,72 +1,16 @@
-// Render scheduling + the main draw loop, viewport math, and label
-// editor positioning. Source part for app.js. Run `npm run build`
-// after editing.
+// Render scheduling + the main draw loop, and label editor positioning.
+// Source part for app.js. Run `npm run build` after editing.
 //
 // requestRender batches into rAF so multiple state mutations in one tick
 // turn into a single repaint. render() is the only place the canvas is
 // transformed (pan + zoom) and walks every layer in z order: images,
 // erase strokes, drafts (Auto Mode), committed annotations, selection
 // helpers, detection overlay, anchors, label editor positioning.
-
-  function getMousePos(e) {
-    // Read the live rect for pointer input. Mode/toolbars can change the
-    // canvas position without a window resize, and a stale cached rect makes
-    // clicks land offset from the cursor.
-    const rect = el.canvas.getBoundingClientRect();
-    state.lastCanvasRect = rect;
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
-    };
-  }
-
-function screenToWorld(x, y) {
-  return {
-    x: (x - state.panX) / state.zoom,
-    y: (y - state.panY) / state.zoom
-  };
-}
-
-function getViewportRect() {
-  return state.lastCanvasRect || el.canvas.getBoundingClientRect();
-}
-
-function normalizeWheelDelta(e) {
-  if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) return e.deltaY * 16;
-  if (e.deltaMode === WheelEvent.DOM_DELTA_PAGE) return e.deltaY * getViewportRect().height;
-  return e.deltaY;
-}
-
-function zoomAtScreenPoint(nextZoom, screenX, screenY) {
-  const clampedZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
-  if (Math.abs(clampedZoom - state.zoom) < 0.0001) return;
-  const before = screenToWorld(screenX, screenY);
-  state.zoom = clampedZoom;
-  state.panX = screenX - before.x * state.zoom;
-  state.panY = screenY - before.y * state.zoom;
-  updateUI();
-  requestRender();
-}
-
-function onDoubleClick(e) {
-  if (state.tool !== 'select') return;
-  const mouse = getMousePos(e);
-  const world = screenToWorld(mouse.x, mouse.y);
-  const annHit = hitTestAnnotations(world);
-  if (annHit) {
-    setSelection('annotation', annHit.id);
-    openLabelEditor(annHit.id);
-    return;
-  }
-  const imageHit = hitTestImages(world);
-  if (imageHit) {
-    setSelection('image', imageHit.id);
-    const image = getImageById(imageHit.id);
-    if (image) fitBoundsToViewport(getImageBounds(image));
-    return;
-  }
-  fitSelectionOrAll();
-}
+//
+// Pointer/viewport math (getMousePos, screenToWorld, getViewportRect,
+// normalizeWheelDelta, zoomAtScreenPoint) and the double-click handler
+// (onDoubleClick) live in the sibling viewport.js, which loads before
+// this file.
 
 function requestRender() {
     if (state.rafPending) return;
