@@ -84,6 +84,10 @@
     // pointer event — diffing against that would read zero change and skip the
     // compensation exactly when a reflow happened mid-gesture. See resizeCanvas.
     sizedCanvasRect: null,
+    // The devicePixelRatio the backing buffer was sized for. The buffer is a
+    // function of the CSS box AND the density, so a density change alone still
+    // needs a resize — and a ResizeObserver cannot see one.
+    sizedCanvasDpr: null,
     idCounter: 1,
 
     calibration: { unitsPerPx: null, unit: 'in' },

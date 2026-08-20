@@ -291,6 +291,10 @@
     // pointer event — diffing against that would read zero change and skip the
     // compensation exactly when a reflow happened mid-gesture. See resizeCanvas.
     sizedCanvasRect: null,
+    // The devicePixelRatio the backing buffer was sized for. The buffer is a
+    // function of the CSS box AND the density, so a density change alone still
+    // needs a resize — and a ResizeObserver cannot see one.
+    sizedCanvasDpr: null,
     idCounter: 1,
 
     calibration: { unitsPerPx: null, unit: 'in' },
@@ -18420,9 +18424,18 @@ function resizeCanvas() {
   const rect = el.canvas.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return;
 
+  // The backing buffer is a function of the CSS box AND the pixel density, so
+  // both have to be in the "does this need redoing?" test. Measured: dragging
+  // the window to a Retina display doubles devicePixelRatio while the CSS box
+  // stays put (or settles a frame later), and render() picks the new dpr up
+  // immediately for its ctx transform — so a buffer still sized for the old dpr
+  // gets drawn into at 2x and the whole board doubles. Comparing only width and
+  // height skipped exactly that case.
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
   const movedX = previousRect ? previousRect.left - rect.left : 0;
   const movedY = previousRect ? previousRect.top - rect.top : 0;
   const resized = !previousRect
+    || state.sizedCanvasDpr !== dpr
     || Math.abs(previousRect.width - rect.width) > 0.01
     || Math.abs(previousRect.height - rect.height) > 0.01;
   if (!resized && movedX === 0 && movedY === 0) return;
@@ -18441,7 +18454,7 @@ function resizeCanvas() {
   if (state.gestureCanvasRect) state.gestureCanvasRect = rect;
 
   if (resized) {
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    state.sizedCanvasDpr = dpr;
     el.canvas.width = Math.round(rect.width * dpr);
     el.canvas.height = Math.round(rect.height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -18456,9 +18469,32 @@ function resizeCanvas() {
 // changes. Observing the element itself means correctness no longer depends on
 // every one of those call sites remembering.
 function initCanvasResizeObserver() {
-  if (typeof ResizeObserver !== 'function' || !el.canvas) return;
-  const observer = new ResizeObserver(() => resizeCanvas());
-  observer.observe(el.canvas);
+  if (typeof ResizeObserver === 'function' && el.canvas) {
+    new ResizeObserver(() => resizeCanvas()).observe(el.canvas);
+  }
+  watchDevicePixelRatio();
+}
+
+// A ResizeObserver cannot see a density change: drag the window from a Retina
+// laptop panel to an external 1080p monitor and devicePixelRatio halves while
+// the CSS box stays exactly the same, so nothing fires. Chrome happens to emit
+// a `resize` here too, but that is not guaranteed across browsers and is the
+// kind of thing that quietly stops being true. A resolution media query is the
+// one signal that is actually about density; it has to be re-armed after every
+// change because the query pins the old value.
+function watchDevicePixelRatio() {
+  if (typeof window.matchMedia !== 'function') return;
+  const arm = () => {
+    const dpr = window.devicePixelRatio || 1;
+    const query = window.matchMedia(`(resolution: ${dpr}dppx)`);
+    const onChange = () => {
+      if (typeof query.removeEventListener === 'function') query.removeEventListener('change', onChange);
+      resizeCanvas();
+      arm();
+    };
+    if (typeof query.addEventListener === 'function') query.addEventListener('change', onChange, { once: true });
+  };
+  arm();
 }
 
 function toggleSpecPanel() {
@@ -36483,7 +36519,29 @@ function requestRender() {
     });
   }
 
+  // US-088: the last line of defence for "the buffer matches its CSS box".
+  // A ResizeObserver covers box changes and a resolution media query covers
+  // density changes, but both are event plumbing, and this invariant is too
+  // expensive to get wrong — a mismatched buffer is stretched into the box, so
+  // the board is painted at the wrong scale and every hit-test silently misses
+  // by a margin that grows across the canvas. Checking it where the drawing
+  // actually happens makes correctness independent of which event fired.
+  //
+  // Costs nothing per frame: it reads the cached rect rather than forcing
+  // layout, and resizeCanvas' own early-return makes the common case a no-op.
+  // It cannot loop — resizeCanvas fixes the buffer and requests one more frame,
+  // and by that frame there is nothing left to fix.
+  function syncCanvasBufferBeforeDraw() {
+    const rect = state.lastCanvasRect;
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    if (el.canvas.width === Math.round(rect.width * dpr)
+      && el.canvas.height === Math.round(rect.height * dpr)) return;
+    resizeCanvas();
+  }
+
   function render() {
+    syncCanvasBufferBeforeDraw();
     const rect = state.lastCanvasRect || el.canvas.getBoundingClientRect();
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

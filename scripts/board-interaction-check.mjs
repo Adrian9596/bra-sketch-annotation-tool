@@ -658,6 +658,54 @@ async function main() {
     `a drag across the photo must rubber-band the lines under it, got ${groups.photoMarqueeGroupMoved}`);
   console.log('board-interaction-check: multi-select and marquee intact, photo drag rubber-bands');
 
+  // ---- 8. The buffer follows the pixel DENSITY, not just the box ----
+  // Dragging the window from a Retina panel to an external 1080p monitor changes
+  // devicePixelRatio while the CSS box stays identical. A ResizeObserver is
+  // structurally blind to that, and `resize` is not guaranteed either — measured
+  // here, Chrome emits one going 1 -> 2 and NONE going 2 -> 1. render() drawing
+  // at the new density into a buffer sized for the old one puts the whole board
+  // at 2x or 0.5x, which is the US-088 failure again by a different door.
+  //
+  // Runs last, and restores the override, because changing device metrics
+  // resizes the viewport and would move every coordinate the checks above use.
+  const density = await (async () => {
+    const rows = [];
+    const forceDraw = () => s.eval(`window.__braAutoModeDebug.setHiddenAnnIds([]); 'drawn'`);
+    const settle = () => s.eval(`new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 120))))`);
+    const sample = async label => {
+      await settle();
+      await forceDraw();
+      await settle();
+      rows.push(Object.assign({ label }, await s.eval(`(() => {
+        const c = document.getElementById('boardCanvas');
+        const r = c.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        return { dpr, bufW: c.width, bufH: c.height,
+          wantW: Math.round(r.width * dpr), wantH: Math.round(r.height * dpr) };
+      })()`)));
+    };
+    await sample('baseline');
+    for (const factor of [2, 1]) {
+      await s.cdp('Emulation.setDeviceMetricsOverride', {
+        width: 1440, height: 900, deviceScaleFactor: factor, mobile: false,
+      });
+      await sample(`deviceScaleFactor ${factor}`);
+    }
+    await s.cdp('Emulation.clearDeviceMetricsOverride', {});
+    return rows;
+  })();
+  console.log('board-interaction-check: density ' + JSON.stringify(density));
+  // A run where the emulation never actually changed dpr would pass every
+  // assertion below while testing nothing.
+  check(new Set(density.map(r => r.dpr)).size > 1,
+    `the device-scale override did not change devicePixelRatio (${density.map(r => r.dpr).join(', ')}) — this assertion proves nothing as written`);
+  for (const row of density) {
+    check(row.bufW === row.wantW && row.bufH === row.wantH,
+      `at ${row.label} (dpr ${row.dpr}) the backing buffer is ${row.bufW}x${row.bufH} but its CSS box needs ${row.wantW}x${row.wantH} — `
+      + `the board is painted at ${(row.wantW / row.bufW).toFixed(2)}x the correct scale`);
+  }
+  console.log('board-interaction-check: the backing buffer tracks devicePixelRatio changes');
+
   const errors = await s.eval(`window.__toolbarConsoleErrors || []`);
   check(errors.length === 0, `page errors during the run: ${JSON.stringify(errors)}`);
 

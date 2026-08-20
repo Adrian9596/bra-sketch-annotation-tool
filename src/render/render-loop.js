@@ -21,7 +21,29 @@ function requestRender() {
     });
   }
 
+  // US-088: the last line of defence for "the buffer matches its CSS box".
+  // A ResizeObserver covers box changes and a resolution media query covers
+  // density changes, but both are event plumbing, and this invariant is too
+  // expensive to get wrong — a mismatched buffer is stretched into the box, so
+  // the board is painted at the wrong scale and every hit-test silently misses
+  // by a margin that grows across the canvas. Checking it where the drawing
+  // actually happens makes correctness independent of which event fired.
+  //
+  // Costs nothing per frame: it reads the cached rect rather than forcing
+  // layout, and resizeCanvas' own early-return makes the common case a no-op.
+  // It cannot loop — resizeCanvas fixes the buffer and requests one more frame,
+  // and by that frame there is nothing left to fix.
+  function syncCanvasBufferBeforeDraw() {
+    const rect = state.lastCanvasRect;
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    if (el.canvas.width === Math.round(rect.width * dpr)
+      && el.canvas.height === Math.round(rect.height * dpr)) return;
+    resizeCanvas();
+  }
+
   function render() {
+    syncCanvasBufferBeforeDraw();
     const rect = state.lastCanvasRect || el.canvas.getBoundingClientRect();
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
