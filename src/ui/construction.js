@@ -60,11 +60,36 @@
     ccSyncUi();
   }
 
+  // US-090, generalising ADR 0051 to the other two on-page canvases. Both
+  // re-derive their buffer AND their whole world->canvas transform from the live
+  // rect on every draw, so they never hold a stale buffer — but nothing redrew
+  // them when the box changed without a redraw being requested. The toolbar
+  // hint rewrapping on a tool switch, a table row adding a scrollbar, or the
+  // print stylesheet changing the aspect all left the last-painted buffer
+  // stretched into a differently-shaped box: the drawing is scaled, while
+  // ccEventPoint / bmCanvasPointFromEvent read the live rect and assume 1:1. A
+  // callout then lands measurably off the click and is saved there.
+  //
+  // Observing the element is the same general answer as on the board: no call
+  // site has to remember. Redrawing is enough here because the draw already
+  // re-sizes the buffer itself.
+  function observeCanvasBox(canvasId, redraw) {
+    if (typeof ResizeObserver !== 'function') return;
+    const node = document.getElementById(canvasId);
+    if (!node) return;
+    new ResizeObserver(() => {
+      const rect = node.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;   // page hidden
+      redraw();
+    }).observe(node);
+  }
+
   function initConstruction() {
     ensureConstruction();
     const page = document.getElementById('constructionPage');
     if (!page) return;
     const canvas = document.getElementById('constructionCanvas');
+    observeCanvasBox('constructionCanvas', () => ccDrawCanvas());
     const imageInput = document.getElementById('ccImageInput');
     const tableBody = document.getElementById('ccTableBody');
 

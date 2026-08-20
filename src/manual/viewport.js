@@ -200,7 +200,13 @@ function getImageBounds(image) {
 // Annotations whose line midpoint sits within the image are treated as part of
 // that sketch, so dragging the image moves its callouts as one group.
 function getAnnotationsOnImage(image) {
-  const bounds = getImageBounds(image);
+  return annotationsWithinBounds(getImageBounds(image));
+}
+
+// Split out of getAnnotationsOnImage (US-091) so a resize can ask which lines
+// belonged to the image as it was BEFORE the rect changed — asking afterwards
+// would test the new bounds and lose any line the shrink pushed outside.
+function annotationsWithinBounds(bounds) {
   // Auto Mode drafts live outside state.annotations (see getAnnotationById,
   // which already resolves both arrays) but they sit on the same photo and have
   // to travel with it. Filtering state.annotations alone meant that in Auto Mode
@@ -220,4 +226,41 @@ function getAnnotationsOnImage(image) {
     return cx >= bounds.x && cx <= bounds.x + bounds.width
       && cy >= bounds.y && cy <= bounds.y + bounds.height;
   });
+}
+
+// US-091: resizing a sketch scales the POM lines drawn on it, and leaves every
+// measured value exactly where it was.
+//
+// The two halves are separate problems. Anchors are stored normalized to their
+// image so they scale for free; annotations are absolute world coordinates and
+// did not move at all — measured, a photo scaled x1.2354 left 0/18 lines
+// behind, detached from the garment they annotate. Scaling them about the
+// resize anchor fixes the geometry.
+//
+// That alone would silently restate every measurement, because a value is
+// lineLength x unitsPerPx and the line just got longer. Resizing the photo on
+// the board is a layout act, not a re-measurement, so each scaled line carries
+// the factor in `measureScale` and lineLength divides it back out. Kept on the
+// ANNOTATION rather than on the image on purpose: the line/image association is
+// positional and can change, while the factor belongs to the line for good.
+// calibration.unitsPerPx is global and cannot express a per-image scale, which
+// is why it is not touched.
+function scalePointAbout(point, origin, factor) {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+  point.x = origin.x + (point.x - origin.x) * factor;
+  point.y = origin.y + (point.y - origin.y) * factor;
+}
+
+function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
+  if (!previousBounds || !origin) return;
+  if (!Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 1e-9) return;
+  for (const ann of annotationsWithinBounds(previousBounds)) {
+    scalePointAbout(ann.start, origin, factor);
+    scalePointAbout(ann.end, origin, factor);
+    for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
+      if (ann[key]) scalePointAbout(ann[key], origin, factor);
+    }
+    scalePointAbout(ann.label, origin, factor);
+    ann.measureScale = (ann.measureScale || 1) * factor;
+  }
 }

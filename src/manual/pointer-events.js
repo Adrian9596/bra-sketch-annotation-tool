@@ -662,13 +662,20 @@ function resizeImagesFromCorner(interaction, world) {
   if (Number.isFinite(smallest) && smallest > 0) {
     scale = Math.max(scale, MIN_IMAGE_SIZE / smallest);
   }
+  // US-091: same contract as the single-image resize — the lines drawn on each
+  // photo scale with it, about the GROUP anchor every photo is scaling about.
+  // `scale` here is absolute against the gesture's start snapshot, so the
+  // per-frame factor is the ratio against the rect the image has right now.
   for (const s of start) {
     const image = getImageById(s.id);
     if (!image) continue;
+    const previousBounds = getImageBounds(image);
+    const factor = image.width > 0 ? (s.width * scale) / image.width : 1;
     image.x = anchor.x + (s.x - anchor.x) * scale;
     image.y = anchor.y + (s.y - anchor.y) * scale;
     image.width = s.width * scale;
     image.height = s.height * scale;
+    scaleAnnotationsForImageResize(previousBounds, anchor, factor);
   }
 }
 

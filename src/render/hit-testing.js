@@ -183,6 +183,13 @@
       width = height * aspect;
     }
 
+    // US-091: which lines belong to this photo has to be answered against the
+    // rect it had BEFORE the resize, and the incremental factor read off the
+    // same pair — this runs once per mousemove, so the factor is per-frame, not
+    // for the whole gesture.
+    const previousBounds = getImageBounds(image);
+    const factor = image.width > 0 ? width / image.width : 1;
+
     if (corner === 'nw') {
       image.x = anchor.x - width;
       image.y = anchor.y - height;
@@ -199,6 +206,9 @@
 
     image.width = width;
     image.height = height;
+
+    // The photo scales about the opposite corner, so its lines do too.
+    scaleAnnotationsForImageResize(previousBounds, anchor, factor);
   }
 
   function pointInLabelBounds(point, labelPos, seq, padding) {

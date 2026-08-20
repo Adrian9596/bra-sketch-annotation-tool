@@ -729,6 +729,82 @@ async function main() {
     `a drag across the photo must rubber-band the lines under it, got ${groups.photoMarqueeGroupMoved}`);
   console.log('board-interaction-check: multi-select and marquee intact, photo drag rubber-bands');
 
+  // ---- 7b. Resizing the sketch scales its lines and holds every value ----
+  // US-091. Anchors are normalized to their image and scale for free;
+  // annotations are absolute world coordinates and did not move at all, so a
+  // resized sketch left all 18 POM lines detached from the garment. Scaling
+  // them fixes the geometry but would restate every measurement, since a value
+  // is lineLength x unitsPerPx — so each line carries the factor in
+  // measureScale and lineLength divides it back out. Both halves are asserted:
+  // geometry followed, and NOT ONE measured value moved.
+  const resize = await s.eval(`(async () => {
+    const B = window.__BI;
+    await B.restore();
+    B.clearSelection();
+    await B.settle();
+    const canvas = document.getElementById('boardCanvas');
+    const shot = () => B.d.getAnnotations().map(a => ({
+      id: a.id,
+      drawn: Math.hypot(a.end.x - a.start.x, a.end.y - a.start.y),
+      ms: (Number.isFinite(a.measureScale) && a.measureScale > 0) ? a.measureScale : 1,
+      sx: a.start.x, sy: a.start.y,
+    }));
+    const im = B.d.getImages()[0];
+    const before = shot();
+    const beforeW = im.width;
+    // Select the photo first (US-086 select-then-drag) — the corner handles
+    // only exist once it is selected. Press at the point on the photo furthest
+    // from every line, or the press is claimed by a line and the corner press
+    // that follows falls through to a marquee, testing nothing.
+    let spot = null, bestClear = -1;
+    for (let gx = 1; gx <= 14; gx += 1) for (let gy = 1; gy <= 14; gy += 1) {
+      const p = { x: im.x + im.width * gx / 15, y: im.y + im.height * gy / 15 };
+      let clear = Infinity;
+      for (const a of B.d.getAnnotations()) {
+        const vx = a.end.x - a.start.x, vy = a.end.y - a.start.y;
+        const len2 = vx * vx + vy * vy || 1;
+        const t = Math.max(0, Math.min(1, ((p.x - a.start.x) * vx + (p.y - a.start.y) * vy) / len2));
+        clear = Math.min(clear, Math.hypot(p.x - (a.start.x + vx * t), p.y - (a.start.y + vy * t)));
+      }
+      if (clear > bestClear) { bestClear = clear; spot = p; }
+    }
+    const mid = B.w2s(spot);
+    B.ev('mousedown', mid.x, mid.y); B.ev('mouseup', mid.x, mid.y);
+    await B.settle();
+    const se = B.w2s({ x: im.x + im.width, y: im.y + im.height });
+    B.ev('mousedown', se.x, se.y);
+    const opened = (B.d.getInteraction() || {}).type;
+    for (let i = 1; i <= 6; i += 1) B.ev('mousemove', se.x + 120 * i / 6, se.y + 90 * i / 6);
+    B.ev('mouseup', se.x + 120, se.y + 90);
+    await B.settle();
+    const after = shot();
+    const imgScale = B.d.getImages()[0].width / beforeW;
+    const byId = new Map(before.map(l => [l.id, l]));
+    let movedCount = 0, worstValueDrift = 0, worstScaleErr = 0;
+    for (const l of after) {
+      const b = byId.get(l.id); if (!b) continue;
+      if (Math.hypot(l.sx - b.sx, l.sy - b.sy) > 0.5) movedCount += 1;
+      const beforeValue = b.drawn / b.ms, afterValue = l.drawn / l.ms;
+      worstValueDrift = Math.max(worstValueDrift, Math.abs(afterValue - beforeValue) / (beforeValue || 1));
+      worstScaleErr = Math.max(worstScaleErr, Math.abs(l.ms / b.ms - imgScale));
+    }
+    await B.restore();
+    return { opened, imgScale: +imgScale.toFixed(4), n: after.length, movedCount,
+      worstValueDriftPct: +(worstValueDrift * 100).toFixed(4),
+      worstScaleErr: +worstScaleErr.toFixed(6) };
+  })()`);
+  console.log('board-interaction-check: resize ' + JSON.stringify(resize));
+  check(resize.opened === 'drag-image-resize',
+    `the corner press opened ${resize.opened} instead of a resize — nothing was tested`);
+  check(resize.imgScale > 1.05, `the photo barely resized (x${resize.imgScale}) — nothing was tested`);
+  check(resize.movedCount === resize.n,
+    `the photo scaled x${resize.imgScale} but only ${resize.movedCount}/${resize.n} lines followed it`);
+  check(resize.worstScaleErr < 0.001,
+    `a line recorded measureScale off the photo's own scale by ${resize.worstScaleErr}`);
+  check(resize.worstValueDriftPct < 0.01,
+    `resizing the sketch moved a measured value by ${resize.worstValueDriftPct}% — a layout act must not restate a measurement`);
+  console.log(`board-interaction-check: resize x${resize.imgScale} scales all ${resize.n} lines and changes no measured value`);
+
   // ---- 8. The buffer follows the pixel DENSITY, not just the box ----
   // Dragging the window from a Retina panel to an external 1080p monitor changes
   // devicePixelRatio while the CSS box stays identical. A ResizeObserver is

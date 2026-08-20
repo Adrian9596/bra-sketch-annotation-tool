@@ -144,6 +144,9 @@
   let bmSelectedImageId = null;
   let bmDrag = null;             // callout anchor/label or BOM image drag
   let bmCanvasView = { offX: 0, offY: 0, scale: 1 };
+  // US-090: the fit-to-bounds basis, frozen while an image drag is in flight so
+  // the view cannot move under the drag's own reference. Null otherwise.
+  let bmFrozenBounds = null;
 
   function bmVariantKey(variant) {
     return String(variant || bmVariant).toLowerCase() === 'lace' ? 'lace' : 'solid';

@@ -70,9 +70,20 @@
     return String(ann.seq);
   }
 
+  // The MEASURED length, which is not the drawn length once the sketch has been
+  // resized (US-091). Resizing a photo on the board scales the lines drawn on it
+  // so they stay on the garment, and stamps the factor into ann.measureScale;
+  // dividing it back out here keeps every measured value exactly what it was
+  // before the resize. Every caller of lineLength is a measurement — the spec
+  // panel, the tolerance check, the Set Scale dialog, the grading model and the
+  // on-canvas label — so this is the one place it belongs. Drawing and
+  // hit-testing use the raw geometry and never come through here.
   function lineLength(ann) {
-    if (ann.type === 'straight') return distance(ann.start, ann.end);
-    return polylineLength(getAnnotationPolyline(ann, BEZIER_SAMPLES * 2));
+    const drawn = ann.type === 'straight'
+      ? distance(ann.start, ann.end)
+      : polylineLength(getAnnotationPolyline(ann, BEZIER_SAMPLES * 2));
+    const scale = ann.measureScale;
+    return (Number.isFinite(scale) && scale > 0) ? drawn / scale : drawn;
   }
 
   // Map a callout label ("8", "1,2") to POM standard info. Joins descriptions for

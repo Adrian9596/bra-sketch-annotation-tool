@@ -26,6 +26,11 @@
     ensureBom();
     const page = document.getElementById('bomPage');
     if (!page) return;
+    // US-090 — see observeCanvasBox in construction.js for why. The Material
+    // Key is the worse of the two: switching tool rewraps the toolbar hint and
+    // shrinks the canvas ~19px with no redraw, so leader arrowheads landed a
+    // few percent off the click and were saved there.
+    observeCanvasBox('bomMatkeyCanvas', () => bmDrawCanvas());
 
     document.querySelectorAll('[data-bom-variant]').forEach(btn => {
       btn.addEventListener('click', () => {

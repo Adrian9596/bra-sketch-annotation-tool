@@ -350,7 +350,17 @@
       return;
     }
 
-    const bounds = bmImageBounds();
+    // US-090, the same defect Construction's ccBuildPanelLayout carries (ADR
+    // 0041 keeps the two as a deliberate fork): this view fits the canvas to
+    // the UNION BBOX of the Material Key's images and was rebuilt from the live
+    // bbox on every draw, while bmOnPointerMove positions the dragged image
+    // from an origin captured in the PREVIOUS view's space. The reference moved
+    // under the formula, so the image lagged the cursor and the whole key
+    // rescaled mid-drag (measured 1.214 -> 0.795 over one 200px drag), while
+    // the stored x ran away by an unbounded amount that pushHistoryIfChanged
+    // saved into the project. Frozen for the duration of a drag; re-fits on
+    // release.
+    const bounds = (bmFrozenBounds || bmImageBounds());
     const pad = 40;
     const scale = Math.min(
       (cssWidth - pad * 2) / bounds.width,
@@ -544,10 +554,18 @@
     if (image) {
       bmSelectedCalloutId = null;
       bmSelectedImageId = image.id;
-      bmDrag = {
-        part: 'image', imageRec: image,
-        startX: pt.x, startY: pt.y, originX: image.x, originY: image.y,
-      };
+      // A Material Key holding a single image has no arrangement to make: the
+      // fit-to-bounds view re-centres it whatever its coordinates, so a drag
+      // could only produce an invisible mutation that gets saved. Select it,
+      // do not drag it. With two or more, position matters and the drag runs
+      // against a frozen fit basis.
+      if (bmVariantImages().length > 1) {
+        bmFrozenBounds = bmImageBounds();
+        bmDrag = {
+          part: 'image', imageRec: image,
+          startX: pt.x, startY: pt.y, originX: image.x, originY: image.y,
+        };
+      }
       renderBom();
       e.preventDefault();
       return;
@@ -577,7 +595,14 @@
 
   function bmOnPointerUp() {
     if (!bmDrag) return;
+    const wasImageDrag = bmDrag.part === 'image';
     bmDrag = null;
+    // Release the frozen fit basis and re-frame the key around wherever the
+    // images ended up, before the history entry is taken.
+    if (bmFrozenBounds) {
+      bmFrozenBounds = null;
+      if (wasImageDrag) bmDrawCanvas();
+    }
     pushHistoryIfChanged();
   }
 

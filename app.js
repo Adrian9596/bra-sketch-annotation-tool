@@ -10614,10 +10614,23 @@ const CONSTRUCTION_GENERATED_PHRASES = [
   let ccDrag = null;
   let ccPanelLayouts = {};
   let ccBoxCache = {};
+  // US-090: the fit-to-bounds basis, frozen for the duration of an image drag.
+  // Keyed by view; null when no drag is in flight.
+  let ccFrozenBounds = null;
 
   function ccBuildPanelLayout(view, x, y, width, height) {
     const content = { x: x + 12, y: y + 36, width: width - 24, height: height - 48 };
-    const bounds = ccImageBounds(ccSheet, view);
+    // US-090. This transform fits the panel to the UNION BBOX of its images and
+    // was recomputed from the live bbox on every draw — so moving an image
+    // moved the very bounds the transform is derived from. With one image the
+    // two cancelled exactly: measured, a 200px drag advanced the stored x by
+    // 128.21 world units while the painted pixels did not move at all, and
+    // pushHistoryIfChanged saved that invisible offset into the project. With
+    // two, the bbox grew and the whole panel rescaled mid-gesture (1.214 ->
+    // 0.795 over one drag). Freezing the basis for the duration of the drag
+    // makes the gesture a plain translation in a stable space; the panel
+    // re-fits once on release.
+    const bounds = (ccFrozenBounds && ccFrozenBounds[view]) || ccImageBounds(ccSheet, view);
     const hasImages = ccImages(ccSheet, view).length > 0;
     const scale = hasImages ? Math.min(content.width / bounds.width, content.height / bounds.height, 2) : 1;
     return {
@@ -10984,7 +10997,16 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     if (image) {
       ccSelectedImageId = image.id;
       ccSelectedCalloutId = null;
-      ccDrag = { kind: 'image', image, layout, prev: world };
+      // A panel holding a single image has no arrangement to make: the
+      // fit-to-bounds transform re-centres it whatever its coordinates, so the
+      // only thing a drag could achieve is an invisible mutation that gets
+      // saved. Select it, do not drag it. With two or more, position is
+      // meaningful and the drag runs against a frozen fit basis.
+      const draggable = ccImages(ccSheet, layout.view).length > 1;
+      if (draggable) {
+        ccFrozenBounds = { [layout.view]: ccImageBounds(ccSheet, layout.view) };
+        ccDrag = { kind: 'image', image, layout, prev: world };
+      }
     } else {
       ccSelectedImageId = null;
       ccSelectedCalloutId = null;
@@ -11014,7 +11036,14 @@ const CONSTRUCTION_GENERATED_PHRASES = [
 
   function ccOnPointerUp() {
     if (!ccDrag) return;
+    const wasImageDrag = ccDrag.kind === 'image';
     ccDrag = null;
+    // Release the frozen fit basis and re-frame the panel around wherever the
+    // images ended up, before the history entry is taken.
+    if (ccFrozenBounds) {
+      ccFrozenBounds = null;
+      if (wasImageDrag) ccDrawCanvas();
+    }
     pushHistoryIfChanged();
   }
 
@@ -11342,11 +11371,36 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     ccSyncUi();
   }
 
+  // US-090, generalising ADR 0051 to the other two on-page canvases. Both
+  // re-derive their buffer AND their whole world->canvas transform from the live
+  // rect on every draw, so they never hold a stale buffer — but nothing redrew
+  // them when the box changed without a redraw being requested. The toolbar
+  // hint rewrapping on a tool switch, a table row adding a scrollbar, or the
+  // print stylesheet changing the aspect all left the last-painted buffer
+  // stretched into a differently-shaped box: the drawing is scaled, while
+  // ccEventPoint / bmCanvasPointFromEvent read the live rect and assume 1:1. A
+  // callout then lands measurably off the click and is saved there.
+  //
+  // Observing the element is the same general answer as on the board: no call
+  // site has to remember. Redrawing is enough here because the draw already
+  // re-sizes the buffer itself.
+  function observeCanvasBox(canvasId, redraw) {
+    if (typeof ResizeObserver !== 'function') return;
+    const node = document.getElementById(canvasId);
+    if (!node) return;
+    new ResizeObserver(() => {
+      const rect = node.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;   // page hidden
+      redraw();
+    }).observe(node);
+  }
+
   function initConstruction() {
     ensureConstruction();
     const page = document.getElementById('constructionPage');
     if (!page) return;
     const canvas = document.getElementById('constructionCanvas');
+    observeCanvasBox('constructionCanvas', () => ccDrawCanvas());
     const imageInput = document.getElementById('ccImageInput');
     const tableBody = document.getElementById('ccTableBody');
 
@@ -11931,6 +11985,9 @@ const BOM_MATERIAL_LIBRARY = [
   let bmSelectedImageId = null;
   let bmDrag = null;             // callout anchor/label or BOM image drag
   let bmCanvasView = { offX: 0, offY: 0, scale: 1 };
+  // US-090: the fit-to-bounds basis, frozen while an image drag is in flight so
+  // the view cannot move under the drag's own reference. Null otherwise.
+  let bmFrozenBounds = null;
 
   function bmVariantKey(variant) {
     return String(variant || bmVariant).toLowerCase() === 'lace' ? 'lace' : 'solid';
@@ -12983,7 +13040,17 @@ const BOM_MATERIAL_LIBRARY = [
       return;
     }
 
-    const bounds = bmImageBounds();
+    // US-090, the same defect Construction's ccBuildPanelLayout carries (ADR
+    // 0041 keeps the two as a deliberate fork): this view fits the canvas to
+    // the UNION BBOX of the Material Key's images and was rebuilt from the live
+    // bbox on every draw, while bmOnPointerMove positions the dragged image
+    // from an origin captured in the PREVIOUS view's space. The reference moved
+    // under the formula, so the image lagged the cursor and the whole key
+    // rescaled mid-drag (measured 1.214 -> 0.795 over one 200px drag), while
+    // the stored x ran away by an unbounded amount that pushHistoryIfChanged
+    // saved into the project. Frozen for the duration of a drag; re-fits on
+    // release.
+    const bounds = (bmFrozenBounds || bmImageBounds());
     const pad = 40;
     const scale = Math.min(
       (cssWidth - pad * 2) / bounds.width,
@@ -13177,10 +13244,18 @@ const BOM_MATERIAL_LIBRARY = [
     if (image) {
       bmSelectedCalloutId = null;
       bmSelectedImageId = image.id;
-      bmDrag = {
-        part: 'image', imageRec: image,
-        startX: pt.x, startY: pt.y, originX: image.x, originY: image.y,
-      };
+      // A Material Key holding a single image has no arrangement to make: the
+      // fit-to-bounds view re-centres it whatever its coordinates, so a drag
+      // could only produce an invisible mutation that gets saved. Select it,
+      // do not drag it. With two or more, position matters and the drag runs
+      // against a frozen fit basis.
+      if (bmVariantImages().length > 1) {
+        bmFrozenBounds = bmImageBounds();
+        bmDrag = {
+          part: 'image', imageRec: image,
+          startX: pt.x, startY: pt.y, originX: image.x, originY: image.y,
+        };
+      }
       renderBom();
       e.preventDefault();
       return;
@@ -13210,7 +13285,14 @@ const BOM_MATERIAL_LIBRARY = [
 
   function bmOnPointerUp() {
     if (!bmDrag) return;
+    const wasImageDrag = bmDrag.part === 'image';
     bmDrag = null;
+    // Release the frozen fit basis and re-frame the key around wherever the
+    // images ended up, before the history entry is taken.
+    if (bmFrozenBounds) {
+      bmFrozenBounds = null;
+      if (wasImageDrag) bmDrawCanvas();
+    }
     pushHistoryIfChanged();
   }
 
@@ -13494,6 +13576,11 @@ const BOM_MATERIAL_LIBRARY = [
     ensureBom();
     const page = document.getElementById('bomPage');
     if (!page) return;
+    // US-090 — see observeCanvasBox in construction.js for why. The Material
+    // Key is the worse of the two: switching tool rewraps the toolbar hint and
+    // shrinks the canvas ~19px with no redraw, so leader arrowheads landed a
+    // few percent off the click and were saved there.
+    observeCanvasBox('bomMatkeyCanvas', () => bmDrawCanvas());
 
     document.querySelectorAll('[data-bom-variant]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -17456,13 +17543,20 @@ function resizeImagesFromCorner(interaction, world) {
   if (Number.isFinite(smallest) && smallest > 0) {
     scale = Math.max(scale, MIN_IMAGE_SIZE / smallest);
   }
+  // US-091: same contract as the single-image resize — the lines drawn on each
+  // photo scale with it, about the GROUP anchor every photo is scaling about.
+  // `scale` here is absolute against the gesture's start snapshot, so the
+  // per-frame factor is the ratio against the rect the image has right now.
   for (const s of start) {
     const image = getImageById(s.id);
     if (!image) continue;
+    const previousBounds = getImageBounds(image);
+    const factor = image.width > 0 ? (s.width * scale) / image.width : 1;
     image.x = anchor.x + (s.x - anchor.x) * scale;
     image.y = anchor.y + (s.y - anchor.y) * scale;
     image.width = s.width * scale;
     image.height = s.height * scale;
+    scaleAnnotationsForImageResize(previousBounds, anchor, factor);
   }
 }
 
@@ -18591,7 +18685,13 @@ function getImageBounds(image) {
 // Annotations whose line midpoint sits within the image are treated as part of
 // that sketch, so dragging the image moves its callouts as one group.
 function getAnnotationsOnImage(image) {
-  const bounds = getImageBounds(image);
+  return annotationsWithinBounds(getImageBounds(image));
+}
+
+// Split out of getAnnotationsOnImage (US-091) so a resize can ask which lines
+// belonged to the image as it was BEFORE the rect changed — asking afterwards
+// would test the new bounds and lose any line the shrink pushed outside.
+function annotationsWithinBounds(bounds) {
   // Auto Mode drafts live outside state.annotations (see getAnnotationById,
   // which already resolves both arrays) but they sit on the same photo and have
   // to travel with it. Filtering state.annotations alone meant that in Auto Mode
@@ -18611,6 +18711,43 @@ function getAnnotationsOnImage(image) {
     return cx >= bounds.x && cx <= bounds.x + bounds.width
       && cy >= bounds.y && cy <= bounds.y + bounds.height;
   });
+}
+
+// US-091: resizing a sketch scales the POM lines drawn on it, and leaves every
+// measured value exactly where it was.
+//
+// The two halves are separate problems. Anchors are stored normalized to their
+// image so they scale for free; annotations are absolute world coordinates and
+// did not move at all — measured, a photo scaled x1.2354 left 0/18 lines
+// behind, detached from the garment they annotate. Scaling them about the
+// resize anchor fixes the geometry.
+//
+// That alone would silently restate every measurement, because a value is
+// lineLength x unitsPerPx and the line just got longer. Resizing the photo on
+// the board is a layout act, not a re-measurement, so each scaled line carries
+// the factor in `measureScale` and lineLength divides it back out. Kept on the
+// ANNOTATION rather than on the image on purpose: the line/image association is
+// positional and can change, while the factor belongs to the line for good.
+// calibration.unitsPerPx is global and cannot express a per-image scale, which
+// is why it is not touched.
+function scalePointAbout(point, origin, factor) {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+  point.x = origin.x + (point.x - origin.x) * factor;
+  point.y = origin.y + (point.y - origin.y) * factor;
+}
+
+function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
+  if (!previousBounds || !origin) return;
+  if (!Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 1e-9) return;
+  for (const ann of annotationsWithinBounds(previousBounds)) {
+    scalePointAbout(ann.start, origin, factor);
+    scalePointAbout(ann.end, origin, factor);
+    for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
+      if (ann[key]) scalePointAbout(ann[key], origin, factor);
+    }
+    scalePointAbout(ann.label, origin, factor);
+    ann.measureScale = (ann.measureScale || 1) * factor;
+  }
 }
 
   // ---- src/manual/image-records.js ----
@@ -19241,9 +19378,20 @@ function getAnnotationsOnImage(image) {
     return String(ann.seq);
   }
 
+  // The MEASURED length, which is not the drawn length once the sketch has been
+  // resized (US-091). Resizing a photo on the board scales the lines drawn on it
+  // so they stay on the garment, and stamps the factor into ann.measureScale;
+  // dividing it back out here keeps every measured value exactly what it was
+  // before the resize. Every caller of lineLength is a measurement — the spec
+  // panel, the tolerance check, the Set Scale dialog, the grading model and the
+  // on-canvas label — so this is the one place it belongs. Drawing and
+  // hit-testing use the raw geometry and never come through here.
   function lineLength(ann) {
-    if (ann.type === 'straight') return distance(ann.start, ann.end);
-    return polylineLength(getAnnotationPolyline(ann, BEZIER_SAMPLES * 2));
+    const drawn = ann.type === 'straight'
+      ? distance(ann.start, ann.end)
+      : polylineLength(getAnnotationPolyline(ann, BEZIER_SAMPLES * 2));
+    const scale = ann.measureScale;
+    return (Number.isFinite(scale) && scale > 0) ? drawn / scale : drawn;
   }
 
   // Map a callout label ("8", "1,2") to POM standard info. Joins descriptions for
@@ -35035,6 +35183,13 @@ function makeExportFileName() {
       width = height * aspect;
     }
 
+    // US-091: which lines belong to this photo has to be answered against the
+    // rect it had BEFORE the resize, and the incremental factor read off the
+    // same pair — this runs once per mousemove, so the factor is per-frame, not
+    // for the whole gesture.
+    const previousBounds = getImageBounds(image);
+    const factor = image.width > 0 ? width / image.width : 1;
+
     if (corner === 'nw') {
       image.x = anchor.x - width;
       image.y = anchor.y - height;
@@ -35051,6 +35206,9 @@ function makeExportFileName() {
 
     image.width = width;
     image.height = height;
+
+    // The photo scales about the opposite corner, so its lines do too.
+    scaleAnnotationsForImageResize(previousBounds, anchor, factor);
   }
 
   function pointInLabelBounds(point, labelPos, seq, padding) {

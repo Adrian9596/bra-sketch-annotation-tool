@@ -13,10 +13,23 @@
   let ccDrag = null;
   let ccPanelLayouts = {};
   let ccBoxCache = {};
+  // US-090: the fit-to-bounds basis, frozen for the duration of an image drag.
+  // Keyed by view; null when no drag is in flight.
+  let ccFrozenBounds = null;
 
   function ccBuildPanelLayout(view, x, y, width, height) {
     const content = { x: x + 12, y: y + 36, width: width - 24, height: height - 48 };
-    const bounds = ccImageBounds(ccSheet, view);
+    // US-090. This transform fits the panel to the UNION BBOX of its images and
+    // was recomputed from the live bbox on every draw — so moving an image
+    // moved the very bounds the transform is derived from. With one image the
+    // two cancelled exactly: measured, a 200px drag advanced the stored x by
+    // 128.21 world units while the painted pixels did not move at all, and
+    // pushHistoryIfChanged saved that invisible offset into the project. With
+    // two, the bbox grew and the whole panel rescaled mid-gesture (1.214 ->
+    // 0.795 over one drag). Freezing the basis for the duration of the drag
+    // makes the gesture a plain translation in a stable space; the panel
+    // re-fits once on release.
+    const bounds = (ccFrozenBounds && ccFrozenBounds[view]) || ccImageBounds(ccSheet, view);
     const hasImages = ccImages(ccSheet, view).length > 0;
     const scale = hasImages ? Math.min(content.width / bounds.width, content.height / bounds.height, 2) : 1;
     return {
@@ -383,7 +396,16 @@
     if (image) {
       ccSelectedImageId = image.id;
       ccSelectedCalloutId = null;
-      ccDrag = { kind: 'image', image, layout, prev: world };
+      // A panel holding a single image has no arrangement to make: the
+      // fit-to-bounds transform re-centres it whatever its coordinates, so the
+      // only thing a drag could achieve is an invisible mutation that gets
+      // saved. Select it, do not drag it. With two or more, position is
+      // meaningful and the drag runs against a frozen fit basis.
+      const draggable = ccImages(ccSheet, layout.view).length > 1;
+      if (draggable) {
+        ccFrozenBounds = { [layout.view]: ccImageBounds(ccSheet, layout.view) };
+        ccDrag = { kind: 'image', image, layout, prev: world };
+      }
     } else {
       ccSelectedImageId = null;
       ccSelectedCalloutId = null;
@@ -413,6 +435,13 @@
 
   function ccOnPointerUp() {
     if (!ccDrag) return;
+    const wasImageDrag = ccDrag.kind === 'image';
     ccDrag = null;
+    // Release the frozen fit basis and re-frame the panel around wherever the
+    // images ended up, before the history entry is taken.
+    if (ccFrozenBounds) {
+      ccFrozenBounds = null;
+      if (wasImageDrag) ccDrawCanvas();
+    }
     pushHistoryIfChanged();
   }
