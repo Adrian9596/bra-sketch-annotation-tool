@@ -16858,7 +16858,7 @@ function setSelection(kind, id) {
       const imageHandleHitAuto = selImageAuto && !selImageAuto.locked && getSelectedImageIds().length <= 1
         ? hitTestSelectedImageHandles(world, selImageAuto) : null;
       if (imageHandleHitAuto) {
-        startImageResize(selImageAuto.id, imageHandleHitAuto.corner);
+        startImageResize(selImageAuto.id, imageHandleHitAuto.corner, world);
         return;
       }
       const imageHitAuto = hitTestImages(world);
@@ -16918,7 +16918,7 @@ function setSelection(kind, id) {
     const imageHandleHit = selectedImage && !selectedImage.locked && getSelectedImageIds().length <= 1
       ? hitTestSelectedImageHandles(world, selectedImage) : null;
     if (imageHandleHit) {
-      startImageResize(selectedImage.id, imageHandleHit.corner);
+      startImageResize(selectedImage.id, imageHandleHit.corner, world);
       return;
     }
 
@@ -16993,7 +16993,12 @@ function setSelection(kind, id) {
       // first selects it and reveals its resize handles, the next one drags.
       // An already-selected photo drags on the first press, so the group drag
       // from Cmd/Ctrl+click and Cmd+A is unchanged.
-      if (hitImage && !hitImage.locked && isImageInSelection(imageHit.id)) {
+      // …and even then, not when the press sits in the near-miss band around a
+      // line. Selection alone was not enough: the press that selects the photo
+      // leaves it selected, so without this the very next mis-aim slid the
+      // sketch again.
+      if (hitImage && !hitImage.locked && isImageInSelection(imageHit.id)
+          && !isPointNearAnyAnnotation(world, 16)) {
         startImageDrag(imageHit.id, world);
         return;
       }
@@ -17095,7 +17100,7 @@ function setSelection(kind, id) {
       // startHandleDrag). prevWorld lives in the same space.
       const off = interaction.grabOffset || { x: 0, y: 0 };
       const target = { x: world.x + off.x, y: world.y + off.y };
-      if (!dragArmed(interaction, world, target)) return;
+      if (!dragArmed(interaction, world)) return;
       dragHandle(ann, interaction.part, target, interaction.prevWorld);
       if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
       interaction.changed = true;
@@ -17131,6 +17136,7 @@ function setSelection(kind, id) {
     if (interaction.type === 'drag-image-resize') {
       const image = getImageById(interaction.id);
       if (!image) return;
+      if (!dragArmed(interaction, world)) return;
       resizeImageFromCorner(image, interaction.corner, interaction.anchor, interaction.aspect, world);
       interaction.changed = true;
       interaction.prevWorld = world;
@@ -17139,6 +17145,7 @@ function setSelection(kind, id) {
     }
 
     if (interaction.type === 'drag-images-resize') {
+      if (!dragArmed(interaction, world)) return;
       resizeImagesFromCorner(interaction, world);
       interaction.changed = true;
       interaction.prevWorld = world;
@@ -17149,6 +17156,7 @@ function setSelection(kind, id) {
     if (interaction.type === 'drag-anchor') {
       const anchor = getAnchorById(interaction.id);
       if (!anchor) return;
+      if (!dragArmed(interaction, world)) return;
       const image = getImageById(anchor.sourceImageId);
       if (!image || !image.width || !image.height) return;
       // Convert world delta into the source image's normalized space; the
@@ -17268,16 +17276,23 @@ function setSelection(kind, id) {
 // extends the same 3px grace to the gestures that mutate geometry. prevWorld is
 // re-based at the moment of arming, so the drag starts from where the pointer
 // actually is with no jump.
-// rebaseTo lets a caller whose prevWorld lives in a shifted space re-base into
-// that space instead — drag-handle keeps its grab offset there (see below).
-function dragArmed(interaction, world, rebaseTo) {
+// prevWorld is deliberately NOT re-based when the gesture arms. Re-basing was
+// the first attempt and it is wrong twice over: the target ends up permanently
+// ~3px behind the cursor for the rest of the drag, and on the arming frame of a
+// drag-handle it makes dx zero, so the endpoint snaps to the cursor while the
+// curve control handle rigidly coupled to it stays behind and quietly reshapes
+// the curve. Leaving prevWorld at the press point means the first armed frame
+// applies the whole accumulated travel: one small catch-up jump, then 1:1.
+//
+// Returning true when startWorld is absent is a deliberate fail-open, so a drag
+// type that has not opted in still works rather than freezing.
+function dragArmed(interaction, world) {
   if (interaction.armed) return true;
   if (!interaction.startWorld) return true;
   const dx = (world.x - interaction.startWorld.x) * state.zoom;
   const dy = (world.y - interaction.startWorld.y) * state.zoom;
   if (Math.hypot(dx, dy) <= 3) return false;
   interaction.armed = true;
-  interaction.prevWorld = rebaseTo || world;
   return true;
 }
 
@@ -17373,12 +17388,15 @@ function startImageDrag(id, world) {
   });
 }
 
-function startImageResize(id, corner) {
+function startImageResize(id, corner, world) {
   const image = getImageById(id);
   if (!image) return;
   beginTrackedInteraction('drag-image-resize', {
     id,
     corner,
+    // US-086: resize is a geometry mutation like any other, so it arms too.
+    startWorld: world ? { x: world.x, y: world.y } : null,
+    armed: false,
     anchor: getOppositeImageCorner(image, corner),
     aspect: image.width / Math.max(1, image.height),
   });
@@ -17399,6 +17417,8 @@ function startGroupResizeIfHandleHit(world) {
   if (!hit) return false;
   beginTrackedInteraction('drag-images-resize', {
     corner: hit.corner,
+    startWorld: { x: world.x, y: world.y },
+    armed: false,
     anchor: getOppositeImageCorner(box, hit.corner),
     box,
     // Snapshot every member up front: scaling must be computed from the ORIGINAL
@@ -28315,6 +28335,12 @@ function getAnnotationsOnImage(image) {
       type: 'drag-anchor',
       id: anchorId,
       prevWorld: world,
+      // US-086: arm like every other geometry drag. An anchor is the highest-
+      // stakes thing on the board — a stray pixel moves it, snapAnchorToInk
+      // then pulls it onto the nearest ink on mouseup, and recordAnchorResidual
+      // files that accident as a TD correction the learner trains on.
+      startWorld: { x: world.x, y: world.y },
+      armed: false,
       changed: false,
       beforeFingerprint: before,
       // Snapshot the anchor's pre-drag normalized position so onMouseUp
@@ -34800,6 +34826,24 @@ function makeExportFileName() {
     return null;
   }
 
+  // US-086 follow-up: is this press close enough to a line that it should read
+  // as a MISS of that line rather than as intent to move the photo behind it?
+  //
+  // Deliberately wider than the line-body tolerance. Requiring the photo to be
+  // selected before it drags only protected the FIRST mis-aimed press — the
+  // press that selected the photo left it selected, so the next near-miss slid
+  // the sketch again (measured: 25.5px). The band between "grabbed the line"
+  // and "clearly meant the photo" is exactly where a mis-aim lands, and moving
+  // the sketch is by far the costlier of the two mistakes to make silently.
+  function isPointNearAnyAnnotation(world, screenTolerance) {
+    const tol = (screenTolerance || 16) / state.zoom;
+    for (const ann of state.annotations) {
+      if (isAnnHidden(ann.id)) continue;
+      if (isPointNearAnnotation(world, ann, tol)) return true;
+    }
+    return false;
+  }
+
   function hitTestImages(world) {
     for (let i = state.images.length - 1; i >= 0; i -= 1) {
       const image = state.images[i];
@@ -36290,8 +36334,17 @@ function makeExportFileName() {
     // away, so the line lurched the instant the TD grabbed it and no
     // click-vs-drag threshold could hold. A gesture has to be measured in one
     // frame: mousedown pins the rect, mouseup releases it.
-    const rect = state.gestureCanvasRect || el.canvas.getBoundingClientRect();
-    state.lastCanvasRect = rect;
+    //
+    // Two limits keep the pin from leaking. state.lastCanvasRect always gets
+    // the LIVE rect — resizeCanvas, Fit and the render loop read it, and a
+    // pinned value there would shift the whole board after a drag. And the pin
+    // only applies while a gesture is genuinely in flight, so a press that
+    // opened no interaction (or a cleanup that never ran) cannot leave stale
+    // coordinates behind for hover work that runs with no interaction at all.
+    const live = el.canvas.getBoundingClientRect();
+    state.lastCanvasRect = live;
+    const inGesture = !!(state.interaction || state.drawSession || state.eraseSession);
+    const rect = (inGesture && state.gestureCanvasRect) || live;
     return {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top

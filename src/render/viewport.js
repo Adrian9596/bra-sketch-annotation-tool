@@ -20,8 +20,17 @@
     // away, so the line lurched the instant the TD grabbed it and no
     // click-vs-drag threshold could hold. A gesture has to be measured in one
     // frame: mousedown pins the rect, mouseup releases it.
-    const rect = state.gestureCanvasRect || el.canvas.getBoundingClientRect();
-    state.lastCanvasRect = rect;
+    //
+    // Two limits keep the pin from leaking. state.lastCanvasRect always gets
+    // the LIVE rect — resizeCanvas, Fit and the render loop read it, and a
+    // pinned value there would shift the whole board after a drag. And the pin
+    // only applies while a gesture is genuinely in flight, so a press that
+    // opened no interaction (or a cleanup that never ran) cannot leave stale
+    // coordinates behind for hover work that runs with no interaction at all.
+    const live = el.canvas.getBoundingClientRect();
+    state.lastCanvasRect = live;
+    const inGesture = !!(state.interaction || state.drawSession || state.eraseSession);
+    const rect = (inGesture && state.gestureCanvasRect) || live;
     return {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top

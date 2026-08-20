@@ -67,6 +67,12 @@
       type: 'drag-anchor',
       id: anchorId,
       prevWorld: world,
+      // US-086: arm like every other geometry drag. An anchor is the highest-
+      // stakes thing on the board — a stray pixel moves it, snapAnchorToInk
+      // then pulls it onto the nearest ink on mouseup, and recordAnchorResidual
+      // files that accident as a TD correction the learner trains on.
+      startWorld: { x: world.x, y: world.y },
+      armed: false,
       changed: false,
       beforeFingerprint: before,
       // Snapshot the anchor's pre-drag normalized position so onMouseUp

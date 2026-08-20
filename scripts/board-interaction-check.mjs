@@ -140,7 +140,45 @@ async function main() {
   // The real CV engine must be up: on the free-CV fallback the detection is
   // different geometry, so the ambiguity this suite reasons about changes.
   await s.waitFor(`/ready/i.test(document.querySelector('#visionEngineChip')?.textContent || '')`, 60000);
-  console.log('board-interaction-check: app ready');
+
+  // Refuse to run against a stale bundle. Every assertion below is about code
+  // that only exists after US-086, and a served-but-old app.js would report
+  // those behaviours as "broken" and send the next reader hunting a phantom.
+  const served = await s.eval(`(async () => {
+    const src = document.querySelector('script[src*="app.js"]').getAttribute('src');
+    const txt = await (await fetch(src)).text();
+    return {
+      src,
+      hitTestAnyEndpoint: txt.includes('function hitTestAnyEndpoint'),
+      dragArmed: txt.includes('function dragArmed'),
+      gestureCanvasRect: txt.includes('gestureCanvasRect'),
+      getInteraction: typeof window.__braAutoModeDebug.getInteraction === 'function',
+    };
+  })()`);
+  for (const key of ['hitTestAnyEndpoint', 'dragArmed', 'gestureCanvasRect', 'getInteraction']) {
+    check(served[key] === true,
+      `the served bundle (${served.src}) predates US-086 — no ${key}. Run npm run build.`);
+  }
+
+  // Learning OFF for the whole run. Every gesture below is a real TD edit as
+  // far as the app is concerned: an applied POM dragged in Manual Mode feeds
+  // evaluateManualPomSample, so a suite that drives ~200 of them would pour
+  // synthetic corrections into the calibration store and quietly bias
+  // detection for every later run — and destabilise learning-tests with it.
+  //
+  // Not restored afterwards, deliberately. Chrome runs on a throwaway
+  // --user-data-dir, so the store this writes to is per-run localStorage and
+  // cannot outlive the process — and an s.eval() queued as a cleanup task runs
+  // AFTER s.close(), where it never resolves and hangs the suite instead of
+  // finishing it. Turning it off is about keeping THIS run deterministic:
+  // learning bias would otherwise shift the anchors the assertions press on.
+  const learningWasOn = await s.eval(`(() => {
+    const l = window.__braAutoModeDebug.learning;
+    const was = l.isEnabled();
+    l.setEnabled(false);
+    return was;
+  })()`);
+  console.log(`board-interaction-check: app ready (learning off for the run, was ${learningWasOn ? 'on' : 'off'})`);
 
   // ---- Set the board up exactly as a TD sees it after Apply Lines ----
   await s.eval(`(async () => {
@@ -149,12 +187,56 @@ async function main() {
     const dataUrl = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
     window.__BI_RUN = 'detecting';
     await d.runAutoOnDataUrl(dataUrl);
+    // Pause here on purpose: applying the drafts consumes the anchors, and the
+    // anchor-jiggle check below is the only place they can be exercised.
+    window.__BI_RUN = 'detected';
+    return 'kicked';
+  })()`);
+  await s.waitFor(`window.__BI_RUN === 'detected'`, 180000);
+
+  // ---- Auto Mode: a jitter-click must not move an anchor ----
+  // Higher stakes than a line: a moved anchor is snapped to the nearest ink on
+  // mouseup AND filed as a TD correction the learner trains on, so an accident
+  // here teaches the model something nobody did. Runs BEFORE Apply, because
+  // Apply consumes the anchors and loadProject does not carry them — placing it
+  // later made it skip silently, which is worse than not having it.
+  const anchorJiggle = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug;
+    const canvas = document.getElementById('boardCanvas');
+    const v = d.getView(), r = canvas.getBoundingClientRect();
+    const w2s = (p) => ({ x: p.x * v.zoom + v.panX + r.left, y: p.y * v.zoom + v.panY + r.top });
+    const ev = (t, x, y) => canvas.dispatchEvent(new MouseEvent(t, {
+      bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: t === 'mouseup' ? 0 : 1 }));
+    const anchors = d.getAnchors();
+    const img = d.getImages()[0];
+    if (!anchors || !anchors.length || !img) return { skipped: true, mode: d.getState().appMode, n: (anchors || []).length };
+    const a = anchors[0];
+    const before = { x: a.x, y: a.y };
+    const s0 = w2s({ x: img.x + a.x * img.width, y: img.y + a.y * img.height });
+    ev('mousedown', s0.x, s0.y);
+    for (let i = 1; i <= 4; i += 1) ev('mousemove', s0.x + 2 * i / 4, s0.y + 1 * i / 4);
+    ev('mouseup', s0.x + 2, s0.y + 1);
+    const after = d.getAnchors().find(z => z.id === a.id);
+    return {
+      skipped: false, kind: a.kind, mode: d.getState().appMode,
+      movedNorm: after ? +Math.hypot(after.x - before.x, after.y - before.y).toFixed(6) : -1,
+    };
+  })()`);
+  check(anchorJiggle.skipped === false,
+    `the anchor-jiggle check found no anchors to press (mode ${anchorJiggle.mode}, ${anchorJiggle.n} anchors) — it must not skip silently`);
+  check(anchorJiggle.mode === 'auto', `anchors are only interactive in Auto Mode, got ${anchorJiggle.mode}`);
+  check(anchorJiggle.movedNorm === 0,
+    `a 2px press on the ${anchorJiggle.kind} anchor moved it ${anchorJiggle.movedNorm} in normalized space — anchor drags must arm like every other gesture`);
+  console.log(`board-interaction-check: sub-3px press leaves the ${anchorJiggle.kind} anchor alone`);
+
+  await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug;
     d.approveDrawableDrafts();
     d.applyApprovedDrafts();
     window.__BI_RUN = 'done';
-    return 'kicked';
+    return 'applied';
   })()`);
-  await s.waitFor(`window.__BI_RUN === 'done'`, 180000);
+  await s.waitFor(`window.__BI_RUN === 'done'`, 60000);
 
   const setup = await s.eval(`({
     appMode: window.__braAutoModeDebug.getState().appMode,
@@ -203,9 +285,21 @@ async function main() {
   // Coincident endpoints are a real property of the POM template — POM 1's end
   // IS POM 2's start — so a handful of grabs legitimately land on the sibling
   // line's endpoint. Nearest-wins cannot separate two identical points; cycling
-  // (US-087) is what will. Keep the bound tight enough to catch a regression.
-  check(epOk >= endpoints.length - 6,
-    `too many endpoint grabs missed their own line: ${epOk}/${endpoints.length} ok, stolen at ${epOther.join(', ')}`);
+  // (US-087) is what will.
+  //
+  // Asserted as an exact SET, not a count. A count of six passes just as
+  // happily when six *different* grabs break, which is precisely what a
+  // detection change would do — the failure this guard exists to catch would
+  // slip through looking unchanged. When US-087 lands, this list shrinks and
+  // the suite says so instead of staying quietly green.
+  const EXPECTED_COINCIDENT = ['POM1.end', 'POM3.end', 'POM4.start', 'POM5.start', 'POM8.start', 'POM13.start'];
+  const stolenSet = epOther.slice().sort().join(', ');
+  const expectedSet = EXPECTED_COINCIDENT.slice().sort().join(', ');
+  check(stolenSet === expectedSet,
+    `endpoint grabs landing on a sibling POM changed.\n  expected: ${expectedSet}\n  actual:   ${stolenSet}\n` +
+    `  If US-087's cycling landed, shorten EXPECTED_COINCIDENT. Otherwise this is a regression.`);
+  check(epOk === endpoints.length - EXPECTED_COINCIDENT.length,
+    `${epOk}/${endpoints.length} endpoint grabs were exact; expected ${endpoints.length - EXPECTED_COINCIDENT.length}`);
   console.log(`board-interaction-check: endpoint first-press ${epOk}/${endpoints.length} exact` +
     (epOther.length ? ` (coincident with a sibling POM: ${epOther.join(', ')})` : ''));
 
@@ -268,12 +362,30 @@ async function main() {
     B.drag(spot, 30, 30);                       // second press: really move it
     const after2 = B.diff(before2, B.snapshot());
     await B.restore();
-    return { clearPx, firstPressMovedImage: after1.imageMoved, secondPressMovedImage: after2.imageMoved };
+    // With the photo ALREADY selected, a press in the near-miss band around a
+    // line must still not move it. Requiring selection alone protected only the
+    // first mis-aim: the press that selects the photo leaves it selected, so
+    // the next near-miss slid the sketch again (measured 25.5px before this).
+    B.clearSelection();
+    const a0 = B.d.getAnnotations()[0];
+    B.click(spot);                              // adopt the photo
+    const before3 = B.snapshot();
+    B.drag(B.offGeom(a0, 0.30, 12), 24, 24);
+    const after3 = B.diff(before3, B.snapshot());
+    await B.restore();
+    return {
+      clearPx,
+      firstPressMovedImage: after1.imageMoved,
+      secondPressMovedImage: after2.imageMoved,
+      nearMissMovedSelectedPhoto: after3.imageMoved,
+    };
   })()`);
   check(photo.clearPx > 24, `test spot is only ${Math.round(photo.clearPx)}px from a line — too close to be conclusive`);
   check(photo.firstPressMovedImage === false, 'the first press on an unselected photo must not move it');
   check(photo.secondPressMovedImage === true, 'a press on an already-selected photo must move it');
-  console.log('board-interaction-check: photo needs select-then-drag, still movable');
+  check(photo.nearMissMovedSelectedPhoto === false,
+    'a near-miss of a line must not move the photo even once the photo is selected');
+  console.log('board-interaction-check: photo needs select-then-drag, still movable, near-miss safe');
 
   // ---- 4. A press that barely moves is a click, not an edit ----
   // A control diff with no gesture runs first: if the board is not quiescent
@@ -313,7 +425,10 @@ async function main() {
       sweep.push({
         pressPx: +Math.hypot(dx, dy).toFixed(2),
         movedPx: +(Math.hypot(s1.anns[aa.id].s[0] - b0.anns[aa.id].s[0], s1.anns[aa.id].s[1] - b0.anns[aa.id].s[1]) * z).toFixed(2),
-        zoom: +z.toFixed(3), shift, armedDuring: during ? during.armed : null,
+        zoom: +z.toFixed(3), shift,
+        openedType: opened ? opened.type : null,
+        openedArmed: opened ? opened.armed : null,
+        armedDuring: during ? during.armed : null,
       });
     }
     await B.restore();
@@ -336,15 +451,62 @@ async function main() {
   // press. Gesture-pinned rect + threshold together must give: nothing below
   // 3px, real tracking above it.
   for (const row of jiggle.sweep) {
+    // The gesture must be the one under test, and it must open UNARMED —
+    // otherwise "nothing moved" below could just mean the press never reached
+    // the line, and the threshold would look enforced while doing nothing.
+    check(row.openedType === 'drag-annotation',
+      `the ${row.pressPx}px press opened ${row.openedType} instead of a line drag`);
+    check(row.openedArmed === false,
+      `the ${row.pressPx}px press opened already armed, so the threshold is not being applied`);
+    check(row.armedDuring === (row.pressPx > 3),
+      `the ${row.pressPx}px press ended armed=${row.armedDuring}; the 3px gate should decide it`);
     if (row.pressPx <= 3) {
       check(row.movedPx === 0, `a ${row.pressPx}px press must move nothing, moved ${row.movedPx}px (canvas shift ${JSON.stringify(row.shift)})`);
     } else {
       check(row.movedPx > 0, `a ${row.pressPx}px press must drag the line, moved ${row.movedPx}px`);
-      check(row.movedPx <= row.pressPx + 1,
-        `a ${row.pressPx}px press moved the line ${row.movedPx}px — more than the pointer travelled, so the gesture is being measured against a shifting canvas rect`);
+      // Equal, not merely bounded: once armed the line must sit under the
+      // cursor, with the 3px of travel spent on the threshold applied as a
+      // catch-up rather than discarded. A permanent lag means dragArmed went
+      // back to re-basing prevWorld; more than the travel means the canvas rect
+      // is shifting mid-gesture again.
+      check(Math.abs(row.movedPx - row.pressPx) <= 1,
+        `a ${row.pressPx}px press moved the line ${row.movedPx}px — after arming the drag must track the pointer 1:1`);
     }
   }
   console.log('board-interaction-check: sub-3px press changes nothing, larger presses track 1:1');
+
+  // ---- 4b. A grabbed endpoint carries its curve handle rigidly ----
+  // dragHandle moves control1/control2 by the frame delta while SNAPPING the
+  // endpoint. If the arming frame re-bases prevWorld the delta is zero there,
+  // so the endpoint jumps and its handle does not — silently reshaping the
+  // curve by the arming distance on every single endpoint edit.
+  const curve = await s.eval(`(async () => {
+    const B = window.__BI;
+    await B.restore();
+    B.clearSelection();
+    const a = B.d.getAnnotations().find(x => x.type === 'curved' && x.control1 && x.control2);
+    if (!a) return { skipped: true };
+    const c0 = { x: a.control1.x, y: a.control1.y }, s0 = { x: a.start.x, y: a.start.y };
+    B.drag(a.start, 24, 16);
+    const a2 = B.d.getAnnotations().find(x => x.id === a.id);
+    const z = B.d.getView().zoom;
+    await B.restore();
+    return {
+      skipped: false, seq: a.seq,
+      startMovedPx: +(Math.hypot(a2.start.x - s0.x, a2.start.y - s0.y) * z).toFixed(2),
+      controlMovedPx: +(Math.hypot(a2.control1.x - c0.x, a2.control1.y - c0.y) * z).toFixed(2),
+      pointerPx: +Math.hypot(24, 16).toFixed(2),
+    };
+  })()`);
+  if (curve.skipped) {
+    console.log('board-interaction-check: no curved line on this board, rigid-handle check skipped');
+  } else {
+    check(Math.abs(curve.startMovedPx - curve.pointerPx) <= 1,
+      `POM ${curve.seq} endpoint moved ${curve.startMovedPx}px for ${curve.pointerPx}px of travel`);
+    check(Math.abs(curve.controlMovedPx - curve.startMovedPx) <= 1,
+      `POM ${curve.seq}'s curve handle moved ${curve.controlMovedPx}px while its endpoint moved ${curve.startMovedPx}px — the handle must ride the endpoint rigidly or the curve reshapes on every edit`);
+    console.log(`board-interaction-check: curved endpoint carries its handle rigidly (POM ${curve.seq})`);
+  }
 
   // ---- 5. The gestures US-053 / US-057 rely on still work ----
   const groups = await s.eval(`(async () => {

@@ -74,6 +74,24 @@
     return null;
   }
 
+  // US-086 follow-up: is this press close enough to a line that it should read
+  // as a MISS of that line rather than as intent to move the photo behind it?
+  //
+  // Deliberately wider than the line-body tolerance. Requiring the photo to be
+  // selected before it drags only protected the FIRST mis-aimed press — the
+  // press that selected the photo left it selected, so the next near-miss slid
+  // the sketch again (measured: 25.5px). The band between "grabbed the line"
+  // and "clearly meant the photo" is exactly where a mis-aim lands, and moving
+  // the sketch is by far the costlier of the two mistakes to make silently.
+  function isPointNearAnyAnnotation(world, screenTolerance) {
+    const tol = (screenTolerance || 16) / state.zoom;
+    for (const ann of state.annotations) {
+      if (isAnnHidden(ann.id)) continue;
+      if (isPointNearAnnotation(world, ann, tol)) return true;
+    }
+    return false;
+  }
+
   function hitTestImages(world) {
     for (let i = state.images.length - 1; i >= 0; i -= 1) {
       const image = state.images[i];
