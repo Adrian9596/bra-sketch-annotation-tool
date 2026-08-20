@@ -201,7 +201,20 @@ function getImageBounds(image) {
 // that sketch, so dragging the image moves its callouts as one group.
 function getAnnotationsOnImage(image) {
   const bounds = getImageBounds(image);
-  return state.annotations.filter(ann => {
+  // Auto Mode drafts live outside state.annotations (see getAnnotationById,
+  // which already resolves both arrays) but they sit on the same photo and have
+  // to travel with it. Filtering state.annotations alone meant that in Auto Mode
+  // — where state.annotations is still empty — dragging the sketch moved the
+  // photo and its anchors and left all 18 drafts standing on empty board, and
+  // Apply Lines then committed them at those stale coordinates. Measured: photo
+  // +92.8 world units, 0 of 18 drafts moved; the same drag after Apply moves
+  // 18 of 18 by exactly 92.8.
+  const drafts = state.autoMode && state.autoMode.draftAnnotations
+    ? state.autoMode.draftAnnotations
+    : [];
+  const pool = drafts.length ? state.annotations.concat(drafts) : state.annotations;
+  return pool.filter(ann => {
+    if (!ann || !ann.start || !ann.end) return false;
     const cx = (ann.start.x + ann.end.x) / 2;
     const cy = (ann.start.y + ann.end.y) / 2;
     return cx >= bounds.x && cx <= bounds.x + bounds.width

@@ -229,6 +229,77 @@ async function main() {
     `a 2px press on the ${anchorJiggle.kind} anchor moved it ${anchorJiggle.movedNorm} in normalized space — anchor drags must arm like every other gesture`);
   console.log(`board-interaction-check: sub-3px press leaves the ${anchorJiggle.kind} anchor alone`);
 
+  // ---- Auto Mode: the sketch carries its DRAFT lines, exactly as it carries
+  // applied ones ----
+  // Photos stay draggable in Auto Mode (US-052), and the drafts under review sit
+  // on the photo. They live in state.autoMode.draftAnnotations rather than
+  // state.annotations, and getAnnotationsOnImage used to filter only the latter,
+  // so the photo and its anchors moved while all 18 drafts stayed put — then
+  // Apply Lines committed them at those stale coordinates. Silently wrong
+  // measurements, no error. Runs here because it needs the pre-Apply state, and
+  // drags back afterwards so the checks below see the board it expects.
+  const draftCarry = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug;
+    const canvas = document.getElementById('boardCanvas');
+    const w2s = (p) => { const v = d.getView(); const r = canvas.getBoundingClientRect();
+      return { x: p.x * v.zoom + v.panX + r.left, y: p.y * v.zoom + v.panY + r.top }; };
+    const ev = (t, x, y) => canvas.dispatchEvent(new MouseEvent(t, {
+      bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: t === 'mouseup' ? 0 : 1 }));
+    const settle = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
+    const drafts = () => (d.getDrafts() || []).filter(a => a && a.start && a.end);
+    const snap = () => ({ img: d.getImages()[0].x, lines: drafts().map(a => ({ id: a.id, x: a.start.x, y: a.start.y })) });
+    // A press point on the photo as far as possible from every anchor pin and
+    // every draft, so the gesture is unambiguously about the photo.
+    const im = d.getImages()[0];
+    const pins = (d.getAnchors() || []).map(a => ({ x: im.x + a.x * im.width, y: im.y + a.y * im.height }));
+    let spot = null, bestClear = -1;
+    for (let gx = 1; gx <= 14; gx += 1) for (let gy = 1; gy <= 14; gy += 1) {
+      const p = { x: im.x + im.width * gx / 15, y: im.y + im.height * gy / 15 };
+      let clear = Infinity;
+      for (const a of pins) clear = Math.min(clear, Math.hypot(p.x - a.x, p.y - a.y));
+      for (const l of drafts()) {
+        const vx = l.end.x - l.start.x, vy = l.end.y - l.start.y;
+        const len2 = vx * vx + vy * vy || 1;
+        const t = Math.max(0, Math.min(1, ((p.x - l.start.x) * vx + (p.y - l.start.y) * vy) / len2));
+        clear = Math.min(clear, Math.hypot(p.x - (l.start.x + vx * t), p.y - (l.start.y + vy * t)));
+      }
+      if (clear > bestClear) { bestClear = clear; spot = p; }
+    }
+    const pull = (dx) => {
+      const c = w2s(spot);
+      ev('mousedown', c.x, c.y); ev('mouseup', c.x, c.y);          // select the photo
+      ev('mousedown', c.x, c.y);
+      const opened = (d.getInteraction() || {}).type;
+      for (let i = 1; i <= 6; i += 1) ev('mousemove', c.x + dx * i / 6, c.y);
+      ev('mouseup', c.x + dx, c.y);
+      return opened;
+    };
+    const before = snap();
+    const opened = pull(200);
+    await settle();
+    const after = snap();
+    const imgDx = after.img - before.img;
+    const byId = new Map(before.lines.map(l => [l.id, l]));
+    const deltas = after.lines.map(l => { const p = byId.get(l.id); return p ? +(l.x - p.x).toFixed(2) : null; });
+    pull(-200);                                                     // put the board back
+    await settle();
+    const restoredDx = +(snap().img - before.img).toFixed(2);
+    return { opened, mode: d.getState().appMode, nDrafts: before.lines.length,
+      imgDx: +imgDx.toFixed(2), deltas, restoredDx };
+  })()`);
+  check(draftCarry.mode === 'auto', `this check needs the pre-Apply Auto state, got ${draftCarry.mode}`);
+  check(draftCarry.opened === 'drag-image',
+    `the press was meant to grab the photo but opened ${draftCarry.opened} — re-aim it, or it proves nothing`);
+  check(draftCarry.nDrafts >= 15, `expected the generated drafts, got ${draftCarry.nDrafts}`);
+  check(Math.abs(draftCarry.imgDx) > 1, `the photo did not move (${draftCarry.imgDx}) — nothing was tested`);
+  const strays = draftCarry.deltas.filter(d => d == null || Math.abs(d - draftCarry.imgDx) > 0.5);
+  check(strays.length === 0,
+    `the photo moved ${draftCarry.imgDx} world units but ${strays.length}/${draftCarry.deltas.length} drafts did not follow it `
+    + `(deltas ${JSON.stringify(draftCarry.deltas.slice(0, 6))}...) — Apply would commit them at stale coordinates`);
+  check(Math.abs(draftCarry.restoredDx) < 0.5,
+    `the drag-back left the board ${draftCarry.restoredDx} off, so the checks below start from the wrong state`);
+  console.log(`board-interaction-check: the sketch carries all ${draftCarry.nDrafts} drafts in Auto Mode (${draftCarry.imgDx} world units)`);
+
   await s.eval(`(async () => {
     const d = window.__braAutoModeDebug;
     d.approveDrawableDrafts();
