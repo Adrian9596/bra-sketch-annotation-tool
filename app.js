@@ -5770,11 +5770,10 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     el.specBody.appendChild(headerTr);
   }
 
-  function escapeHtml(str) {
-    return String(str == null ? '' : str)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
+  // escapeHtml lives in src/ui/dialogs/core.js — one declaration for the whole
+  // bundle. This file used to carry a byte-equivalent second copy; because every
+  // part shares one scope, the later declaration silently won for BOTH call
+  // sites, so editing either copy would have had a surprising blast radius.
 
   function buildDraftRow(draft) {
     const tr = document.createElement('tr');

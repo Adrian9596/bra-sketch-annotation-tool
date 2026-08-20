@@ -84,6 +84,13 @@ for (const file of SOURCE_PARTS) {
   }
 }
 
+// Shared-scope gates. Every source part is concatenated into ONE IIFE, so all
+// top-level declarations land in a single shared scope with no module boundary
+// to catch a collision or an ordering mistake. These two gates cover the only
+// two ways that scope can bite silently — neither produces a syntax error, so
+// nothing else in this file would notice.
+failures.push(...validateSharedScope(appDir));
+
 const appCheck = spawnSync(process.execPath, ['--check', path.join(appDir, 'app.js')], {
   cwd: appDir,
   encoding: 'utf8',
@@ -204,6 +211,204 @@ function validateRuleContract(pomTemplate, anchorSchema) {
     if (!ids.has(String(n))) out.push(`POM contract: missing POM id "${n}".`);
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Shared-scope validation
+//
+// The bundle is one IIFE, so `src/a.js` and `src/b.js` share a scope. Two
+// hazards follow, and neither is a syntax error:
+//
+//   1. DUPLICATE top-level declarations. Two `function foo(){}` in different
+//      parts is legal JS — the later one silently replaces the earlier for
+//      EVERY caller, including callers that only ever meant the first. Editing
+//      one copy then appears to do nothing.
+//
+//   2. LOAD-TIME use of a non-hoisted binding declared in a later part.
+//      `function` and `var` hoist across the whole bundle, so a part may call
+//      a function defined further down — that is normal here and heavily
+//      relied upon. `const`/`let`/`class` do NOT hoist: reading one before its
+//      own part has been evaluated throws a TDZ ReferenceError at load. This
+//      only matters for references that execute AT LOAD TIME (brace depth 0);
+//      a reference inside a function body runs long after every part has been
+//      evaluated and is perfectly safe.
+//
+// Both gates work off a comment/string/regex-blanked copy of each part, so
+// identifiers inside comments and string literals are never matched.
+function validateSharedScope(dir) {
+  const out = [];
+  const code = new Map();
+  const decls = new Map();
+  for (const rel of SOURCE_PARTS) {
+    const absolute = path.join(dir, rel);
+    if (!existsSync(absolute)) continue; // already reported by the membership gate
+    const blanked = blankNonCode(readFileSync(absolute, 'utf8'));
+    code.set(rel, blanked);
+    decls.set(rel, topLevelDeclarations(blanked));
+  }
+
+  const sitesByName = new Map();
+  for (const rel of SOURCE_PARTS) {
+    for (const decl of decls.get(rel) || []) {
+      if (!sitesByName.has(decl.name)) sitesByName.set(decl.name, []);
+      sitesByName.get(decl.name).push({ ...decl, file: rel });
+    }
+  }
+
+  // Gate 1 — duplicate top-level declarations.
+  for (const [name, sites] of sitesByName) {
+    if (sites.length < 2) continue;
+    const where = sites.map(s => `${s.file}:${s.line} (${s.kind})`).join(', ');
+    out.push(
+      `Shared scope: "${name}" is declared at top level in ${sites.length} parts — ${where}. `
+      + 'All parts share one scope, so the last declaration silently wins for every caller. '
+      + 'Keep exactly one and let the others call it.'
+    );
+  }
+
+  // Gate 2 — load-time use of a later, non-hoisted binding.
+  const order = new Map(SOURCE_PARTS.map((rel, i) => [rel, i]));
+  for (const [name, sites] of sitesByName) {
+    for (const site of sites) {
+      if (site.kind === 'function' || site.kind === 'var') continue; // hoisted
+      for (const rel of SOURCE_PARTS) {
+        if ((order.get(rel) ?? 0) >= (order.get(site.file) ?? 0)) continue;
+        const line = firstLoadTimeReference(code.get(rel) || '', name);
+        if (line == null) continue;
+        out.push(
+          `Shared scope: ${rel}:${line} reads "${name}" while the bundle is still loading, `
+          + `but "${name}" is a ${site.kind} declared later in ${site.file}:${site.line}. `
+          + 'const/let/class do not hoist, so this throws a TDZ ReferenceError at load. '
+          + `Either move ${site.file} earlier in SOURCE_PARTS, or defer the read into a function body.`
+        );
+        break;
+      }
+    }
+  }
+
+  return out;
+}
+
+// Replace the CONTENT of comments, strings and regex literals with spaces,
+// preserving length and newlines so reported line numbers stay accurate.
+function blankNonCode(src) {
+  const out = src.split('');
+  let i = 0;
+  let prev = '';
+  while (i < src.length) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (c === '/' && next === '/') {
+      while (i < src.length && src[i] !== '\n') { out[i] = ' '; i += 1; }
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      out[i] = ' '; out[i + 1] = ' '; i += 2;
+      while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) {
+        if (src[i] !== '\n') out[i] = ' ';
+        i += 1;
+      }
+      if (i < src.length) { out[i] = ' '; out[i + 1] = ' '; i += 2; }
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      i += 1;
+      while (i < src.length) {
+        if (src[i] === '\\') { out[i] = ' '; out[i + 1] = ' '; i += 2; continue; }
+        if (src[i] === c) break;
+        if (src[i] !== '\n') out[i] = ' ';
+        i += 1;
+      }
+      i += 1;
+      prev = c;
+      continue;
+    }
+    // A `/` in prefix position starts a regex literal, not a division.
+    if (c === '/' && /[(,=:[!&|?{};+\-*%^~<>]/.test(prev)) {
+      i += 1;
+      let inClass = false;
+      while (i < src.length) {
+        if (src[i] === '\\') { out[i] = ' '; out[i + 1] = ' '; i += 2; continue; }
+        if (src[i] === '[') inClass = true;
+        else if (src[i] === ']') inClass = false;
+        else if (src[i] === '/' && !inClass) break;
+        else if (src[i] === '\n') break;
+        out[i] = ' ';
+        i += 1;
+      }
+      i += 1;
+      prev = '/';
+      continue;
+    }
+    if (!/\s/.test(c)) prev = c;
+    i += 1;
+  }
+  return out.join('');
+}
+
+// Declarations sitting at brace/paren depth 0 within a part are top level in
+// the bundle's shared scope once concatenated.
+function topLevelDeclarations(code) {
+  // Built per call: a module-level `const` here would itself be in the TDZ
+  // when validateSharedScope() runs from the top of this file — the exact
+  // hazard gate 2 below exists to catch, which is how this line got written.
+  const TOP_LEVEL_DECL = /\b(function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/g;
+  const found = [];
+  let depth = 0;
+  let paren = 0;
+  const lines = code.split('\n');
+  for (let n = 0; n < lines.length; n += 1) {
+    const line = lines[n];
+    TOP_LEVEL_DECL.lastIndex = 0;
+    let match;
+    while ((match = TOP_LEVEL_DECL.exec(line)) !== null) {
+      let d = depth;
+      let p = paren;
+      for (let k = 0; k < match.index; k += 1) {
+        const ch = line[k];
+        if (ch === '{') d += 1;
+        else if (ch === '}') d -= 1;
+        else if (ch === '(') p += 1;
+        else if (ch === ')') p -= 1;
+      }
+      if (d === 0 && p === 0) found.push({ kind: match[1], name: match[2], line: n + 1 });
+    }
+    for (const ch of line) {
+      if (ch === '{') depth += 1;
+      else if (ch === '}') depth -= 1;
+      else if (ch === '(') paren += 1;
+      else if (ch === ')') paren -= 1;
+    }
+  }
+  return found;
+}
+
+// First reference to `name` that executes at load time (brace depth 0),
+// ignoring property access (obj.name) and object keys (name:). Returns the
+// 1-based line number, or null when every reference is inside a function body.
+function firstLoadTimeReference(code, name) {
+  const re = new RegExp(`\\b${name.replace(/\$/g, '\\$')}\\b`);
+  const lines = code.split('\n');
+  let depth = 0;
+  for (let n = 0; n < lines.length; n += 1) {
+    const line = lines[n];
+    const match = re.exec(line);
+    if (match) {
+      let d = depth;
+      for (let k = 0; k < match.index; k += 1) {
+        if (line[k] === '{') d += 1;
+        else if (line[k] === '}') d -= 1;
+      }
+      const before = line.slice(0, match.index).trimEnd();
+      const after = line.slice(match.index + name.length).trimStart();
+      if (d === 0 && !before.endsWith('.') && !after.startsWith(':')) return n + 1;
+    }
+    for (const ch of line) {
+      if (ch === '{') depth += 1;
+      else if (ch === '}') depth -= 1;
+    }
+  }
+  return null;
 }
 
 function listJsFiles(dir) {
