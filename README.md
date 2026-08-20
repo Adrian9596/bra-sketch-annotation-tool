@@ -49,14 +49,19 @@ Then open the printed local URL.
 ## Check
 
 ```sh
-npm run check   # rebuild + syntax/wiring checks
+npm run check   # read-only: build freshness + syntax/wiring + shared-scope gates
 npm run smoke   # headless end-to-end Auto Mode run on demo/demo1.jpg
 npm run library-l0-tests # governed library contracts, schemas, fingerprints
 ```
 
+`check` never writes `app.js` — run `npm run build` yourself after editing
+`src/*`, or `check` will fail with a stale-build error (that is the point).
+
 Other suites: `golden`, `accuracy`, `invariants`, `contract`, `pipeline-tests`,
-`junction-tests`, `learning-tests`, `meaning-tests`, `evidence-tests`,
-`autosave-check`, `pom7-limitations`. See [`TESTING.md`](TESTING.md).
+`junction-tests`, `learning-tests`, `evidence-tests`, `autosave-check`,
+`pom6/7/14-limitations`, `viewrole-limitations`, plus the tech-pack page suites
+`mainpage-check`, `construction-check`, `bom-check`, `preview-check`,
+`board-toolbar-check`. See [`TESTING.md`](TESTING.md).
 
 ## Auto vs. Manual Mode
 
@@ -74,10 +79,29 @@ is visible in both modes.
 
 ## Code layout
 
-`index.html` is layout/CSS; `app.js` is **generated** by concatenating the
-parts under `src/` (see `scripts/source-parts.mjs`). **Edit `src/*`, then
-`npm run build` — never edit `app.js` directly.** Fixed POM/rule/anchor data
-lives in `auto_mode_rules/*.json`. Full map in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+`index.html` is layout/CSS; `app.js` is **generated** by concatenating ~150
+single-concern parts under `src/`, in the order declared in
+`scripts/source-parts.mjs`. **Edit `src/*`, then `npm run build` — never edit
+`app.js` directly.** Fixed POM/rule/anchor data lives in `auto_mode_rules/*.json`.
+
+Roughly, `src/` is grouped by role:
+
+| Directory | What lives there |
+|---|---|
+| `auto/detect/` | The detection pipeline: ink mask, view boxes, segmentation, geometry, the per-feature landmark finders, and the POM 6 / POM 7 seam detectors |
+| `auto/anchors/` | Seeding those landmarks into draggable anchors, then deriving/dragging them |
+| `auto/drafts/` | Anchors → the 18 POM rows → drafts → applied lines |
+| `auto/learning/` | The optional local calibration / meaning / style-evidence stores |
+| `manual/` | The Manual-Mode input stack: selection, pointer events, touch, tools, shortcuts |
+| `render/` | The canvas draw loop, overlays, and the PDF / Excel exporters |
+| `ui/` | The measurements panel, the tech-pack pages (MAIN PAGE, Construction, BOM, Preview), and every dialog |
+| `project/` | Save / open / autosave / undo history / the project library |
+
+Because every part is concatenated into **one shared scope**, two rules apply
+when moving code: keep one declaration per name bundle-wide, and keep anything
+called across files a `function` declaration (it hoists; `const` arrows do not).
+`npm run check` enforces both. Full map and rationale in
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Harness
 
