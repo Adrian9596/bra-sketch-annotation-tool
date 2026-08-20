@@ -1,137 +1,132 @@
 # Bra Auto Measure
 
-Auto-first drafting tool for bra technical sketches. This is a focused fork of
-the "How to measure1" Bra Measurement Assistant: the same offline detection
-engine and POM drafting pipeline. The app boots straight into **Auto Mode**,
-which is the priority — the auto pass detects the sketch and generates the 18
-POM lines. After the lines are applied it hands off to **Manual Mode** so the
-technical designer can make the small fixes auto can't get perfect. Manual is
-the correction step, not a blank-canvas drawing tool, and the app never boots
-into it on a fresh sketch (see
-[`docs/decisions/0008-reenable-manual-mode.md`](docs/decisions/0008-reenable-manual-mode.md)).
+A single-page browser tool that reads a bra technical sketch and drafts its 18
+points of measure (POMs) for a technical designer to check.
 
-## Documentation
+Everything runs locally in the browser — the detection pass, the drafting, the
+Excel and PDF export. There is no server, no API key, and no upload step: a
+sketch never leaves the machine it was opened on.
 
-- **Why / goals:** [`PROJECT_CHARTER.md`](PROJECT_CHARTER.md)
-- **Architecture / project map:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
-- **The 18 POMs:** [`POMS_CONTRACT.md`](POMS_CONTRACT.md)
-- **Tests:** [`TESTING.md`](TESTING.md)
-- **Working context (agents):** [`CLAUDE.md`](CLAUDE.md) · [`AGENTS.md`](AGENTS.md)
+**[Try it →](https://adrian9596.github.io/bra-sketch-annotation-tool/)**
 
-## Workflow
+> This repository is the public mirror of the app. The sketch fixtures, ground
+> truth, measurement library, and internal design docs stay in the private
+> working repo — see [What isn't here](#what-isnt-here).
 
-1. Add a sketch image (button, paste with Ctrl/Cmd+V, or drag-drop).
-2. Click **Detect** — local offline vision estimates views, landmarks, and
-   seeds draggable anchors. No cloud/API dependency.
-3. Drag anchors to correct them if needed (**Reset Anchors** re-seeds).
-4. Click **Generate Drafts** — the 18 POM lines are generated from the anchors
-   and applied to the project immediately; no per-row approval step.
-   Review-only rows (no reliable line) are dropped with a note.
-5. On Apply the app switches to **Manual Mode** to correct the applied lines:
-   drag / reshape / relabel / delete a line, copy/paste, reflect, or **Copy
-   Image** (⌘⇧C) to put the whole board on the clipboard as a PNG. The
-   Manual/Auto toggle returns to Auto (e.g. to re-detect).
-6. **Save** the project JSON. **Open** reopens a project with applied lines in
-   Manual Mode, ready to edit.
+## How it works
 
-The Approve / Review-Only / Apply Lines / Discard controls only come into play
-when an apply fails (e.g. duplicate POM rows on the same image): the drafts then
-stay on the board for row-by-row resolution.
+The app is **auto-first**. A fresh sketch always boots into Auto Mode, and the
+whole design bets on making that first pass good enough to correct rather than
+redo.
 
-## Run
+**1 · Detect.** Offline computer vision segments the ink, finds how many garment
+views are on the sheet and which is front / back / inside, then locates the
+landmarks a pattern maker would point at — band, chest, cradle seams, cup edges,
+strap joins, apex. OpenCV compiled to WebAssembly does the heavy lifting when it
+finishes loading; a dependency-free fallback keeps detection deterministic when
+it hasn't.
+
+**2 · Anchors.** Those landmarks become draggable pins, stored in normalized
+`[0,1]` image space so they survive pan, zoom, resize, and save. A pin in the
+wrong place is one drag away from right — and that correction is the whole
+point, because it is far cheaper than redrawing a line.
+
+**3 · Generate.** The 18 POM lines are drafted from the anchor positions and
+applied. Where the evidence isn't good enough for a reliable line, the row is
+marked review-only rather than guessed — a wrong number that looks confident is
+worse than a blank one. The app then hands off to Manual Mode so the designer
+can fix what auto couldn't.
+
+From there: a measurements panel with a graded size run, three tech-pack pages
+(main page, construction callouts, BOM), and export to `.xlsx` / PDF / clipboard
+PNG — all still offline.
+
+## Run it locally
 
 ```sh
 npm run serve
 ```
 
-Then open the printed local URL.
+Then open the printed URL. There is no build step to run first — `app.js` is
+committed.
 
-## Check
+If you edit anything under `src/`:
 
 ```sh
-npm run check   # read-only: build freshness + syntax/wiring + shared-scope gates
-npm run smoke   # headless end-to-end Auto Mode run on demo/demo1.jpg
-npm run library-l0-tests # governed library contracts, schemas, fingerprints
+npm run build   # regenerate app.js  (required — see Code layout)
+npm run check   # read-only validation; fails if you forgot the build
 ```
 
-`check` never writes `app.js` — run `npm run build` yourself after editing
-`src/*`, or `check` will fail with a stale-build error (that is the point).
+### Tests
 
-Other suites: `golden`, `accuracy`, `invariants`, `contract`, `pipeline-tests`,
-`junction-tests`, `learning-tests`, `evidence-tests`, `autosave-check`,
-`pom6/7/14-limitations`, `viewrole-limitations`, plus the tech-pack page suites
-`mainpage-check`, `construction-check`, `bom-check`, `preview-check`,
-`board-toolbar-check`. See [`TESTING.md`](TESTING.md).
+These pass in this repository:
 
-## Auto vs. Manual Mode
+```sh
+npm run check              # build freshness, syntax, wiring, shared-scope gates
+npm run pipeline-tests     # detection pipeline stages
+npm run junction-tests     # skeleton topology / junction detection
+npm run export-xlsx        # Excel export, byte-level
+npm run export-hidden      # hidden-POM export behaviour
+npm run suggestions-tests  # library-value suggestion layer
+npm run autosave-check     # crash-safe autosave and restore
+npm run mainpage-check     # tech-pack MAIN PAGE sheet
+npm run construction-check # construction annotation page
+npm run bom-check          # BOM page
+npm run preview-check      # preview & export tab
+```
 
-The tool is **Auto-first**: a fresh sketch always boots into Auto Mode, and the
-roadmap invests in making the auto pass better. **Manual Mode** is the bounded
-correction step that follows the auto Apply — it is not a fresh-load entry
-point and not a general drawing tool.
-
-Manual controls carry the `manual-only` class and are hidden only while in Auto
-(`index.html` scopes the rule to `body.app-auto`); they reveal after the
-post-Apply handoff or via the Manual/Auto toggle. Available in Manual: line edit
-(drag/reshape/relabel/delete), undo/redo, copy/paste, reflect, clear, lock,
-styles, Hide Numbers, Export PDF, Copy Image, and Help. The Manual/Auto toggle
-is visible in both modes.
+The suites that score detection accuracy against real sketches — `golden`,
+`accuracy`, `contract`, `invariants`, `smoke`, `board-toolbar-check`, and the
+per-POM limitation guards — need the sketch fixtures, which aren't published
+here. They run in the private repo.
 
 ## Code layout
 
-`index.html` is layout/CSS; `app.js` is **generated** by concatenating ~150
-single-concern parts under `src/`, in the order declared in
-`scripts/source-parts.mjs`. **Edit `src/*`, then `npm run build` — never edit
-`app.js` directly.** Fixed POM/rule/anchor data lives in `auto_mode_rules/*.json`.
-
-Roughly, `src/` is grouped by role:
+`index.html` holds the layout and CSS. `app.js` holds all the logic — and it is
+**generated**, not written: `npm run build` concatenates ~150 single-concern
+files from `src/` in the order declared in `scripts/source-parts.mjs`, inlining
+the rule JSON. **Edit `src/*` and rebuild; never edit `app.js` directly**, or
+your change is overwritten on the next build.
 
 | Directory | What lives there |
 |---|---|
-| `auto/detect/` | The detection pipeline: ink mask, view boxes, segmentation, geometry, the per-feature landmark finders, and the POM 6 / POM 7 seam detectors |
-| `auto/anchors/` | Seeding those landmarks into draggable anchors, then deriving/dragging them |
+| `auto/detect/` | The detection pipeline: ink mask, view boxes, segmentation, geometry, the per-feature landmark finders, and the two heavily-tuned seam detectors |
+| `auto/anchors/` | Turning detected landmarks into draggable anchors, then deriving and dragging them |
 | `auto/drafts/` | Anchors → the 18 POM rows → drafts → applied lines |
-| `auto/learning/` | The optional local calibration / meaning / style-evidence stores |
+| `auto/learning/` | The optional, local-only calibration and evidence stores |
 | `manual/` | The Manual-Mode input stack: selection, pointer events, touch, tools, shortcuts |
 | `render/` | The canvas draw loop, overlays, and the PDF / Excel exporters |
-| `ui/` | The measurements panel, the tech-pack pages (MAIN PAGE, Construction, BOM, Preview), and every dialog |
+| `ui/` | The measurements panel, the tech-pack pages, and every dialog |
 | `project/` | Save / open / autosave / undo history / the project library |
 
-Because every part is concatenated into **one shared scope**, two rules apply
-when moving code: keep one declaration per name bundle-wide, and keep anything
-called across files a `function` declaration (it hoists; `const` arrows do not).
-`npm run check` enforces both. Full map and rationale in
-[`ARCHITECTURE.md`](ARCHITECTURE.md).
+The 18 POMs and the anchor schema are a versioned contract in
+`auto_mode_rules/*.json`. The learning layer only biases where anchors start —
+it never edits that JSON.
 
-## Harness
+### One shared scope
 
-This repo uses [Harness](https://github.com/hoangnb24/repository-harness) — an
-agent-operating layer that gives coding agents project context, feature intake,
-story packets, a validation matrix, and decision records before they touch code.
+Every part is concatenated into a single IIFE, so all top-level declarations
+share one scope with no module boundary. That is why a bare cross-file call
+works with no import. Two rules follow, and `npm run check` enforces both,
+because neither is a syntax error:
 
-- Agents start at [`AGENTS.md`](AGENTS.md) and [`docs/HARNESS.md`](docs/HARNESS.md).
-- Work is classified via [`docs/FEATURE_INTAKE.md`](docs/FEATURE_INTAKE.md)
-  (tiny / normal / high-risk lanes).
-- Product truth, stories, decisions, and templates live under [`docs/`](docs/README.md).
-- Operational state (intake, stories, traces, matrix) is managed by the Rust
-  Harness CLI at `scripts/bin/harness-cli`, backed by a local `harness.db`.
-- If the CLI binary is absent, agents use [`docs/TEST_MATRIX.md`](docs/TEST_MATRIX.md)
-  as the fallback proof map and report that durable intake/trace rows were not
-  recorded.
+- **One declaration per name, bundle-wide.** Two `function foo(){}` in different
+  files is legal JS — the later silently replaces the earlier for *every*
+  caller, so editing one copy appears to do nothing.
+- **Anything called across files stays a `function` declaration.** Those hoist
+  across the whole bundle; `const foo = () => {}` does not, and a load-time read
+  of one throws a `ReferenceError`.
 
-The Harness CLI binary is not committed. Install it (and refresh any harness
-files) with:
+## What isn't here
 
-```sh
-curl -fsSL "https://raw.githubusercontent.com/hoangnb24/repository-harness/main/scripts/install-harness.sh?$(date +%s)" | bash -s -- --merge --claude --yes
-```
+This mirror deliberately excludes, and always will:
 
-Then initialize the durable layer:
+- **`demo/`** — real brand sketches used as test fixtures
+- **`scripts/golden/`, `scripts/groundtruth/`** — baseline outputs and
+  designer-labelled ground truth derived from them
+- **`library/`** — the measurement library mined from historical production data
+- **`docs/`** and the internal design docs — architecture notes, decision
+  records, and story packets
 
-```sh
-scripts/bin/harness-cli init
-```
-
-The installer executes a remote script. In restricted environments, inspect or
-run it outside the sandbox with explicit human approval, then return here and
-run `scripts/bin/harness-cli query matrix`.
+The app itself is complete: what's published runs, builds, and exports exactly
+as it does internally.
