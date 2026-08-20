@@ -223,13 +223,33 @@ async function main() {
   await writeFile(xlsxPath, Buffer.from(matkeyB64, 'base64'));
   const unzipRes = spawnSync('unzip', ['-t', xlsxPath], { encoding: 'utf-8' });
   check(unzipRes.status === 0, `unzip -t rejected the workbook: ${unzipRes.stdout} ${unzipRes.stderr}`);
-  const py = spawnSync('python3', ['-c',
-    'import sys, openpyxl; wb = openpyxl.load_workbook(sys.argv[1]); print("|".join(wb.sheetnames))',
-    xlsxPath], { encoding: 'utf-8' });
-  if (py.status === 0) {
-    check(py.stdout.trim() === SHEET_NAMES.join('|'), `openpyxl sheet names mismatch: ${py.stdout.trim()}`);
-  } else {
+  // openpyxl is the only reader here that opens the workbook the way Excel does
+  // — `unzip -t` above only proves the ZIP container is intact, and a workbook
+  // can be a perfectly valid ZIP full of OOXML that Excel refuses.
+  //
+  // So availability has to be probed SEPARATELY from validation. Both "openpyxl
+  // is not installed" and "openpyxl read the file and rejected it" exit
+  // non-zero, and the previous single-spawn form treated the pair as one case:
+  // a workbook this suite exists to reject was reported as
+  // "openpyxl unavailable — skipped" and passed. Verified on this machine —
+  // openpyxl IS installed, and feeding it a corrupt workbook exits 1 exactly
+  // like a missing module. The one gate that could catch a broken deliverable
+  // could never fail.
+  const openpyxlAvailable = (() => {
+    const probe = spawnSync('python3', ['-c', 'import openpyxl'], { encoding: 'utf-8' });
+    return !probe.error && probe.status === 0;
+  })();
+  if (!openpyxlAvailable) {
     console.log('note: python3/openpyxl unavailable — external reader check skipped');
+  } else {
+    const py = spawnSync('python3', ['-c',
+      'import sys, openpyxl; wb = openpyxl.load_workbook(sys.argv[1]); print("|".join(wb.sheetnames))',
+      xlsxPath], { encoding: 'utf-8' });
+    check(py.status === 0,
+      `openpyxl REJECTED the tech-pack workbook (exit ${py.status}) — Excel would too:\n${(py.stderr || '').trim()}`);
+    if (py.status === 0) {
+      check(py.stdout.trim() === SHEET_NAMES.join('|'), `openpyxl sheet names mismatch: ${py.stdout.trim()}`);
+    }
   }
 
   // --- 7b. A version sketch reaches the preview sheet and the worksheet. ---

@@ -184,11 +184,16 @@ const ASSERTIONS = [
   },
   {
     id: 'B4', name: 'POM 10 outer endpoint clear of side seam',
-    require: (c) => has10(c) && !cupOnInnerView(c) && c.cupModel && c.cupModel.side != null,
+    // The undetected-side-seam case belongs HERE, not inside test(). Returning
+    // { ok: true } from the body for it counted a disarmed assertion as a
+    // genuine PASS in the "N/N assertions ok" tally, so a run where the seam
+    // stopped being detected corpus-wide read exactly like a run where B4 held.
+    // As a `require` it reports SKIP, which is what it is.
+    require: (c) => has10(c) && !cupOnInnerView(c) && c.cupModel && c.cupModel.side != null
+      && (c.cupModel.side < 0 ? c.sideLeftX : c.sideRightX) != null,
     test: (c) => {
       const side = c.cupModel.side;
       const sideCol = side < 0 ? c.sideLeftX : c.sideRightX;
-      if (sideCol == null) return { ok: true, msg: 'side seam not detected — skipped' };
       // outer endpoint = the one closer to the side seam
       const lx = c.anchors['inner-cup-left'].x;
       const rx = c.anchors['inner-cup-right'].x;
