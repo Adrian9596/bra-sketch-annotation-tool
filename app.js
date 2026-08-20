@@ -20193,449 +20193,869 @@ function getAnnotationsOnImage(image) {
     };
   }
 
-  // ---- src/auto-detection.js ----
-// Auto Mode boundaries, offline sketch detection, feature extraction, anchor seeding and dragging.
+  // ---- src/auto/detect/math-utils.js ----
+// Detection math primitives: zero-dependency numeric helpers (range clamping,
+// Otsu thresholding, 1-2-1 smoothing, symmetry-axis refinement and scoring,
+// median-of-non-zero) shared by nearly every detection stage.
+//
+// This is the first of the src/auto/detect/* parts to load; the ink-mask
+// (ink-mask.js), sheet-geometry (view-boxes.js), segmentation (segmentation.js)
+// and geometry (geometry-stage.js) stages all build on it.
 // Source part for app.js. Run `npm run build` after editing.
 
-  // -------- Offline sketch detection --------
-  //
-  // First pass of "Detect Sketch": pure pixel analysis on the source image,
-  // no model. Estimates a bounding box of the dark line art, the vertical
-  // symmetry axis, and the bottom-band y. These will feed anchor placement
-  // in the next phase. Everything is normalized to the image's native
-  // pixel space [0, 1]^2 so it survives image scaling / canvas pans.
+  function clampNumber(value, min, max, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+  }
 
-  async function runOfflineDetection() {
-    // ---- Edge: precondition checks (state read + toast on failure) ----
-    if (state.appMode !== 'auto') {
-      showToast('Switch to Auto Mode first.');
-      return;
+  // Otsu's method — picks the threshold that maximizes between-class variance.
+  function otsuThreshold(hist, total) {
+    let sum = 0;
+    for (let i = 0; i < 256; i += 1) sum += i * hist[i];
+    let sumB = 0;
+    let wB = 0;
+    let maxVar = -1;
+    let bestT = 128;
+    for (let t = 0; t < 256; t += 1) {
+      wB += hist[t];
+      if (wB === 0) continue;
+      const wF = total - wB;
+      if (wF === 0) break;
+      sumB += t * hist[t];
+      const mB = sumB / wB;
+      const mF = (sum - sumB) / wF;
+      const diff = mB - mF;
+      const v = wB * wF * diff * diff;
+      if (v > maxVar) { maxVar = v; bestT = t; }
     }
-    const sourceImage = pickAutoSourceImage();
-    if (!sourceImage) {
-      showToast('Add or select an image first, then click Detect Sketch.', 3600);
-      return;
+    if (maxVar < 0) {
+      // Degenerate histogram (e.g. a single-valued / blank image): no
+      // between-class split exists, so the loop never updated bestT. Return
+      // the mean intensity — the single populated bin for a one-value image —
+      // instead of a misleading hard-coded 128.
+      return total > 0 ? Math.round(sum / total) : 128;
     }
-    if (!sourceImage.img || !sourceImage.img.complete) {
-      showToast('Source image is not ready yet — try again in a moment.');
-      return;
-    }
+    return bestT;
+  }
 
-    recordAutoTelemetryEvent('detect_clicked', {
-      sourceImageId: sourceImage.id,
-    });
-
-    // ---- Edge: status flip + render so the chip updates before the scan ----
-    state.autoMode.status = 'detecting';
-    state.autoMode.lastError = null;
-    updateUI();
-    requestRender();
-    await new Promise((r) => setTimeout(r, 0));
-    // Give real opencv.js a short grace window to finish compiling (the
-    // vendored script loads from disk; S1 warms it up from init(), so by the
-    // first Detect this is usually already settled). Skipped entirely when
-    // the harness pins the free path.
-    if (!FORCE_FREE_CV && window.RealOpenCVAPI && typeof window.RealOpenCVAPI.whenReady === 'function') {
-      try { await window.RealOpenCVAPI.whenReady(2500); } catch (_) { /* fall through */ }
+  // 1-2-1 smoothing kernel — cheap, removes single-row/single-column jitter
+  // without flattening real peaks.
+  function smooth1D(arr) {
+    const n = arr.length;
+    const out = new Float32Array(n);
+    if (n === 0) return out;
+    for (let i = 0; i < n; i += 1) {
+      const a = i > 0 ? arr[i - 1] : arr[i];
+      const b = arr[i];
+      const c = i < n - 1 ? arr[i + 1] : arr[i];
+      out[i] = (a + 2 * b + c) / 4;
     }
+    return out;
+  }
 
-    // ---- Pure middle: image → ink analysis → detection ----
-    // detectSketchFromImage is a thin wrapper: buildInkAnalysisFromImage
-    // (DOM read) → detectSketchFromInkAnalysis (pure pipeline with per-stage
-    // timings on detection.stageTimingsMs).
-    // CV debug capture is opt-in: state flag (set via the debug API) OR a
-    // ?cvDebug=1 URL flag. The flag is consulted once per detection so a
-    // mid-run toggle takes effect on the next click.
-    syncCvDebugFromUrl();
-    const cvDebugOn = !!(state.autoMode.cvDebug && state.autoMode.cvDebug.enabled);
-    let detection;
-    const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    try {
-      detection = detectSketchFromImage(sourceImage, { debug: cvDebugOn });
-    } catch (err) {
-      console.warn('[Auto Mode] Detect Sketch failed:', err);
-      state.autoMode.status = 'error';
-      state.autoMode.lastError = 'Detect Sketch failed: ' + (err && err.message ? err.message : err);
-      showToast(state.autoMode.lastError, 4200);
-      updateUI();
-      requestRender();
-      return;
+  // Search centroid ± 5% bboxWidth (2px steps) and pick the candidate whose
+  // mirror-fold around the binary dark map gives the best symmetry score.
+  function refineAxisBySymmetry(dark, w, minX, maxX, minY, maxY, centroid) {
+    const searchHalf = Math.max(3, Math.round((maxX - minX) * 0.05));
+    const center = Math.round(centroid);
+    let bestX = center;
+    let bestScore = -1;
+    for (let dx = -searchHalf; dx <= searchHalf; dx += 2) {
+      const candidate = center + dx;
+      if (candidate <= minX + 2 || candidate >= maxX - 2) continue;
+      const score = computeSymmetryScore(dark, w, candidate, minX, maxX, minY, maxY);
+      if (score > bestScore) { bestScore = score; bestX = candidate; }
     }
-    const t1 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    return bestX;
+  }
 
-    if (!detection || !detection.bbox || detection.coverage < 0.001) {
-      state.autoMode.detection = null;
-      state.autoMode.status = state.autoMode.draftAnnotations.length > 0 ? 'reviewing' : 'ready';
-      state.autoMode.lastError = 'Detect Sketch found no dark line art in the source image.';
-      showToast(state.autoMode.lastError, 4200);
-      updateUI();
-      requestRender();
-      return;
-    }
-
-    // ---- Edge: post-pipeline annotation + optional Potrace contour pass ----
-    // Stamping identity / timing onto the detection counts as a side effect
-    // because the pure pipeline produced an opaque value; we attach the
-    // context only the orchestrator knows. Potrace tracing is async DOM-free
-    // work but is non-deterministic in duration, so it lives at the edge.
-    detection.sourceImageId = sourceImage.id;
-    detection.computedAt = new Date().toISOString();
-    detection.durationMs = Math.round(t1 - t0);
-    // Mask is normally consumed (and stripped) by the Potrace pass. When CV
-    // debug is on, render a PNG of it FIRST so the debug snapshot has an
-    // image to display — otherwise the mask is gone before debug runs.
-    if (cvDebugOn && detection.debug && detection._mask) {
-      try {
-        detection.debug.maskPng = encodeMaskToPng(
-          detection._mask, detection._maskW, detection._maskH
-        );
-      } catch (err) {
-        console.warn('[Auto Mode] CV debug: mask PNG encode failed:', err);
+  // Symmetry score: of all dark pixels in scan range, share that have a dark
+  // partner mirrored across `axisX`. Subsamples by 2 for speed.
+  function computeSymmetryScore(dark, w, axisX, minX, maxX, minY, maxY) {
+    const half = Math.min(axisX - minX, maxX - axisX);
+    if (half < 4) return 0;
+    let matches = 0;
+    let total = 0;
+    const step = 2;
+    for (let y = minY; y <= maxY; y += step) {
+      const rowBase = y * w;
+      for (let d = 1; d <= half; d += step) {
+        const li = rowBase + (axisX - d);
+        const ri = rowBase + (axisX + d);
+        const ld = dark[li];
+        const rd = dark[ri];
+        if (ld) { total += 1; if (rd) matches += 1; }
+        if (rd) { total += 1; if (ld) matches += 1; }
       }
     }
-    await applyPotraceContoursToDetection(detection);
-    // Mirror the latest debug capture onto state so it can be exported
-    // independently of the live detection object (which gets cleared on
-    // mode switches).
-    if (state.autoMode.cvDebug) {
-      state.autoMode.cvDebug.lastDebug = cvDebugOn && detection.debug
-        ? detection.debug
-        : null;
+    return total > 0 ? matches / total : 0;
+  }
+
+  function approxMedianNonZero(arr, lo, hi) {
+    const vals = [];
+    for (let i = lo; i <= hi; i += 1) {
+      if (arr[i] > 0) vals.push(arr[i]);
     }
-
-    // ---- Edge: commit detection + seed anchors + notify ----
-    state.autoMode.detection = detection;
-    // US-039: recognize EXTRA board photos (beyond the single detection source)
-    // as auxiliary views — e.g. a front-inner cutaway the TD added as its own
-    // image. Recognition + labeling ONLY: measurement stays on the source image
-    // and no POM moves to these views (ADR 0011).
-    detection.auxViews = await buildAuxViews(sourceImage);
-    // When view-role classification is uncertain — e.g. a 3-panel board where
-    // "back" vs "front_inner" is genuinely ambiguous from the sketch — let the
-    // TD confirm/correct the roles BEFORE anchors are seeded, so a corrected
-    // front/back/inner assignment places anchors on the right panels. Awaited so
-    // seeding uses the confirmed roles. In test/label modes it returns
-    // immediately (see maybePromptForViewRoles) and seeding proceeds with the
-    // auto roles, so headless suites are unaffected.
-    await maybePromptForViewRoles(detection, sourceImage);
-    seedAndRelocateAnchors(detection, sourceImage);
-    recordAutoTelemetryEvent('anchor_seeded', {
-      sourceImageId: sourceImage.id,
-      count: state.autoMode.anchors.length,
-      duration_ms: detection.durationMs,
-    });
-    state.autoMode.anchorSelectedId = null;
-    state.autoMode.anchorsHidden = false;
-    state.autoMode.hiddenAnchorKinds = []; // US-038: fresh detect shows all anchors
-    state.autoMode.status = 'detected';
-    state.autoMode.lastError = null;
-    recordAutoTelemetryEvent('detect_finished', {
-      sourceImageId: sourceImage.id,
-      duration_ms: detection.durationMs,
-      status: 'ok',
-    });
-
-    pushHistoryIfChanged();
-    updateUI();
-    requestRender();
-    const traceInfo = detection.contours
-      ? ' + ' + detection.contourCount + ' contours (' + detection.traceDurationMs + 'ms)'
-      : '';
-    showToast('Detected sketch (' + detection.durationMs + 'ms)' + traceInfo + '. Anchors seeded — drag any that look wrong, then Generate POM Drafts.');
+    if (!vals.length) return 0;
+    vals.sort((a, b) => a - b);
+    return vals[Math.floor(vals.length / 2)];
   }
 
-  // Seed anchors from the committed detection, then apply the US-049 relocation
-  // that moves the cup / neckline / armhole POMs (9/10/17/18) onto a SEPARATE
-  // front-inner PHOTO's own seeded anchors when one was recognized as an aux
-  // view. (An in-image front-inner PANEL — a 3-view board in a single photo — is
-  // handled inside seedAnchorsFromDetection itself, which transfers those anchors
-  // from the front-outer box onto the inner box.) Extracted so it can re-run
-  // after the TD confirms/corrects view roles, re-placing anchors to follow the
-  // corrected front/back/inner assignment.
-  function seedAndRelocateAnchors(detection, sourceImage) {
-    state.autoMode.anchors = seedAnchorsFromDetection(detection, sourceImage);
-    const innerViewSeed = (detection.auxViews || [])
-      .find(v => v && v.viewRole === 'front_inner' && Array.isArray(v.anchors) && v.anchors.length);
-    if (innerViewSeed) {
-      const MOVED_ANCHOR_KINDS = ['inner-cup-top', 'inner-cup-bottom', 'inner-cup-left', 'inner-cup-right', '171', '172', '181', '182'];
-      const innerByKind = Object.create(null);
-      for (const an of innerViewSeed.anchors) innerByKind[an.kind] = an;
-      state.autoMode.anchors = state.autoMode.anchors.map(an =>
-        (MOVED_ANCHOR_KINDS.indexOf(an.kind) >= 0 && innerByKind[an.kind]) ? innerByKind[an.kind] : an);
+  // ---- src/auto/detect/ink-mask.js ----
+// Ink-mask acquisition: how the detector gets a binary ink mask off the source
+// bitmap. Holds the detection resolution / tuning-parameter block, the DOM
+// pixel-read edge (offscreen canvas), the legacy no-OpenCV thresholding path,
+// the paper-background estimator, and the adapter/OpenCV/legacy selection in
+// buildInkAnalysisFromImage.
+//
+// Depends on math-utils.js (otsuThreshold). The mask it produces is consumed by
+// the segmentation stage in segmentation.js.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // Detection analysis resolution. Higher = better small-feature accuracy
+  // (cleavage point, hook profile, strap attach) at the cost of CPU. Offline
+  // detection is local so this trades CPU for accuracy, not latency or $.
+  const DETECTION_TARGET_WIDTH = 1024;
+  const DETECTION_DEFAULT_PARAMS = {
+    bandSearchStartRatio: 0.58,
+    bandPreferredRatio: 0.82,
+    rowNoiseMultiplier: 1,
+    colNoiseMultiplier: 1,
+  };
+
+  function getDefaultDetectionParams() {
+    return { ...DETECTION_DEFAULT_PARAMS };
+  }
+
+  function normalizeDetectionParams(input) {
+    const base = getDefaultDetectionParams();
+    const src = input && typeof input === 'object' ? input : {};
+    return {
+      bandSearchStartRatio: clampNumber(src.bandSearchStartRatio, 0.50, 0.68, base.bandSearchStartRatio),
+      bandPreferredRatio: clampNumber(src.bandPreferredRatio, 0.72, 0.90, base.bandPreferredRatio),
+      rowNoiseMultiplier: clampNumber(src.rowNoiseMultiplier, 0.75, 1.25, base.rowNoiseMultiplier),
+      colNoiseMultiplier: clampNumber(src.colNoiseMultiplier, 0.75, 1.25, base.colNoiseMultiplier),
+    };
+  }
+
+  function activeDetectionParams(options) {
+    const sources = [];
+    if (!(options && options.skipLearningParams) && typeof getLearnedDetectionParams === 'function') {
+      sources.push(getLearnedDetectionParams());
     }
+    if (options && options.params) sources.push(options.params);
+    return normalizeDetectionParams(Object.assign({}, ...sources));
   }
 
-  // US-039: recognize EXTRA board photos as auxiliary views. The main pipeline
-  // detects/measures ONE source image; a TD may add a front-inner cutaway (or
-  // other reference) as its OWN photo. Each such photo becomes one aux view: an
-  // ink bbox normalized to that photo (so it follows pans / zooms / resizes),
-  // with a display role. This is recognition + labeling only — no anchors, no
-  // POM placement, no change to the measurement detection (ADR 0011: the inner
-  // cutaway is a bonus, never a precondition). The primary image already holds
-  // front_outer + back, so the first extra photo defaults to the front-inner
-  // view; further extras stay 'unknown' for the TD to interpret.
-  async function buildAuxViews(sourceImage) {
-    if (!sourceImage) return [];
-    const others = state.images.filter(
-      (im) => im && im.id !== sourceImage.id && im.img && im.img.complete
-    );
-    const auxViews = [];
-    let innerAssigned = false;
-    for (const im of others) {
-      let box = { x: 0, y: 0, width: 1, height: 1 }; // fallback: whole photo
-      let det = null;
-      try {
-        // singleView: an aux photo is ONE garment view (front-inner cutaway),
-        // so detect it without the panel split — otherwise its gore/shading
-        // alleys split it into 3 boxes and the cup/neckline/armhole anchors
-        // seed off one cup instead of the whole, centered garment.
-        det = detectSketchFromImage(im, { debug: false, singleView: true });
-        // Union of every detected view box = the full drawn extent, so the
-        // label hugs the whole sketch even when an extra photo has more than
-        // one panel (or its cups split at the gore). detection.bbox alone is
-        // only the primary view's bounds, so it can undercover. Fall back to
-        // bbox, then to the whole photo.
-        const views = det && Array.isArray(det.viewBoxes) ? det.viewBoxes.filter(Boolean) : [];
-        if (views.length) {
-          const minX = Math.min(...views.map((v) => v.x));
-          const minY = Math.min(...views.map((v) => v.y));
-          const maxX = Math.max(...views.map((v) => v.x + v.width));
-          const maxY = Math.max(...views.map((v) => v.y + v.height));
-          if (maxX > minX && maxY > minY) box = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-        } else if (det && det.bbox && det.bbox.width > 0 && det.bbox.height > 0) {
-          box = { x: det.bbox.x, y: det.bbox.y, width: det.bbox.width, height: det.bbox.height };
-        }
-      } catch (err) {
-        console.warn('[Auto Mode] aux-view bbox failed; boxing whole image:', err);
-      }
-      const viewRole = innerAssigned ? 'unknown' : 'front_inner';
-      innerAssigned = true;
-      const auxView = {
-        sourceImageId: im.id,
-        aux: true,
-        viewRole,
-        x: box.x,
-        y: box.y,
-        width: box.width,
-        height: box.height,
-      };
-      // US-049: the front-inner view is a MEASUREMENT surface for the cup /
-      // neckline / armhole POMs (9, 10, 17, 18 — POM 8 stays on front-outer,
-      // ADR 0011 amendment). Persist its detection (minus the heavy ink mask,
-      // session-only) plus a full anchor set seeded on THIS photo, so
-      // generatePOMDraftsFromAnchors can run a second pass that places those
-      // POMs on the inner view.
-      if (viewRole === 'front_inner' && det && det.bbox) {
-        try {
-          det.sourceImageId = im.id;
-          // Mark the detection as a single-view (front-inner cutaway) so the
-          // anchor seeder drops the top-of-cup POMs (172/182/IC-top) to the
-          // strap→cup seam for this view — the front-outer strap-join fraction
-          // lands them up at the apex on a molded cutaway.
-          det.singleView = true;
-          // Trace this photo's contours BEFORE the mask is dropped. The primary
-          // pipeline traces only the SOURCE image, but seedAnchorsFromDetection's
-          // cup-width extremes (ADR 0036) require detection.contours — without
-          // them it silently fell back to the pre-ADR-0036 shared-row placement,
-          // so a 2-image board (primary + separate front-inner cutaway) kept the
-          // old narrow POM 10 while a single 3-view photo got the new one.
-          await applyPotraceContoursToDetection(det);
-          delete det._mask; delete det._maskW; delete det._maskH; delete det.debug;
-          // Keep the promise in the comment above buildAuxViews: the persisted aux
-          // detection carries no heavy raster payload.
-          delete det.inkMask; delete det.inkMaskW; delete det.inkMaskH;
-          auxView.detection = det;
-          auxView.anchors = seedAnchorsFromDetection(det, im);
-        } catch (err) {
-          console.warn('[Auto Mode] inner-view anchor seeding failed:', err);
-        }
-      }
-      auxViews.push(auxView);
-    }
-    return auxViews;
-  }
+  // Side-effect-only: reads RGBA pixels off the source image via an offscreen
+  // canvas. Returns the data the rest of the detection pipeline needs, with no
+  // further dependency on the DOM. Split out of createLegacyInkAnalysis so the
+  // pure pixel-math stages below can be unit-tested from Node without a canvas.
+  function readSourceImagePixels(src, targetWidth) {
+    const naturalW = src.naturalWidth || src.width || 0;
+    const naturalH = src.naturalHeight || src.height || 0;
+    if (!naturalW || !naturalH) throw new Error('image has zero size');
+    const TARGET_WIDTH = targetWidth || DETECTION_TARGET_WIDTH;
+    const scale = Math.min(1, TARGET_WIDTH / naturalW);
+    const w = Math.max(32, Math.round(naturalW * scale));
+    const h = Math.max(32, Math.round(naturalH * scale));
 
-  // Vector tracing pass — runs after the raster feature pass so curved
-  // landmarks (cup arcs, strap, back hook) have real bezier control points
-  // available to the POM generator. Failure is non-fatal: the rest of the
-  // pipeline keeps working with the hand-tuned curves. Mutates `detection`
-  // in place (adds contours / contourCount / traceDurationMs / engine suffix).
-  async function applyPotraceContoursToDetection(detection) {
-    const mask = detection._mask;
-    const maskW = detection._maskW;
-    const maskH = detection._maskH;
-    delete detection._mask;
-    delete detection._maskW;
-    delete detection._maskH;
-    if (!mask || !maskW || !maskH) return;
-    // U2: keep the binary ink mask (~1 byte per sample px, session-only —
-    // detection is never persisted or snapshotted) so snapAnchorToInk can
-    // pull a released anchor onto the nearest sketch ink. Moved off the
-    // underscore keys, which the debug/PNG path above treats as consumed.
-    detection.inkMask = mask;
-    detection.inkMaskW = maskW;
-    detection.inkMaskH = maskH;
-    const traceT0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    try {
-      const traced = await tracePotraceFromMask(mask, maskW, maskH);
-      if (traced) {
-        detection.contours = traced;
-        detection.contourCount = traced.paths.length;
-        detection.traceDurationMs = Math.round(
-          (typeof performance !== 'undefined' ? performance.now() : Date.now()) - traceT0
-        );
-        detection.engine += '+potrace';
-        // Phase 4: normalize the traced outlines into reusable curve candidates
-        // (one shared classification pass) and complete the contour-evidence
-        // summary. Both are the deferred half of extractContours' bundle —
-        // shape evidence only, no geometry decision.
-        detection.curveCandidates = buildContourCurveCandidates(traced, detection);
-        if (detection.contourEvidence) {
-          detection.contourEvidence.traced = true;
-          detection.contourEvidence.contourCount = traced.paths.length;
-          detection.contourEvidence.curveCandidateCount = detection.curveCandidates.length;
-        }
-      }
-    } catch (err) {
-      console.warn('[Auto Mode] Potrace tracing failed:', err);
-    }
-  }
-
-  async function maybePromptForViewRoles(detection, sourceImage) {
-    if (!detection || !Array.isArray(detection.views) || detection.views.length < 2) return;
-    if (!detection.viewRoleReviewRequired && !detection.views.some(v => !v.viewRole || v.viewRole === 'unknown')) return;
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search || '');
-    if (params.has('autoDraft') || params.has('smoke') || params.has('learningTests') || params.has('meaningTests') || params.has('evidenceTests') || params.has('golden') || params.has('accuracy') || params.has('invariants') || params.has('contract') || params.get('label') === '1') return;
-    const roles = await askForViewRoles(detection, sourceImage);
-    if (!roles || !roles.length) return;
-    for (let i = 0; i < detection.views.length && i < roles.length; i += 1) {
-      const role = roles[i] || 'unknown';
-      detection.views[i].viewRole = role;
-      detection.views[i].role = role;
-      if (detection.viewBoxes && detection.viewBoxes[i]) {
-        detection.viewBoxes[i].viewRole = role;
-        detection.viewBoxes[i].role = role === 'front_outer' ? 'front' : role;
-      }
-    }
-    syncDetectionRoleIndexes(detection);
-    // The TD may have moved the back role to a different panel than the auto
-    // pick. Back POM landmarks (POM 11/12/13/15) were detected on the auto back
-    // box, so re-run that detection on the confirmed back box before anchors are
-    // (re-)seeded. Cup/neckline/armhole (front-inner) anchors are box-relative
-    // and follow the corrected role without re-detection.
-    redetectBackLandmarks(detection);
-    detection.viewRoleReviewRequired = false;
-  }
-
-  // Prefer the in-app dialog (thumbnails + one click per view); fall back to
-  // the legacy letter-code window.prompt only where the dialog can't run
-  // (no DOM dialog shell available, e.g. stripped-down test harnesses).
-  async function askForViewRoles(detection, sourceImage) {
-    if (typeof openViewRolesDialog === 'function' && typeof document !== 'undefined' && document.body) {
-      return openViewRolesDialog({ views: detection.views, sourceImage });
-    }
-    if (typeof window.prompt !== 'function') return null;
-    const current = detection.views
-      .map((v, i) => (i + 1) + ':' + shortViewRole(v.viewRole || v.role || 'unknown'))
-      .join(', ');
-    const answer = window.prompt(
-      'Confirm view roles. Use F=Front Outer, B=Back, I=Front Inner, U=Unknown.\n' +
-      'Current: ' + current + '\n' +
-      'Enter one letter per detected view, left to right:',
-      detection.views.map(v => roleToPromptLetter(v.viewRole || v.role)).join('')
-    );
-    if (!answer) return null;
-    const letters = String(answer).toUpperCase().replace(/[^FBIU]/g, '').split('');
-    if (!letters.length) return null;
-    const roleByLetter = { F: 'front_outer', B: 'back', I: 'front_inner', U: 'unknown' };
-    return letters.map(l => roleByLetter[l] || 'unknown');
-  }
-
-  function roleToPromptLetter(role) {
-    if (role === 'front_outer' || role === 'front') return 'F';
-    if (role === 'back') return 'B';
-    if (role === 'front_inner') return 'I';
-    return 'U';
-  }
-
-  function shortViewRole(role) {
-    if (role === 'front_outer' || role === 'front') return 'F';
-    if (role === 'back') return 'B';
-    if (role === 'front_inner') return 'I';
-    return 'U';
-  }
-
-  function syncDetectionRoleIndexes(detection) {
-    const views = detection.views || detection.viewBoxes || [];
-    const roleAt = (role) => views.findIndex(v => v && (v.viewRole === role || v.role === role));
-    detection.frontOuterViewIndex = roleAt('front_outer');
-    detection.frontViewIndex = detection.frontOuterViewIndex;
-    detection.backViewIndex = roleAt('back');
-    detection.frontInnerViewIndex = roleAt('front_inner');
-    detection.primaryViewIndex = detection.frontOuterViewIndex >= 0
-      ? detection.frontOuterViewIndex
-      : (detection.primaryViewIndex || 0);
-  }
-
-  // Read the ?cvDebug=1 flag once per detection and reflect it into state.
-  // Lets a URL-flagged session capture intermediate detector data without
-  // requiring the caller to also flip the flag through the debug API.
-  // Skipped silently when window/URLSearchParams isn't available (Node tests).
-  function syncCvDebugFromUrl() {
-    if (typeof window === 'undefined' || !window.location) return;
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      if (!params.has('cvDebug')) return;
-      const raw = params.get('cvDebug');
-      const on = raw === '1' || raw === 'true' || raw === 'on';
-      if (state && state.autoMode && state.autoMode.cvDebug) {
-        state.autoMode.cvDebug.enabled = on;
-      }
-    } catch (_) { /* no-op */ }
-  }
-
-  // Encode a binary ink mask (1 byte per pixel, row-major) as a base64
-  // PNG data URL so the CV debug payload includes a visual mask the TD can
-  // open in an image viewer. Dark pixels become black on white.
-  function encodeMaskToPng(mask, w, h) {
-    if (typeof document === 'undefined' || !mask || !w || !h) return null;
     const off = document.createElement('canvas');
     off.width = w;
     off.height = h;
-    const ctx = off.getContext('2d');
-    if (!ctx) return null;
-    const img = ctx.createImageData(w, h);
-    const data = img.data;
-    for (let p = 0, i = 0; p < mask.length; p += 1, i += 4) {
-      const v = mask[p] ? 0 : 255;
-      data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255;
+    const offCtx = off.getContext('2d', { willReadFrequently: true });
+    if (!offCtx) throw new Error('offscreen canvas unavailable');
+    offCtx.drawImage(src, 0, 0, w, h);
+
+    let pixels;
+    try {
+      pixels = offCtx.getImageData(0, 0, w, h).data;
+    } catch (err) {
+      throw new Error('cannot read pixels (tainted canvas)');
     }
-    ctx.putImageData(img, 0, 0);
-    try { return off.toDataURL('image/png'); }
-    catch (_) { return null; }
+    return { pixels, width: w, height: h, naturalWidth: naturalW, naturalHeight: naturalH };
   }
 
-  // Test-harness pin: ?freeCv=1 forces the deterministic FreeOpenCVAPI
-  // backend. With opencv.js vendored (served same-origin from vendor/), the
-  // harnesses' old `--host-resolver-rules=MAP docs.opencv.org …` CDN block
-  // can no longer starve the real backend, so the pin must be explicit.
-  // Read once per page load — the golden/accuracy/invariant/contract/demo
-  // runners all append it to their target URL.
-  const FORCE_FREE_CV = typeof window !== 'undefined'
-    && new URLSearchParams(window.location.search).get('freeCv') === '1';
-
-  // Prefer real opencv.js when its WASM has finished compiling; fall back
-  // to the in-house FreeOpenCVAPI while the vendored script is still
-  // loading (or if it failed). Both adapters return the same data shape,
-  // so detectSketchFromImage() never branches on which one it got.
-  function getCvApi() {
-    if (typeof window === 'undefined') return null;
-    if (FORCE_FREE_CV) return window.FreeOpenCVAPI || null;
-    const real = window.RealOpenCVAPI;
-    if (real && typeof real.isReady === 'function' && real.isReady()) return real;
-    return window.FreeOpenCVAPI || null;
+  function createLegacyInkAnalysis(src, naturalW, naturalH) {
+    const { pixels, width: w, height: h } = readSourceImagePixels(src);
+    return pixelsToLegacyInkAnalysis(pixels, w, h);
   }
+
+  // Pure ink-mask stage: rgba pixels → { mask, stats, threshold, ... }.
+  // Takes a fixed Uint8ClampedArray + dimensions; returns deterministic output.
+  // No DOM, no state, no globals — safe to call from a Node test harness.
+  function pixelsToLegacyInkAnalysis(pixels, w, h) {
+    const total = w * h;
+    const lumGrid = new Uint8ClampedArray(total);
+    const inkGrid = new Uint8ClampedArray(total);
+    const lumHist = new Uint32Array(256);
+    const inkHist = new Uint32Array(256);
+    const background = estimateBorderBackground(pixels, w, h);
+    for (let i = 0, p = 0; p < total; i += 4, p += 1) {
+      const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+      const lum = Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b);
+      const maxC = Math.max(r, g, b);
+      const minC = Math.min(r, g, b);
+      const chroma = maxC - minC;
+      const bgDiff = Math.max(0, background.lum - lum);
+      const colorDiff = Math.hypot(r - background.r, g - background.g, b - background.b);
+      const chromaInk = chroma > 18 && lum < background.lum - 6 ? chroma * 0.7 : 0;
+      const ink = clamp(Math.round(Math.max(bgDiff, colorDiff * 0.78, chromaInk)), 0, 255);
+      lumGrid[p] = lum;
+      inkGrid[p] = ink;
+      lumHist[lum] += 1;
+      inkHist[ink] += 1;
+    }
+
+    const otsuInk = otsuThreshold(inkHist, total);
+    const otsuLum = otsuThreshold(lumHist, total);
+    const threshold = Math.max(22, Math.min(96, otsuInk));
+    const luminanceThreshold = Math.max(55, Math.min(190, otsuLum - 8));
+    const rawDark = new Uint8Array(total);
+    for (let p = 0; p < total; p += 1) {
+      const ink = inkGrid[p];
+      const lum = lumGrid[p];
+      const localInk = ink >= threshold;
+      const darkByLum = lum < luminanceThreshold && background.lum - lum > 18;
+      // (Dropped a dead `ink > threshold * 1.45` clause: localInk already
+      // covers ink >= threshold, and threshold >= 22 > 0, so that term could
+      // never be the deciding condition.)
+      if (localInk || darkByLum) rawDark[p] = 1;
+    }
+
+    return {
+      engine: 'offline-vision-legacy-threshold',
+      width: w,
+      height: h,
+      total,
+      mask: rawDark,
+      stats: buildMaskStats(rawDark, w, h),
+      threshold,
+      luminanceThreshold,
+      backgroundLum: Math.round(background.lum || 255),
+    };
+  }
+
+  // DOM I/O edge: builds the ink-mask analysis for the source image, either via
+  // the OpenCV adapter (which reads the canvas itself) or via the pure
+  // legacy-pixel pipeline. Returns the same { mask, stats, threshold, ... }
+  // shape from either path so the rest of the pipeline never branches on it.
+  function buildInkAnalysisFromImage(image) {
+    const src = image.img;
+    if (!src) throw new Error('image has no bitmap');
+    const naturalW = src.naturalWidth || src.width || 0;
+    const naturalH = src.naturalHeight || src.height || 0;
+    if (!naturalW || !naturalH) throw new Error('image has zero size');
+
+    let cvAnalysis = null;
+    // Record which backend ACTUALLY produced the mask so the components stage
+    // can reuse the same one. getCvApi() can flip (real opencv.js finishes
+    // compiling) between calls, so we must not re-pick later — see
+    // detectSketchFromImage.
+    let inkBackend = null;
+
+    // Phase 3 seam: a registered SAM-like segmentation adapter gets first
+    // refusal. Default is null (see registerSegmentationAdapter), so this
+    // branch is skipped entirely in normal offline runs. An adapter mask keeps
+    // the in-house components path (inkBackend stays null) unless the adapter
+    // also exposes connectedComponentsWithStats — same rule as the legacy path.
+    const adapter = getSegmentationAdapter();
+    if (adapter) {
+      try {
+        const adapted = adapter(src, { targetWidth: DETECTION_TARGET_WIDTH, minSize: 32 });
+        if (adapted && adapted.mask && adapted.stats) {
+          cvAnalysis = adapted;
+          if (!cvAnalysis.engine) cvAnalysis.engine = 'external-segmentation-adapter';
+          inkBackend = (typeof adapted.connectedComponentsWithStats === 'function') ? adapted : null;
+        }
+      } catch (err) {
+        console.warn('[Auto Mode] segmentation adapter failed; using built-in detector:', err);
+        cvAnalysis = null;
+        inkBackend = null;
+      }
+    }
+
+    const cv = getCvApi();
+    if (!cvAnalysis && cv && typeof cv.createInkMaskFromImage === 'function') {
+      try {
+        cvAnalysis = cv.createInkMaskFromImage(src, { targetWidth: DETECTION_TARGET_WIDTH, minSize: 32 });
+        if (cvAnalysis && cvAnalysis.mask && cvAnalysis.stats) inkBackend = cv;
+      } catch (err) {
+        console.warn('[Auto Mode] OpenCV ink mask failed; using legacy detector:', err);
+      }
+    }
+    if (!cvAnalysis || !cvAnalysis.mask || !cvAnalysis.stats) {
+      // In-house pixel path → keep the components stage in-house too (null).
+      cvAnalysis = createLegacyInkAnalysis(src, naturalW, naturalH);
+      inkBackend = null;
+    }
+    cvAnalysis.inkBackend = inkBackend;
+    return cvAnalysis;
+  }
+
+  function estimateBorderBackground(pixels, w, h) {
+    const samples = [];
+    const step = Math.max(1, Math.floor(Math.min(w, h) / 40));
+    const add = (x, y) => {
+      const i = (y * w + x) * 4;
+      const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      samples.push({ r, g, b, lum });
+    };
+    for (let x = 0; x < w; x += step) {
+      add(x, 0);
+      add(x, h - 1);
+    }
+    // Start at `step` and stop before the last row so the four corners aren't
+    // sampled twice (the top/bottom loop already covered y = 0 and y = h - 1),
+    // which slightly over-weighted them in the brightest-40% background mean.
+    for (let y = step; y < h - 1; y += step) {
+      add(0, y);
+      add(w - 1, y);
+    }
+    if (!samples.length) return { r: 255, g: 255, b: 255, lum: 255 };
+    samples.sort((a, b) => a.lum - b.lum);
+    const start = Math.floor(samples.length * 0.60);
+    const bright = samples.slice(start);
+    const src = bright.length ? bright : samples;
+    let r = 0, g = 0, b = 0, lum = 0;
+    for (const s of src) {
+      r += s.r; g += s.g; b += s.b; lum += s.lum;
+    }
+    const n = src.length || 1;
+    return { r: r / n, g: g / n, b: b / n, lum: lum / n };
+  }
+
+  // ---- src/auto/detect/view-boxes.js ----
+// Geometry of the SHEET, not of one landmark: how many garment views are drawn
+// on this board, where each one's box is, and which is front_outer / back /
+// front_inner. Holds view-box grouping (detectSketchViewBoxes), the primary-view
+// pick, the over-wide-box vertical-valley split, and the role classifier plus its
+// layout scorer.
+//
+// It also holds the shared row/column ink-scan primitives (row spans, longest
+// row run, band-edge snapping, column counts, the directional ink-bound walks and
+// the per-column hem row) that both the geometry stage and the individual
+// landmark finders reuse.
+//
+// Depends on math-utils.js (refineAxisBySymmetry, computeSymmetryScore).
+// Source part for app.js. Run `npm run build` after editing.
+
+  function detectSketchViewBoxes(components, fallbackStats, w, h) {
+    if (!components || !components.length) {
+      return fallbackStats && fallbackStats.maxX >= 0 ? [statsToBounds(fallbackStats)] : [];
+    }
+    const largest = components.reduce((m, c) => Math.max(m, c.count), 0);
+    const minCount = Math.max(8, largest * 0.04);
+    const candidates = components
+      .filter(c => c.count >= minCount || c.area >= w * h * 0.002)
+      .sort((a, b) => a.minX - b.minX);
+    if (!candidates.length) return [statsToBounds(fallbackStats)];
+
+    const groups = [];
+    for (const c of candidates) {
+      const last = groups[groups.length - 1];
+      if (!last) {
+        groups.push({ minX: c.minX, minY: c.minY, maxX: c.maxX, maxY: c.maxY, count: c.count });
+        continue;
+      }
+      const gap = c.minX - last.maxX;
+      const lastW = Math.max(1, last.maxX - last.minX + 1);
+      const cW = Math.max(1, c.maxX - c.minX + 1);
+      const yOverlap = Math.max(0, Math.min(last.maxY, c.maxY) - Math.max(last.minY, c.minY) + 1);
+      const yOverlapRatio = yOverlap / Math.max(1, Math.min(last.maxY - last.minY + 1, c.maxY - c.minY + 1));
+      const allowedGap = Math.max(10, Math.min(lastW, cW) * 0.28, w * 0.035);
+      const alignedCloseGap = gap <= Math.max(allowedGap, w * 0.08) && yOverlapRatio > 0.55;
+      if (gap <= allowedGap || alignedCloseGap) {
+        last.minX = Math.min(last.minX, c.minX);
+        last.minY = Math.min(last.minY, c.minY);
+        last.maxX = Math.max(last.maxX, c.maxX);
+        last.maxY = Math.max(last.maxY, c.maxY);
+        last.count += c.count;
+      } else {
+        groups.push({ minX: c.minX, minY: c.minY, maxX: c.maxX, maxY: c.maxY, count: c.count });
+      }
+    }
+    return groups;
+  }
+
+  function choosePrimaryViewBox(viewBoxes, dark, w, h) {
+    if (!viewBoxes || !viewBoxes.length) return -1;
+    let bestIndex = 0;
+    let bestScore = -Infinity;
+    for (let i = 0; i < viewBoxes.length; i += 1) {
+      const b = viewBoxes[i];
+      const width = Math.max(1, b.maxX - b.minX + 1);
+      const height = Math.max(1, b.maxY - b.minY + 1);
+      const centroid = (b.minX + b.maxX) / 2;
+      const axis = refineAxisBySymmetry(dark, w, b.minX, b.maxX, b.minY, b.maxY, centroid);
+      const sym = computeSymmetryScore(dark, w, axis, b.minX, b.maxX, b.minY, b.maxY);
+      const center = (b.minX + b.maxX) / 2 / w;
+      const centerBonus = 1 - Math.min(1, Math.abs(center - 0.5) * 1.4);
+      const shapeBonus = Math.min(1, height / Math.max(1, width)) * 0.18;
+      const score = (b.count || 1) * (0.62 + sym * 0.55 + centerBonus * 0.10 + shapeBonus);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = i;
+      }
+    }
+    return bestIndex;
+  }
+
+  // Split every view box wide enough to plausibly hold more than one panel at
+  // its internal vertical alley, recursing so a board whose panels merged in
+  // component-grouping separates into one box per panel. This generalizes the
+  // former lone-box-only special case: a box is split-eligible when it spans
+  // more than half the canvas (>0.50w). A single garment panel on a multi-panel
+  // board is never that wide — there would be no room for the others — so a box
+  // over that gate is a merge of >=2 panels (e.g. EvelynBliss's back+inner
+  // grouped into one 0.565w box). Correct 2-panel boards keep two sub-half
+  // boxes and are untouched, which is why golden is unaffected. The per-box
+  // sanity gates inside splitMergedViewByVerticalValley (empty-alley run length
+  // + >=20% ink share each side) additionally reject splitting a genuine single
+  // view (deep-V neckline, wide back panel).
+  function splitWideViewBoxes(boxes, dark, w, h) {
+    if (!boxes || boxes.length === 0) return boxes;
+    const out = [];
+    for (const box of boxes) {
+      const parts = splitMergedViewByVerticalValley(dark, w, h, box, 0.50);
+      if (parts.length > 1) {
+        // Recurse at the SAME 0.50 gate so a box holding 3+ merged panels keeps
+        // splitting while any resulting piece still spans more than half the
+        // canvas. The gate stays at 0.50 (never lower) because a lone wide
+        // single panel — demo1/demo2 group into one >0.50w box that the split
+        // separates into front+back — must not have its halves re-split; a
+        // lower gate over-splits those legitimate single panels (golden regress).
+        out.push(...splitWideViewBoxes(parts, dark, w, h));
+      } else {
+        out.push(box);
+      }
+    }
+    return out;
+  }
+
+  function splitMergedViewByVerticalValley(dark, w, h, view, minWidthRatio = 0.50) {
+    const { minX, minY, maxX, maxY } = view;
+    const bw = maxX - minX + 1;
+    const bh = maxY - minY + 1;
+    // Require a fairly wide bbox before we even try to split — narrow boxes
+    // are almost certainly a single view that just happens to be off-center.
+    if (bw < w * minWidthRatio || bh < 16) return [view];
+
+    // Column density restricted to the view's bbox.
+    const colDark = new Uint32Array(bw);
+    for (let y = minY; y <= maxY; y += 1) {
+      const base = y * w;
+      for (let x = minX; x <= maxX; x += 1) {
+        if (dark[base + x]) colDark[x - minX] += 1;
+      }
+    }
+    // Walk the center 30..70% range, looking for the LONGEST run of columns
+    // whose density is below 8% of the bbox height (i.e. nearly empty).
+    const lo = Math.floor(bw * 0.30);
+    const hi = Math.floor(bw * 0.70);
+    const emptyThreshold = Math.max(1, Math.round(bh * 0.08));
+    let bestStart = -1, bestEnd = -1, bestLen = 0;
+    let curStart = -1;
+    for (let i = lo; i <= hi; i += 1) {
+      if (colDark[i] <= emptyThreshold) {
+        if (curStart < 0) curStart = i;
+        // Track true run length (end - start + 1); the old `end - start`
+        // comparison against a -1/-1 sentinel could never record a 1-col run.
+        const curLen = i - curStart + 1;
+        if (curLen > bestLen) {
+          bestLen = curLen;
+          bestStart = curStart;
+          bestEnd = i;
+        }
+      } else {
+        curStart = -1;
+      }
+    }
+    const runLen = bestLen;
+    // Need a noticeable alley — at least 4% of the bbox width — before splitting.
+    if (bestStart < 0 || runLen < Math.max(4, bw * 0.04)) return [view];
+
+    // Use the MIDDLE of the alley as the split point. Recompute each sub-view's
+    // ink-bbox by scanning its columns; this snaps the bbox to the actual ink
+    // (so the FRONT/BACK overlay doesn't include the gap or stray ink).
+    const splitX = minX + Math.round((bestStart + bestEnd) / 2);
+    const subBounds = (xStart, xEnd) => {
+      let lMinX = w, lMaxX = -1, lMinY = h, lMaxY = -1, lCount = 0;
+      for (let y = minY; y <= maxY; y += 1) {
+        const base = y * w;
+        for (let x = xStart; x <= xEnd; x += 1) {
+          if (!dark[base + x]) continue;
+          lCount += 1;
+          if (x < lMinX) lMinX = x;
+          if (x > lMaxX) lMaxX = x;
+          if (y < lMinY) lMinY = y;
+          if (y > lMaxY) lMaxY = y;
+        }
+      }
+      return lMaxX < 0 ? null : { minX: lMinX, minY: lMinY, maxX: lMaxX, maxY: lMaxY, count: lCount };
+    };
+    const left = subBounds(minX, splitX - 1);
+    const right = subBounds(splitX + 1, maxX);
+    if (!left || !right) return [view];
+    // Sanity check the split: each side should hold a non-trivial share of
+    // the original ink. Otherwise the alley was probably just a real empty
+    // space inside a single view (e.g. a deep V neckline).
+    const total = Math.max(1, view.count || (left.count + right.count));
+    const minShare = 0.20;
+    if (left.count / total < minShare || right.count / total < minShare) return [view];
+    return [left, right];
+  }
+
+  // Decide each detected garment component's semantic role. Visual features
+  // get first vote; layout only breaks ties. This keeps two-view styles
+  // working while allowing a third inner-cup/front-lining detail view.
+  function classifySketchViewRoles(dark, w, h, viewBoxes) {
+    const scores = (viewBoxes || []).map((view) => scoreViewLayout(view, w, dark, h));
+    const roles = new Array(scores.length).fill('unknown');
+    if (!viewBoxes || !viewBoxes.length) {
+      return {
+        roles,
+        frontOuterIndex: -1,
+        backIndex: -1,
+        frontInnerIndex: -1,
+        scores,
+        reviewRequired: true,
+      };
+    }
+    if (viewBoxes.length === 1) {
+      roles[0] = 'front_outer';
+      scores[0].roleConfidence = 0.55;
+      return {
+        roles,
+        frontOuterIndex: 0,
+        backIndex: -1,
+        frontInnerIndex: -1,
+        scores,
+        reviewRequired: false,
+      };
+    }
+
+    const largest = viewBoxes.reduce((m, v) => Math.max(m, v.count || 0), 0);
+    const minQualifyingCount = Math.max(1, largest * 0.05);
+    const eligible = viewBoxes
+      .map((view, index) => ({ view, index, score: scores[index] }))
+      .filter((item) => (item.view.count || 0) >= minQualifyingCount);
+    if (!eligible.length) {
+      roles[0] = 'front_outer';
+      scores[0].roleConfidence = 0.35;
+      return {
+        roles,
+        frontOuterIndex: 0,
+        backIndex: -1,
+        frontInnerIndex: -1,
+        scores,
+        reviewRequired: true,
+      };
+    }
+
+    const assignBest = (role, metric, exclude) => {
+      let best = null;
+      for (const item of eligible) {
+        if (exclude && exclude.has(item.index)) continue;
+        if (!best || item.score[metric] > best.score[metric]) best = item;
+      }
+      if (!best) return -1;
+      roles[best.index] = role;
+      return best.index;
+    };
+
+    const used = new Set();
+    let backIndex = -1;
+    let frontInnerIndex = -1;
+    let frontOuterIndex = -1;
+
+    if (eligible.length >= 3) {
+      // Panel order on a technical board is a fixed TD convention, left to
+      // right: front_outer, back, front_inner. Position is a far more reliable
+      // signal than the visual scores — a symmetric racerback back and a
+      // molded-cup inner cutaway score too alike to tell apart — so assign the
+      // three roles by centroidX order. Take the three highest-ink eligible
+      // views first so a stray 4th blob can't shift the mapping; any extra
+      // panel stays 'unknown' and trips reviewRequired below.
+      const trio = eligible
+        .slice()
+        .sort((a, b) => (b.view.count || 0) - (a.view.count || 0))
+        .slice(0, 3)
+        .sort((a, b) => a.score.centroidX - b.score.centroidX);
+      frontOuterIndex = trio[0].index; roles[frontOuterIndex] = 'front_outer';
+      backIndex       = trio[1].index; roles[backIndex] = 'back';
+      frontInnerIndex = trio[2].index; roles[frontInnerIndex] = 'front_inner';
+      used.add(frontOuterIndex); used.add(backIndex); used.add(frontInnerIndex);
+      // Position is authoritative for the 3-view layout, so assign a confident
+      // role score — the review dialog is NOT forced on a clean 3-panel board
+      // (the TD can still nudge anchors if a board ever breaks the convention).
+      for (const idx of [frontOuterIndex, backIndex, frontInnerIndex]) {
+        if (scores[idx]) scores[idx].roleConfidence = 0.75;
+      }
+    } else {
+      // Two panels (the common front + back board): back by best backScore, the
+      // remaining view is front_outer. Unchanged from the long-standing path.
+      backIndex = assignBest('back', 'backScore', used);
+      if (backIndex >= 0) used.add(backIndex);
+
+      frontOuterIndex = assignBest('front_outer', 'frontOuterScore', used);
+      if (frontOuterIndex < 0) {
+        const fallback = eligible
+          .filter(item => !used.has(item.index))
+          .sort((a, b) => a.score.centroidX - b.score.centroidX)[0] || eligible[0];
+        frontOuterIndex = fallback.index;
+        roles[frontOuterIndex] = 'front_outer';
+      }
+    }
+
+    const roleConfidence = (index, metric) => {
+      if (index < 0 || !scores[index]) return 0;
+      const values = eligible
+        .filter(item => item.index !== index)
+        .map(item => item.score[metric])
+        .sort((a, b) => b - a);
+      const runnerUp = values.length ? values[0] : 0;
+      return clamp01(0.45 + (scores[index][metric] - runnerUp) * 0.55);
+    };
+    // The ≤2-panel path derives confidence from the visual score margin. The
+    // 3-view path already set a fixed positional confidence above (position is
+    // authoritative there), so it is not recomputed from scores here.
+    if (eligible.length < 3) {
+      if (frontOuterIndex >= 0) scores[frontOuterIndex].roleConfidence = roleConfidence(frontOuterIndex, 'frontOuterScore');
+      if (backIndex >= 0) scores[backIndex].roleConfidence = roleConfidence(backIndex, 'backScore');
+    }
+
+    const reviewRequired =
+      eligible.length > 3 ||
+      eligible.some(item => roles[item.index] === 'unknown') ||
+      eligible.some(item => {
+        const role = roles[item.index];
+        if (role === 'front_outer') return (scores[item.index].roleConfidence || 0) < 0.52;
+        if (role === 'front_inner') return (scores[item.index].roleConfidence || 0) < 0.52;
+        if (role === 'back') return (scores[item.index].roleConfidence || 0) < 0.52;
+        return true;
+      });
+
+    return { roles, frontOuterIndex, backIndex, frontInnerIndex, scores, reviewRequired };
+  }
+
+  function scoreViewLayout(view, w, dark, h) {
+    const bw = (view.maxX - view.minX + 1);
+    const bh = (view.maxY - view.minY + 1);
+    const cx = (view.minX + view.maxX) / 2;
+    const ink = view.count || 1;
+    let edgeInk = 0;
+    let centerVerticalInk = 0;
+    if (dark && w && h && bw > 0 && bh > 0) {
+      const insetX = Math.max(2, Math.round(bw * 0.16));
+      const insetY = Math.max(2, Math.round(bh * 0.12));
+      const centerLo = Math.round(view.minX + bw * 0.42);
+      const centerHi = Math.round(view.minX + bw * 0.58);
+      for (let y = view.minY; y <= view.maxY; y += 1) {
+        const base = y * w;
+        for (let x = view.minX; x <= view.maxX; x += 1) {
+          if (!dark[base + x]) continue;
+          const inInner = x >= view.minX + insetX && x <= view.maxX - insetX
+            && y >= view.minY + insetY && y <= view.maxY - insetY;
+          if (!inInner) edgeInk += 1;
+          if (x >= centerLo && x <= centerHi) centerVerticalInk += 1;
+        }
+      }
+    }
+    const widthRatio = w > 0 ? bw / w : 0;
+    const aspect = bh / Math.max(1, bw);
+    const edgeRatio = edgeInk / ink;
+    const centerVerticalRatio = centerVerticalInk / ink;
+    const leftness = 1 - clamp01(cx / Math.max(1, w));
+    const rightness = clamp01(cx / Math.max(1, w));
+    const symmetry = computeSymmetryScore(
+      dark,
+      w,
+      Math.round(cx),
+      view.minX,
+      view.maxX,
+      view.minY,
+      view.maxY
+    );
+    const frontOuterScore =
+      symmetry * 0.34 +
+      widthRatio * 0.22 +
+      edgeRatio * 0.16 +
+      leftness * 0.14 +
+      (1 - clamp01(Math.abs(aspect - 1.05))) * 0.14;
+    const backScore =
+      rightness * 0.30 +
+      centerVerticalRatio * 0.24 +
+      edgeRatio * 0.20 +
+      clamp01(aspect / 1.45) * 0.16 +
+      (1 - symmetry) * 0.10;
+    return {
+      centroidX: w > 0 ? cx / w : 0,
+      widthRatio,
+      count: view.count || 0,
+      edgeRatio,
+      centerVerticalRatio,
+      symmetry,
+      frontOuterScore,
+      backScore,
+      roleConfidence: 0,
+    };
+  }
+
+  function computeRowSpans(mask, w, minX, maxX, minY, maxY) {
+    const spans = new Uint32Array(maxY + 1);
+    for (let y = minY; y <= maxY; y += 1) {
+      const base = y * w;
+      let left = -1, right = -1;
+      for (let x = minX; x <= maxX; x += 1) {
+        if (!mask[base + x]) continue;
+        if (left < 0) left = x;
+        right = x;
+      }
+      spans[y] = left >= 0 ? right - left + 1 : 0;
+    }
+    return spans;
+  }
+
+  // Longest contiguous dark run per row. Solid seam lines have a long single
+  // run; dense lace patterns have many short runs at high total density. This
+  // is the signal that lets the underbust-seam detector beat the lace band.
+  function computeRowMaxRun(mask, w, minX, maxX, minY, maxY) {
+    const runs = new Uint32Array(maxY + 1);
+    for (let y = minY; y <= maxY; y += 1) {
+      const base = y * w;
+      let cur = 0, best = 0;
+      for (let x = minX; x <= maxX; x += 1) {
+        if (mask[base + x]) {
+          cur += 1;
+          if (cur > best) best = cur;
+        } else {
+          cur = 0;
+        }
+      }
+      runs[y] = best;
+    }
+    return runs;
+  }
+
+  // Snap a detected band row to the SOLID bottom edge of the band, not a zig-zag
+  // elastic line drawn above it. Scanned row by row, a zig-zag has only short
+  // horizontal runs (its diagonal strokes crossing each row), while the solid
+  // edge is one long continuous run. We search a tight window around the detected
+  // band zone and take the LOWEST row that reads as solid, so the bottom-band and
+  // center-front-bottom anchors land on the real edge under any decorative
+  // stitching. Returns the original row when no solid line stands out (e.g. a
+  // band drawn only as a zig-zag), so non-banded sketches are untouched.
+  function snapBandToSolidEdge(rowRun, bandRow, minY, maxY, bandWidth, bandHeight) {
+    if (bandRow <= 0) return bandRow;
+    const lo = Math.max(minY, bandRow - Math.round(bandHeight * 0.04));
+    const hi = Math.min(maxY, bandRow + Math.round(bandHeight * 0.12));
+    let peakRun = 0;
+    for (let y = lo; y <= hi; y += 1) if (rowRun[y] > peakRun) peakRun = rowRun[y];
+    if (peakRun < bandWidth * 0.30) return bandRow;
+    const solidThresh = Math.max(bandWidth * 0.30, peakRun * 0.6);
+    for (let y = hi; y >= lo; y -= 1) if (rowRun[y] >= solidThresh) return y;
+    return bandRow;
+  }
+
+  function countDarkByColumnInRange(mask, w, minX, maxX, minY, maxY) {
+    const counts = new Uint32Array(w);
+    const y0 = Math.max(0, minY);
+    const y1 = Math.max(y0, maxY);
+    for (let y = y0; y <= y1; y += 1) {
+      const base = y * w;
+      for (let x = minX; x <= maxX; x += 1) {
+        if (mask[base + x]) counts[x] += 1;
+      }
+    }
+    return counts;
+  }
+
+  // Walk inward along a horizontal band of rows and return the first column
+  // where ink appears. Used to snap chest-left/right (and band-left/right) to
+  // the actual ink endpoints instead of view-box edges. halfBand widens the
+  // search vertically so a slightly-off chest row still finds the line.
+  function findHorizontalInkBound(dark, w, rowCenter, halfBand, fromX, toX, direction) {
+    const yLo = Math.max(0, rowCenter - halfBand);
+    const yHi = rowCenter + halfBand;
+    if (direction > 0) {
+      for (let x = fromX; x <= toX; x += 1) {
+        for (let y = yLo; y <= yHi; y += 1) {
+          if (dark[y * w + x]) return x;
+        }
+      }
+    } else {
+      for (let x = fromX; x >= toX; x -= 1) {
+        for (let y = yLo; y <= yHi; y += 1) {
+          if (dark[y * w + x]) return x;
+        }
+      }
+    }
+    return -1;
+  }
+
+  // Walk vertically along a thin column-band and return the first row with
+  // ink. Used to snap CF-top to where the cleavage actually begins instead of
+  // a hardcoded 4% offset from the view-box top.
+  function findVerticalInkBound(dark, w, colCenter, halfBand, fromY, toY, direction) {
+    const xLo = Math.max(0, colCenter - halfBand);
+    const xHi = colCenter + halfBand;
+    if (direction > 0) {
+      for (let y = fromY; y <= toY; y += 1) {
+        const base = y * w;
+        for (let x = xLo; x <= xHi; x += 1) {
+          if (dark[base + x]) return y;
+        }
+      }
+    } else {
+      for (let y = fromY; y >= toY; y -= 1) {
+        const base = y * w;
+        for (let x = xLo; x <= xHi; x += 1) {
+          if (dark[base + x]) return y;
+        }
+      }
+    }
+    return -1;
+  }
+
+  // Lowest inked row in a thin column band — the garment's drawn hem AT ONE x.
+  //
+  // bandY is a single horizontal row, which is right for a straight hem and
+  // wrong for a scalloped or arched one. Measured on Evelyn vA 3.0 (1830x711):
+  // the picot hem sits at 662px out at the sides and rises to 632px at centre
+  // front, a 30px arch, while bandY is a flat 659px — so the CF bottom anchor
+  // ends up 27px BELOW the artwork, floating in white space.
+  //
+  // Used ONLY by the POM 6 / POM 7 bottom anchors (US-061). band-left and
+  // band-right deliberately keep the flat row so POM 1 stays a level span.
+  //
+  // Scans UP from just below the band row and returns the first inked row.
+  // Returns null when the window holds no ink, so the caller keeps bandY and
+  // straight-hem sketches stay byte-identical.
+  function hemRowAtColumn(dark, w, h, colPx, bandRowPx, bboxH) {
+    if (!Number.isFinite(colPx) || !Number.isFinite(bandRowPx) || !(bboxH > 0)) return null;
+    const halfBand = Math.max(1, Math.round(bboxH * 0.006));
+    const fromY = Math.min(h - 1, Math.round(bandRowPx + bboxH * 0.06));
+    const toY = Math.max(0, Math.round(bandRowPx - bboxH * 0.12));
+    if (fromY < toY) return null;
+    const hit = findVerticalInkBound(dark, w, Math.round(colPx), halfBand, fromY, toY, -1);
+    return hit >= 0 ? hit : null;
+  }
+
+  // ---- src/auto/detect/segmentation.js ----
+// Stage 2 of the detection pipeline: segmentation. Turns the ink analysis from
+// ink-mask.js into the cleaned foreground mask the rest of the pipeline reads.
+//
+// Holds the pluggable external-segmenter registry (the adapter seam consumed by
+// src/auto/debug-api.js's test hooks), the backend-id classifier, the
+// deterministic segmentation-quality score and its serializable view, the mask
+// statistics / bounds helpers, the in-house connected-component ink filter, and
+// the segmentSketch stage itself.
+//
+// Depends on ink-mask.js and math-utils.js.
+// Source part for app.js. Run `npm run build` after editing.
 
   // -------- Segmentation adapter seam (Engineering Workflow Phase 3, item 4) --------
   //
@@ -20749,286 +21169,120 @@ function getAnnotationsOnImage(image) {
     };
   }
 
-  // Detection analysis resolution. Higher = better small-feature accuracy
-  // (cleavage point, hook profile, strap attach) at the cost of CPU. Offline
-  // detection is local so this trades CPU for accuracy, not latency or $.
-  const DETECTION_TARGET_WIDTH = 1024;
-  const DETECTION_DEFAULT_PARAMS = {
-    bandSearchStartRatio: 0.58,
-    bandPreferredRatio: 0.82,
-    rowNoiseMultiplier: 1,
-    colNoiseMultiplier: 1,
-  };
-
-  function getDefaultDetectionParams() {
-    return { ...DETECTION_DEFAULT_PARAMS };
+  function buildMaskStats(mask, w, h, bounds) {
+    const x0 = bounds ? clamp(Math.floor(bounds.minX), 0, w - 1) : 0;
+    const y0 = bounds ? clamp(Math.floor(bounds.minY), 0, h - 1) : 0;
+    const x1 = bounds ? clamp(Math.ceil(bounds.maxX), 0, w - 1) : w - 1;
+    const y1 = bounds ? clamp(Math.ceil(bounds.maxY), 0, h - 1) : h - 1;
+    const colDark = new Uint32Array(w);
+    const rowDark = new Uint32Array(h);
+    let count = 0;
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = y0; y <= y1; y += 1) {
+      const base = y * w;
+      for (let x = x0; x <= x1; x += 1) {
+        if (!mask[base + x]) continue;
+        colDark[x] += 1;
+        rowDark[y] += 1;
+        count += 1;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+    return { count, minX, minY, maxX, maxY, colDark, rowDark };
   }
 
-  function normalizeDetectionParams(input) {
-    const base = getDefaultDetectionParams();
-    const src = input && typeof input === 'object' ? input : {};
+  function statsToBounds(stats) {
     return {
-      bandSearchStartRatio: clampNumber(src.bandSearchStartRatio, 0.50, 0.68, base.bandSearchStartRatio),
-      bandPreferredRatio: clampNumber(src.bandPreferredRatio, 0.72, 0.90, base.bandPreferredRatio),
-      rowNoiseMultiplier: clampNumber(src.rowNoiseMultiplier, 0.75, 1.25, base.rowNoiseMultiplier),
-      colNoiseMultiplier: clampNumber(src.colNoiseMultiplier, 0.75, 1.25, base.colNoiseMultiplier),
+      minX: stats.minX,
+      minY: stats.minY,
+      maxX: stats.maxX,
+      maxY: stats.maxY,
+      count: stats.count,
     };
   }
 
-  function activeDetectionParams(options) {
-    const sources = [];
-    if (!(options && options.skipLearningParams) && typeof getLearnedDetectionParams === 'function') {
-      sources.push(getLearnedDetectionParams());
-    }
-    if (options && options.params) sources.push(options.params);
-    return normalizeDetectionParams(Object.assign({}, ...sources));
+  function normalizeBounds(bounds, w, h) {
+    return {
+      x: clamp01(bounds.minX / w),
+      y: clamp01(bounds.minY / h),
+      width: clamp01((bounds.maxX - bounds.minX + 1) / w),
+      height: clamp01((bounds.maxY - bounds.minY + 1) / h),
+      count: bounds.count || 0,
+    };
   }
 
-  function clampNumber(value, min, max, fallback) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return fallback;
-    return Math.max(min, Math.min(max, n));
-  }
-
-  // Side-effect-only: reads RGBA pixels off the source image via an offscreen
-  // canvas. Returns the data the rest of the detection pipeline needs, with no
-  // further dependency on the DOM. Split out of createLegacyInkAnalysis so the
-  // pure pixel-math stages below can be unit-tested from Node without a canvas.
-  function readSourceImagePixels(src, targetWidth) {
-    const naturalW = src.naturalWidth || src.width || 0;
-    const naturalH = src.naturalHeight || src.height || 0;
-    if (!naturalW || !naturalH) throw new Error('image has zero size');
-    const TARGET_WIDTH = targetWidth || DETECTION_TARGET_WIDTH;
-    const scale = Math.min(1, TARGET_WIDTH / naturalW);
-    const w = Math.max(32, Math.round(naturalW * scale));
-    const h = Math.max(32, Math.round(naturalH * scale));
-
-    const off = document.createElement('canvas');
-    off.width = w;
-    off.height = h;
-    const offCtx = off.getContext('2d', { willReadFrequently: true });
-    if (!offCtx) throw new Error('offscreen canvas unavailable');
-    offCtx.drawImage(src, 0, 0, w, h);
-
-    let pixels;
-    try {
-      pixels = offCtx.getImageData(0, 0, w, h).data;
-    } catch (err) {
-      throw new Error('cannot read pixels (tainted canvas)');
-    }
-    return { pixels, width: w, height: h, naturalWidth: naturalW, naturalHeight: naturalH };
-  }
-
-  function createLegacyInkAnalysis(src, naturalW, naturalH) {
-    const { pixels, width: w, height: h } = readSourceImagePixels(src);
-    return pixelsToLegacyInkAnalysis(pixels, w, h);
-  }
-
-  // Pure ink-mask stage: rgba pixels → { mask, stats, threshold, ... }.
-  // Takes a fixed Uint8ClampedArray + dimensions; returns deterministic output.
-  // No DOM, no state, no globals — safe to call from a Node test harness.
-  function pixelsToLegacyInkAnalysis(pixels, w, h) {
+  function filterInkComponents(rawMask, w, h, minCount) {
     const total = w * h;
-    const lumGrid = new Uint8ClampedArray(total);
-    const inkGrid = new Uint8ClampedArray(total);
-    const lumHist = new Uint32Array(256);
-    const inkHist = new Uint32Array(256);
-    const background = estimateBorderBackground(pixels, w, h);
-    for (let i = 0, p = 0; p < total; i += 4, p += 1) {
-      const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
-      const lum = Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b);
-      const maxC = Math.max(r, g, b);
-      const minC = Math.min(r, g, b);
-      const chroma = maxC - minC;
-      const bgDiff = Math.max(0, background.lum - lum);
-      const colorDiff = Math.hypot(r - background.r, g - background.g, b - background.b);
-      const chromaInk = chroma > 18 && lum < background.lum - 6 ? chroma * 0.7 : 0;
-      const ink = clamp(Math.round(Math.max(bgDiff, colorDiff * 0.78, chromaInk)), 0, 255);
-      lumGrid[p] = lum;
-      inkGrid[p] = ink;
-      lumHist[lum] += 1;
-      inkHist[ink] += 1;
-    }
+    const visited = new Uint8Array(total);
+    const out = new Uint8Array(total);
+    const queue = new Int32Array(total);
+    const keptComponents = [];
+    let componentCount = 0;
 
-    const otsuInk = otsuThreshold(inkHist, total);
-    const otsuLum = otsuThreshold(lumHist, total);
-    const threshold = Math.max(22, Math.min(96, otsuInk));
-    const luminanceThreshold = Math.max(55, Math.min(190, otsuLum - 8));
-    const rawDark = new Uint8Array(total);
-    for (let p = 0; p < total; p += 1) {
-      const ink = inkGrid[p];
-      const lum = lumGrid[p];
-      const localInk = ink >= threshold;
-      const darkByLum = lum < luminanceThreshold && background.lum - lum > 18;
-      // (Dropped a dead `ink > threshold * 1.45` clause: localInk already
-      // covers ink >= threshold, and threshold >= 22 > 0, so that term could
-      // never be the deciding condition.)
-      if (localInk || darkByLum) rawDark[p] = 1;
-    }
+    for (let start = 0; start < total; start += 1) {
+      if (!rawMask[start] || visited[start]) continue;
+      componentCount += 1;
+      let head = 0, tail = 0;
+      queue[tail++] = start;
+      visited[start] = 1;
 
-    return {
-      engine: 'offline-vision-legacy-threshold',
-      width: w,
-      height: h,
-      total,
-      mask: rawDark,
-      stats: buildMaskStats(rawDark, w, h),
-      threshold,
-      luminanceThreshold,
-      backgroundLum: Math.round(background.lum || 255),
-    };
-  }
+      let count = 0;
+      let minX = w, minY = h, maxX = -1, maxY = -1;
+      let sumX = 0, sumY = 0;
+      let touches = 0;
 
-  // detectSketchFromImage — offline shape analysis pipeline.
-  //
-  // Reads pixels into an offscreen canvas, estimates the paper/background,
-  // builds an "ink" mask, removes speckle via connected components, groups
-  // likely sketch views, then picks a primary view for landmark extraction.
-  // Feature detection is still fully local: no API, no network, no model.
-  //
-  // All returned coordinates are normalized [0, 1] relative to the source
-  // image's native pixel size so they travel with the image.
-  // DOM I/O edge: builds the ink-mask analysis for the source image, either via
-  // the OpenCV adapter (which reads the canvas itself) or via the pure
-  // legacy-pixel pipeline. Returns the same { mask, stats, threshold, ... }
-  // shape from either path so the rest of the pipeline never branches on it.
-  function buildInkAnalysisFromImage(image) {
-    const src = image.img;
-    if (!src) throw new Error('image has no bitmap');
-    const naturalW = src.naturalWidth || src.width || 0;
-    const naturalH = src.naturalHeight || src.height || 0;
-    if (!naturalW || !naturalH) throw new Error('image has zero size');
+      while (head < tail) {
+        const idx = queue[head++];
+        const x = idx % w;
+        const y = Math.floor(idx / w);
+        count += 1;
+        sumX += x;
+        sumY += y;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
 
-    let cvAnalysis = null;
-    // Record which backend ACTUALLY produced the mask so the components stage
-    // can reuse the same one. getCvApi() can flip (real opencv.js finishes
-    // compiling) between calls, so we must not re-pick later — see
-    // detectSketchFromImage.
-    let inkBackend = null;
-
-    // Phase 3 seam: a registered SAM-like segmentation adapter gets first
-    // refusal. Default is null (see registerSegmentationAdapter), so this
-    // branch is skipped entirely in normal offline runs. An adapter mask keeps
-    // the in-house components path (inkBackend stays null) unless the adapter
-    // also exposes connectedComponentsWithStats — same rule as the legacy path.
-    const adapter = getSegmentationAdapter();
-    if (adapter) {
-      try {
-        const adapted = adapter(src, { targetWidth: DETECTION_TARGET_WIDTH, minSize: 32 });
-        if (adapted && adapted.mask && adapted.stats) {
-          cvAnalysis = adapted;
-          if (!cvAnalysis.engine) cvAnalysis.engine = 'external-segmentation-adapter';
-          inkBackend = (typeof adapted.connectedComponentsWithStats === 'function') ? adapted : null;
+        for (let yy = y - 1; yy <= y + 1; yy += 1) {
+          if (yy < 0 || yy >= h) continue;
+          const rowBase = yy * w;
+          for (let xx = x - 1; xx <= x + 1; xx += 1) {
+            if (xx < 0 || xx >= w || (xx === x && yy === y)) continue;
+            const ni = rowBase + xx;
+            if (visited[ni] || !rawMask[ni]) continue;
+            visited[ni] = 1;
+            queue[tail++] = ni;
+          }
         }
-      } catch (err) {
-        console.warn('[Auto Mode] segmentation adapter failed; using built-in detector:', err);
-        cvAnalysis = null;
-        inkBackend = null;
       }
+
+      if (minX === 0) touches += 1;
+      if (maxX === w - 1) touches += 1;
+      if (minY === 0) touches += 1;
+      if (maxY === h - 1) touches += 1;
+
+      const width = maxX - minX + 1;
+      const height = maxY - minY + 1;
+      const area = Math.max(1, width * height);
+      const density = count / area;
+      const longStroke = Math.max(width, height) >= Math.min(w, h) * 0.08 && count >= minCount * 0.45;
+      const likelyFrame = touches >= 2 && width > w * 0.82 && height > h * 0.82 && density < 0.10;
+      const keep = !likelyFrame && (count >= minCount || longStroke);
+      if (!keep) continue;
+
+      for (let i = 0; i < tail; i += 1) out[queue[i]] = 1;
+      keptComponents.push({
+        count, minX, minY, maxX, maxY, width, height, area, density,
+        cx: sumX / count,
+        cy: sumY / count,
+        touches,
+      });
     }
 
-    const cv = getCvApi();
-    if (!cvAnalysis && cv && typeof cv.createInkMaskFromImage === 'function') {
-      try {
-        cvAnalysis = cv.createInkMaskFromImage(src, { targetWidth: DETECTION_TARGET_WIDTH, minSize: 32 });
-        if (cvAnalysis && cvAnalysis.mask && cvAnalysis.stats) inkBackend = cv;
-      } catch (err) {
-        console.warn('[Auto Mode] OpenCV ink mask failed; using legacy detector:', err);
-      }
-    }
-    if (!cvAnalysis || !cvAnalysis.mask || !cvAnalysis.stats) {
-      // In-house pixel path → keep the components stage in-house too (null).
-      cvAnalysis = createLegacyInkAnalysis(src, naturalW, naturalH);
-      inkBackend = null;
-    }
-    cvAnalysis.inkBackend = inkBackend;
-    return cvAnalysis;
-  }
-
-  // Orchestrator that keeps the public callsite unchanged.
-  // 1. Builds the ink analysis from the source image (DOM I/O edge).
-  // 2. Hands it to the pure detection pipeline along with the same CV adapter
-  //    used for the ink mask, so the components stage stays on one backend.
-  function detectSketchFromImage(image, options) {
-    const cvAnalysis = buildInkAnalysisFromImage(image);
-    return detectSketchFromInkAnalysis(cvAnalysis, {
-      // Reuse the exact backend that built the ink mask — do NOT re-pick with
-      // getCvApi(), which can flip mid-pipeline and feed a free-path mask into
-      // the real-backend component pass (an untested, nondeterministic path).
-      cv: cvAnalysis.inkBackend || null,
-      params: activeDetectionParams(options),
-      debug: !!(options && options.debug),
-      // singleView: treat the whole photo as ONE garment view — skip the
-      // front/back/inner panel split. Used for auxiliary photos (e.g. a
-      // front-inner cutaway added as its own image), which are a single view;
-      // the split otherwise carves the cutaway's gore/shading alleys into 3
-      // boxes and collapses the "front" onto one cup.
-      singleView: !!(options && options.singleView),
-    });
-  }
-
-  // Pure detection pipeline: ink mask + stats → detection object.
-  //
-  // From this point on the pipeline is data-in / data-out — no DOM, no state,
-  // no globals. The CV adapter (opts.cv) is injected so callers can swap or
-  // omit it; passing null forces the in-house components path, which keeps the
-  // pipeline runnable from Node with a synthetic ink analysis. Per-stage
-  // durations are recorded on detection.stageTimingsMs so each stage can be
-  // independently timed.
-  // Pure detection pipeline, now composed from four named stage functions:
-  //   segmentSketch    → ink mask + connected-component cleanup
-  //   extractContours  → junction / endpoint topology on the cleaned mask
-  //   analyzeGeometry  → view boxes, symmetry axis, band/chest/cradle rows,
-  //                      side-seam columns (geometry facts in pixel space)
-  //   detectLandmarks  → apex/strap/cup/back landmarks, confidence, and the
-  //                      assembled detection result
-  // The stages thread explicit context objects between them (no shared closure
-  // state beyond the injected stage marker), and the composed output is the
-  // same detection object shape the rest of the app already consumed. This is
-  // a pure structural refactor — see Engineering Workflow Phase 2.
-  function detectSketchFromInkAnalysis(cvAnalysis, opts) {
-    const cv = (opts && opts.cv) || null;
-    const detectionParams = normalizeDetectionParams(opts && opts.params);
-    const debugEnabled = !!(opts && opts.debug);
-    const stageTimingsMs = {};
-    const mark = makeStageMarker(stageTimingsMs);
-
-    // Stage 2: segmentation (ink mask + connected-component cleanup).
-    const seg = segmentSketch(cvAnalysis, { cv, mark, stageTimingsMs });
-    if (seg.earlyReturn) return seg.earlyReturn;
-
-    // Stage 3: contour / topology extraction (the clean evidence bundle).
-    const contours = extractContours(seg, { mark });
-
-    // Stage 4: geometry analysis (view roles, axis, band/cup rows, seams).
-    // The contour-evidence bundle is threaded in so the geometry stage CAN read
-    // endpoints / curve candidates (Phase 4, item 3); geometry decisions are
-    // unchanged in this phase — it is availability, not forced consumption.
-    const geometry = analyzeGeometry(seg, {
-      detectionParams, mark, stageTimingsMs, contourEvidence: contours,
-      singleView: !!(opts && opts.singleView),
-    });
-    if (geometry.earlyReturn) return geometry.earlyReturn;
-
-    // Stage 5: landmark construction + confidence + assembly.
-    return detectLandmarks(cvAnalysis, seg, geometry, contours, {
-      detectionParams, debugEnabled, stageTimingsMs, mark,
-    });
-  }
-
-  // Per-stage wall-clock marker. Records the delta (ms, 2dp) since the last
-  // mark under `name` on the shared timings object. Timings are diagnostic
-  // only and inherently non-deterministic — nothing downstream keys on them.
-  function makeStageMarker(timings) {
-    const now = (typeof performance !== 'undefined' && performance.now)
-      ? () => performance.now()
-      : () => Date.now();
-    let last = now();
-    return function markStage(name) {
-      const t = now();
-      timings[name] = Math.max(0, Math.round((t - last) * 100) / 100);
-      last = t;
-    };
+    return { mask: out, keptComponents, componentCount };
   }
 
   // ---- Stage 2: segmentation (ink mask + connected-component cleanup) ----
@@ -21161,79 +21415,298 @@ function getAnnotationsOnImage(image) {
     };
   }
 
-  // ---- Stage 3: contour / topology extraction (Engineering Workflow Phase 4) ----
-  // Input: the cleaned mask from segmentSketch. Output: a clean CONTOUR-EVIDENCE
-  // bundle — { contours, endpoints, junctions, corners, curves, strokeStats }
-  // (plus the raw junctionMap handle for back-compat). This is deliberately a
-  // bag of SHAPE EVIDENCE, not geometry decisions: nothing here is an anchor or
-  // a garment-level verdict, and downstream stages only READ it. Keeping the
-  // raw contour data separate from technical meaning is the whole point of the
-  // phase (see Engineering Workflow.md §3, "Keep raw contour data separate").
+  // ---- src/auto/detect/potrace-trace.js ----
+// Vector tracing and bezier curve fitting: wraps the vendored Potrace singleton
+// (via an offscreen canvas), parses the SVG it emits into normalized contour
+// paths, and fits a cubic through the traced arc between two POM endpoints.
+//
+// Also holds buildContourCurveCandidates, the one classification pass that turns
+// traced paths into the reusable curve-candidate list on the detection object.
+//
+// matchContourForCurve is called cross-file from
+// src/auto/drafts/pom-fixture-builder.js behind a `typeof` guard, so its name is
+// part of the contract. Nothing else in the detector needs to know how an SVG
+// path is parsed or matched.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // Potrace vector tracer — wraps the singleton Potrace API (potrace.js) into
+  // a Promise that takes the ink mask and returns normalized contour paths.
   //
-  // Two fields are populated lazily by the deferred Potrace edge pass (its
-  // duration is non-deterministic, so it runs at the orchestrator edge, not in
-  // this pure stage): `contours` (traced outlines → detection.contours) and
-  // `curves` (reusable curve candidates → detection.curveCandidates, built by
-  // buildContourCurveCandidates). They are null here by design.
-  // Auxiliary data only — a failure here must never sink the detection.
-  function extractContours(seg, ctx) {
-    const _stageMark = ctx.mark;
-    const { dark, w, h } = seg;
-
-    // ---- Stage: junction / endpoint / corner map (Phase 1, plan 2) ----
-    // Skeleton-topology features on the CLEANED mask. A failure here must never
-    // sink the detection — hence the catch.
-    let junctionMap = null;
-    try {
-      junctionMap = detectJunctions(dark, w, h);
-    } catch (err) {
-      if (typeof console !== 'undefined' && console.warn) {
-        console.warn('[Auto Mode] junction detection failed (non-fatal):', err);
-      }
-      junctionMap = null;
+  // Why we trace at all: the row/column peak detector finds straight reference
+  // lines well (chest, band, axis), but cup arcs, strap curves and the back
+  // hook are curved. Tracing gives real cubic-Bezier control points instead of
+  // hand-tuned guesses.
+  //
+  // Returns: { paths: [{ start: {x,y}, segments: [{type:'C'|'L', c1?, c2?, end}], bbox }], sampleWidth, sampleHeight }
+  // All coordinates are normalized to [0,1] of the source image.
+  function tracePotraceFromMask(dark, w, h) {
+    if (typeof Potrace === 'undefined' || !Potrace || typeof Potrace.process !== 'function') {
+      return Promise.resolve(null);
     }
-    _stageMark('junctions');
+    // Render the binary mask as black ink on white background. Potrace
+    // expects a normal raster image; it re-binarises from luminance.
+    const off = document.createElement('canvas');
+    off.width = w;
+    off.height = h;
+    const ctx = off.getContext('2d');
+    if (!ctx) return Promise.resolve(null);
+    const img = ctx.createImageData(w, h);
+    const data = img.data;
+    for (let p = 0, i = 0; p < dark.length; p += 1, i += 4) {
+      const v = dark[p] ? 0 : 255;
+      data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
 
-    // Split the raw feature points by type and roll up stroke statistics. The
-    // shaping lives in the junction module (buildContourTopology) so it stays
-    // testable next to detectJunctions.
-    const topology = buildContourTopology(junctionMap);
+    let url;
+    try {
+      url = off.toDataURL('image/png');
+    } catch (err) {
+      console.warn('[Auto Mode] Potrace: cannot encode mask to PNG:', err);
+      return Promise.resolve(null);
+    }
 
+    // Tracing params tuned for technical-sketch ink: small turdsize so we
+    // keep thin strap edges; alphamax 1.0 keeps smooth curves; optcurve so we
+    // emit beziers instead of dense polylines.
+    Potrace.setParameter({
+      turdsize: 4,
+      alphamax: 1.0,
+      optcurve: true,
+      opttolerance: 0.2,
+      turnpolicy: 'minority',
+    });
+    Potrace.loadImageFromUrl(url);
+
+    return new Promise((resolve) => {
+      let waited = 0;
+      function tick() {
+        // potrace.js sets isReady inside img.onload — poll until it flips.
+        if (!Potrace.img || !Potrace.img.complete) {
+          waited += 1;
+          if (waited > 200) { resolve(null); return; } // 4s ceiling
+          setTimeout(tick, 20);
+          return;
+        }
+        try {
+          Potrace.process(() => {
+            try {
+              const svg = Potrace.getSVG(1, 'curve');
+              const paths = parsePotraceSvgPaths(svg, w, h);
+              resolve({ paths, sampleWidth: w, sampleHeight: h });
+            } catch (err) {
+              console.warn('[Auto Mode] Potrace: SVG parse failed:', err);
+              resolve(null);
+            }
+          });
+        } catch (err) {
+          console.warn('[Auto Mode] Potrace.process failed:', err);
+          resolve(null);
+        }
+      }
+      tick();
+    });
+  }
+
+  // Parse the SVG that Potrace emits. The SVG contains one <path d="...">
+  // built from absolute M / C / L commands (no relatives, no arcs). We split
+  // on M to get subpaths, then walk each subpath's commands.
+  function parsePotraceSvgPaths(svg, w, h) {
+    const match = /<path[^>]*\sd="([^"]+)"/.exec(svg);
+    if (!match) return [];
+    const d = match[1];
+    // Tokens: command letter OR a signed decimal number.
+    const tokens = d.match(/[MLC]|-?\d+(?:\.\d+)?/g) || [];
+    const paths = [];
+    let current = null;
+    let cursorX = 0, cursorY = 0;
+    let i = 0;
+    const num = () => parseFloat(tokens[i++]);
+    while (i < tokens.length) {
+      const t = tokens[i++];
+      if (t === 'M') {
+        if (current && current.segments.length) paths.push(finalizePath(current, w, h));
+        cursorX = num(); cursorY = num();
+        current = { start: { x: cursorX, y: cursorY }, segments: [] };
+      } else if (t === 'L' && current) {
+        // Potrace's CORNER segment emits FOUR numbers: an interior corner
+        // vertex then the endpoint ("L x1 y1 x2 y2"). Push both as polyline
+        // samples and advance the cursor to the true endpoint. (Reading only
+        // two took the corner as the endpoint and desynced every later segment.)
+        const x1 = num(); const y1 = num();
+        const x2 = num(); const y2 = num();
+        current.segments.push({ type: 'L', end: { x: x1, y: y1 } });
+        current.segments.push({ type: 'L', end: { x: x2, y: y2 } });
+        cursorX = x2; cursorY = y2;
+      } else if (t === 'C' && current) {
+        const c1x = num(); const c1y = num();
+        const c2x = num(); const c2y = num();
+        const ex  = num(); const ey  = num();
+        current.segments.push({
+          type: 'C',
+          c1: { x: c1x, y: c1y },
+          c2: { x: c2x, y: c2y },
+          end:{ x: ex,  y: ey  },
+        });
+        cursorX = ex; cursorY = ey;
+      } else {
+        // Unknown token — number outside a command (shouldn't happen with
+        // Potrace's output). Skip.
+      }
+    }
+    if (current && current.segments.length) paths.push(finalizePath(current, w, h));
+    return paths;
+  }
+
+  function finalizePath(path, w, h) {
+    const pts = [path.start, ...path.segments.map(s => s.end)];
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    // Normalize to [0,1] over the source image so the consumer doesn't need
+    // to know the analysis sample dimensions.
+    const norm = (p) => ({ x: p.x / w, y: p.y / h });
     return {
-      // Raw traced outlines — filled by the deferred Potrace edge pass.
-      contours: null,
-      // Skeleton topology, split so consumers don't re-filter by type.
-      junctions: topology.junctions,
-      endpoints: topology.endpoints,
-      corners: topology.corners,
-      // Reusable curve candidates — populated from the trace (see
-      // buildContourCurveCandidates) once detection.contours exists.
-      curves: null,
-      // Deterministic skeleton stroke statistics (px, iterations, counts).
-      strokeStats: topology.strokeStats,
-      // Internal handle: detectLandmarks maps this to the unchanged
-      // detection.junctions / detection.junctionSummary contract.
-      junctionMap,
+      start: norm(path.start),
+      segments: path.segments.map(s => {
+        if (s.type === 'C') return { type: 'C', c1: norm(s.c1), c2: norm(s.c2), end: norm(s.end) };
+        return { type: 'L', end: norm(s.end) };
+      }),
+      bbox: {
+        x: minX / w,
+        y: minY / h,
+        width: (maxX - minX) / w,
+        height: (maxY - minY) / h,
+      },
+      pointCount: pts.length,
     };
   }
 
-  // Phase 4: build a compact, serializable summary of the contour-evidence
-  // bundle for the detection result. Deterministic skeleton-derived counts +
-  // stroke stats; the trace-dependent fields (traced / contourCount /
-  // curveCandidateCount) start empty here and are filled at the Potrace edge.
-  function buildContourEvidenceSummary(contourEvidence) {
-    const ce = contourEvidence || {};
-    const stroke = ce.strokeStats || null;
-    return {
-      junctionCount: Array.isArray(ce.junctions) ? ce.junctions.length : 0,
-      endpointCount: Array.isArray(ce.endpoints) ? ce.endpoints.length : 0,
-      cornerCount: Array.isArray(ce.corners) ? ce.corners.length : 0,
-      strokeStats: stroke ? { ...stroke } : null,
-      // Raw traced outlines are optional shape evidence attached at the edge.
-      traced: false,
-      contourCount: null,
-      curveCandidateCount: 0,
+  // Score how well a traced contour fits the line segment AB. The returned
+  // shape contains bezier control points sampled from the matching arc — the
+  // POM generator uses these for POM 9 / 10 / 14 instead of guessed S-curves.
+  //
+  // "preferThin" weights thin contours (real seam lines, strap edges) higher
+  // than the bra outline.
+  function matchContourForCurve(paths, A, B, options) {
+    if (!paths || !paths.length || !A || !B) return null;
+    const preferThin = !!(options && options.preferThin);
+    const ax = A.x, ay = A.y, bx = B.x, by = B.y;
+    const lineLen = Math.hypot(bx - ax, by - ay);
+    if (lineLen < 1e-6) return null;
+    // Tolerance: how far from the AB line a contour's nearest sample can be.
+    const tol = Math.max(0.04, lineLen * 0.35);
+
+    let best = null;
+    let bestScore = -Infinity;
+    for (const path of paths) {
+      if (!path || !path.segments || !path.segments.length) continue;
+      const bbox = path.bbox || { width: 1, height: 1 };
+      // Reject paths whose bbox can't possibly contain both endpoints.
+      const x0 = bbox.x - tol, y0 = bbox.y - tol;
+      const x1 = bbox.x + bbox.width + tol, y1 = bbox.y + bbox.height + tol;
+      if (ax < x0 || ax > x1 || bx < x0 || bx > x1 ||
+          ay < y0 || ay > y1 || by < y0 || by > y1) continue;
+      const samples = samplePathPoints(path);
+      if (samples.length < 4) continue;
+      let nearestA = Infinity, nearestB = Infinity;
+      let idxA = -1, idxB = -1;
+      for (let i = 0; i < samples.length; i += 1) {
+        const dA = Math.hypot(samples[i].x - ax, samples[i].y - ay);
+        const dB = Math.hypot(samples[i].x - bx, samples[i].y - by);
+        if (dA < nearestA) { nearestA = dA; idxA = i; }
+        if (dB < nearestB) { nearestB = dB; idxB = i; }
+      }
+      if (nearestA > tol || nearestB > tol) continue;
+      // Thin contours score higher when preferThin is set — strap edges /
+      // seam lines beat the bra outline.
+      const aspect = Math.min(bbox.width, bbox.height) / Math.max(1e-6, Math.max(bbox.width, bbox.height));
+      const thinness = preferThin ? clamp01(1 - aspect) : 0;
+      const proximity = 1 - clamp01((nearestA + nearestB) / (2 * tol));
+      const score = proximity * 1.0 + thinness * 0.6;
+      if (score > bestScore) {
+        bestScore = score;
+        best = { path, samples, idxA, idxB };
+      }
+    }
+    if (!best) return null;
+
+    // Walk the closed contour from idxA → idxB the short way around (the seam
+    // is one side of the loop). Sample 4 evenly-spaced points along that arc
+    // and fit a cubic bezier to them by setting c1/c2 at the 1/3 and 2/3
+    // sample positions.
+    const arc = takeShortestArc(best.samples, best.idxA, best.idxB);
+    if (arc.length < 4) return null;
+    const p1 = arc[Math.floor(arc.length / 3)];
+    const p2 = arc[Math.floor((2 * arc.length) / 3)];
+    // A cubic does NOT pass through its control points, so using on-curve arc
+    // samples directly as controls makes the curve overshoot the seam. Solve in
+    // closed form for the controls C1,C2 of the cubic [A,C1,C2,B] that PASSES
+    // THROUGH p1 at t=1/3 and p2 at t=2/3. Controls may fall outside [0,1].
+    const fitControls = (a, b, q1, q2) => {
+      const u = 27 * q1 - 8 * a - b;
+      const v = 27 * q2 - a - 8 * b;
+      return { c1: (2 * u - v) / 18, c2: (2 * v - u) / 18 };
     };
+    const fitX = fitControls(A.x, B.x, p1.x, p2.x);
+    const fitY = fitControls(A.y, B.y, p1.y, p2.y);
+    return {
+      c1: { x: fitX.c1, y: fitY.c1 },
+      c2: { x: fitX.c2, y: fitY.c2 },
+      arcLength: arc.length,
+      score: bestScore,
+    };
+  }
+
+  // Convert a path into a flat array of polyline samples. Cubic-segment
+  // sampling at 6 points is enough to find the nearest-to-endpoint vertex.
+  function samplePathPoints(path) {
+    const out = [path.start];
+    for (const seg of path.segments) {
+      if (seg.type === 'C') {
+        const prev = out[out.length - 1];
+        for (let t = 0.2; t < 1; t += 0.2) {
+          out.push(cubicBezierPoint(prev, seg.c1, seg.c2, seg.end, t));
+        }
+        out.push(seg.end);
+      } else {
+        out.push(seg.end);
+      }
+    }
+    return out;
+  }
+
+  function cubicBezierPoint(p0, p1, p2, p3, t) {
+    const u = 1 - t;
+    const uu = u * u;
+    const uuu = uu * u;
+    const tt = t * t;
+    const ttt = tt * t;
+    return {
+      x: uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x,
+      y: uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y,
+    };
+  }
+
+  function takeShortestArc(samples, idxA, idxB) {
+    if (samples.length === 0) return [];
+    const n = samples.length;
+    let a = idxA, b = idxB;
+    if (a === b) return [samples[a]];
+    // Forward arc length idxA→idxB
+    const forwardLen = (b - a + n) % n;
+    const backwardLen = n - forwardLen;
+    const arc = [];
+    if (forwardLen <= backwardLen) {
+      for (let k = 0; k <= forwardLen; k += 1) arc.push(samples[(a + k) % n]);
+    } else {
+      for (let k = 0; k <= backwardLen; k += 1) arc.push(samples[(a - k + n) % n]);
+    }
+    return arc;
   }
 
   // Phase 4: normalize traced contour paths into a reusable curve-candidate
@@ -21271,6 +21744,20 @@ function getAnnotationsOnImage(image) {
     }
     return out;
   }
+
+  // ---- src/auto/detect/geometry-stage.js ----
+// Stage 4 of the detection pipeline: geometry analysis. Groups the ink into view
+// boxes and dispatches their roles, refines the symmetry axis, picks the band /
+// chest / cradle / underbust row peaks and the side-seam columns, and assembles
+// the explicit geometryFacts block — all in pixel space, before any anchor
+// exists. Also holds buildGeometryViewRegions, the view-region fact builder it
+// feeds.
+//
+// The object analyzeGeometry returns is the contract the landmark stage
+// destructures, so its shape must not drift.
+//
+// Depends on view-boxes.js, segmentation.js and math-utils.js.
+// Source part for app.js. Run `npm run build` after editing.
 
   // Phase 5: build the explicit VIEW-REGION facts. View classification is a
   // GEOMETRY decision (role + confidence per detected garment component) that is
@@ -21623,125 +22110,1755 @@ function getAnnotationsOnImage(image) {
     };
   }
 
-  // ---- Stage 5: landmark construction (+ confidence + assembly) ----
-  // Input: segmentation output, geometry facts, and the contour/topology map.
-  // Output: the assembled detection result the rest of the app consumes —
-  // apex/strap/inner-cup/side/back landmarks, the cup model, per-feature
-  // confidence, overall quality, seam evidence, view metadata, and (when
-  // requested) the layered CV-debug payload. Landmarks carry technical
-  // meaning; normalization to anchors happens later in the anchor seed layer.
-  function detectLandmarks(cvAnalysis, seg, geometry, contours, ctx) {
-    const { detectionParams, debugEnabled, stageTimingsMs } = ctx;
-    const _stageMark = ctx.mark;
-    const { rawStats, inkCleanupReverted, segmentation } = seg;
-    // Contour-evidence bundle (Phase 4). junctionMap keeps the unchanged
-    // detection.junctions / junctionSummary contract; endpoints / corners /
-    // strokeStats are the reusable shape evidence, exposed additively.
-    const { junctionMap } = contours;
-    const contourEndpoints = contours.endpoints || [];
-    const contourCorners = contours.corners || [];
-    const contourStrokeStats = contours.strokeStats || null;
-    const {
-      dark, rawDark, w, h, total, filtered, globalStats,
-      threshold, luminanceThreshold,
-      viewBoxesPx, viewClassification, primaryViewIndex, darkCount,
-      minX, minY, maxX, maxY, bbox, bboxW, bboxH,
-      axisXpx, axisX, symmetry, axisPx,
-      rowNoiseFloor, colNoiseFloor,
-      bandStart, bandRow, bandStrength, bandPreferred, bandEdgeRow, bandY,
-      chestRow, chestStrength, chestY,
-      peakSep, cradleRow, cradleStrength, cradleY,
-      underbustRow, underbustStrength, minRowSpan, underbustRunPx, underbustY,
-      medianRow, medianCol, innerLo, innerHi, axisGuard,
-      sideLeftCol, sideLeftStrength, sideLeftX,
-      sideRightCol, sideRightStrength, sideRightX,
-      geometryFacts,
-    } = geometry;
+  // ---- src/auto/detect/front-landmarks.js ----
+// Front-view ink landmark finders: the "find one specific ink feature inside a
+// view box" toolkit. Cup/strap join + apex pair validation (POM 16), front
+// shoulder-strap start (POM 14), inner-cup top, cup width / silhouette edges /
+// cup bottom (the ink support behind POM 9 / POM 10), and the side-seam
+// top/bottom notch (POM 11). Also holds detectFeaturesInViewBox, the
+// self-contained per-view mini feature pass. Every function here takes explicit
+// (dark, w, h, bounds, ...) arguments and keeps no closure state.
+//
+// detectFeaturesInViewBox / findSideTopFromInk / findSideBottomFromInk are also
+// used by the back view (src/auto/detect/back-landmarks.js, which therefore
+// loads after this file). The cup decision engine that consumes these finders is
+// src/auto/detect/cup-model.js; the stage that calls them is
+// src/auto/detect/landmark-stage.js.
+// Source part for app.js. Run `npm run build` after editing.
 
-    // ---- Stage: apex + strap landmarks ----
-    const bounds = { minX, minY, maxX, maxY };
+  // Per-view feature pass: a self-contained mini-detector that runs inside a
+  // single view's bounding box. Used to give the back view its own axis,
+  // chest/band rows, side seams, and ink endpoints — so back-view anchors
+  // snap to actual ink rather than hardcoded view-box ratios.
+  function detectFeaturesInViewBox(dark, w, h, viewBoxPx) {
+    if (!viewBoxPx) return null;
+    const minX = viewBoxPx.minX;
+    const minY = viewBoxPx.minY;
+    const maxX = viewBoxPx.maxX;
+    const maxY = viewBoxPx.maxY;
+    const bw = maxX - minX + 1;
+    const bh = maxY - minY + 1;
+    if (bw < 16 || bh < 16) return null;
 
-    // POM 6 / POM 7 bottom anchors follow the drawn hem at their OWN column
-    // instead of the single flat bandY row (US-061). Normalized result, with
-    // the flat row as the fallback when that column carries no ink — so a
-    // straight-hem sketch is byte-identical to before.
-    const hemNormAtColumn = (colPx, flatY) => {
-      const row = hemRowAtColumn(dark, w, h, colPx, bandY * h, bboxH);
-      return row == null ? flatY : row / h;
-    };
-    // The CF column's hem — POM 6's (and, unavoidably, POM 5's) bottom.
-    const cfBottomHemY = hemNormAtColumn(axisPx, bandY);
-    const apexLeftCandidate = findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, -1);
-    const apexRightCandidate = findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, +1);
-    // US-084: the two cup/strap joins are near-symmetric features, so a pair
-    // that disagrees sharply on row means one side locked onto the wrong ink —
-    // and the sides are found INDEPENDENTLY, so nothing above caught that. Give
-    // the outlier side a second look, anchored on the side we trust.
-    const apexRepaired = repairApexPairRow(
-      apexLeftCandidate, apexRightCandidate, dark, w, h, bounds, axisPx, chestRow);
-    const apexPair = validateCupApexPair(apexRepaired.left, apexRepaired.right, bounds, w, h);
-    const apexLeftInfo = apexPair ? apexPair.left : null;
-    const apexRightInfo = apexPair ? apexPair.right : null;
-    const apexLeft = apexLeftInfo ? apexLeftInfo.point : null;
-    const apexRight = apexRightInfo ? apexRightInfo.point : null;
-    // Inner-edge apex points (POM 16 measures inner-edge to inner-edge of the
-    // cup/front-strap joining seams). Falls back to the join center when the
-    // ink run didn't yield an inner edge.
-    const apexLeftInner = (apexLeftInfo && apexLeftInfo.innerEdgeX != null)
-      ? { x: apexLeftInfo.innerEdgeX, y: apexLeftInfo.point.y }
-      : apexLeft;
-    const apexRightInner = (apexRightInfo && apexRightInfo.innerEdgeX != null)
-      ? { x: apexRightInfo.innerEdgeX, y: apexRightInfo.point.y }
-      : apexRight;
-    // Outer-edge apex points (POM 14's fallback strap join sits on the OUTER
-    // edge of the cup/strap join — ADR 0017, TD correction 2026-07-10).
-    const apexLeftOuter = (apexLeftInfo && apexLeftInfo.outerEdgeX != null)
-      ? { x: apexLeftInfo.outerEdgeX, y: apexLeftInfo.point.y }
-      : apexLeft;
-    const apexRightOuter = (apexRightInfo && apexRightInfo.outerEdgeX != null)
-      ? { x: apexRightInfo.outerEdgeX, y: apexRightInfo.point.y }
-      : apexRight;
-    const strapInfo = findStrapLandmarksFromInk(dark, w, h, bounds, axisPx, chestRow);
-    // POM 14 starts at the upper joining seam of the stitched section of the
-    // FRONT RIGHT shoulder strap (TD-corrected, ADR 0016: the strap adjacent
-    // to the back view, so the drawn curve follows one continuous strap over
-    // the shoulder). This is a separate semantic landmark from strapInfo.top
-    // (the topmost strap ink) and from the back strap/panel join.
-    const frontStrapStartInfo = findFrontStrapStartFromInk(
-      dark, w, h, bounds, apexRightInfo || apexLeftInfo, chestRow);
+    // Local row/column ink counts restricted to the view box.
+    const rowDark = new Uint32Array(h);
+    const colDark = new Uint32Array(w);
+    let count = 0;
+    let xSum = 0;
+    for (let y = minY; y <= maxY; y += 1) {
+      const base = y * w;
+      let rowCount = 0;
+      for (let x = minX; x <= maxX; x += 1) {
+        if (dark[base + x]) {
+          rowCount += 1;
+          colDark[x] += 1;
+          xSum += x;
+          count += 1;
+        }
+      }
+      rowDark[y] = rowCount;
+    }
+    if (count < 60) return null;
+    const centroidX = xSum / count;
+    const axisPx = refineAxisBySymmetry(dark, w, minX, maxX, minY, maxY, centroidX);
 
-    _stageMark('apexStrap');
+    // Smoothed peak picks (mirror of the front-view logic).
+    const rowSmooth = smooth1D(rowDark);
+    const colSmooth = smooth1D(colDark);
 
-    // ---- Stage: inner-cup top + side-seam top (audit POMs 9, 10, 11) ----
-    const innerCupTopInfo = findInnerCupTopFromInk(dark, w, h, bounds, axisPx, chestRow, bandRow);
-    const sideTopLeftInfo = findSideTopFromInk(dark, w, h, bounds, sideLeftCol, chestRow, -1);
-    const sideTopRightInfo = findSideTopFromInk(dark, w, h, bounds, sideRightCol, chestRow, +1);
-    const sideBottomRightInfo = sideTopRightInfo
-      ? findSideBottomFromInk(dark, w, h, bounds, sideTopRightInfo.point)
-      : null;
+    // Band: bottom 40% of the view height, strongest horizontal row.
+    const rowRun = computeRowMaxRun(dark, w, minX, maxX, minY, maxY);
+    const bandStart = Math.round(minY + bh * 0.58);
+    let bandRow = -1; let bandStrength = 0;
+    for (let y = bandStart; y <= maxY; y += 1) {
+      if (rowSmooth[y] > bandStrength) { bandStrength = rowSmooth[y]; bandRow = y; }
+    }
+    const bandEdgeRow = snapBandToSolidEdge(rowRun, bandRow, minY, maxY, bw, bh);
+    // Chest / top-band: upper 50% of the view height.
+    const chestEnd = Math.round(minY + bh * 0.50);
+    let chestRow = -1; let chestStrength = 0;
+    for (let y = minY + Math.round(bh * 0.06); y <= chestEnd; y += 1) {
+      if (rowSmooth[y] > chestStrength) { chestStrength = rowSmooth[y]; chestRow = y; }
+    }
 
-    _stageMark('innerCupAndSideTop');
+    // Side seams: strongest verticals on either side of the axis, with a
+    // small guard band so the centerline doesn't win.
+    const axisGuard = Math.max(4, Math.round(bw * 0.08));
+    let sideLeftCol = -1, sideLeftStrength = 0;
+    for (let x = minX + 1; x <= axisPx - axisGuard; x += 1) {
+      if (colSmooth[x] > sideLeftStrength) { sideLeftStrength = colSmooth[x]; sideLeftCol = x; }
+    }
+    let sideRightCol = -1, sideRightStrength = 0;
+    for (let x = axisPx + axisGuard; x <= maxX - 1; x += 1) {
+      if (colSmooth[x] > sideRightStrength) { sideRightStrength = colSmooth[x]; sideRightCol = x; }
+    }
 
-    // ---- Stage: front-view ink endpoints (chest L/R, band L/R, CF top) ----
-    // The pipeline already detects chest/band ROWS from ink; walk along those
-    // rows to find the ink ENDPOINTS too so chest-left/right and band-left/
-    // right snap to actual line ends instead of view-box corners.
-    const halfRowBand = Math.max(2, Math.round(bboxH * 0.012));
-    const halfColBand = Math.max(2, Math.round(bboxW * 0.018));
+    // Walk inward along chest / band rows to find ink endpoints.
+    const halfRowBand = Math.max(2, Math.round(bh * 0.012));
     const chestLeftPx  = chestRow > 0 ? findHorizontalInkBound(dark, w, chestRow, halfRowBand, minX, maxX, +1) : -1;
     const chestRightPx = chestRow > 0 ? findHorizontalInkBound(dark, w, chestRow, halfRowBand, maxX, minX, -1) : -1;
     const bandLeftPx   = bandEdgeRow > 0 ? findHorizontalInkBound(dark, w, bandEdgeRow, halfRowBand, minX, maxX, +1) : -1;
     const bandRightPx  = bandEdgeRow > 0 ? findHorizontalInkBound(dark, w, bandEdgeRow, halfRowBand, maxX, minX, -1) : -1;
-    const underbustLeftPx  = underbustRow > 0 ? findHorizontalInkBound(dark, w, underbustRow, halfRowBand, minX, maxX, +1) : -1;
-    const underbustRightPx = underbustRow > 0 ? findHorizontalInkBound(dark, w, underbustRow, halfRowBand, maxX, minX, -1) : -1;
-    const cfTopPx      = findVerticalInkBound(dark, w, axisPx, halfColBand, minY, maxY, +1);
-    const chestLeftX  = chestLeftPx  > 0 ? chestLeftPx  / w : null;
-    const chestRightX = chestRightPx > 0 ? chestRightPx / w : null;
-    const bandLeftX   = bandLeftPx   > 0 ? bandLeftPx   / w : null;
-    const bandRightX  = bandRightPx  > 0 ? bandRightPx  / w : null;
-    const underbustLeftX  = underbustLeftPx  > 0 ? underbustLeftPx  / w : null;
-    const underbustRightX = underbustRightPx > 0 ? underbustRightPx / w : null;
-    const cfTopY      = cfTopPx      >= 0 ? cfTopPx     / h : null;
+
+    // Walk down the symmetry axis to find the topmost ink (cleavage / strap
+    // notch). halfColBand widens it slightly so a center-line off by 1px
+    // still scores.
+    const halfColBand = Math.max(2, Math.round(bw * 0.020));
+    const axisTopPx = findVerticalInkBound(dark, w, axisPx, halfColBand, minY, maxY, +1);
+    const axisBottomPx = findVerticalInkBound(dark, w, axisPx, halfColBand, maxY, minY, -1);
+
+    return {
+      bbox: {
+        x: minX / w, y: minY / h,
+        width: bw / w, height: bh / h,
+      },
+      axisX: axisPx / w,
+      chestY:    chestRow >= 0 ? chestRow / h : null,
+      bandY:     bandEdgeRow >= 0 ? bandEdgeRow / h : null,
+      sideLeftX: sideLeftCol  > 0 ? sideLeftCol  / w : null,
+      sideRightX:sideRightCol > 0 ? sideRightCol / w : null,
+      chestLeftX:  chestLeftPx  > 0 ? chestLeftPx  / w : null,
+      chestRightX: chestRightPx > 0 ? chestRightPx / w : null,
+      bandLeftX:   bandLeftPx   > 0 ? bandLeftPx   / w : null,
+      bandRightX:  bandRightPx  > 0 ? bandRightPx  / w : null,
+      axisTopY:    axisTopPx    >= 0 ? axisTopPx    / h : null,
+      axisBottomY: axisBottomPx >= 0 ? axisBottomPx / h : null,
+    };
+  }
+
+  // rowHintNorm (US-084, optional): when the other side's join is trusted, scan
+  // only a band around that row and score by PROXIMITY to it instead of by the
+  // topmost-run preference. The top preference is what takes the bait on a high
+  // stray feature, so a hinted retry must not reuse it — otherwise the retry
+  // simply re-picks the same wrong run inside a smaller window.
+  function findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, side, rowHintNorm) {
+    const bboxW = bounds.maxX - bounds.minX + 1;
+    const bboxH = bounds.maxY - bounds.minY + 1;
+    const guard = Math.max(4, Math.round(bboxW * 0.075));
+    let y1 = bounds.minY + Math.round(bboxH * 0.08);
+    let y2 = Math.min(
+      bounds.maxY,
+      chestRow > 0 ? chestRow + Math.round(bboxH * 0.05) : bounds.minY + Math.round(bboxH * 0.48)
+    );
+    // Band half-height for a hinted retry. Wide enough to absorb a real
+    // left/right height difference (TD pairs slant at most 0.0548) plus the
+    // run-centre quantisation, narrow enough to exclude the stray that caused
+    // the disagreement.
+    const hinted = Number.isFinite(rowHintNorm);
+    if (hinted) {
+      const hintPx = rowHintNorm * h;
+      const band = Math.max(3, Math.round(bboxH * 0.06));
+      y1 = Math.max(y1, Math.round(hintPx - band));
+      y2 = Math.min(y2, Math.round(hintPx + band));
+    }
+    const x1 = side < 0
+      ? bounds.minX + Math.round(bboxW * 0.05)
+      : axisPx + guard;
+    const x2 = side < 0
+      ? axisPx - guard
+      : bounds.maxX - Math.round(bboxW * 0.05);
+    if (x2 <= x1 || y2 <= y1) return null;
+
+    const minSupport = Math.max(3, Math.round(bboxW * 0.012));
+    const localRows = Math.max(5, Math.round(bboxH * 0.035));
+    let best = null;
+    for (let y = y1; y <= y2; y += 1) {
+      const base = y * w;
+      let runStart = -1;
+      for (let x = x1; x <= x2 + 1; x += 1) {
+        const on = x <= x2 && !!dark[base + x];
+        if (on && runStart < 0) {
+          runStart = x;
+          continue;
+        }
+        if (on) continue;
+        if (runStart < 0) continue;
+        const startX = runStart;
+        const runEnd = x - 1;
+        const runWidth = runEnd - startX + 1;
+        runStart = -1;
+        if (runWidth < minSupport) continue;
+        const cx = (startX + runEnd) / 2;
+        if (side < 0 && cx > axisPx - guard) continue;
+        if (side > 0 && cx < axisPx + guard) continue;
+
+        let support = 0;
+        let supportBottomY = y;
+        const sx1 = Math.max(x1, Math.round(cx - bboxW * 0.035));
+        const sx2 = Math.min(x2, Math.round(cx + bboxW * 0.035));
+        for (let yy = y; yy <= Math.min(y2, y + localRows); yy += 1) {
+          const b = yy * w;
+          let rowSupport = 0;
+          for (let xx = sx1; xx <= sx2; xx += 1) {
+            if (dark[b + xx]) rowSupport += 1;
+          }
+          support += rowSupport;
+          if (rowSupport > 0) supportBottomY = yy;
+        }
+        const verticalSpan = supportBottomY - y + 1;
+        if (support < Math.max(minSupport * 2, verticalSpan * 2)) continue;
+        // Reject decorative blobs (bow / scallop) sitting on the cup body
+        // top. A real cup-strap join is the upper-outer corner of the cup,
+        // so the cup BODY fills the rows below it — verticalSpan saturates
+        // at localRows. A bow inked into the cup body lasts only a few
+        // rows before its ribbon ends, leaving a gap below — verticalSpan
+        // small. Require ≥ 40% of the lookahead window to be supported.
+        if (verticalSpan < Math.max(3, Math.round((localRows + 1) * 0.4))) continue;
+
+        const edgeBias = side < 0
+          ? clamp01((axisPx - cx) / Math.max(1, bboxW * 0.45))
+          : clamp01((cx - axisPx) / Math.max(1, bboxW * 0.45));
+        const highCupBias = 1 - Math.min(1, (y - y1) / Math.max(1, y2 - y1));
+        // Strongly (nonlinearly) prefer the TOPMOST qualifying run so the cup
+        // top lands at the strap-cup join, not a denser lower band (e.g. lace
+        // scallops or a cup-body seam). A lower band only wins when its support
+        // dramatically outweighs the top's. The verticalSpan>=40% gate above
+        // still requires real cup body below the pick, so this cannot snap onto
+        // a thin strap-ribbon tick above the true cup seam.
+        const topPref = 0.5 + 0.5 * highCupBias * highCupBias;
+        // A hinted retry scores by nearness to the trusted row instead of by
+        // height in the window — see the rowHintNorm note on this function.
+        const rowPref = hinted
+          ? 1 - Math.min(1, Math.abs(y - rowHintNorm * h) / Math.max(1, y2 - y1))
+          : topPref;
+        const score = support * rowPref * (0.75 + edgeBias * 0.25);
+        // Tie-break: normally the higher run wins (cup top, not a lower seam);
+        // on a hinted retry the run nearer the trusted row wins instead.
+        const tieBreakWins = best && Math.abs(score - best.score) < 1e-6
+          && (hinted
+            ? Math.abs(y - rowHintNorm * h) < Math.abs(best.y - rowHintNorm * h)
+            : y < best.y);
+        if (!best || score > best.score || tieBreakWins) {
+          best = {
+            x: cx,
+            // Inner edge of the strap ribbon at the join row — the edge nearer
+            // the center front. POM 16 (apex distance) measures inner-edge to
+            // inner-edge across the cup/front-strap joining seams, so the left
+            // cup uses the run's right edge and the right cup its left edge.
+            innerX: side < 0 ? runEnd : startX,
+            // Outer edge (nearer the side seam) — POM 14's strap join anchor
+            // sits on the OUTER edge of the join (ADR 0017, TD correction).
+            outerX: side < 0 ? startX : runEnd,
+            y,
+            support,
+            verticalSpan,
+            score,
+          };
+        }
+      }
+    }
+    if (!best) return null;
+
+    const regionArea = Math.max(1, (x2 - x1 + 1) * (y2 - y1 + 1));
+    const confidence = clamp01(0.18 + Math.min(0.42, best.support / Math.max(1, regionArea * 0.012))
+      + Math.min(0.24, best.verticalSpan / Math.max(1, bboxH * 0.18))
+      + Math.min(0.16, best.score / Math.max(1, bboxW)));
+    if (confidence < 0.32) return null;
+    return {
+      point: { x: best.x / w, y: best.y / h },
+      innerEdgeX: best.innerX / w,
+      outerEdgeX: best.outerX / w,
+      confidence,
+      support: {
+        count: best.support,
+        verticalSpan: best.verticalSpan,
+        score: Math.round(best.score * 100) / 100,
+      },
+    };
+  }
+
+  // US-084: cross-check the two cup/strap joins against each other.
+  //
+  // findCupStrapJoinFromInk runs once per side with no knowledge of the other,
+  // and it deliberately prefers the TOPMOST qualifying run so the pick lands on
+  // the strap join rather than a lower cup-body seam. When one side carries an
+  // extra high feature that clears the support gates (a strap ribbon tick, a
+  // trim line, a neckline binding crossing the search window), that preference
+  // takes the bait on that side only. The result is a pair straddling two
+  // different rows, which no per-side check can see: on demo7.png the left join
+  // is exactly on the TD-labelled row while the right sits 0.134 above it.
+  //
+  // The two joins are near-symmetric features on a flat sketch. TD-labelled
+  // pairs slant (dy/dx) by at most 0.0548, so a pair beyond APEX_SLANT_LIMIT is
+  // a detection disagreement, not a garment property. Re-run the losing side
+  // with the trusted side's row as a hint and keep the result only if it
+  // genuinely reconciles the pair — otherwise leave both candidates untouched
+  // and let validateCupApexPair / the POM 16 slant gate handle it, so a sketch
+  // this cannot repair degrades exactly as before rather than getting a
+  // fabricated anchor.
+  const APEX_SLANT_LIMIT = 0.06;
+
+  function apexPairSlant(left, right) {
+    if (!left || !right) return null;
+    const dx = Math.abs(right.point.x - left.point.x);
+    if (!(dx > 0)) return Infinity;
+    return Math.abs(left.point.y - right.point.y) / dx;
+  }
+
+  function repairApexPairRow(left, right, dark, w, h, bounds, axisPx, chestRow) {
+    const slant = apexPairSlant(left, right);
+    if (slant == null || slant <= APEX_SLANT_LIMIT) return { left, right, repaired: null };
+
+    // Trust the more confident side; on a tie prefer the LOWER row, since the
+    // failure mode this repairs is a pick that jumped UP off the cup.
+    const leftWins = left.confidence > right.confidence + 1e-9
+      || (Math.abs(left.confidence - right.confidence) <= 1e-9 && left.point.y >= right.point.y);
+    const keep = leftWins ? left : right;
+    const side = leftWins ? +1 : -1;   // re-search the OTHER side
+    const retry = findCupStrapJoinFromInk(
+      dark, w, h, bounds, axisPx, chestRow, side, keep.point.y);
+    if (!retry) return { left, right, repaired: null };
+
+    const next = leftWins ? { left, right: retry } : { left: retry, right };
+    const nextSlant = apexPairSlant(next.left, next.right);
+    // Only accept a retry that actually reconciles the pair.
+    if (nextSlant == null || nextSlant > APEX_SLANT_LIMIT || nextSlant >= slant) {
+      return { left, right, repaired: null };
+    }
+    return {
+      left: next.left,
+      right: next.right,
+      repaired: {
+        side: leftWins ? 'right' : 'left',
+        fromY: (leftWins ? right : left).point.y,
+        toY: retry.point.y,
+        hintY: keep.point.y,
+        slantBefore: slant,
+        slantAfter: nextSlant,
+      },
+    };
+  }
+
+  function validateCupApexPair(left, right, bounds, w, h) {
+    if (!left || !right) return null;
+    const bboxW = bounds.maxX - bounds.minX + 1;
+    const bboxH = bounds.maxY - bounds.minY + 1;
+    const lx = left.point.x * w;
+    const rx = right.point.x * w;
+    const ly = left.point.y * h;
+    const ry = right.point.y * h;
+    if (rx <= lx + bboxW * 0.12) return null;
+    if (Math.abs(ly - ry) > bboxH * 0.22) return null;
+    if (left.confidence < 0.32 || right.confidence < 0.32) return null;
+    return { left, right };
+  }
+
+  // (Removed dead findCupApexFromInk: never referenced — the live pipeline
+  // uses findCupStrapJoinFromInk / buildCupModel for apex detection.)
+
+  // Front shoulder-strap start for POM 14. The TD measurement starts at the
+  // upper joining seam of the stitched/elastic front strap section (the first
+  // clear cross-strap seam above the cup), not at the cup/strap apex and not
+  // at the topmost silhouette ink. Search a narrow column around the validated
+  // left cup/strap join and choose the highest substantial horizontal run.
+  // apexInfo is the cup/strap join the strap rises from — the RIGHT join on a
+  // standard two-view sheet (ADR 0016), falling back to the left join when the
+  // right one wasn't validated.
+  function findFrontStrapStartFromInk(dark, w, h, bounds, apexInfo, chestRow) {
+    if (!apexInfo || !apexInfo.point) return null;
+    const bboxW = bounds.maxX - bounds.minX + 1;
+    const bboxH = bounds.maxY - bounds.minY + 1;
+    const cx = Math.round(apexInfo.point.x * w);
+    const apexY = Math.round(apexInfo.point.y * h);
+    const y1 = Math.max(bounds.minY + Math.round(bboxH * 0.025), 1);
+    const y2 = Math.min(
+      apexY - Math.max(3, Math.round(bboxH * 0.035)),
+      chestRow > 0 ? chestRow - 2 : bounds.maxY);
+    const halfWindow = Math.max(6, Math.round(bboxW * 0.055));
+    const x1 = Math.max(bounds.minX, cx - halfWindow);
+    const x2 = Math.min(bounds.maxX, cx + halfWindow);
+    const minRun = Math.max(4, Math.round(bboxW * 0.014));
+    const maxRun = Math.max(minRun + 2, Math.round(bboxW * 0.11));
+    if (y2 <= y1 || x2 <= x1) return null;
+
+    let best = null;
+    for (let y = y1; y <= y2; y += 1) {
+      const base = y * w;
+      let runStart = -1;
+      for (let x = x1; x <= x2 + 1; x += 1) {
+        const on = x <= x2 && !!dark[base + x];
+        if (on && runStart < 0) runStart = x;
+        if (on) continue;
+        if (runStart < 0) continue;
+        const runEnd = x - 1;
+        const runWidth = runEnd - runStart + 1;
+        const runCenter = (runStart + runEnd) / 2;
+        runStart = -1;
+        if (runWidth < minRun || runWidth > maxRun) continue;
+        if (Math.abs(runCenter - cx) > halfWindow * 0.62) continue;
+
+        // A joining seam is supported by strap ink immediately below it.
+        // This rejects an isolated crop/silhouette cap at the top of the view.
+        let belowSupport = 0;
+        const supportDepth = Math.max(4, Math.round(bboxH * 0.025));
+        for (let yy = y + 1; yy <= Math.min(y2, y + supportDepth); yy += 1) {
+          const b = yy * w;
+          for (let xx = Math.max(x1, Math.round(runCenter - minRun));
+            xx <= Math.min(x2, Math.round(runCenter + minRun)); xx += 1) {
+            if (dark[b + xx]) belowSupport += 1;
+          }
+        }
+        if (belowSupport < supportDepth * 2) continue;
+
+        // Prefer the LOWEST valid seam — the joining seam at the top of the
+        // stitched (zigzag) section sits nearest the cup join; the zigzag ink
+        // itself only yields sub-minRun runs so it can't win. Preferring the
+        // topmost run (pre-ADR-0016) landed on the strap cap / top of the
+        // elastic stripes, which the TD flagged as too high. Width/support
+        // break ties between adjacent antialiased rows of the same seam.
+        const score = runWidth + Math.min(minRun * 2, belowSupport / Math.max(1, supportDepth));
+        if (!best || y > best.y + 2 || (Math.abs(y - best.y) <= 2 && score > best.score)) {
+          best = { x: runCenter, y, runWidth, belowSupport, score };
+        }
+      }
+    }
+    if (!best) return null;
+    const confidence = clamp01(0.28
+      + Math.min(0.36, best.runWidth / Math.max(1, minRun * 2) * 0.22)
+      + Math.min(0.28, best.belowSupport / Math.max(1, bboxH * 0.08)));
+    return {
+      point: { x: best.x / w, y: best.y / h },
+      confidence,
+      support: { runWidth: best.runWidth, belowSupport: best.belowSupport },
+    };
+  }
+
+  function findStrapLandmarksFromInk(dark, w, h, bounds, axisPx, chestRow) {
+    const bboxW = bounds.maxX - bounds.minX + 1;
+    const bboxH = bounds.maxY - bounds.minY + 1;
+    const y1 = bounds.minY;
+    const y2 = Math.min(bounds.maxY, chestRow > 0 ? chestRow : bounds.minY + Math.round(bboxH * 0.34));
+    if (y2 <= y1 + 3) return null;
+
+    const scanSide = (side) => {
+      const x1 = side < 0 ? bounds.minX : axisPx + Math.round(bboxW * 0.08);
+      const x2 = side < 0 ? axisPx - Math.round(bboxW * 0.08) : bounds.maxX;
+      if (x2 <= x1) return null;
+      let count = 0;
+      let topY = h, topXSum = 0, topCount = 0;
+      let bottomY = -1, bottomXSum = 0, bottomCount = 0;
+      for (let y = y1; y <= y2; y += 1) {
+        const base = y * w;
+        let rowXSum = 0, rowCount = 0;
+        for (let x = x1; x <= x2; x += 1) {
+          if (!dark[base + x]) continue;
+          count += 1;
+          rowXSum += x;
+          rowCount += 1;
+        }
+        if (rowCount > 0) {
+          if (y < topY) { topY = y; topXSum = rowXSum; topCount = rowCount; }
+          if (y > bottomY) { bottomY = y; bottomXSum = rowXSum; bottomCount = rowCount; }
+        }
+      }
+      if (count < Math.max(6, (x2 - x1 + 1) * (y2 - y1 + 1) * 0.0015)) return null;
+      return {
+        count,
+        top: { x: (topXSum / Math.max(1, topCount)) / w, y: topY / h },
+        bottom: { x: (bottomXSum / Math.max(1, bottomCount)) / w, y: bottomY / h },
+      };
+    };
+
+    const left = scanSide(-1);
+    const right = scanSide(+1);
+    const chosen = right && (!left || right.count >= left.count * 0.85) ? right : left;
+    if (!chosen) return null;
+    return {
+      top: chosen.top,
+      bottom: chosen.bottom,
+      confidence: clamp01(0.25 + Math.min(0.65, chosen.count / Math.max(1, bboxW * bboxH * 0.03))),
+    };
+  }
+
+  // Topmost dark pixel in the +/-30% horizontal strip around the axis, BELOW
+  // chestRow. This is the high point of the inner-cup construction curves —
+  // the audit's anchor for POM 9 (inner cup height) and POM 10 (inner cup
+  // width). Returns { point: {x, y}, confidence } in normalized coords.
+  function findInnerCupTopFromInk(dark, w, h, bounds, axisPx, chestRow, bandRow) {
+    const { minX, minY, maxX, maxY } = bounds;
+    const bboxW = maxX - minX + 1;
+    const bboxH = maxY - minY + 1;
+    if (bboxW < 12 || bboxH < 12) return null;
+    const stripHalf = Math.max(4, Math.round(bboxW * 0.30));
+    const xLo = Math.max(minX, axisPx - stripHalf);
+    const xHi = Math.min(maxX, axisPx + stripHalf);
+    // Skip the chest-row band itself so we don't pin to the chest line ink.
+    const guardBelowChest = Math.max(3, Math.round(bboxH * 0.04));
+    const yLo = (chestRow > 0 ? chestRow : minY + Math.round(bboxH * 0.30)) + guardBelowChest;
+    const yHi = (bandRow > 0 ? bandRow : maxY) - Math.max(4, Math.round(bboxH * 0.10));
+    if (yHi <= yLo || xHi <= xLo) return null;
+    // Find first row in [yLo, yHi] with at least a few ink pixels in strip.
+    const minInkPerRow = Math.max(2, Math.round((xHi - xLo + 1) * 0.05));
+    let topY = -1, topX = axisPx, topInk = 0;
+    for (let y = yLo; y <= yHi; y += 1) {
+      const base = y * w;
+      let inkCount = 0, xSum = 0;
+      for (let x = xLo; x <= xHi; x += 1) {
+        if (dark[base + x]) { inkCount += 1; xSum += x; }
+      }
+      if (inkCount >= minInkPerRow) {
+        topY = y;
+        topX = xSum / inkCount;
+        topInk = inkCount;
+        break;
+      }
+    }
+    if (topY < 0) return null;
+    // Confidence scales with how much ink we found on the winning row.
+    const confidence = clamp01(0.35 + Math.min(0.45, topInk / Math.max(1, xHi - xLo + 1)));
+    return { point: { x: topX / w, y: topY / h }, confidence };
+  }
+
+  // POM 10 width from real cup ink. Walks the cup-body band [apexY..seamY]
+  // on the picked cup half, finds the widest ink-supported row, and returns
+  // its leftmost/rightmost ink columns re-labeled as inner (near CF axis) /
+  // outer (near side seam) for that side. Returns null when ink is too
+  // sparse or the widest row still doesn't span a real cup extent — the
+  // caller then keeps its fixed-inset priors so nothing downstream regresses.
+  function findCupWidthFromInk(dark, w, h, bounds, axisPx, sideColPx, apexY, seamY, side, targetY, searchWindow) {
+    if (!dark || !w || !h) return null;
+    if (apexY == null || seamY == null || seamY <= apexY) return null;
+    const { minX, minY, maxX, maxY } = bounds;
+    const bboxW = maxX - minX + 1;
+    const cupHeightPx = (seamY - apexY) * h;
+    if (cupHeightPx < 20) return null;
+    // Row band to scan. When a searchWindow {loY,hiY} is given, scan that whole
+    // caller-supplied band (already clamped to the A6-legal region) and take the
+    // widest coherent cup-ink run — used for deep cups whose true widest seam
+    // sits below the fixed upper-middle level. When a targetY is given, scan a
+    // narrow band around it (the legacy fixed-level probe). Otherwise scan the
+    // cup body proper — skipping the strap-junction band right below the apex
+    // (top 20%) and the cradle-transition band above the seam (bottom 15%) — and
+    // take the widest row overall.
+    let yLo, yHi;
+    if (searchWindow && Number.isFinite(searchWindow.loY) && Number.isFinite(searchWindow.hiY)
+        && searchWindow.hiY > searchWindow.loY) {
+      yLo = Math.max(minY + 1, Math.round(clamp01(searchWindow.loY) * h));
+      yHi = Math.min(maxY - 1, Math.round(clamp01(searchWindow.hiY) * h));
+    } else if (targetY != null) {
+      const bandPx = Math.max(3, Math.round(cupHeightPx * 0.06));
+      const cy = Math.round(clamp01(targetY) * h);
+      yLo = Math.max(minY + 1, cy - bandPx);
+      yHi = Math.min(maxY - 1, cy + bandPx);
+    } else {
+      yLo = Math.max(minY + 1, Math.round(apexY * h + cupHeightPx * 0.20));
+      yHi = Math.min(maxY - 1, Math.round(seamY * h - cupHeightPx * 0.15));
+    }
+    if (yHi <= yLo + 2) return null;
+    // Keep the x search clear of both the CF axis and the side seam so we
+    // never match seam ink itself.
+    const axisGuard = Math.max(2, Math.round(bboxW * 0.02));
+    const seamGuard = Math.max(2, Math.round(bboxW * 0.015));
+    let xLo, xHi;
+    if (side < 0) {
+      xLo = Math.max(minX + 1, sideColPx + seamGuard);
+      xHi = Math.min(maxX - 1, axisPx - axisGuard);
+    } else {
+      xLo = Math.max(minX + 1, axisPx + axisGuard);
+      xHi = Math.min(maxX - 1, sideColPx - seamGuard);
+    }
+    if (xHi <= xLo + 4) return null;
+    const cupHalfWidthPx = Math.max(1, Math.abs(sideColPx - axisPx));
+    // Require the run to span a real cup extent (≥45% of the cup half-width).
+    // A narrower run at the targeted upper level is usually a fragment trapped
+    // between internal cup seams (not the gore→outer span), so we reject it and
+    // let the caller use its straddling axis/side inset prior instead.
+    const minCupWidthPx = Math.max(6, Math.round(cupHalfWidthPx * 0.45));
+    let bestY = -1, bestLeft = -1, bestRight = -1, bestWidth = 0;
+    for (let y = yLo; y <= yHi; y += 1) {
+      const base = y * w;
+      let firstInk = -1, lastInk = -1;
+      for (let x = xLo; x <= xHi; x += 1) {
+        if (dark[base + x]) {
+          if (firstInk < 0) firstInk = x;
+          lastInk = x;
+        }
+      }
+      if (firstInk < 0) continue;
+      const runWidth = lastInk - firstInk + 1;
+      if (runWidth < minCupWidthPx) continue;
+      if (runWidth > bestWidth) {
+        bestWidth = runWidth;
+        bestLeft = firstInk;
+        bestRight = lastInk;
+        bestY = y;
+      }
+    }
+    if (bestY < 0) return null;
+    // On the LEFT cup the inner (near-axis) edge is the RIGHTMOST ink pixel
+    // and the outer (near-seam) edge is the LEFTMOST. On the RIGHT cup it
+    // flips. seed-anchors.js separately assigns inner-cup-left/right by x
+    // ordering so canvas geometry stays left→right regardless of cup side.
+    const innerPx = side < 0 ? bestRight : bestLeft;
+    const outerPx = side < 0 ? bestLeft  : bestRight;
+    return {
+      centerY: bestY / h,
+      innerX: innerPx / w,
+      outerX: outerPx / w,
+      widthPx: bestWidth,
+      widthFrac: bestWidth / cupHalfWidthPx,
+    };
+  }
+
+  // Cup OUTER silhouette edge at a single row. Scans INWARD from the view's
+  // outer (armhole-side) bbox edge toward the CF axis and returns the first
+  // coherent ink run — the cup's outer outline at that row. Unlike
+  // findCupWidthFromInk this is NOT capped at the detected side-seam column, so
+  // it recovers the true cup edge when sideColPx lands inboard of the silhouette
+  // (POM 10 must span the FULL cup width — CF gore → outer armhole edge).
+  // Returns the pixel x of the outline, or null. side<0 = left cup.
+  function findCupOuterSilhouettePx(dark, w, h, bounds, axisPx, rowPx, side) {
+    if (!dark || !w || !h) return null;
+    const { minX, minY, maxX, maxY } = bounds;
+    if (rowPx <= minY || rowPx >= maxY) return null;
+    const base = rowPx * w;
+    const guard = Math.max(2, Math.round((maxX - minX + 1) * 0.02));
+    if (side < 0) {
+      const xStop = axisPx - guard;
+      for (let x = minX + 1; x < xStop; x += 1) {
+        if (dark[base + x] && dark[base + x + 1]) return x; // first 2px run
+      }
+    } else {
+      const xStop = axisPx + guard;
+      for (let x = maxX - 1; x > xStop; x -= 1) {
+        if (dark[base + x] && dark[base + x - 1]) return x;
+      }
+    }
+    return null;
+  }
+
+  // Cup INNER silhouette (seam) at a single row. Scans from just off the CF
+  // axis OUTWARD toward the cup center and returns the first coherent ink run —
+  // the cup's inner seam where it meets the center gore. On wide-gore styles
+  // the gore is faint mesh (below the ink threshold), so the scan skips it and
+  // lands on the cup panel's inner edge; on narrow gores it stops near the axis
+  // ≈ the gore inset. Bounded by cupCenterPx so it never crosses to the outer
+  // half. Returns the pixel x, or null. side<0 = left cup (inner edge is right).
+  function findCupInnerSilhouettePx(dark, w, h, bounds, axisPx, cupCenterPx, rowPx, side, startInsetPx) {
+    if (!dark || !w || !h) return null;
+    const { minX, minY, maxX, maxY } = bounds;
+    if (rowPx <= minY || rowPx >= maxY) return null;
+    const base = rowPx * w;
+    if (side < 0) {
+      const xStart = Math.min(maxX - 1, axisPx - startInsetPx);
+      const xStop = Math.max(minX + 1, cupCenterPx);   // don't cross cup center
+      for (let x = xStart; x > xStop; x -= 1) {
+        if (dark[base + x] && dark[base + x - 1]) return x;
+      }
+    } else {
+      const xStart = Math.max(minX + 1, axisPx + startInsetPx);
+      const xStop = Math.min(maxX - 1, cupCenterPx);
+      for (let x = xStart; x < xStop; x += 1) {
+        if (dark[base + x] && dark[base + x + 1]) return x;
+      }
+    }
+    return null;
+  }
+
+  // Confirm/refine the cup's OWN underwire bottom from the dark mask. The
+  // global cradleY is a single horizontal row for the whole garment; this
+  // instead looks for the lowest COHERENT ink arc within the cup's central
+  // columns — the underwire dips near cup center (per the POM 9 reference,
+  // cup height runs to that lowest wire point). We keep the result close to
+  // cradleY (a validation, not a relocation): if a real arc is found near the
+  // cradle row under this cup, POM 9's bottom becomes trustworthy (earned
+  // confidence) instead of a flat guess. Returns { bottomY, support } or null.
+  function findCupBottomFromInk(dark, w, h, bounds, axisPx, sideColPx, apexY, cradleY, side) {
+    if (!dark || !w || !h) return null;
+    if (apexY == null || cradleY == null) return null;
+    const { minX, minY, maxX, maxY } = bounds;
+    const bboxH = maxY - minY + 1;
+    // Central portion of the cup x-band — the wire bottoms near cup center,
+    // not out at the side seam nor hard against the CF gore.
+    const loX = Math.min(axisPx, sideColPx);
+    const hiX = Math.max(axisPx, sideColPx);
+    const bandW = hiX - loX;
+    if (bandW < 8) return null;
+    const cLo = Math.max(minX + 1, Math.round(loX + bandW * 0.20));
+    const cHi = Math.min(maxX - 1, Math.round(hiX - bandW * 0.20));
+    if (cHi <= cLo + 2) return null;
+    // Vertical window: clearly below the apex, down to just past the cradle
+    // row (the wire can dip a little below it) but never into the band hem.
+    const yTop = Math.round(apexY * h + bboxH * 0.10);
+    const yBot = Math.min(maxY - 1, Math.round(clamp01(cradleY + 0.05) * h));
+    if (yBot <= yTop + 4) return null;
+    let cols = 0, hit = 0;
+    const bottoms = [];
+    for (let x = cLo; x <= cHi; x += 1) {
+      cols += 1;
+      let low = -1;
+      for (let y = yBot; y >= yTop; y -= 1) {
+        if (dark[y * w + x]) {
+          // Require a short vertical run so a lone speck doesn't win.
+          let run = 0;
+          for (let k = 0; k < 4 && (y - k) >= yTop; k += 1) if (dark[(y - k) * w + x]) run += 1;
+          if (run >= 2) { low = y; break; }
+        }
+      }
+      if (low >= 0) { bottoms.push({ x, low }); hit += 1; }
+    }
+    if (hit < Math.max(3, Math.round(cols * 0.30))) return null; // not a coherent arc
+    const lows = bottoms.slice();  // (x, low) pairs preserved below
+    bottoms.sort((a, b) => a.low - b.low);
+    // 80th percentile of per-column lowest points — robust to a few short cols.
+    const idx = Math.min(bottoms.length - 1, Math.round(bottoms.length * 0.80));
+    const chosenY = bottoms[idx].low;
+    // Arc-bottom column: median x of the columns within 2px of the deepest
+    // point — the flat center of the wire dip (used by the POM 7 arc tier).
+    const deep = lows.filter((b) => b.low >= chosenY - 2).map((b) => b.x).sort((a, b) => a - b);
+    const bottomX = deep.length ? deep[Math.floor(deep.length / 2)] / w : null;
+    return { bottomY: chosenY / h, bottomX, support: hit / cols };
+  }
+
+  // Underarm notch on one side: starting at the detected side-seam column,
+  // scan upward from chestRow looking for the topmost dark pixel within a
+  // small lateral window. The result is the side-top anchor for POM 11.
+  function findSideTopFromInk(dark, w, h, bounds, sideCol, chestRow, side) {
+    if (sideCol == null || sideCol < 0) return null;
+    const { minX, minY, maxX } = bounds;
+    const bboxW = maxX - minX + 1;
+    const lateralHalf = Math.max(3, Math.round(bboxW * 0.025));
+    const xLo = Math.max(minX, sideCol - lateralHalf);
+    const xHi = Math.min(maxX, sideCol + lateralHalf);
+    const yLo = minY;
+    const yHi = chestRow > 0 ? chestRow : bounds.maxY;
+    if (yHi <= yLo || xHi <= xLo) return null;
+    let topY = -1, topXSum = 0, topCount = 0;
+    for (let y = yLo; y <= yHi; y += 1) {
+      const base = y * w;
+      let rowSum = 0, rowCount = 0;
+      for (let x = xLo; x <= xHi; x += 1) {
+        if (dark[base + x]) { rowSum += x; rowCount += 1; }
+      }
+      if (rowCount > 0) {
+        topY = y; topXSum = rowSum; topCount = rowCount;
+        break;
+      }
+    }
+    if (topY < 0) return null;
+    const topX = topXSum / topCount;
+    const confidence = clamp01(0.4 + Math.min(0.4, (chestRow > 0 ? (chestRow - topY) / Math.max(1, bounds.maxY - bounds.minY) : 0) * 1.5));
+    return { point: { x: topX / w, y: topY / h }, confidence, side };
+  }
+
+  // From a detected side-top, follow the side-seam OUTLINE downward to the
+  // bottom hem. A real side seam slants inward (it is rarely a vertical edge),
+  // so we edge-walk the ink nearest the previous column each row — tolerating
+  // small gaps where the band line crosses — instead of holding the top column.
+  // The lowest tracked point is the side-bottom anchor for POM 11.
+  function findSideBottomFromInk(dark, w, h, bounds, topPoint) {
+    if (!topPoint) return null;
+    const { minX, minY, maxX, maxY } = bounds;
+    const bboxW = maxX - minX + 1;
+    let lastX = Math.round(topPoint.x * w);
+    const startY = Math.round(topPoint.y * h) + 1;
+    if (startY >= maxY || lastX < minX || lastX > maxX) return null;
+    const lateralHalf = Math.max(3, Math.round(bboxW * 0.05));
+    const maxGap = Math.max(4, Math.round((maxY - minY) * 0.05));
+    let bestX = lastX, bestY = -1, gap = 0, rows = 0;
+    for (let y = startY; y <= maxY; y += 1) {
+      const base = y * w;
+      const xLo = Math.max(minX, lastX - lateralHalf);
+      const xHi = Math.min(maxX, lastX + lateralHalf);
+      let nearestX = -1, nearestDist = Infinity;
+      for (let x = xLo; x <= xHi; x += 1) {
+        if (dark[base + x]) {
+          const d = Math.abs(x - lastX);
+          if (d < nearestDist) { nearestDist = d; nearestX = x; }
+        }
+      }
+      if (nearestX < 0) { gap += 1; if (gap > maxGap) break; continue; }
+      gap = 0; lastX = nearestX; bestX = nearestX; bestY = y; rows += 1;
+    }
+    if (bestY < 0 || rows < 3) return null;
+    const confidence = clamp01(0.35 + Math.min(0.45, rows / Math.max(1, maxY - minY)));
+    return { point: { x: bestX / w, y: bestY / h }, confidence };
+  }
+
+  // ---- src/auto/detect/cup-model.js ----
+// Cup model — the self-contained decision engine shared by POM 9 (inner cup
+// height) and POM 10 (inner cup width). It picks ONE cup side and one view from
+// positive structure evidence, classifies visibility (direct / inferred /
+// hidden), and derives the cup's top / bottom / inner-edge / outer-edge / center
+// endpoints under invariants A5 / A6 / B3 / B4.
+//
+// Reads the ink through the front-view finders in
+// src/auto/detect/front-landmarks.js (findCupInnerSilhouettePx /
+// findCupOuterSilhouettePx / findCupBottomFromInk / findCupWidthFromInk), so this
+// part must load after that one. Its caller is
+// src/auto/detect/landmark-stage.js.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // POM 9 / POM 10 share one cup model so they describe the same physical cup.
+  // The model selects ONE cup side (left or right) and one view, then derives
+  // its top / bottom / inner-edge / outer-edge / center from real structure
+  // signals (apex = cup-strap join, cradleCupTop = cup-bottom seam, side seam,
+  // CF axis). It never snaps to the topmost dark pixel inside a broad strip.
+  //
+  // visibility (POMs 9/10 are the cup drawn on the FRONT/outer view; a front_inner
+  // cutaway is a bonus, never a precondition — DETECTION_AND_MEASUREMENT_CONTRACT.md):
+  //   - 'direct'   : cup read from real structure at both ends — a validated apex
+  //                  AND a real cup-bottom (committed seam or traced arc), OR a
+  //                  front_inner cutaway view exists
+  //   - 'inferred' : endpoints placeable but one is only extrapolated (flat-cradle
+  //                  bottom, or no real apex)
+  //   - 'hidden'   : neither apex nor cup-bottom reference is reliable
+  //
+  // When visibility is 'hidden' the model still returns a stub (topPoint / etc
+  // may be null) so the seeding layer can skip inner-cup-* anchors and POM 9/10
+  // demote to REVIEW_ONLY via the requiredAnchors guard. No ratio fallback.
+  function buildCupModel(ctx) {
+    const {
+      bounds, w, h, dark, axisPx, cradleY,
+      apexLeft, apexLeftConf, apexRight, apexRightConf,
+      cradleCupTop, cradleCupSide, cradleCupTier, cradleCupConfidence,
+      sideLeftX, sideRightX,
+      hasFrontInner,
+    } = ctx;
+    const { minX, maxX } = bounds;
+    const bboxW = maxX - minX + 1;
+
+    // -------- 1. Pick cup side from positive structure evidence -------------
+    // Only trusted seam tiers may influence the cup side. 'guide'/'arc' tier
+    // commits (ADR 0021/0022) are review-grade POM 7 evidence and must leave
+    // the cupModel — including its side selection — byte-identical.
+    const trustedSeamTier = cradleCupTier === 'strong' || cradleCupTier === 'seam';
+    const seamSide = trustedSeamTier ? cradleCupSide : 0;
+    let side = 0;
+    let sideReason = '';
+    const lConf = apexLeftConf || 0;
+    const rConf = apexRightConf || 0;
+    if (apexLeft && apexRight && Math.abs(lConf - rConf) < 0.08) {
+      // Symmetric apex evidence — pick the side whose cup-bottom seam was
+      // accepted by the POM 7 detector. Fall back to left when neither side
+      // dominates.
+      if (seamSide === +1) { side = +1; sideReason = 'symmetric apex pair; cup-bottom seam confirms right cup'; }
+      else if (seamSide === -1) { side = -1; sideReason = 'symmetric apex pair; cup-bottom seam confirms left cup'; }
+      else { side = -1; sideReason = 'symmetric apex pair without cup-bottom seam evidence; default left cup'; }
+    } else if (lConf > 0 || rConf > 0) {
+      side = lConf >= rConf ? -1 : +1;
+      sideReason = `stronger ${side < 0 ? 'left' : 'right'} apex confidence (${lConf.toFixed(2)} vs ${rConf.toFixed(2)})`;
+    } else if (seamSide === -1 || seamSide === +1) {
+      side = seamSide;
+      sideReason = `no apex; cup side taken from POM 7 cup-bottom seam (side=${side})`;
+    } else {
+      side = -1;
+      sideReason = 'no apex and no cup-bottom seam evidence; default left cup';
+    }
+
+    // Cup columns (needed early so the cup-bottom ink trace in step 3 can scan
+    // the cup's central band). The cup occupies [sideColPx .. axisPx] for a
+    // left cup and [axisPx .. sideColPx] for right; the HEIGHT runs through the
+    // vertical median cupCenterX.
+    const sideColPx = side < 0
+      ? (Number.isFinite(sideLeftX)  ? Math.round(sideLeftX  * w) : minX + Math.round(bboxW * 0.05))
+      : (Number.isFinite(sideRightX) ? Math.round(sideRightX * w) : maxX - Math.round(bboxW * 0.05));
+    const cupCenterXpx = Math.round((axisPx + sideColPx) / 2);
+    const cupCenterX = cupCenterXpx / w;
+
+    // -------- 2. View role and visibility ----------------------------------
+    const viewRole = hasFrontInner ? 'front_inner' : 'front_outer';
+    const apexPoint = side < 0 ? apexLeft : apexRight;
+    const apexConf  = side < 0 ? lConf    : rConf;
+
+    // -------- 3. Y references — apex row (cup top) and seam row (cup bottom)
+    // We separate Y from X here: a "cup height" measurement must use a
+    // SINGLE column for both endpoints — taking topPoint.x from apex and
+    // bottomPoint.x from the POM 7 seam column produces a diagonal line that
+    // is NOT what a TD reads as cup height. So we record y-only references
+    // and project them onto the cup center column in step 7.
+    let apexY = null;
+    let topFromApex = false;
+    if (apexPoint) {
+      apexY = apexPoint.y;
+      topFromApex = true;
+    }
+
+    let seamY = null;
+    let bottomFromSeam = false;
+    let bottomFromInk = false;      // cup-bottom confirmed by a traced ink arc
+    let bottomInkSupport = 0;
+    let seamRawX = null;        // raw seam column (debug only)
+    if (cradleCupTop && cradleCupSide === side && trustedSeamTier) {
+      // Only strong/pattern-3 seams may relocate the cup bottom. Guide-tier
+      // (sparse dashed, ADR 0021) and arc-tier (traced underwire, ADR 0022)
+      // commits are weak evidence drawn for TD review — letting them in here
+      // is exactly what shifted inner-cup geometry and broke invariant B3 in
+      // the reverted 2026-07-09 prototype.
+      seamY = cradleCupTop.y;
+      seamRawX = cradleCupTop.x;
+      bottomFromSeam = true;
+    } else if (cradleY != null) {
+      // POM 7 didn't commit a column on this side. Before falling back to the
+      // flat global cradle row, try to CONFIRM the cup's own underwire bottom
+      // as a coherent ink arc under the cup center (rule.md: "POM 7 can help
+      // locate the lower cup reference, but only when POM 7 confidence is
+      // reliable" — here we earn our own reliability). The trace is kept near
+      // the cradle row (±0.05), so this refines/validates rather than relocates
+      // the bottom, but converts an unearned guess into a trusted endpoint.
+      const inkBottom = (apexY != null)
+        ? findCupBottomFromInk(dark, w, h, bounds, axisPx, sideColPx, apexY, cradleY, side)
+        : null;
+      if (inkBottom
+          && inkBottom.support >= 0.30
+          && inkBottom.bottomY > apexY + 0.08
+          && inkBottom.bottomY >= cradleY - 0.05) {
+        seamY = clamp01(inkBottom.bottomY);
+        bottomFromInk = true;
+        bottomInkSupport = inkBottom.support;
+      } else {
+        seamY = cradleY;
+      }
+      bottomFromSeam = false;
+    }
+
+    // -------- 4. Visibility classification ---------------------------------
+    // 'direct' still requires SOMETHING to anchor Y — front_inner alone with
+    // no apex AND no cradle reference cannot place real endpoints, so it
+    // falls through to 'hidden' rather than build geometry from null y's.
+    // A cup is read DIRECTLY when it rests on real drawn structure at both ends —
+    // a validated apex (cup top) AND a real cup-bottom (a committed POM 7 seam or a
+    // traced underwire arc) — regardless of whether a separate front_inner cutaway
+    // view exists. Per the 2026-07-09 TD correction (DETECTION_AND_MEASUREMENT_CONTRACT.md
+    // Part 1 "Cup group"), POMs 9/10 are the cup as drawn on the FRONT (outer) view;
+    // a front_inner cutaway is a bonus, never a precondition. 'inferred' is the
+    // genuinely weaker case: endpoints are placeable but one is only extrapolated —
+    // a bare flat-cradle-row bottom, or no real apex. 'hidden' = endpoints unplaceable.
+    const bottomReal = bottomFromSeam || bottomFromInk;
+    let visibility;
+    let visibilityReason;
+    if ((topFromApex && bottomReal) || (hasFrontInner && (apexY != null || seamY != null))) {
+      visibility = 'direct';
+      visibilityReason = hasFrontInner
+        ? 'front_inner view detected; inner cup is drawn directly'
+        : (bottomFromSeam
+          ? 'front cup read directly: apex (cup top) + committed cup-bottom seam'
+          : 'front cup read directly: apex (cup top) + traced cup-bottom underwire arc');
+    } else if (apexY != null && seamY != null) {
+      visibility = 'inferred';
+      visibilityReason = topFromApex
+        ? 'apex anchors the cup top; cup bottom only inferred from the flat cradle row'
+        : 'cup top not on a real apex; endpoints partially inferred';
+    } else {
+      visibility = 'hidden';
+      visibilityReason = hasFrontInner
+        ? 'front_inner view present but no apex and no cup-bottom reference — cannot anchor endpoints'
+        : 'no apex AND no cup-bottom reference — cup model cannot be located';
+    }
+
+    // POM 9/10 silent-demotion diagnostics. Captures every upstream signal we
+    // checked so a TD can answer "which input was missing?" without re-running
+    // the detector with extra console.logs. Surfaced via detection.debug.cupModel.
+    const diagnostics = {
+      hasFrontInner: !!hasFrontInner,
+      apexLeftPresent: !!apexLeft,
+      apexRightPresent: !!apexRight,
+      apexLeftConf: Number.isFinite(lConf) ? lConf : 0,
+      apexRightConf: Number.isFinite(rConf) ? rConf : 0,
+      sidePicked: side,
+      apexPointPresent: !!apexPoint,
+      apexConfPicked: Number.isFinite(apexConf) ? apexConf : 0,
+      cradleCupTopPresent: !!cradleCupTop,
+      cradleCupSide,
+      cradleCupSideMatches: !!(cradleCupTop && cradleCupSide === side),
+      cradleYPresent: cradleY != null,
+      cradleCupConfidence: Number.isFinite(cradleCupConfidence) ? cradleCupConfidence : 0,
+      apexY,
+      seamY,
+      topFromApex,
+      bottomFromSeam,
+      bottomFromInk,
+      bottomInkSupport: Number.isFinite(bottomInkSupport) ? bottomInkSupport : 0,
+      visibility,
+      visibilityReason,
+    };
+    if (visibility === 'hidden' && typeof console !== 'undefined' && console.warn) {
+      console.warn('[Auto Mode] cupModel hidden → POM 9/10 will demote to REVIEW_ONLY', diagnostics);
+    }
+
+    // For 'direct' with only one of (apexY, seamY) present, extrapolate the
+    // missing endpoint by a typical cup-height fraction of the normalized
+    // image height (apexY / seamY are already 0–1 normalized). 0.28 is a
+    // reasonable approximation across the demo sketches.
+    if (visibility === 'direct') {
+      const fallbackCupHeight = 0.28;
+      if (apexY == null && seamY != null) apexY = clamp01(seamY - fallbackCupHeight);
+      if (seamY == null && apexY != null) seamY = clamp01(apexY + fallbackCupHeight);
+    }
+
+    // -------- 5. Reject decorative/texture-only evidence -------------------
+    // Per rule.md "Reject lace/flower/texture as primary cup evidence". We
+    // don't run a dedicated texture detector here; instead we delegate to the
+    // two upstream detectors whose validation already excludes decorative
+    // candidates:
+    //   - apex: validateCupApexPair rejects strap-join candidates that aren't
+    //     symmetric and bounded inside the cup region
+    //   - cradleCupTop: the POM 7 column scan rejects short decorative ticks,
+    //     side-seam-like vertical runs, and ratio-only candidates
+    // So a cupModel sourced from (apex, cradleCupTop) is texture-free by
+    // construction. The only remaining failure mode is "neither signal fires";
+    // that maps to visibility='hidden' above. texturePenalty stays 0 unless a
+    // dedicated detector is added later.
+    const texturePenalty = 0;
+    const contourConfidence = clamp01(topFromApex ? apexConf : (apexConf * 0.4));
+    // Bottom-endpoint provenance & confidence. A committed POM 7 seam is best;
+    // a traced underwire arc (bottomFromInk) earns confidence from its column
+    // support (0.30..1.0 support -> ~0.5..0.85) instead of the flat 0.25 guess
+    // used when only the global cradle row is available.
+    const bottomEvidence = bottomFromSeam ? 'seam'
+      : (bottomFromInk ? 'ink'
+        : (seamY != null ? 'cradleRow' : 'none'));
+    const seamConfidence = bottomFromSeam
+      ? clamp01(cradleCupConfidence || 0)
+      : (bottomFromInk
+        ? clamp01(0.35 + 0.5 * bottomInkSupport)
+        : (seamY != null ? 0.25 : 0));
+
+    if (visibility === 'hidden') {
+      return {
+        side, viewRole, visibility,
+        topPoint: null, bottomPoint: null,
+        innerEdge: null, outerEdgeNearArmhole: null, centerPoint: null,
+        contourConfidence, seamConfidence, texturePenalty,
+        sideReason, visibilityReason,
+        topFromApex: false, bottomFromSeam: false, bottomFromInk: false, bottomEvidence: 'none',
+        apexAnchor: null, seamAnchor: null,
+        rejectedTextureReason: null,
+        diagnostics,
+        reason: `cup model hidden: ${visibilityReason}`,
+      };
+    }
+
+    // -------- 6. Cup geometry — shared columns, coherent endpoints ---------
+    // The cup occupies the band [sideColPx .. axisPx] for a left cup (and
+    // [axisPx .. sideColPx] for right). The HEIGHT measurement runs through
+    // the cup's vertical median (cupCenterX); the WIDTH measurement spans
+    // the cup's full horizontal extent (innerEdge → outerEdge) at the cup's
+    // vertical mid (centerY). sideColPx / cupCenterX are computed in step 1.
+
+    // POM 10 endpoints — the reference draws cup width at the UPPER-MIDDLE of
+    // the cup (from the center gore junction out to the outer cup edge), not at
+    // the fullest row. We target that level and snap to the real cup ink there
+    // when the dark mask is available, otherwise fall back to fixed insets from
+    // the CF axis and side seam at the same level. Ink-based snapping picks the
+    // inner (gore-side) and outer (side-seam-side) ink pixels on the picked cup
+    // half so the width follows the drawn cup outline instead of a geometric
+    // prior.
+    //
+    // Fallback rationale — see the historical note preserved below.
+    //   A previous attempt swapped innerEdge to cradleCupTop.x assuming it
+    //   marked the cup-gore boundary. It does not — cradleCupTop sits in the
+    //   OUTER cup zone (where the cup-bottom seam rises toward chest near the
+    //   side seam), so using it as the inner edge collapsed POM 10 width to
+    //   near-zero. The inner edge is therefore always derived from the CF-axis
+    //   side (ink edge, else a 3% axis inset), never a side-zone landmark.
+    //
+    // widthLevelY = apex + 0.42·(seam−apex): the fixed upper-middle level. It is
+    // the fallback and also the upper floor of the widest-row search below (kept
+    // above 0.40 so it stays within 0.08 of POM 9 mid-y, invariant A6).
+    const widthLevelY = clamp01(apexY + 0.42 * (seamY - apexY));
+    const pom9Mid = (apexY + seamY) / 2;
+
+    // Deep cups: cup width is measured at the cup's WIDEST horizontal cross-
+    // section, which on a deep cup sits BELOW the fixed 0.42 level. Search a
+    // body-bounded, A6-clamped window for the widest coherent cup-ink row and
+    // place the width line there. The window is ONE-SIDED — its floor is
+    // widthLevelY, so it can only move the row DOWN — meaning shallow cups
+    // (widest already at/above 0.42) keep today's placement and only cups with a
+    // genuinely wider seam lower down descend. Capping hiY at pom9Mid+0.07
+    // guarantees invariant A6 (|width_y−pom9Mid| < 0.08) by construction: 0.07 +
+    // pixel rounding < 0.075 usability gate < 0.08. bodyHiY keeps the row off the
+    // underwire/cradle band. Shallow cups skip the search entirely (byte-
+    // identical output → no golden drift).
+    const cupSpan = seamY - apexY;
+    const DEEP_CUP_FRAC = 0.24;
+    const bodyHiY = seamY - 0.15 * cupSpan;
+    const widthWindow = {
+      loY: widthLevelY,
+      hiY: clamp01(Math.min(bodyHiY, pom9Mid + 0.07)),
+    };
+    // The legacy fixed-level probe is always computed — both as the fallback and
+    // as the baseline width the widest-row search must clearly beat.
+    const atLevel = findCupWidthFromInk(
+      dark, w, h, bounds, axisPx, sideColPx, apexY, seamY, side, widthLevelY
+    );
+    let inkWidth = atLevel;
+    if (cupSpan >= DEEP_CUP_FRAC && widthWindow.hiY > widthWindow.loY) {
+      const windowed = findCupWidthFromInk(
+        dark, w, h, bounds, axisPx, sideColPx, apexY, seamY, side, null, widthWindow
+      );
+      // Only descend to the lower row when the cup is MEANINGFULLY wider there
+      // (a genuine deep bulge) — ≥12% wider than at the fixed level, and at least
+      // 3% of cup span lower. This keeps roughly-uniform cups at today's level
+      // (no spurious drift) and moves only the deep cups the fixed 0.42 level
+      // strands too high.
+      if (windowed
+          && windowed.widthPx >= (atLevel ? atLevel.widthPx * 1.12 : 0)
+          && windowed.centerY > widthLevelY + 0.03 * cupSpan) {
+        inkWidth = windowed;
+      }
+    }
+    // Guard against a stray-ink row that would violate invariant A6 (POM 10
+    // row must lie within 0.08 of POM 9 mid-y). Also require the found row
+    // to sit clearly BELOW the apex — otherwise it's likely strap-junction
+    // ink, not a cup body row.
+    const inkWidthUsable = !!(inkWidth
+      && Math.abs(inkWidth.centerY - pom9Mid) < 0.075
+      && inkWidth.centerY > apexY + 0.02);
+
+    // Cup-width vertical reference — the widest ink row when accepted, else the
+    // geometric upper-middle level.
+    const centerY = inkWidthUsable
+      ? clamp01(inkWidth.centerY)
+      : widthLevelY;
+
+    // POM 9 endpoints — cup height runs from the APEX (cup-strap join, the true
+    // top of the cup) down to the cup-bottom at the cup's vertical median. A TD
+    // reads cup height from the apex, so the top anchor sits on the detected
+    // apex point rather than being projected onto the cup-center column (which
+    // floated above the cup edge, since the cup top dips from the apex toward
+    // the gore). The bottom stays on the cup-center column at the cup-bottom
+    // seam. The line therefore tilts slightly apex→bottom (rendered as a curve)
+    // — that matches the TD's cup-height convention. When no apex fired
+    // (topFromApex false) there is no real top landmark, so fall back to the
+    // cup-center column for a coherent vertical estimate.
+    const topX = (topFromApex && apexPoint) ? apexPoint.x : cupCenterX;
+    const topPoint    = { x: clamp01(topX), y: clamp01(apexY) };
+    // Bottom sits under the cup BODY, not at the geometric side↔CF midpoint.
+    // When the apex is at the outer-top (strap join near the side seam), the
+    // plain cup-center leans toward CF and the bottom drifts off the cup; bias
+    // it halfway from the apex column toward the cup center so POM 9 runs down
+    // the cup body. Falls back to the cup center when no apex fired.
+    const bottomXraw = (topFromApex && apexPoint) ? (apexPoint.x + cupCenterX) / 2 : cupCenterX;
+    // bottomPoint is created AFTER the width endpoints below, so it can be
+    // clamped to sit between them (invariant A5).
+
+    // Inner endpoint = the CENTER-FRONT gore junction (where the two cups meet),
+    // per the reference. That is a STRUCTURAL point at the CF, not the cup's ink
+    // edge at this level — near the top the cup's inner edge curves inward under
+    // the neckline V, which would shorten the width. So anchor the inner
+    // endpoint just off the CF axis (a small gore inset, ≥ invariant B3's 0.5%),
+    // guaranteeing it sits at the gore and that POM 9's column falls between the
+    // two POM 10 endpoints (invariant A5).
+    const axisPadPx = Math.max(2, Math.round(bboxW * 0.006));
+    // Size the gore inset in IMAGE-width terms (0.8% of w) so the inner
+    // endpoint always clears invariant B3 (>0.5% of image width off the CF
+    // axis) regardless of how much of the frame the cup bbox fills — a bbox-
+    // relative inset can shrink below the B3 floor on wide two-view sketches.
+    const goreInsetPx = Math.max(axisPadPx, Math.ceil(w * 0.008));
+    const goreInsetXpx = side < 0 ? axisPx - goreInsetPx : axisPx + goreInsetPx;
+    // On a WIDE center gore the cups are separated by a broad (often faint mesh)
+    // panel; the gore inset then floats the inner endpoint in the gore instead
+    // of on the cup. Trace the cup's inner seam at the width row and pull the
+    // endpoint OUTWARD onto it. Only ever moves away from the axis (never past
+    // the gore inset toward center), so invariant B3 (>0.5% off CF axis) holds.
+    const innerSilPx = findCupInnerSilhouettePx(
+      dark, w, h, bounds, axisPx, cupCenterXpx, Math.round(centerY * h), side, goreInsetPx);
+    let innerEdgeXpx = goreInsetXpx;
+    if (innerSilPx != null) {
+      innerEdgeXpx = side < 0
+        ? Math.min(goreInsetXpx, innerSilPx)   // smaller x = further from axis (left cup)
+        : Math.max(goreInsetXpx, innerSilPx);
+    }
+    const innerEdge = { x: clamp01(innerEdgeXpx / w), y: centerY };
+    diagnostics.innerEdgeSilhouettePx = innerSilPx;
+    diagnostics.innerEdgeExtendedToSeam = innerSilPx != null && innerEdgeXpx !== goreInsetXpx;
+    // Ink support for the inner endpoint. The gore inset is a FABRICATED
+    // fallback — legitimate only when the point lies inside the garment. On
+    // front-closure styles whose apex fires on the strap top, the width row
+    // crosses the OPEN neckline V and the inset point floats in blank
+    // background. Consumers (landmark-qa cupModelUsable, seed
+    // innerCupFromCupModel) treat innerEdgeSupported === false as "cup model
+    // not usable for anchors" so the seed falls down the existing precedence
+    // chain (innerCupTopInk → view ratios → delete) instead.
+    // "Inside the garment" test: faint fills (lace texture) don't register in
+    // the dark mask, so ink-proximity alone can't tell garment interior from
+    // the neckline opening. But every garment-interior point has the
+    // neckline/top edge line somewhere ABOVE it, while a point in the open
+    // neckline V sees nothing but background all the way to the ink-bbox top.
+    let innerEdgeSupported = innerSilPx != null;
+    if (!innerEdgeSupported && dark) {
+      const rowPx = Math.min(h - 1, Math.max(0, Math.round(centerY * h)));
+      const cLo = Math.max(minX, innerEdgeXpx - 2);
+      const cHi = Math.min(maxX, innerEdgeXpx + 2);
+      scan: for (let y = rowPx - 1; y >= Math.max(0, bounds.minY); y -= 1) {
+        const rowBase = y * w;
+        for (let x = cLo; x <= cHi; x += 1) {
+          if (dark[rowBase + x]) { innerEdgeSupported = true; break scan; }
+        }
+      }
+    }
+    diagnostics.innerEdgeSupported = innerEdgeSupported;
+    if (!innerEdgeSupported && typeof console !== 'undefined' && console.warn) {
+      console.warn('[Auto Mode] cupModel inner edge unsupported (width row crosses a void) → cup model not usable for POM 9/10 anchors');
+    }
+
+    // Outer endpoint = the cup's OUTER edge near the armhole. Prefer the traced
+    // outer ink edge when it is a valid outer boundary (on the side-seam side of
+    // the cup center); otherwise a small inset from the detected side-seam
+    // column. Invariant B4 keeps it ≥0.3% off the side seam.
+    const outerInsetPx = Math.max(2, Math.round(bboxW * 0.02));
+    const outerFallbackXpx = side < 0 ? sideColPx + outerInsetPx : sideColPx - outerInsetPx;
+    // Size the seam pad in IMAGE-width terms as well (0.4% of w): invariant B4
+    // measures the seam gap as a fraction of the full image (>0.3%), and a
+    // purely bbox-relative pad bottoms out at 2px on multi-view sketches whose
+    // ink bbox is a small fraction of the frame — landing the outer endpoint
+    // inside the B4 floor (same failure class as the B3 gore inset above).
+    const seamPadPx = Math.max(2, Math.round(bboxW * 0.004), Math.ceil(w * 0.004));
+    const outerInkValid = inkWidthUsable
+      && (side < 0 ? inkWidth.outerX < cupCenterX : inkWidth.outerX > cupCenterX);
+    // POM 10 must span the full cup — CF gore → outer side seam. The traced ink
+    // edge may pull the outer endpoint FURTHER OUT toward the seam, but must
+    // never narrow the cup inward: sketches with interior panel/princess seams
+    // were snapping the ink to an inner seam, ending POM 10 ~30% short of the
+    // cup. Reach the detected side seam (outerFallbackXpx) and let ink only
+    // extend it outward, floored a hair inside the seam (invariant B4).
+    const inkOuterXpx = outerInkValid ? Math.round(inkWidth.outerX * w) : outerFallbackXpx;
+    const outerEdgeSeamXpx = side < 0
+      ? Math.max(sideColPx + seamPadPx, Math.min(outerFallbackXpx, inkOuterXpx))
+      : Math.min(sideColPx - seamPadPx, Math.max(outerFallbackXpx, inkOuterXpx));
+    // The side-seam column can land INBOARD of the cup's true outer outline
+    // (interior/princess seams, faint side seams). Trace the outer silhouette at
+    // the width row and let it extend the endpoint OUTWARD to the real cup edge
+    // (floored a hair inside the outline, invariant B4). Never narrows the cup.
+    const silhouettePx = findCupOuterSilhouettePx(dark, w, h, bounds, axisPx, Math.round(centerY * h), side);
+    let outerEdgeXpx = outerEdgeSeamXpx;
+    if (silhouettePx != null) {
+      const silPadded = side < 0 ? silhouettePx + seamPadPx : silhouettePx - seamPadPx;
+      outerEdgeXpx = side < 0
+        ? Math.min(outerEdgeSeamXpx, silPadded)   // smaller x = further outboard
+        : Math.max(outerEdgeSeamXpx, silPadded);
+    }
+    const outerEdgeNearArmhole = { x: clamp01(outerEdgeXpx / w), y: centerY };
+    diagnostics.outerEdgeSilhouettePx = silhouettePx;
+    diagnostics.outerEdgeExtendedToSilhouette = silhouettePx != null && outerEdgeXpx !== outerEdgeSeamXpx;
+    // POM 9 bottom (deferred from above): clamp the apex-biased column to sit
+    // between the POM 10 width endpoints so the height line stays on the cup
+    // body (invariant A5) — on a degenerate narrow cup the raw column can fall
+    // just outside the span.
+    const bottomLoX = Math.min(innerEdge.x, outerEdgeNearArmhole.x);
+    const bottomHiX = Math.max(innerEdge.x, outerEdgeNearArmhole.x);
+    const bottomPoint = { x: clamp01(Math.max(bottomLoX, Math.min(bottomHiX, bottomXraw))), y: clamp01(seamY) };
+    diagnostics.innerEdgeSource = 'goreAnchor';
+    diagnostics.outerEdgeSource = outerInkValid ? 'ink' : 'sideInset';
+    diagnostics.innerEdgeX = innerEdge.x;
+    diagnostics.outerEdgeX = outerEdgeNearArmhole.x;
+    if (inkWidth) {
+      diagnostics.cupWidthInkRow = inkWidth.centerY;
+      diagnostics.cupWidthInkFrac = inkWidth.widthFrac;
+      diagnostics.cupWidthInkUsable = inkWidthUsable;
+    }
+
+    // Cup geometric center (debug only — POM 10 spans inner→outer, NOT
+    // center→outer).
+    const centerPoint = { x: clamp01(cupCenterX), y: centerY };
+
+    // Raw landmark sources kept for debug/inspection.
+    const apexAnchor = apexPoint
+      ? { x: apexPoint.x, y: apexPoint.y }
+      : null;
+    const seamAnchor = (seamRawX != null && seamY != null)
+      ? { x: seamRawX, y: seamY }
+      : null;
+
+    return {
+      side, viewRole, visibility,
+      topPoint, bottomPoint, innerEdge, outerEdgeNearArmhole, centerPoint,
+      innerEdgeSupported,
+      contourConfidence, seamConfidence, texturePenalty,
+      sideReason, visibilityReason,
+      topFromApex, bottomFromSeam, bottomFromInk, bottomEvidence,
+      apexAnchor, seamAnchor,
+      rejectedTextureReason: null,
+      diagnostics,
+      reason: visibility === 'direct'
+        ? (hasFrontInner
+          ? `direct cup view (front_inner): ${sideReason}`
+          : `direct front cup (apex + ${bottomFromSeam ? 'cup-bottom seam' : 'traced underwire arc'}): ${sideReason}`)
+        : `inferred cup model from ${topFromApex ? 'apex' : 'no apex'} + ${bottomFromSeam ? 'cup-bottom seam' : (bottomFromInk ? 'traced underwire arc' : 'cradle row reference')}: ${sideReason}`,
+    };
+  }
+
+  // ---- src/auto/detect/back-landmarks.js ----
+// Back-view landmark finders — the back-view counterpart of
+// src/auto/detect/front-landmarks.js. Serves POM 11 (side seam), POM 12 (back
+// center length), POM 13 (back panel height) and POM 15 (back strap distance):
+// back center axis / top / bottom, back panel edges and height, back strap top
+// and strap inner edges, and the back side seam as corner endpoints.
+//
+// detectBackLandmarks bundles the whole pass so the SAME pass can re-run after a
+// TD view-role correction; redetectBackLandmarks is that re-run entry point and
+// deliberately mutates an already-finished detection object in place (ADR 0035 /
+// US-045 three-view boards) — it is a post-pipeline edge operation, not a stage.
+//
+// Shares detectFeaturesInViewBox / findSideTopFromInk / findSideBottomFromInk
+// with src/auto/detect/front-landmarks.js and the row/column ink primitives with
+// src/auto/detect/view-boxes.js, so this part must load after both.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // Back-view strap-top: walk the left strap zone above the back chest row to
+  // find the topmost ink. On a back technical sketch the strap rises from the
+  // back-panel top toward the shoulder. Returns null when the strap zone has
+  // no ink.
+  function findBackStrapTopFromInk(dark, w, h, viewBoxPx, chestRow) {
+    if (!viewBoxPx) return null;
+    const minX = viewBoxPx.minX;
+    const minY = viewBoxPx.minY;
+    const maxX = viewBoxPx.maxX;
+    const maxY = viewBoxPx.maxY;
+    const bw = maxX - minX + 1;
+    const bh = maxY - minY + 1;
+    if (bw < 16 || bh < 16) return null;
+    const yEnd = (chestRow > 0 && chestRow > minY)
+      ? Math.min(maxY, chestRow)
+      : minY + Math.round(bh * 0.45);
+    const xLo = minX + Math.round(bw * 0.05);
+    const xHi = minX + Math.round(bw * 0.32);
+    if (xHi <= xLo) return null;
+    let total = 0;
+    for (let y = minY; y <= yEnd; y += 1) {
+      const base = y * w;
+      let rowCount = 0;
+      let rowXSum = 0;
+      for (let x = xLo; x <= xHi; x += 1) {
+        if (dark[base + x]) { rowCount += 1; rowXSum += x; }
+      }
+      total += rowCount;
+      if (rowCount > 0) {
+        const cx = rowXSum / rowCount;
+        return {
+          point: { x: cx / w, y: y / h },
+          confidence: clamp01(0.3 + Math.min(0.55, total / Math.max(1, bw * bh * 0.02))),
+        };
+      }
+    }
+    return null;
+  }
+
+  // Back-view shoulder-strap INNER edges (POM 15, back strap distance).
+  // The two straps are near-vertical bands descending from the top of the back
+  // view down to the attach (chest) row; the panel body and wing outlines only
+  // begin AT/below that row, so scanning the zone [top .. chestRow] isolates the
+  // straps from everything else. For each column we count ink over the zone; a
+  // column that carries ink through most of the zone height is "strap ink". The
+  // LEFT strap's inner edge is the right-most strap column left of the axis; the
+  // RIGHT strap's inner edge is the left-most strap column right of the axis.
+  // A narrow dead-center guard keeps a center-back construction line from being
+  // mistaken for a strap edge. Returns normalized {left,right,confidence} or null.
+  function findBackStrapInnerEdges(dark, w, h, viewBoxPx, chestRow, axisPx) {
+    if (!viewBoxPx) return null;
+    const minX = viewBoxPx.minX, minY = viewBoxPx.minY;
+    const maxX = viewBoxPx.maxX, maxY = viewBoxPx.maxY;
+    const bw = maxX - minX + 1, bh = maxY - minY + 1;
+    if (bw < 24 || bh < 24) return null;
+    const yTop = minY;
+    const yBot = (chestRow > minY && chestRow < maxY)
+      ? chestRow
+      : minY + Math.round(bh * 0.32);
+    const zoneH = yBot - yTop;
+    if (zoneH < Math.max(8, Math.round(bh * 0.08))) return null;
+    const axis = (axisPx > minX && axisPx < maxX)
+      ? axisPx
+      : Math.round((minX + maxX) / 2);
+    // Per-column ink count over the strap zone.
+    const counts = new Array(bw).fill(0);
+    for (let y = yTop; y <= yBot; y += 1) {
+      const base = y * w;
+      for (let x = minX; x <= maxX; x += 1) {
+        if (dark[base + x]) counts[x - minX] += 1;
+      }
+    }
+    // Strap columns carry near-vertical ink over most of the zone height.
+    const colThresh = Math.max(3, Math.round(zoneH * 0.40));
+    // Dead-center guard: strap edges never sit on the axis (there is always a
+    // neckline gap), so ignore columns within ~2% of bbox width of the axis.
+    const guard = Math.max(1, Math.round(bw * 0.02));
+    let leftInnerI = -1, rightInnerI = -1;
+    for (let i = 0; i < bw; i += 1) {
+      if (counts[i] < colThresh) continue;
+      const x = minX + i;
+      if (x < axis - guard) leftInnerI = i;              // keep last → right-most
+      else if (x > axis + guard && rightInnerI < 0) rightInnerI = i; // first → left-most
+    }
+    if (leftInnerI < 0 || rightInnerI < 0) return null;
+    const leftInnerXpx = minX + leftInnerI;
+    const rightInnerXpx = minX + rightInnerI;
+    if (!(leftInnerXpx < axis && rightInnerXpx > axis)) return null;
+    // Require a real neckline gap between the inner edges.
+    if (rightInnerXpx - leftInnerXpx < Math.round(bw * 0.05)) return null;
+    const yPx = (chestRow > minY && chestRow < maxY) ? chestRow : yBot;
+    const edgeInk = (counts[leftInnerI] + counts[rightInnerI]) / (2 * Math.max(1, zoneH));
+    const confidence = clamp01(0.40 + 0.35 * Math.min(1, edgeInk));
+    return {
+      left:  { x: leftInnerXpx / w, y: yPx / h },
+      right: { x: rightInnerXpx / w, y: yPx / h },
+      confidence,
+    };
+  }
+
+  // Back-view landmarks. Given the back view's pixel-space bbox, finds:
+  //   - the back symmetry axis (vertical line through the center-back seam)
+  //   - back-center-top: topmost ink in a thin strip around the axis. On a
+  //     U-cutout back this is the bottom of the U; on a closed top this is the
+  //     band's top edge.
+  //   - back-center-bottom: bottommost ink in the same strip. The band's
+  //     bottom edge at center.
+  // POM 12 (back center length) is back-center-top → back-center-bottom.
+  function findBackCenterLandmarks(dark, w, h, bounds) {
+    const { minX, minY, maxX, maxY } = bounds;
+    const bboxW = maxX - minX + 1;
+    const bboxH = maxY - minY + 1;
+    if (bboxW < 8 || bboxH < 8) return null;
+
+    let xSum = 0, xWeight = 0;
+    for (let y = minY; y <= maxY; y += 1) {
+      const base = y * w;
+      for (let x = minX; x <= maxX; x += 1) {
+        if (dark[base + x]) { xSum += x; xWeight += 1; }
+      }
+    }
+    if (xWeight === 0) return null;
+    const centroidX = xSum / xWeight;
+    const axisPx = refineAxisBySymmetry(dark, w, minX, maxX, minY, maxY, centroidX);
+    const symmetry = computeSymmetryScore(dark, w, axisPx, minX, maxX, minY, maxY);
+
+    // Strip half-width around the axis. Wide enough to survive a faint U-curve
+    // crossing the axis at an angle, narrow enough to skip strap tabs at the
+    // top corners.
+    const halfStripPx = Math.max(2, Math.round(bboxW * 0.035));
+    const xLo = Math.max(minX, axisPx - halfStripPx);
+    const xHi = Math.min(maxX, axisPx + halfStripPx);
+
+    let topY = -1;
+    for (let y = minY; y <= maxY && topY < 0; y += 1) {
+      const base = y * w;
+      for (let x = xLo; x <= xHi; x += 1) {
+        if (dark[base + x]) { topY = y; break; }
+      }
+    }
+    let bottomY = -1;
+    for (let y = maxY; y >= minY && bottomY < 0; y -= 1) {
+      const base = y * w;
+      for (let x = xLo; x <= xHi; x += 1) {
+        if (dark[base + x]) { bottomY = y; break; }
+      }
+    }
+    if (topY < 0 || bottomY < 0) return null;
+    const spanPx = bottomY - topY;
+    if (spanPx < bboxH * 0.15) return null;
+
+    // Refine X at the top/bottom rows by taking the centroid of ink in the
+    // strip on that row. This keeps the point on the actual edge ink instead
+    // of pinning to the global symmetry axis when the edge curls slightly.
+    const rowCentroid = (y) => {
+      const base = y * w;
+      let sum = 0, count = 0;
+      for (let x = xLo; x <= xHi; x += 1) {
+        if (dark[base + x]) { sum += x; count += 1; }
+      }
+      return count > 0 ? sum / count : axisPx;
+    };
+    const topX = rowCentroid(topY);
+    const botX = rowCentroid(bottomY);
+
+    return {
+      axisX: axisPx / w,
+      top: { x: topX / w, y: topY / h },
+      bottom: { x: botX / w, y: bottomY / h },
+      symmetry,
+      bandHeightFrac: spanPx / Math.max(1, bboxH),
+      confidence: clamp01(0.30 + 0.45 * symmetry + Math.min(0.25, spanPx / Math.max(1, bboxH))),
+    };
+  }
+
+  // Back-view side seam as CORNER endpoints, not silhouette guesses. The side
+  // seam's two ends are junctions: the TOP is where the side meets the armhole
+  // (the armpit), the BOTTOM is where the side meets the band. We walk the outer
+  // silhouette (leftmost ink per row — the back view's side is on its left),
+  // find the armpit as the outermost extremum (a corner that exists at any
+  // proportion, no fixed ratio), fit a line to the straight seam between, and
+  // place the bottom corner on that line at the detected band row so POM 11 and
+  // the band agree at the same point. `bandYpx` is the back band row (full-image
+  // px), or <0 to fall back to the hem.
+  function findBackSideSeam(dark, w, h, bounds, bandYpx) {
+    const { minX, minY, maxX, maxY } = bounds;
+    const H = maxY - minY + 1;
+    if (H < 24) return null;
+    const leftEdge = (y) => { const base = y * w; for (let x = minX; x <= maxX; x += 1) if (dark[base + x]) return x; return -1; };
+
+    const ys = [], xs = [];
+    for (let y = minY; y <= maxY; y += 1) { const x = leftEdge(y); if (x >= 0) { ys.push(y); xs.push(x); } }
+    if (ys.length < 8) return null;
+    const yHem = ys[ys.length - 1];
+
+    // TOP corner = armpit: outermost (leftmost) silhouette point below the strap
+    // sliver. A true extremum, so it lands on the armhole∩side junction whatever
+    // the style's vertical proportions are.
+    const skipTop = minY + Math.round(H * 0.10);
+    const armMax = minY + Math.round(H * 0.72);
+    let yTop = -1, xTop = Infinity;
+    for (let i = 0; i < ys.length; i += 1) {
+      if (ys[i] < skipTop || ys[i] > armMax) continue;
+      if (xs[i] < xTop) { xTop = xs[i]; yTop = ys[i]; }
+    }
+    if (yTop < 0) return null;
+
+    // Fit x = m*y + b to the straight seam rows (below the armpit, above the
+    // hem). POM 11 is a straight line between its corners, so this denoises the
+    // seam and lets the bottom corner sit exactly on it.
+    let n = 0, sy = 0, sx = 0, syy = 0, sxy = 0;
+    const fitLo = yTop + Math.round(H * 0.06), fitHi = yHem - Math.round(H * 0.05);
+    for (let i = 0; i < ys.length; i += 1) {
+      const y = ys[i];
+      if (y < fitLo || y > fitHi) continue;
+      n += 1; sy += y; sx += xs[i]; syy += y * y; sxy += xs[i] * y;
+    }
+    let m = 0, b = xTop;
+    if (n >= 4) { const d = n * syy - sy * sy; if (Math.abs(d) > 1e-6) { m = (n * sxy - sy * sx) / d; b = (sx - m * sy) / n; } }
+    const lineX = (y) => m * y + b;
+
+    // BOTTOM corner = side∩band junction, on the SOLID hem line — not a zig-zag
+    // elastic line drawn above it. Scanned row by row, a zig-zag has only short
+    // horizontal runs (its diagonal strokes crossing each row), while the hem is
+    // one long continuous run. So we pick the LOWEST row whose max horizontal run
+    // reads as a solid line: that lands the corner on the bottom edge under any
+    // decorative stitching. The band/hem fallback covers sketches with no clear
+    // solid line.
+    const W = maxX - minX + 1;
+    const rowRun = computeRowMaxRun(dark, w, minX, maxX, minY, maxY);
+    const yLo = minY + Math.round(H * 0.45);
+    let peakRun = 0;
+    for (let y = yLo; y <= maxY; y += 1) if (rowRun[y] > peakRun) peakRun = rowRun[y];
+    let yBottom = (bandYpx != null && bandYpx > yTop && bandYpx <= maxY) ? bandYpx : yHem;
+    if (peakRun >= W * 0.18) {
+      const solidThresh = Math.max(W * 0.18, peakRun * 0.5);
+      for (let y = maxY; y >= yLo; y -= 1) { if (rowRun[y] >= solidThresh) { yBottom = y; break; } }
+    }
+    let xBottom = n >= 4 ? lineX(yBottom) : (leftEdge(yBottom) >= 0 ? leftEdge(yBottom) : xTop);
+    xBottom = Math.max(minX, Math.min(maxX, xBottom));
+
+    return { top: { x: xTop / w, y: yTop / h }, bottom: { x: xBottom / w, y: yBottom / h }, confidence: 0.55 };
+  }
+
+  // Back-panel edges: contour-following at ~22% from the back-view's left.
+  // The audit calls out the existing inView(b, 0.225, 0.439) and especially
+  // inView(b, 0.232, 1.005) — the latter clamps off-image. Find real ink
+  // top/bottom along that strip instead.
+  function findBackPanelEdges(dark, w, h, bounds) {
+    const { minX, minY, maxX, maxY } = bounds;
+    const bboxW = maxX - minX + 1;
+    const bboxH = maxY - minY + 1;
+    if (bboxW < 16 || bboxH < 16) return null;
+    // Find the strongest vertical-ink column in the inner 10–45% zone of the
+    // back view. This adapts to panel width instead of assuming a fixed 22.5%.
+    // A minimum ink count guards against stray dots winning over real seams.
+    const searchLo = minX + Math.round(bboxW * 0.10);
+    const searchHi = minX + Math.round(bboxW * 0.45);
+    const colCounts = new Uint32Array(w);
+    for (let y = minY; y <= maxY; y += 1) {
+      const base = y * w;
+      for (let x = searchLo; x <= searchHi; x += 1) {
+        if (dark[base + x]) colCounts[x] += 1;
+      }
+    }
+    let bestCol = -1, bestCount = 0;
+    for (let x = searchLo; x <= searchHi; x += 1) {
+      if (colCounts[x] > bestCount) { bestCount = colCounts[x]; bestCol = x; }
+    }
+    // Require meaningful ink density — rejects empty strips and stray dots.
+    if (bestCol < 0 || bestCount < Math.max(8, Math.round(bboxH * 0.15))) return null;
+    const stripCenter = bestCol;
+    const stripHalf = Math.max(3, Math.round(bboxW * 0.04));
+    const xLo = Math.max(minX, stripCenter - stripHalf);
+    const xHi = Math.min(maxX, stripCenter + stripHalf);
+    if (xHi <= xLo) return null;
+    let topY = -1, topXSum = 0, topCount = 0;
+    for (let y = minY; y <= maxY && topY < 0; y += 1) {
+      const base = y * w;
+      let rowSum = 0, rowCount = 0;
+      for (let x = xLo; x <= xHi; x += 1) {
+        if (dark[base + x]) { rowSum += x; rowCount += 1; }
+      }
+      if (rowCount > 0) { topY = y; topXSum = rowSum; topCount = rowCount; }
+    }
+    let botY = -1, botXSum = 0, botCount = 0;
+    for (let y = maxY; y >= minY && botY < 0; y -= 1) {
+      const base = y * w;
+      let rowSum = 0, rowCount = 0;
+      for (let x = xLo; x <= xHi; x += 1) {
+        if (dark[base + x]) { rowSum += x; rowCount += 1; }
+      }
+      if (rowCount > 0) { botY = y; botXSum = rowSum; botCount = rowCount; }
+    }
+    if (topY < 0 || botY < 0 || botY <= topY) return null;
+    // Reject if the span is implausibly small (likely a stray dot).
+    if ((botY - topY) < bboxH * 0.20) return null;
+    const topX = topXSum / topCount;
+    const botX = botXSum / botCount;
+    const confidence = clamp01(0.30 + Math.min(0.45, (botY - topY) / Math.max(1, bboxH)));
+    return {
+      top: { x: topX / w, y: topY / h },
+      bottom: { x: botX / w, y: botY / h },
+      confidence,
+    };
+  }
+
+  // Back-panel HEIGHT (POM 13) the way a TD measures it: a vertical drop from the
+  // shoulder strap's JOINING point (where the strap meets the panel's top edge)
+  // down to the bottom band. This is NOT findBackPanelEdges, which measures an
+  // interior seam column's ink extent and lands its top up on the strap/hardware.
+  // Key idea: the panel's top edge is the back chest row, and ABOVE that row the
+  // only ink in the inner-left column is the shoulder strap — so the strap's x is
+  // just the centroid of that ink. The join sits at (strapX, chestRow); the
+  // bottom is the band edge straight below it, so the result is a true vertical
+  // height that bottoms out on the solid band (see snapBandToSolidEdge).
+  function findBackPanelHeight(dark, w, h, bounds, bandYpx, chestRowPx) {
+    const { minX, minY, maxX, maxY } = bounds;
+    const bw = maxX - minX + 1;
+    const bh = maxY - minY + 1;
+    if (bw < 16 || bh < 16) return null;
+    if (!(chestRowPx > minY + bh * 0.05 && chestRowPx < maxY)) return null;
+    // Inner-left strap zone (the left strap; the right strap sits past 0.42·bw).
+    const xLo = minX + Math.round(bw * 0.04);
+    const xHi = minX + Math.round(bw * 0.42);
+    if (xHi <= xLo) return null;
+    let sum = 0, cnt = 0;
+    for (let y = minY; y <= chestRowPx; y += 1) {
+      const base = y * w;
+      for (let x = xLo; x <= xHi; x += 1) if (dark[base + x]) { sum += x; cnt += 1; }
+    }
+    // Require real strap ink, else let the caller fall back.
+    if (cnt < Math.max(8, Math.round(bh * 0.05))) return null;
+    const strapX = sum / cnt;
+    const yBot = (bandYpx != null && bandYpx > chestRowPx && bandYpx <= maxY) ? bandYpx : maxY;
+    const confidence = clamp01(0.35 + Math.min(0.45, cnt / Math.max(1, bw * bh * 0.02)));
+    return {
+      top:    { x: strapX / w, y: chestRowPx / h },
+      bottom: { x: strapX / w, y: yBot / h },
+      confidence,
+    };
+  }
+
+  // When the connected-component grouping returns ONE bbox that spans a wide
+  // chunk of the canvas, the most common reason is that two technical-sketch
+  // views (front + back) got merged because stray ink (background texture,
+  // lace mesh) connects them through the gap. Detect such a "merged" view by
+  // looking for a low-density vertical alley in its middle and, if found,
+  // split it into [leftSub, rightSub]. Returns [view] unchanged when no
+  // confident alley is detected.
+  // Compute every back-view landmark from a back view box (pixel-space
+  // {minX,minY,maxX,maxY}) against the ink mask. Extracted verbatim from
+  // detectLandmarks so the SAME pass can re-run when the TD reassigns the back
+  // role in the view-role dialog (redetectBackLandmarks). Returns null-valued
+  // fields when backBox is null.
+  function detectBackLandmarks(dark, w, h, backBox) {
+    if (!backBox) {
+      return {
+        backInfo: null, backFeatures: null, backPanelInfo: null, backPanelHeightInfo: null,
+        backStrapTopInfo: null, backStrapInnerInfo: null, backSideTopInfo: null,
+        backSideBottomInfo: null, backSideInfo: null,
+      };
+    }
+    const backInfo = findBackCenterLandmarks(dark, w, h, backBox);
+    // Per-view feature pass: the back view's OWN axis, chest/band rows, side
+    // seams, and ink endpoints so back anchors snap to ink, not box ratios.
+    const backFeatures = detectFeaturesInViewBox(dark, w, h, backBox);
+    // Back-panel top/bottom (POM 13) from contour-following near the left edge.
+    const backPanelInfo = findBackPanelEdges(dark, w, h, backBox);
+    // POM 13 back-panel height: strap-joining point → bottom band (vertical).
+    const backPanelHeightInfo = backFeatures
+      ? findBackPanelHeight(
+          dark, w, h, backBox,
+          backFeatures.bandY  != null ? Math.round(backFeatures.bandY  * h) : -1,
+          backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1
+        )
+      : null;
+    // Back-view strap-top: topmost ink in the back's left strap zone (POM 14 back).
+    const backStrapTopInfo = findBackStrapTopFromInk(
+      dark, w, h, backBox,
+      backFeatures && backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1
+    );
+    // Back-view strap INNER edges (POM 15) where each strap meets the back band.
+    const backStrapInnerInfo = findBackStrapInnerEdges(
+      dark, w, h, backBox,
+      backFeatures && backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1,
+      backFeatures && backFeatures.axisX  != null ? Math.round(backFeatures.axisX  * w) : -1
+    );
+    // Back-view side-top (POM 11): topmost ink at the left-edge column.
+    const backSideTopInfo = findSideTopFromInk(dark, w, h, backBox, backBox.minX + 1, -1, -1);
+    const backSideBottomInfo = backSideTopInfo
+      ? findSideBottomFromInk(dark, w, h, backBox, backSideTopInfo.point)
+      : null;
+    // Preferred POM-11 source: the outer-silhouette seam (top=armpit, bottom=hem).
+    const backSideInfo = findBackSideSeam(
+      dark, w, h, backBox,
+      backFeatures && backFeatures.bandY != null ? Math.round(backFeatures.bandY * h) : -1
+    );
+    return {
+      backInfo, backFeatures, backPanelInfo, backPanelHeightInfo,
+      backStrapTopInfo, backStrapInnerInfo, backSideTopInfo, backSideBottomInfo, backSideInfo,
+    };
+  }
+
+  // Re-run back-view landmark detection against the CURRENT detection.backViewIndex
+  // and overwrite the back-* fields, so a TD role correction (back moved to a
+  // different panel) re-places the back POMs (11/12/13/15) on the new panel. Uses
+  // the retained ink mask (detection.inkMask, dimensions inkMaskW/H). No-op when
+  // the mask or a back box is unavailable. Mirrors the field mapping in
+  // detectLandmarks' detection assembly.
+  function redetectBackLandmarks(detection) {
+    if (!detection || !detection.inkMask || !detection.inkMaskW || !detection.inkMaskH) return;
+    const views = detection.views || detection.viewBoxes || [];
+    const idx = detection.backViewIndex;
+    const vb = (Number.isFinite(idx) && idx >= 0) ? views[idx] : null;
+    if (!vb || !(vb.width > 0) || !(vb.height > 0)) return;
+    const mw = detection.inkMaskW;
+    const mh = detection.inkMaskH;
+    const backBox = {
+      minX: Math.max(0, Math.round(vb.x * mw)),
+      minY: Math.max(0, Math.round(vb.y * mh)),
+      maxX: Math.min(mw - 1, Math.round((vb.x + vb.width) * mw)),
+      maxY: Math.min(mh - 1, Math.round((vb.y + vb.height) * mh)),
+      count: 0,
+    };
+    const bl = detectBackLandmarks(detection.inkMask, mw, mh, backBox);
+    detection.back = bl.backInfo;
+    detection.backFeatures = bl.backFeatures;
+    detection.backPanel = bl.backPanelInfo;
+    detection.backPanelHeight = bl.backPanelHeightInfo;
+    detection.backStrapInner = bl.backStrapInnerInfo;
+    detection.backStrapTop = bl.backStrapTopInfo ? bl.backStrapTopInfo.point : null;
+    detection.backSideTop = bl.backSideTopInfo ? bl.backSideTopInfo.point : null;
+    detection.backSideBottom = bl.backSideBottomInfo ? bl.backSideBottomInfo.point : null;
+    detection.backSide = bl.backSideInfo;
+  }
+
+  // ---- src/auto/detect/pom6-cradle-cf.js ----
+// POM 6 — the cradle/cup-bottom seam at CENTER FRONT (the cradle-cf-top
+// landmark, POM 6's top endpoint). One function, findCradleCfTop(ctx), holding
+// all three acceptance tiers: the direct axis-ink path (with its front-closure
+// placket snap), the CF-gore dip projection, and the interrupted-placket
+// junction tier (US-015 / ADR 0023).
+//
+// Pure: it reads only the pixel context handed to it and returns every value the
+// landmark stage needs. Its caller is src/auto/detect/landmark-stage.js; the
+// sibling POM 7 seam detector is src/auto/detect/pom7-cradle-cup.js.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // Detect POM 6's cradle-at-CF top endpoint. `ctx` carries the pixel-space
+  // facts the block below reads by name (masks, bbox, axis, row picks and their
+  // strengths); every value it decides is returned, nothing is mutated outside.
+  function findCradleCfTop(ctx) {
+    const {
+      dark, rawDark, w, h,
+      minX, minY, maxX, maxY, bboxW, bboxH,
+      axisPx, axisXpx,
+      rowNoiseFloor, peakSep,
+      bandRow, bandEdgeRow,
+      chestRow, underbustRow,
+      cradleRow, cradleStrength,
+      cfTopPx,
+    } = ctx;
 
     // ---- Cradle-at-CF (POM 6 top endpoint) ----
     // POM 6 measures the cradle / cup-bottom seam height at center front. Per
@@ -22164,6 +24281,57 @@ function getAnnotationsOnImage(image) {
         cradleCfTopReject = null;
       }
     }
+
+    return {
+      cradleCfTop,
+      cradleCfTopInkRatio,
+      cradleCfTopBandInkRatio,
+      cradleCfTopSeamHorizontalRun,
+      cradleCfTopSeamSingleRowRun,
+      cradleCfTopReject,
+      cradleCfTopDipProjected,
+      cradleCfSeamLeftReachPx,
+      cradleCfSeamRightReachPx,
+      cradleCfTopJunction,
+    };
+  }
+
+  // ---- src/auto/detect/pom7-cradle-cup.js ----
+// POM 7 — the cradle/cup-bottom seam at the BOTTOM-CUP position (the
+// cradle-cup-top / cradle-cup-bottom landmarks). One function,
+// findCradleCupSeam(ctx), holding every acceptance tier: the 'strong' vertical
+// guide and 'seam' seam+baseline tiers with their side-seam discriminators, the
+// sparse dashed-guide tier (ADR 0021), and the traced-underwire 'arc' tier
+// (US-014 / ADR 0022) with its CF-clearance floor.
+//
+// The most heavily tuned code in the detector — every threshold here was fitted
+// against the demo corpus, not derived. `npm run pom7-limitations` is its
+// specific guard, alongside golden / accuracy / contract.
+//
+// Pure: it reads only the pixel context handed to it (including the caller's
+// hem-following helper) and returns every value the landmark stage needs. Its
+// caller is src/auto/detect/landmark-stage.js; the sibling POM 6 seam detector
+// is src/auto/detect/pom6-cradle-cf.js, and the arc tier reads the cup bottom
+// through findCupBottomFromInk in src/auto/detect/front-landmarks.js.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // Detect POM 7's cradle-at-bottom-cup endpoints. `ctx` carries the pixel-space
+  // facts the block below reads by name (masks, bbox, axis, row/column picks and
+  // their strengths, the validated apexes, and hemNormAtColumn — the caller's
+  // per-column hem lookup, US-061). Every value it decides is returned; nothing
+  // outside is mutated.
+  function findCradleCupSeam(ctx) {
+    const {
+      dark, rawDark, w, h, bounds,
+      minX, maxX, bboxW, bboxH,
+      axisPx, peakSep,
+      rowNoiseFloor,
+      bandRow, bandY,
+      cradleRow, cradleStrength, cradleY,
+      sideLeftCol, sideRightCol, sideLeftX, sideRightX,
+      apexLeft, apexRight,
+      hemNormAtColumn,
+    } = ctx;
 
     // ---- Cradle-at-bottom-cup (POM 7 endpoints) ----
     // POM 7 measures the cradle/cup-bottom seam height at the BOTTOM-CUP
@@ -22668,6 +24836,588 @@ function getAnnotationsOnImage(image) {
       }
     }
 
+    return {
+      cradleCupTop,
+      cradleCupBottom,
+      cradleCupSide,
+      cradleCupTier,
+      cradleCupTopInkRatio,
+      cradleCupBandInkRatio,
+      cradleCupColInkRatio,
+      cradleCupSegmentsWithInk,
+      cradleCupSegmentCount,
+      cradleCupEdgePenalty,
+      cradleCupReject,
+    };
+  }
+
+  // ---- src/auto/detect/cv-debug-payload.js ----
+// CV-debug payload — the layered ?cvDebug=1 diagnostics snapshot
+// (buildCvDebugPayload). Pure serialization: safeNum-rounded mirrors of values
+// the detector already decided, plus the L1/L2/L3 frame / regions / seams
+// layer view of the POM 6 / 7 / 8 decision pipeline. It has ZERO effect on the
+// detection result — nothing downstream reads it back.
+//
+// Its caller is src/auto/detect/landmark-stage.js, which keeps the debugEnabled
+// guard and attaches the result as detectionResult.debug.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // Build the opt-in CV-debug payload. `ctx` carries every local the snapshot
+  // mirrors; the payload is read-only over them and decides nothing itself.
+  function buildCvDebugPayload(ctx) {
+    const {
+      apexLeftCandidate, apexPair, apexRightCandidate,
+      axisConfidence, axisGuard, axisPx, axisX, axisXpx,
+      backFeatures, backViewIndex,
+      bandEdgeRow, bandPreferred, bandRow, bandStart, bandStrength,
+      baselineConfidence,
+      cfTopY, chestRow, chestStrength, chestY, colNoiseFloor,
+      cradleCfSeamLeftReachPx, cradleCfSeamRightReachPx,
+      cradleCfTop, cradleCfTopBandInkRatio, cradleCfTopDipProjected,
+      cradleCfTopInkRatio, cradleCfTopJunction, cradleCfTopReject,
+      cradleCfTopSeamHorizontalRun, cradleCfTopSeamSingleRowRun,
+      cradleCupBandInkRatio, cradleCupBottom, cradleCupColInkRatio,
+      cradleCupEdgePenalty, cradleCupReject, cradleCupSegmentCount,
+      cradleCupSegmentsWithInk, cradleCupSide, cradleCupTier,
+      cradleCupTop, cradleCupTopInkRatio,
+      cradleRow, cradleStrength, cradleY,
+      cupModel, cvAnalysis, darkCount, detectionParams, detectionResult,
+      filtered, h, inkCleanupReverted, innerHi, innerLo, luminanceThreshold,
+      maxX, maxY, medianCol, medianRow, minRowSpan, minX, minY,
+      peakSep, primaryViewIndex, rawStats, rowNoiseFloor, segmentation,
+      sideLeftCol, sideLeftStrength, sideLeftX,
+      sideRightCol, sideRightStrength, sideRightX,
+      sigConf, stageTimingsMs, symmetry, threshold,
+      underbustRow, underbustRunPx, underbustStrength,
+      viewBoxesPx, viewClassification, w,
+    } = ctx;
+
+    // CV Debug snapshot — intermediate detector state in pixel coords.
+    // Mirrors the locals used to pick anchors so the TD can answer "why did
+    // the detector choose this row/column?" without sprinkling console.logs.
+    // Capture summary fields only — masks and per-row arrays are large; the
+    // mask itself is encoded later (DOM edge) when debug.includeMask is set.
+    const safeNum = (v, digits) => {
+      if (!Number.isFinite(v)) return null;
+      const f = Math.pow(10, digits || 4);
+      return Math.round(v * f) / f;
+    };
+    const keptComponents = filtered.keptComponents || [];
+    return {
+      version: 1,
+      engine: detectionResult.engine,
+      sampleWidth: w,
+      sampleHeight: h,
+      thresholds: {
+        ink: threshold,
+        luminance: luminanceThreshold,
+        backgroundLum: Math.round(cvAnalysis.backgroundLum || 255),
+      },
+      detectionParams: { ...detectionParams },
+      rawInk: {
+        count: rawStats.count,
+        minX: rawStats.minX, minY: rawStats.minY,
+        maxX: rawStats.maxX, maxY: rawStats.maxY,
+      },
+      components: {
+        componentCount: filtered.componentCount || 0,
+        keptComponentCount: keptComponents.length,
+        // Cap to keep the payload bounded — pathological sketches can yield
+        // hundreds of stray components; the top ones by ink count are what
+        // a debugger actually wants to see.
+        kept: keptComponents
+          .slice()
+          .sort((a, b) => (b.count || 0) - (a.count || 0))
+          .slice(0, 64)
+          .map(c => ({
+            minX: c.minX, minY: c.minY, maxX: c.maxX, maxY: c.maxY,
+            count: c.count,
+            cx: Math.round(c.cx || 0), cy: Math.round(c.cy || 0),
+            density: safeNum(c.density, 4),
+          })),
+      },
+      viewBoxes: viewBoxesPx.map((box, i) => ({
+        minX: box.minX, minY: box.minY, maxX: box.maxX, maxY: box.maxY,
+        count: box.count || 0,
+        role: (viewClassification.roles && viewClassification.roles[i]) || 'unknown',
+        roleConfidence: viewClassification.scores && viewClassification.scores[i]
+          ? safeNum(viewClassification.scores[i].roleConfidence, 3)
+          : null,
+      })),
+      primaryViewIndex,
+      frontOuterViewIndex: viewClassification.frontOuterIndex,
+      frontInnerViewIndex: viewClassification.frontInnerIndex,
+      backViewIndex,
+      primary: {
+        minX, minY, maxX, maxY,
+        count: darkCount,
+        axisPx: Math.round(axisXpx),
+        symmetry: safeNum(symmetry, 4),
+      },
+      rows: {
+        noiseFloor: safeNum(rowNoiseFloor, 2),
+        medianRow,
+        bandRow,
+        bandEdgeRow,
+        bandStrength: safeNum(bandStrength, 2),
+        bandSearchStartPx: bandStart,
+        bandPreferredPx: Math.round(bandPreferred),
+        chestRow,
+        chestStrength: safeNum(chestStrength, 2),
+        chestY: chestY != null ? safeNum(chestY, 4) : null,
+        cradleRow,
+        cradleStrength: safeNum(cradleStrength, 2),
+        cradleY: cradleY != null ? safeNum(cradleY, 4) : null,
+        cradleCfTop: cradleCfTop
+          ? { x: safeNum(cradleCfTop.x, 4), y: safeNum(cradleCfTop.y, 4) }
+          : null,
+        cradleCfTopInkRatio: safeNum(cradleCfTopInkRatio, 4),
+        cradleCfTopBandInkRatio: safeNum(cradleCfTopBandInkRatio, 4),
+        cradleCfTopSeamHorizontalRun,
+        cradleCfTopSeamSingleRowRun,
+        cradleCfTopMissingReason: cradleCfTopReject,
+        cradleCfTopDipProjected,
+        cradleCfTopJunction,
+        cradleCfSeamLeftReachPx,
+        cradleCfSeamRightReachPx,
+        cradleCupTop: cradleCupTop
+          ? { x: safeNum(cradleCupTop.x, 4), y: safeNum(cradleCupTop.y, 4) }
+          : null,
+        cradleCupBottom: cradleCupBottom
+          ? { x: safeNum(cradleCupBottom.x, 4), y: safeNum(cradleCupBottom.y, 4) }
+          : null,
+        cradleCupSide,
+        cradleCupTier,
+        cradleCupTopInkRatio: safeNum(cradleCupTopInkRatio, 4),
+        cradleCupBandInkRatio: safeNum(cradleCupBandInkRatio, 4),
+        cradleCupColInkRatio: safeNum(cradleCupColInkRatio, 4),
+        cradleCupSegmentsWithInk,
+        cradleCupSegmentCount,
+        cradleCupEdgePenalty: safeNum(cradleCupEdgePenalty, 4),
+        cradleCupMissingReason: cradleCupReject,
+        underbustRow,
+        underbustStrength: safeNum(underbustStrength, 2),
+        underbustRunPx,
+        minRowSpanPx: minRowSpan,
+      },
+      apex: {
+        leftCandidate: apexLeftCandidate ? {
+          x: safeNum(apexLeftCandidate.point.x, 4),
+          y: safeNum(apexLeftCandidate.point.y, 4),
+          confidence: safeNum(apexLeftCandidate.confidence, 3),
+          support: apexLeftCandidate.support || null,
+        } : null,
+        rightCandidate: apexRightCandidate ? {
+          x: safeNum(apexRightCandidate.point.x, 4),
+          y: safeNum(apexRightCandidate.point.y, 4),
+          confidence: safeNum(apexRightCandidate.confidence, 3),
+          support: apexRightCandidate.support || null,
+        } : null,
+        accepted: !!apexPair,
+        missingReason: apexPair ? null : 'No reliable strap-cup joining seam / highest cup point was detected.',
+      },
+      cupModel: cupModel ? {
+        side: cupModel.side,
+        viewRole: cupModel.viewRole,
+        visibility: cupModel.visibility,
+        topFromApex: cupModel.topFromApex,
+        bottomFromSeam: cupModel.bottomFromSeam,
+        topPoint: cupModel.topPoint
+          ? { x: safeNum(cupModel.topPoint.x, 4), y: safeNum(cupModel.topPoint.y, 4) }
+          : null,
+        bottomPoint: cupModel.bottomPoint
+          ? { x: safeNum(cupModel.bottomPoint.x, 4), y: safeNum(cupModel.bottomPoint.y, 4) }
+          : null,
+        innerEdge: cupModel.innerEdge
+          ? { x: safeNum(cupModel.innerEdge.x, 4), y: safeNum(cupModel.innerEdge.y, 4) }
+          : null,
+        outerEdgeNearArmhole: cupModel.outerEdgeNearArmhole
+          ? { x: safeNum(cupModel.outerEdgeNearArmhole.x, 4), y: safeNum(cupModel.outerEdgeNearArmhole.y, 4) }
+          : null,
+        centerPoint: cupModel.centerPoint
+          ? { x: safeNum(cupModel.centerPoint.x, 4), y: safeNum(cupModel.centerPoint.y, 4) }
+          : null,
+        apexAnchor: cupModel.apexAnchor
+          ? { x: safeNum(cupModel.apexAnchor.x, 4), y: safeNum(cupModel.apexAnchor.y, 4) }
+          : null,
+        seamAnchor: cupModel.seamAnchor
+          ? { x: safeNum(cupModel.seamAnchor.x, 4), y: safeNum(cupModel.seamAnchor.y, 4) }
+          : null,
+        contourConfidence: safeNum(cupModel.contourConfidence, 3),
+        seamConfidence: safeNum(cupModel.seamConfidence, 3),
+        texturePenalty: safeNum(cupModel.texturePenalty, 3),
+        sideReason: cupModel.sideReason,
+        visibilityReason: cupModel.visibilityReason,
+        rejectedTextureReason: cupModel.rejectedTextureReason,
+        reason: cupModel.reason,
+        diagnostics: cupModel.diagnostics
+          ? {
+              hasFrontInner: !!cupModel.diagnostics.hasFrontInner,
+              apexLeftPresent: !!cupModel.diagnostics.apexLeftPresent,
+              apexRightPresent: !!cupModel.diagnostics.apexRightPresent,
+              apexLeftConf: safeNum(cupModel.diagnostics.apexLeftConf, 3),
+              apexRightConf: safeNum(cupModel.diagnostics.apexRightConf, 3),
+              sidePicked: cupModel.diagnostics.sidePicked,
+              apexPointPresent: !!cupModel.diagnostics.apexPointPresent,
+              apexConfPicked: safeNum(cupModel.diagnostics.apexConfPicked, 3),
+              cradleCupTopPresent: !!cupModel.diagnostics.cradleCupTopPresent,
+              cradleCupSide: cupModel.diagnostics.cradleCupSide,
+              cradleCupSideMatches: !!cupModel.diagnostics.cradleCupSideMatches,
+              cradleYPresent: !!cupModel.diagnostics.cradleYPresent,
+              cradleCupConfidence: safeNum(cupModel.diagnostics.cradleCupConfidence, 3),
+              apexY: safeNum(cupModel.diagnostics.apexY, 4),
+              seamY: safeNum(cupModel.diagnostics.seamY, 4),
+              topFromApex: !!cupModel.diagnostics.topFromApex,
+              bottomFromSeam: !!cupModel.diagnostics.bottomFromSeam,
+              visibility: cupModel.diagnostics.visibility,
+              visibilityReason: cupModel.diagnostics.visibilityReason,
+              innerEdgeSource: cupModel.diagnostics.innerEdgeSource || null,
+              innerEdgeX: safeNum(cupModel.diagnostics.innerEdgeX, 4),
+              outerEdgeX: safeNum(cupModel.diagnostics.outerEdgeX, 4),
+              innerEdgeSupported: cupModel.diagnostics.innerEdgeSupported !== false,
+            }
+          : null,
+      } : null,
+      cols: {
+        noiseFloor: safeNum(colNoiseFloor, 2),
+        medianCol,
+        sideLeftCol,
+        sideLeftStrength: safeNum(sideLeftStrength, 2),
+        sideRightCol,
+        sideRightStrength: safeNum(sideRightStrength, 2),
+        axisGuardPx: axisGuard,
+        innerScanLoPx: innerLo,
+        innerScanHiPx: innerHi,
+      },
+      backFeatures: backFeatures ? {
+        axisX: backFeatures.axisX,
+        chestY: backFeatures.chestY,
+        bandY: backFeatures.bandY,
+        sideLeftX: backFeatures.sideLeftX,
+        sideRightX: backFeatures.sideRightX,
+      } : null,
+      confidence: { ...detectionResult.confidence },
+      quality: safeNum(detectionResult.quality, 4),
+      // Normalized segmentation-stage verdict (Phase 3): backend, coverage,
+      // deterministic quality, and the weak-segmentation review signal.
+      segmentation: detectionResult.segmentation,
+      stageTimingsMs,
+      // Layer-by-layer view of the POM 6 / 7 / 8 decision pipeline per
+      // rule.md. Each layer summarises the evidence that feeds into the
+      // next so the TD can answer "why is this POM REVIEW_ONLY?" without
+      // reading the detection source.
+      //
+      // L1 frame:    coordinate-prior confidences (axis from symmetry,
+      //              baseline from band-row strength).
+      // L2 regions:  semantic search zones in pixel coords (CF / cup-side
+      //              / band / above-cradle).
+      // L3 seams:    per-seam evidence and decision. confidence in [0,1].
+      //              missingReason is null on accept, populated on reject.
+      // L4/L5/L6:    POM emission + cross-POM validation lives in the
+      //              drafter (auto-drafts.js POM_TEMPLATE.requiredAnchors).
+      //              The detector exposes the inputs; the drafter applies
+      //              the missing-anchor guard that drives REVIEW_ONLY.
+      layers: {
+        frame: {
+          axisXpx: Math.round(axisXpx),
+          bandRowPx: bandRow,
+          axisConfidence: safeNum(axisConfidence, 4),
+          baselineConfidence: safeNum(baselineConfidence, 4),
+          // Per rule.md L1, low axis/baseline confidence should bias POM
+          // 6 / 7 / 8 toward REVIEW_ONLY even if downstream signals look
+          // OK. Surface a single flag so the drafter / spec-panel can
+          // present a coherent reason.
+          frameWarning: inkCleanupReverted
+            ? 'Ink cleanup was reverted (very faint/dashed sketch or a heavy scan frame) — the outline may include page edges or speckle; verify the detected shape and all POMs.'
+            : ((axisConfidence < 0.4 || baselineConfidence < 0.4)
+              ? 'Low axis or baseline confidence — treat POM 6/7/8 with caution.'
+              : ((segmentation && segmentation.weak)
+                ? 'Weak segmentation (low mask quality) — the detected ink may be noisy or incomplete; verify all POMs.'
+                : null)),
+          // D7: raw boolean so the spec-panel / drafter can react
+          // specifically to a fail-open ink-cleanup revert if desired.
+          inkCleanupReverted: inkCleanupReverted,
+        },
+        regions: {
+          // CF zone: narrow band around the symmetry axis. POM 6 / POM 8
+          // candidates must live inside this zone.
+          cfZonePx: {
+            xLo: Math.max(0, axisPx - Math.max(peakSep * 2, Math.round((maxX - minX) * 0.18))),
+            xHi: Math.min(w - 1, axisPx + Math.max(peakSep * 2, Math.round((maxX - minX) * 0.18))),
+          },
+          // Bottom-cup zone: between the CF axis buffer and the side seam
+          // buffer. POM 7 candidates must live inside this zone.
+          bottomCupZonePx: {
+            left:  { xLo: sideLeftCol > 0 ? sideLeftCol + Math.max(2, Math.round((maxX - minX) * 0.03)) : null,
+                     xHi: axisPx - Math.max(peakSep * 2, Math.round((maxX - minX) * 0.18)) },
+            right: { xLo: axisPx + Math.max(peakSep * 2, Math.round((maxX - minX) * 0.18)),
+                     xHi: sideRightCol > 0 ? sideRightCol - Math.max(2, Math.round((maxX - minX) * 0.03)) : null },
+          },
+          bandRowPx: bandRow,
+          cradleRowPx: cradleRow,
+        },
+        seams: {
+          // Cradle/cup-bottom seam at center front — POM 6 start endpoint.
+          // Accepted only with real ink near the cradle row × axis cell.
+          cradleCfSeam: {
+            accepted: !!cradleCfTop,
+            point: cradleCfTop
+              ? { x: safeNum(cradleCfTop.x, 4), y: safeNum(cradleCfTop.y, 4) }
+              : null,
+            inkRatio: safeNum(cradleCfTopInkRatio, 4),
+            bandInkRatio: safeNum(cradleCfTopBandInkRatio, 4),
+            seamHorizontalRun: cradleCfTopSeamHorizontalRun,
+            seamSingleRowRun: cradleCfTopSeamSingleRowRun,
+            confidence: cradleCfTop ? safeNum(sigConf(cradleStrength, rowNoiseFloor), 4) : 0,
+            missingReason: cradleCfTopReject,
+          },
+          // Cradle/cup-bottom seam at the bottom-cup position — POM 7
+          // start endpoint. Accepted only when cradle ink + band ink +
+          // vertical column ink (continuous OR dashed via segments)
+          // co-occur at a column off the CF axis and off the side seam.
+          cradleBottomCupSeam: {
+            accepted: !!cradleCupTop,
+            point: cradleCupTop
+              ? { x: safeNum(cradleCupTop.x, 4), y: safeNum(cradleCupTop.y, 4) }
+              : null,
+            side: cradleCupSide,
+            cradleInkRatio: safeNum(cradleCupTopInkRatio, 4),
+            bandInkRatio: safeNum(cradleCupBandInkRatio, 4),
+            colInkRatio: safeNum(cradleCupColInkRatio, 4),
+            segmentsWithInk: cradleCupSegmentsWithInk,
+            segmentCount: cradleCupSegmentCount,
+            edgePenalty: safeNum(cradleCupEdgePenalty, 4),
+            confidence: cradleCupTop ? safeNum(sigConf(cradleStrength, rowNoiseFloor), 4) : 0,
+            missingReason: cradleCupReject,
+          },
+          // Upper-cup seam at center front — POM 8 start endpoint. For now
+          // sourced from cfTopY (topmost CF-column ink); the drafter
+          // currently consumes the cf-top anchor, which falls back to
+          // view-box ratio when cfTopY is null. The frame warning above
+          // tracks whether that fallback is happening.
+          upperCupCfSeam: {
+            accepted: cfTopY != null,
+            point: cfTopY != null ? { x: safeNum(axisX, 4), y: safeNum(cfTopY, 4) } : null,
+            source: cfTopY != null ? 'cfTopInkBound' : 'viewBoxFallback',
+            missingReason: cfTopY != null ? null : 'No CF-column ink found above the band region.',
+          },
+          // Side seam (POM 11). Listed so cross-POM validation can compare
+          // POM 7 candidates against the side seam x.
+          sideSeam: {
+            left:  sideLeftX  != null ? { x: safeNum(sideLeftX, 4) }  : null,
+            right: sideRightX != null ? { x: safeNum(sideRightX, 4) } : null,
+          },
+        },
+        // Cross-POM rule status (rule.md L5). These rules are enforced
+        // either by construction (POM 8 end == POM 6 start because both
+        // read cradle-cf-top) or by the detector's search-window buffers
+        // (POM 7 ≥ 18% bbox width off CF, ≥ 3% off side seam). Surface
+        // the status so the TD can confirm.
+        crossPom: {
+          pom8EndEqualsPom6Start: !!cradleCfTop,
+          pom7DistinctFromPom6:
+            !!(cradleCupTop && cradleCfTop)
+              ? Math.abs(cradleCupTop.x - cradleCfTop.x) > 0.05
+              : null,
+          pom7OffSideSeam: !!cradleCupTop
+            ? (cradleCupSide < 0
+                ? (sideLeftX  == null || Math.abs(cradleCupTop.x - sideLeftX)  > 0.03)
+                : (sideRightX == null || Math.abs(cradleCupTop.x - sideRightX) > 0.03))
+            : null,
+        },
+      },
+    };
+  }
+
+  // ---- src/auto/detect/landmark-stage.js ----
+// Stage 5 of the detection pipeline: landmark construction. ONE readable
+// sequence showing everything the detector decides, in order — apex / strap
+// orchestration, the POM 6 and POM 7 seam calls, the cup model and back-landmark
+// call sites, per-feature confidence and overall quality, the assembled
+// detectionResult, the geometryFacts completion with its geometry-quality
+// verdict, the landmark-QA attach, and the opt-in CV-debug payload.
+//
+// The work itself lives in the sibling parts this stage calls into:
+// src/auto/detect/front-landmarks.js, src/auto/detect/back-landmarks.js,
+// src/auto/detect/cup-model.js, src/auto/detect/pom6-cradle-cf.js,
+// src/auto/detect/pom7-cradle-cup.js, src/auto/detect/cv-debug-payload.js and
+// src/auto/detect/landmark-qa.js — so this part must load after all of them.
+// Its caller is the pipeline composer in src/auto-detection.js.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // ---- Stage 5: landmark construction (+ confidence + assembly) ----
+  // Input: segmentation output, geometry facts, and the contour/topology map.
+  // Output: the assembled detection result the rest of the app consumes —
+  // apex/strap/inner-cup/side/back landmarks, the cup model, per-feature
+  // confidence, overall quality, seam evidence, view metadata, and (when
+  // requested) the layered CV-debug payload. Landmarks carry technical
+  // meaning; normalization to anchors happens later in the anchor seed layer.
+  function detectLandmarks(cvAnalysis, seg, geometry, contours, ctx) {
+    const { detectionParams, debugEnabled, stageTimingsMs } = ctx;
+    const _stageMark = ctx.mark;
+    const { rawStats, inkCleanupReverted, segmentation } = seg;
+    // Contour-evidence bundle (Phase 4). junctionMap keeps the unchanged
+    // detection.junctions / junctionSummary contract; endpoints / corners /
+    // strokeStats are the reusable shape evidence, exposed additively.
+    const { junctionMap } = contours;
+    const contourEndpoints = contours.endpoints || [];
+    const contourCorners = contours.corners || [];
+    const contourStrokeStats = contours.strokeStats || null;
+    const {
+      dark, rawDark, w, h, total, filtered, globalStats,
+      threshold, luminanceThreshold,
+      viewBoxesPx, viewClassification, primaryViewIndex, darkCount,
+      minX, minY, maxX, maxY, bbox, bboxW, bboxH,
+      axisXpx, axisX, symmetry, axisPx,
+      rowNoiseFloor, colNoiseFloor,
+      bandStart, bandRow, bandStrength, bandPreferred, bandEdgeRow, bandY,
+      chestRow, chestStrength, chestY,
+      peakSep, cradleRow, cradleStrength, cradleY,
+      underbustRow, underbustStrength, minRowSpan, underbustRunPx, underbustY,
+      medianRow, medianCol, innerLo, innerHi, axisGuard,
+      sideLeftCol, sideLeftStrength, sideLeftX,
+      sideRightCol, sideRightStrength, sideRightX,
+      geometryFacts,
+    } = geometry;
+
+    // ---- Stage: apex + strap landmarks ----
+    const bounds = { minX, minY, maxX, maxY };
+
+    // POM 6 / POM 7 bottom anchors follow the drawn hem at their OWN column
+    // instead of the single flat bandY row (US-061). Normalized result, with
+    // the flat row as the fallback when that column carries no ink — so a
+    // straight-hem sketch is byte-identical to before.
+    const hemNormAtColumn = (colPx, flatY) => {
+      const row = hemRowAtColumn(dark, w, h, colPx, bandY * h, bboxH);
+      return row == null ? flatY : row / h;
+    };
+    // The CF column's hem — POM 6's (and, unavoidably, POM 5's) bottom.
+    const cfBottomHemY = hemNormAtColumn(axisPx, bandY);
+    const apexLeftCandidate = findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, -1);
+    const apexRightCandidate = findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, +1);
+    // US-084: the two cup/strap joins are near-symmetric features, so a pair
+    // that disagrees sharply on row means one side locked onto the wrong ink —
+    // and the sides are found INDEPENDENTLY, so nothing above caught that. Give
+    // the outlier side a second look, anchored on the side we trust.
+    const apexRepaired = repairApexPairRow(
+      apexLeftCandidate, apexRightCandidate, dark, w, h, bounds, axisPx, chestRow);
+    const apexPair = validateCupApexPair(apexRepaired.left, apexRepaired.right, bounds, w, h);
+    const apexLeftInfo = apexPair ? apexPair.left : null;
+    const apexRightInfo = apexPair ? apexPair.right : null;
+    const apexLeft = apexLeftInfo ? apexLeftInfo.point : null;
+    const apexRight = apexRightInfo ? apexRightInfo.point : null;
+    // Inner-edge apex points (POM 16 measures inner-edge to inner-edge of the
+    // cup/front-strap joining seams). Falls back to the join center when the
+    // ink run didn't yield an inner edge.
+    const apexLeftInner = (apexLeftInfo && apexLeftInfo.innerEdgeX != null)
+      ? { x: apexLeftInfo.innerEdgeX, y: apexLeftInfo.point.y }
+      : apexLeft;
+    const apexRightInner = (apexRightInfo && apexRightInfo.innerEdgeX != null)
+      ? { x: apexRightInfo.innerEdgeX, y: apexRightInfo.point.y }
+      : apexRight;
+    // Outer-edge apex points (POM 14's fallback strap join sits on the OUTER
+    // edge of the cup/strap join — ADR 0017, TD correction 2026-07-10).
+    const apexLeftOuter = (apexLeftInfo && apexLeftInfo.outerEdgeX != null)
+      ? { x: apexLeftInfo.outerEdgeX, y: apexLeftInfo.point.y }
+      : apexLeft;
+    const apexRightOuter = (apexRightInfo && apexRightInfo.outerEdgeX != null)
+      ? { x: apexRightInfo.outerEdgeX, y: apexRightInfo.point.y }
+      : apexRight;
+    const strapInfo = findStrapLandmarksFromInk(dark, w, h, bounds, axisPx, chestRow);
+    // POM 14 starts at the upper joining seam of the stitched section of the
+    // FRONT RIGHT shoulder strap (TD-corrected, ADR 0016: the strap adjacent
+    // to the back view, so the drawn curve follows one continuous strap over
+    // the shoulder). This is a separate semantic landmark from strapInfo.top
+    // (the topmost strap ink) and from the back strap/panel join.
+    const frontStrapStartInfo = findFrontStrapStartFromInk(
+      dark, w, h, bounds, apexRightInfo || apexLeftInfo, chestRow);
+
+    _stageMark('apexStrap');
+
+    // ---- Stage: inner-cup top + side-seam top (audit POMs 9, 10, 11) ----
+    const innerCupTopInfo = findInnerCupTopFromInk(dark, w, h, bounds, axisPx, chestRow, bandRow);
+    const sideTopLeftInfo = findSideTopFromInk(dark, w, h, bounds, sideLeftCol, chestRow, -1);
+    const sideTopRightInfo = findSideTopFromInk(dark, w, h, bounds, sideRightCol, chestRow, +1);
+    const sideBottomRightInfo = sideTopRightInfo
+      ? findSideBottomFromInk(dark, w, h, bounds, sideTopRightInfo.point)
+      : null;
+
+    _stageMark('innerCupAndSideTop');
+
+    // ---- Stage: front-view ink endpoints (chest L/R, band L/R, CF top) ----
+    // The pipeline already detects chest/band ROWS from ink; walk along those
+    // rows to find the ink ENDPOINTS too so chest-left/right and band-left/
+    // right snap to actual line ends instead of view-box corners.
+    const halfRowBand = Math.max(2, Math.round(bboxH * 0.012));
+    const halfColBand = Math.max(2, Math.round(bboxW * 0.018));
+    const chestLeftPx  = chestRow > 0 ? findHorizontalInkBound(dark, w, chestRow, halfRowBand, minX, maxX, +1) : -1;
+    const chestRightPx = chestRow > 0 ? findHorizontalInkBound(dark, w, chestRow, halfRowBand, maxX, minX, -1) : -1;
+    const bandLeftPx   = bandEdgeRow > 0 ? findHorizontalInkBound(dark, w, bandEdgeRow, halfRowBand, minX, maxX, +1) : -1;
+    const bandRightPx  = bandEdgeRow > 0 ? findHorizontalInkBound(dark, w, bandEdgeRow, halfRowBand, maxX, minX, -1) : -1;
+    const underbustLeftPx  = underbustRow > 0 ? findHorizontalInkBound(dark, w, underbustRow, halfRowBand, minX, maxX, +1) : -1;
+    const underbustRightPx = underbustRow > 0 ? findHorizontalInkBound(dark, w, underbustRow, halfRowBand, maxX, minX, -1) : -1;
+    const cfTopPx      = findVerticalInkBound(dark, w, axisPx, halfColBand, minY, maxY, +1);
+    const chestLeftX  = chestLeftPx  > 0 ? chestLeftPx  / w : null;
+    const chestRightX = chestRightPx > 0 ? chestRightPx / w : null;
+    const bandLeftX   = bandLeftPx   > 0 ? bandLeftPx   / w : null;
+    const bandRightX  = bandRightPx  > 0 ? bandRightPx  / w : null;
+    const underbustLeftX  = underbustLeftPx  > 0 ? underbustLeftPx  / w : null;
+    const underbustRightX = underbustRightPx > 0 ? underbustRightPx / w : null;
+    const cfTopY      = cfTopPx      >= 0 ? cfTopPx     / h : null;
+
+    // ---- Cradle-at-CF (POM 6 top endpoint) ----
+    // See src/auto/detect/pom6-cradle-cf.js for the full contract, guards and
+    // the three acceptance tiers (direct axis ink, CF-gore dip projection,
+    // interrupted-placket junction).
+    const {
+      cradleCfTop,
+      cradleCfTopInkRatio,
+      cradleCfTopBandInkRatio,
+      cradleCfTopSeamHorizontalRun,
+      cradleCfTopSeamSingleRowRun,
+      cradleCfTopReject,
+      cradleCfTopDipProjected,
+      cradleCfSeamLeftReachPx,
+      cradleCfSeamRightReachPx,
+      cradleCfTopJunction,
+    } = findCradleCfTop({
+      dark, rawDark, w, h,
+      minX, minY, maxX, maxY, bboxW, bboxH,
+      axisPx, axisXpx,
+      rowNoiseFloor, peakSep,
+      bandRow, bandEdgeRow,
+      chestRow, underbustRow,
+      cradleRow, cradleStrength,
+      cfTopPx,
+    });
+
+    // ---- Cradle-at-bottom-cup (POM 7 endpoints) ----
+    // See src/auto/detect/pom7-cradle-cup.js for the full contract, the
+    // strong / seam / dashed-guide / arc tiers and their tuned thresholds.
+    const {
+      cradleCupTop,
+      cradleCupBottom,
+      cradleCupSide,
+      cradleCupTier,
+      cradleCupTopInkRatio,
+      cradleCupBandInkRatio,
+      cradleCupColInkRatio,
+      cradleCupSegmentsWithInk,
+      cradleCupSegmentCount,
+      cradleCupEdgePenalty,
+      cradleCupReject,
+    } = findCradleCupSeam({
+      dark, rawDark, w, h, bounds,
+      minX, maxX, bboxW, bboxH,
+      axisPx, peakSep,
+      rowNoiseFloor,
+      bandRow, bandY,
+      cradleRow, cradleStrength, cradleY,
+      sideLeftCol, sideRightCol, sideLeftX, sideRightX,
+      apexLeft, apexRight,
+      hemNormAtColumn,
+    });
+
     _stageMark('frontInkEndpoints');
 
     const sigConf = (peak, floor) => clamp01((peak - floor) / Math.max(1, floor * 2));
@@ -23078,3067 +25828,247 @@ function getAnnotationsOnImage(image) {
     detectionResult.landmarkQa = buildLandmarkQaFromDetection(detectionResult);
     _stageMark('landmarkQa');
 
-    // CV Debug snapshot — intermediate detector state in pixel coords.
-    // Mirrors the locals used to pick anchors so the TD can answer "why did
-    // the detector choose this row/column?" without sprinkling console.logs.
-    // Capture summary fields only — masks and per-row arrays are large; the
-    // mask itself is encoded later (DOM edge) when debug.includeMask is set.
+    // CV Debug snapshot — intermediate detector state in pixel coords, captured
+    // only when the caller asked for it. See src/auto/detect/cv-debug-payload.js
+    // for the payload's contents and its layered POM 6/7/8 view.
     if (debugEnabled) {
-      const safeNum = (v, digits) => {
-        if (!Number.isFinite(v)) return null;
-        const f = Math.pow(10, digits || 4);
-        return Math.round(v * f) / f;
-      };
-      const keptComponents = filtered.keptComponents || [];
-      detectionResult.debug = {
-        version: 1,
-        engine: detectionResult.engine,
-        sampleWidth: w,
-        sampleHeight: h,
-        thresholds: {
-          ink: threshold,
-          luminance: luminanceThreshold,
-          backgroundLum: Math.round(cvAnalysis.backgroundLum || 255),
-        },
-        detectionParams: { ...detectionParams },
-        rawInk: {
-          count: rawStats.count,
-          minX: rawStats.minX, minY: rawStats.minY,
-          maxX: rawStats.maxX, maxY: rawStats.maxY,
-        },
-        components: {
-          componentCount: filtered.componentCount || 0,
-          keptComponentCount: keptComponents.length,
-          // Cap to keep the payload bounded — pathological sketches can yield
-          // hundreds of stray components; the top ones by ink count are what
-          // a debugger actually wants to see.
-          kept: keptComponents
-            .slice()
-            .sort((a, b) => (b.count || 0) - (a.count || 0))
-            .slice(0, 64)
-            .map(c => ({
-              minX: c.minX, minY: c.minY, maxX: c.maxX, maxY: c.maxY,
-              count: c.count,
-              cx: Math.round(c.cx || 0), cy: Math.round(c.cy || 0),
-              density: safeNum(c.density, 4),
-            })),
-        },
-        viewBoxes: viewBoxesPx.map((box, i) => ({
-          minX: box.minX, minY: box.minY, maxX: box.maxX, maxY: box.maxY,
-          count: box.count || 0,
-          role: (viewClassification.roles && viewClassification.roles[i]) || 'unknown',
-          roleConfidence: viewClassification.scores && viewClassification.scores[i]
-            ? safeNum(viewClassification.scores[i].roleConfidence, 3)
-            : null,
-        })),
-        primaryViewIndex,
-        frontOuterViewIndex: viewClassification.frontOuterIndex,
-        frontInnerViewIndex: viewClassification.frontInnerIndex,
-        backViewIndex,
-        primary: {
-          minX, minY, maxX, maxY,
-          count: darkCount,
-          axisPx: Math.round(axisXpx),
-          symmetry: safeNum(symmetry, 4),
-        },
-        rows: {
-          noiseFloor: safeNum(rowNoiseFloor, 2),
-          medianRow,
-          bandRow,
-          bandEdgeRow,
-          bandStrength: safeNum(bandStrength, 2),
-          bandSearchStartPx: bandStart,
-          bandPreferredPx: Math.round(bandPreferred),
-          chestRow,
-          chestStrength: safeNum(chestStrength, 2),
-          chestY: chestY != null ? safeNum(chestY, 4) : null,
-          cradleRow,
-          cradleStrength: safeNum(cradleStrength, 2),
-          cradleY: cradleY != null ? safeNum(cradleY, 4) : null,
-          cradleCfTop: cradleCfTop
-            ? { x: safeNum(cradleCfTop.x, 4), y: safeNum(cradleCfTop.y, 4) }
-            : null,
-          cradleCfTopInkRatio: safeNum(cradleCfTopInkRatio, 4),
-          cradleCfTopBandInkRatio: safeNum(cradleCfTopBandInkRatio, 4),
-          cradleCfTopSeamHorizontalRun,
-          cradleCfTopSeamSingleRowRun,
-          cradleCfTopMissingReason: cradleCfTopReject,
-          cradleCfTopDipProjected,
-          cradleCfTopJunction,
-          cradleCfSeamLeftReachPx,
-          cradleCfSeamRightReachPx,
-          cradleCupTop: cradleCupTop
-            ? { x: safeNum(cradleCupTop.x, 4), y: safeNum(cradleCupTop.y, 4) }
-            : null,
-          cradleCupBottom: cradleCupBottom
-            ? { x: safeNum(cradleCupBottom.x, 4), y: safeNum(cradleCupBottom.y, 4) }
-            : null,
-          cradleCupSide,
-          cradleCupTier,
-          cradleCupTopInkRatio: safeNum(cradleCupTopInkRatio, 4),
-          cradleCupBandInkRatio: safeNum(cradleCupBandInkRatio, 4),
-          cradleCupColInkRatio: safeNum(cradleCupColInkRatio, 4),
-          cradleCupSegmentsWithInk,
-          cradleCupSegmentCount,
-          cradleCupEdgePenalty: safeNum(cradleCupEdgePenalty, 4),
-          cradleCupMissingReason: cradleCupReject,
-          underbustRow,
-          underbustStrength: safeNum(underbustStrength, 2),
-          underbustRunPx,
-          minRowSpanPx: minRowSpan,
-        },
-        apex: {
-          leftCandidate: apexLeftCandidate ? {
-            x: safeNum(apexLeftCandidate.point.x, 4),
-            y: safeNum(apexLeftCandidate.point.y, 4),
-            confidence: safeNum(apexLeftCandidate.confidence, 3),
-            support: apexLeftCandidate.support || null,
-          } : null,
-          rightCandidate: apexRightCandidate ? {
-            x: safeNum(apexRightCandidate.point.x, 4),
-            y: safeNum(apexRightCandidate.point.y, 4),
-            confidence: safeNum(apexRightCandidate.confidence, 3),
-            support: apexRightCandidate.support || null,
-          } : null,
-          accepted: !!apexPair,
-          missingReason: apexPair ? null : 'No reliable strap-cup joining seam / highest cup point was detected.',
-        },
-        cupModel: cupModel ? {
-          side: cupModel.side,
-          viewRole: cupModel.viewRole,
-          visibility: cupModel.visibility,
-          topFromApex: cupModel.topFromApex,
-          bottomFromSeam: cupModel.bottomFromSeam,
-          topPoint: cupModel.topPoint
-            ? { x: safeNum(cupModel.topPoint.x, 4), y: safeNum(cupModel.topPoint.y, 4) }
-            : null,
-          bottomPoint: cupModel.bottomPoint
-            ? { x: safeNum(cupModel.bottomPoint.x, 4), y: safeNum(cupModel.bottomPoint.y, 4) }
-            : null,
-          innerEdge: cupModel.innerEdge
-            ? { x: safeNum(cupModel.innerEdge.x, 4), y: safeNum(cupModel.innerEdge.y, 4) }
-            : null,
-          outerEdgeNearArmhole: cupModel.outerEdgeNearArmhole
-            ? { x: safeNum(cupModel.outerEdgeNearArmhole.x, 4), y: safeNum(cupModel.outerEdgeNearArmhole.y, 4) }
-            : null,
-          centerPoint: cupModel.centerPoint
-            ? { x: safeNum(cupModel.centerPoint.x, 4), y: safeNum(cupModel.centerPoint.y, 4) }
-            : null,
-          apexAnchor: cupModel.apexAnchor
-            ? { x: safeNum(cupModel.apexAnchor.x, 4), y: safeNum(cupModel.apexAnchor.y, 4) }
-            : null,
-          seamAnchor: cupModel.seamAnchor
-            ? { x: safeNum(cupModel.seamAnchor.x, 4), y: safeNum(cupModel.seamAnchor.y, 4) }
-            : null,
-          contourConfidence: safeNum(cupModel.contourConfidence, 3),
-          seamConfidence: safeNum(cupModel.seamConfidence, 3),
-          texturePenalty: safeNum(cupModel.texturePenalty, 3),
-          sideReason: cupModel.sideReason,
-          visibilityReason: cupModel.visibilityReason,
-          rejectedTextureReason: cupModel.rejectedTextureReason,
-          reason: cupModel.reason,
-          diagnostics: cupModel.diagnostics
-            ? {
-                hasFrontInner: !!cupModel.diagnostics.hasFrontInner,
-                apexLeftPresent: !!cupModel.diagnostics.apexLeftPresent,
-                apexRightPresent: !!cupModel.diagnostics.apexRightPresent,
-                apexLeftConf: safeNum(cupModel.diagnostics.apexLeftConf, 3),
-                apexRightConf: safeNum(cupModel.diagnostics.apexRightConf, 3),
-                sidePicked: cupModel.diagnostics.sidePicked,
-                apexPointPresent: !!cupModel.diagnostics.apexPointPresent,
-                apexConfPicked: safeNum(cupModel.diagnostics.apexConfPicked, 3),
-                cradleCupTopPresent: !!cupModel.diagnostics.cradleCupTopPresent,
-                cradleCupSide: cupModel.diagnostics.cradleCupSide,
-                cradleCupSideMatches: !!cupModel.diagnostics.cradleCupSideMatches,
-                cradleYPresent: !!cupModel.diagnostics.cradleYPresent,
-                cradleCupConfidence: safeNum(cupModel.diagnostics.cradleCupConfidence, 3),
-                apexY: safeNum(cupModel.diagnostics.apexY, 4),
-                seamY: safeNum(cupModel.diagnostics.seamY, 4),
-                topFromApex: !!cupModel.diagnostics.topFromApex,
-                bottomFromSeam: !!cupModel.diagnostics.bottomFromSeam,
-                visibility: cupModel.diagnostics.visibility,
-                visibilityReason: cupModel.diagnostics.visibilityReason,
-                innerEdgeSource: cupModel.diagnostics.innerEdgeSource || null,
-                innerEdgeX: safeNum(cupModel.diagnostics.innerEdgeX, 4),
-                outerEdgeX: safeNum(cupModel.diagnostics.outerEdgeX, 4),
-                innerEdgeSupported: cupModel.diagnostics.innerEdgeSupported !== false,
-              }
-            : null,
-        } : null,
-        cols: {
-          noiseFloor: safeNum(colNoiseFloor, 2),
-          medianCol,
-          sideLeftCol,
-          sideLeftStrength: safeNum(sideLeftStrength, 2),
-          sideRightCol,
-          sideRightStrength: safeNum(sideRightStrength, 2),
-          axisGuardPx: axisGuard,
-          innerScanLoPx: innerLo,
-          innerScanHiPx: innerHi,
-        },
-        backFeatures: backFeatures ? {
-          axisX: backFeatures.axisX,
-          chestY: backFeatures.chestY,
-          bandY: backFeatures.bandY,
-          sideLeftX: backFeatures.sideLeftX,
-          sideRightX: backFeatures.sideRightX,
-        } : null,
-        confidence: { ...detectionResult.confidence },
-        quality: safeNum(detectionResult.quality, 4),
-        // Normalized segmentation-stage verdict (Phase 3): backend, coverage,
-        // deterministic quality, and the weak-segmentation review signal.
-        segmentation: detectionResult.segmentation,
-        stageTimingsMs,
-        // Layer-by-layer view of the POM 6 / 7 / 8 decision pipeline per
-        // rule.md. Each layer summarises the evidence that feeds into the
-        // next so the TD can answer "why is this POM REVIEW_ONLY?" without
-        // reading the detection source.
-        //
-        // L1 frame:    coordinate-prior confidences (axis from symmetry,
-        //              baseline from band-row strength).
-        // L2 regions:  semantic search zones in pixel coords (CF / cup-side
-        //              / band / above-cradle).
-        // L3 seams:    per-seam evidence and decision. confidence in [0,1].
-        //              missingReason is null on accept, populated on reject.
-        // L4/L5/L6:    POM emission + cross-POM validation lives in the
-        //              drafter (auto-drafts.js POM_TEMPLATE.requiredAnchors).
-        //              The detector exposes the inputs; the drafter applies
-        //              the missing-anchor guard that drives REVIEW_ONLY.
-        layers: {
-          frame: {
-            axisXpx: Math.round(axisXpx),
-            bandRowPx: bandRow,
-            axisConfidence: safeNum(axisConfidence, 4),
-            baselineConfidence: safeNum(baselineConfidence, 4),
-            // Per rule.md L1, low axis/baseline confidence should bias POM
-            // 6 / 7 / 8 toward REVIEW_ONLY even if downstream signals look
-            // OK. Surface a single flag so the drafter / spec-panel can
-            // present a coherent reason.
-            frameWarning: inkCleanupReverted
-              ? 'Ink cleanup was reverted (very faint/dashed sketch or a heavy scan frame) — the outline may include page edges or speckle; verify the detected shape and all POMs.'
-              : ((axisConfidence < 0.4 || baselineConfidence < 0.4)
-                ? 'Low axis or baseline confidence — treat POM 6/7/8 with caution.'
-                : ((segmentation && segmentation.weak)
-                  ? 'Weak segmentation (low mask quality) — the detected ink may be noisy or incomplete; verify all POMs.'
-                  : null)),
-            // D7: raw boolean so the spec-panel / drafter can react
-            // specifically to a fail-open ink-cleanup revert if desired.
-            inkCleanupReverted: inkCleanupReverted,
-          },
-          regions: {
-            // CF zone: narrow band around the symmetry axis. POM 6 / POM 8
-            // candidates must live inside this zone.
-            cfZonePx: {
-              xLo: Math.max(0, axisPx - Math.max(peakSep * 2, Math.round((maxX - minX) * 0.18))),
-              xHi: Math.min(w - 1, axisPx + Math.max(peakSep * 2, Math.round((maxX - minX) * 0.18))),
-            },
-            // Bottom-cup zone: between the CF axis buffer and the side seam
-            // buffer. POM 7 candidates must live inside this zone.
-            bottomCupZonePx: {
-              left:  { xLo: sideLeftCol > 0 ? sideLeftCol + Math.max(2, Math.round((maxX - minX) * 0.03)) : null,
-                       xHi: axisPx - Math.max(peakSep * 2, Math.round((maxX - minX) * 0.18)) },
-              right: { xLo: axisPx + Math.max(peakSep * 2, Math.round((maxX - minX) * 0.18)),
-                       xHi: sideRightCol > 0 ? sideRightCol - Math.max(2, Math.round((maxX - minX) * 0.03)) : null },
-            },
-            bandRowPx: bandRow,
-            cradleRowPx: cradleRow,
-          },
-          seams: {
-            // Cradle/cup-bottom seam at center front — POM 6 start endpoint.
-            // Accepted only with real ink near the cradle row × axis cell.
-            cradleCfSeam: {
-              accepted: !!cradleCfTop,
-              point: cradleCfTop
-                ? { x: safeNum(cradleCfTop.x, 4), y: safeNum(cradleCfTop.y, 4) }
-                : null,
-              inkRatio: safeNum(cradleCfTopInkRatio, 4),
-              bandInkRatio: safeNum(cradleCfTopBandInkRatio, 4),
-              seamHorizontalRun: cradleCfTopSeamHorizontalRun,
-              seamSingleRowRun: cradleCfTopSeamSingleRowRun,
-              confidence: cradleCfTop ? safeNum(sigConf(cradleStrength, rowNoiseFloor), 4) : 0,
-              missingReason: cradleCfTopReject,
-            },
-            // Cradle/cup-bottom seam at the bottom-cup position — POM 7
-            // start endpoint. Accepted only when cradle ink + band ink +
-            // vertical column ink (continuous OR dashed via segments)
-            // co-occur at a column off the CF axis and off the side seam.
-            cradleBottomCupSeam: {
-              accepted: !!cradleCupTop,
-              point: cradleCupTop
-                ? { x: safeNum(cradleCupTop.x, 4), y: safeNum(cradleCupTop.y, 4) }
-                : null,
-              side: cradleCupSide,
-              cradleInkRatio: safeNum(cradleCupTopInkRatio, 4),
-              bandInkRatio: safeNum(cradleCupBandInkRatio, 4),
-              colInkRatio: safeNum(cradleCupColInkRatio, 4),
-              segmentsWithInk: cradleCupSegmentsWithInk,
-              segmentCount: cradleCupSegmentCount,
-              edgePenalty: safeNum(cradleCupEdgePenalty, 4),
-              confidence: cradleCupTop ? safeNum(sigConf(cradleStrength, rowNoiseFloor), 4) : 0,
-              missingReason: cradleCupReject,
-            },
-            // Upper-cup seam at center front — POM 8 start endpoint. For now
-            // sourced from cfTopY (topmost CF-column ink); the drafter
-            // currently consumes the cf-top anchor, which falls back to
-            // view-box ratio when cfTopY is null. The frame warning above
-            // tracks whether that fallback is happening.
-            upperCupCfSeam: {
-              accepted: cfTopY != null,
-              point: cfTopY != null ? { x: safeNum(axisX, 4), y: safeNum(cfTopY, 4) } : null,
-              source: cfTopY != null ? 'cfTopInkBound' : 'viewBoxFallback',
-              missingReason: cfTopY != null ? null : 'No CF-column ink found above the band region.',
-            },
-            // Side seam (POM 11). Listed so cross-POM validation can compare
-            // POM 7 candidates against the side seam x.
-            sideSeam: {
-              left:  sideLeftX  != null ? { x: safeNum(sideLeftX, 4) }  : null,
-              right: sideRightX != null ? { x: safeNum(sideRightX, 4) } : null,
-            },
-          },
-          // Cross-POM rule status (rule.md L5). These rules are enforced
-          // either by construction (POM 8 end == POM 6 start because both
-          // read cradle-cf-top) or by the detector's search-window buffers
-          // (POM 7 ≥ 18% bbox width off CF, ≥ 3% off side seam). Surface
-          // the status so the TD can confirm.
-          crossPom: {
-            pom8EndEqualsPom6Start: !!cradleCfTop,
-            pom7DistinctFromPom6:
-              !!(cradleCupTop && cradleCfTop)
-                ? Math.abs(cradleCupTop.x - cradleCfTop.x) > 0.05
-                : null,
-            pom7OffSideSeam: !!cradleCupTop
-              ? (cradleCupSide < 0
-                  ? (sideLeftX  == null || Math.abs(cradleCupTop.x - sideLeftX)  > 0.03)
-                  : (sideRightX == null || Math.abs(cradleCupTop.x - sideRightX) > 0.03))
-              : null,
-          },
-        },
-      };
+      detectionResult.debug = buildCvDebugPayload({
+        apexLeftCandidate, apexPair, apexRightCandidate,
+        axisConfidence, axisGuard, axisPx, axisX, axisXpx,
+        backFeatures, backViewIndex,
+        bandEdgeRow, bandPreferred, bandRow, bandStart, bandStrength,
+        baselineConfidence,
+        cfTopY, chestRow, chestStrength, chestY, colNoiseFloor,
+        cradleCfSeamLeftReachPx, cradleCfSeamRightReachPx,
+        cradleCfTop, cradleCfTopBandInkRatio, cradleCfTopDipProjected,
+        cradleCfTopInkRatio, cradleCfTopJunction, cradleCfTopReject,
+        cradleCfTopSeamHorizontalRun, cradleCfTopSeamSingleRowRun,
+        cradleCupBandInkRatio, cradleCupBottom, cradleCupColInkRatio,
+        cradleCupEdgePenalty, cradleCupReject, cradleCupSegmentCount,
+        cradleCupSegmentsWithInk, cradleCupSide, cradleCupTier,
+        cradleCupTop, cradleCupTopInkRatio,
+        cradleRow, cradleStrength, cradleY,
+        cupModel, cvAnalysis, darkCount, detectionParams, detectionResult,
+        filtered, h, inkCleanupReverted, innerHi, innerLo, luminanceThreshold,
+        maxX, maxY, medianCol, medianRow, minRowSpan, minX, minY,
+        peakSep, primaryViewIndex, rawStats, rowNoiseFloor, segmentation,
+        sideLeftCol, sideLeftStrength, sideLeftX,
+        sideRightCol, sideRightStrength, sideRightX,
+        sigConf, stageTimingsMs, symmetry, threshold,
+        underbustRow, underbustRunPx, underbustStrength,
+        viewBoxesPx, viewClassification, w,
+      });
     }
     return detectionResult;
   }
 
-  function estimateBorderBackground(pixels, w, h) {
-    const samples = [];
-    const step = Math.max(1, Math.floor(Math.min(w, h) / 40));
-    const add = (x, y) => {
-      const i = (y * w + x) * 4;
-      const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
-      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      samples.push({ r, g, b, lum });
-    };
-    for (let x = 0; x < w; x += step) {
-      add(x, 0);
-      add(x, h - 1);
-    }
-    // Start at `step` and stop before the last row so the four corners aren't
-    // sampled twice (the top/bottom loop already covered y = 0 and y = h - 1),
-    // which slightly over-weighted them in the brightest-40% background mean.
-    for (let y = step; y < h - 1; y += step) {
-      add(0, y);
-      add(w - 1, y);
-    }
-    if (!samples.length) return { r: 255, g: 255, b: 255, lum: 255 };
-    samples.sort((a, b) => a.lum - b.lum);
-    const start = Math.floor(samples.length * 0.60);
-    const bright = samples.slice(start);
-    const src = bright.length ? bright : samples;
-    let r = 0, g = 0, b = 0, lum = 0;
-    for (const s of src) {
-      r += s.r; g += s.g; b += s.b; lum += s.lum;
-    }
-    const n = src.length || 1;
-    return { r: r / n, g: g / n, b: b / n, lum: lum / n };
-  }
-
-  function buildMaskStats(mask, w, h, bounds) {
-    const x0 = bounds ? clamp(Math.floor(bounds.minX), 0, w - 1) : 0;
-    const y0 = bounds ? clamp(Math.floor(bounds.minY), 0, h - 1) : 0;
-    const x1 = bounds ? clamp(Math.ceil(bounds.maxX), 0, w - 1) : w - 1;
-    const y1 = bounds ? clamp(Math.ceil(bounds.maxY), 0, h - 1) : h - 1;
-    const colDark = new Uint32Array(w);
-    const rowDark = new Uint32Array(h);
-    let count = 0;
-    let minX = w, minY = h, maxX = -1, maxY = -1;
-    for (let y = y0; y <= y1; y += 1) {
-      const base = y * w;
-      for (let x = x0; x <= x1; x += 1) {
-        if (!mask[base + x]) continue;
-        colDark[x] += 1;
-        rowDark[y] += 1;
-        count += 1;
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-    }
-    return { count, minX, minY, maxX, maxY, colDark, rowDark };
-  }
-
-  function statsToBounds(stats) {
-    return {
-      minX: stats.minX,
-      minY: stats.minY,
-      maxX: stats.maxX,
-      maxY: stats.maxY,
-      count: stats.count,
-    };
-  }
-
-  function normalizeBounds(bounds, w, h) {
-    return {
-      x: clamp01(bounds.minX / w),
-      y: clamp01(bounds.minY / h),
-      width: clamp01((bounds.maxX - bounds.minX + 1) / w),
-      height: clamp01((bounds.maxY - bounds.minY + 1) / h),
-      count: bounds.count || 0,
-    };
-  }
-
-  function filterInkComponents(rawMask, w, h, minCount) {
-    const total = w * h;
-    const visited = new Uint8Array(total);
-    const out = new Uint8Array(total);
-    const queue = new Int32Array(total);
-    const keptComponents = [];
-    let componentCount = 0;
-
-    for (let start = 0; start < total; start += 1) {
-      if (!rawMask[start] || visited[start]) continue;
-      componentCount += 1;
-      let head = 0, tail = 0;
-      queue[tail++] = start;
-      visited[start] = 1;
-
-      let count = 0;
-      let minX = w, minY = h, maxX = -1, maxY = -1;
-      let sumX = 0, sumY = 0;
-      let touches = 0;
-
-      while (head < tail) {
-        const idx = queue[head++];
-        const x = idx % w;
-        const y = Math.floor(idx / w);
-        count += 1;
-        sumX += x;
-        sumY += y;
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-
-        for (let yy = y - 1; yy <= y + 1; yy += 1) {
-          if (yy < 0 || yy >= h) continue;
-          const rowBase = yy * w;
-          for (let xx = x - 1; xx <= x + 1; xx += 1) {
-            if (xx < 0 || xx >= w || (xx === x && yy === y)) continue;
-            const ni = rowBase + xx;
-            if (visited[ni] || !rawMask[ni]) continue;
-            visited[ni] = 1;
-            queue[tail++] = ni;
-          }
-        }
-      }
-
-      if (minX === 0) touches += 1;
-      if (maxX === w - 1) touches += 1;
-      if (minY === 0) touches += 1;
-      if (maxY === h - 1) touches += 1;
-
-      const width = maxX - minX + 1;
-      const height = maxY - minY + 1;
-      const area = Math.max(1, width * height);
-      const density = count / area;
-      const longStroke = Math.max(width, height) >= Math.min(w, h) * 0.08 && count >= minCount * 0.45;
-      const likelyFrame = touches >= 2 && width > w * 0.82 && height > h * 0.82 && density < 0.10;
-      const keep = !likelyFrame && (count >= minCount || longStroke);
-      if (!keep) continue;
-
-      for (let i = 0; i < tail; i += 1) out[queue[i]] = 1;
-      keptComponents.push({
-        count, minX, minY, maxX, maxY, width, height, area, density,
-        cx: sumX / count,
-        cy: sumY / count,
-        touches,
-      });
-    }
-
-    return { mask: out, keptComponents, componentCount };
-  }
-
-  function detectSketchViewBoxes(components, fallbackStats, w, h) {
-    if (!components || !components.length) {
-      return fallbackStats && fallbackStats.maxX >= 0 ? [statsToBounds(fallbackStats)] : [];
-    }
-    const largest = components.reduce((m, c) => Math.max(m, c.count), 0);
-    const minCount = Math.max(8, largest * 0.04);
-    const candidates = components
-      .filter(c => c.count >= minCount || c.area >= w * h * 0.002)
-      .sort((a, b) => a.minX - b.minX);
-    if (!candidates.length) return [statsToBounds(fallbackStats)];
-
-    const groups = [];
-    for (const c of candidates) {
-      const last = groups[groups.length - 1];
-      if (!last) {
-        groups.push({ minX: c.minX, minY: c.minY, maxX: c.maxX, maxY: c.maxY, count: c.count });
-        continue;
-      }
-      const gap = c.minX - last.maxX;
-      const lastW = Math.max(1, last.maxX - last.minX + 1);
-      const cW = Math.max(1, c.maxX - c.minX + 1);
-      const yOverlap = Math.max(0, Math.min(last.maxY, c.maxY) - Math.max(last.minY, c.minY) + 1);
-      const yOverlapRatio = yOverlap / Math.max(1, Math.min(last.maxY - last.minY + 1, c.maxY - c.minY + 1));
-      const allowedGap = Math.max(10, Math.min(lastW, cW) * 0.28, w * 0.035);
-      const alignedCloseGap = gap <= Math.max(allowedGap, w * 0.08) && yOverlapRatio > 0.55;
-      if (gap <= allowedGap || alignedCloseGap) {
-        last.minX = Math.min(last.minX, c.minX);
-        last.minY = Math.min(last.minY, c.minY);
-        last.maxX = Math.max(last.maxX, c.maxX);
-        last.maxY = Math.max(last.maxY, c.maxY);
-        last.count += c.count;
-      } else {
-        groups.push({ minX: c.minX, minY: c.minY, maxX: c.maxX, maxY: c.maxY, count: c.count });
-      }
-    }
-    return groups;
-  }
-
-  function choosePrimaryViewBox(viewBoxes, dark, w, h) {
-    if (!viewBoxes || !viewBoxes.length) return -1;
-    let bestIndex = 0;
-    let bestScore = -Infinity;
-    for (let i = 0; i < viewBoxes.length; i += 1) {
-      const b = viewBoxes[i];
-      const width = Math.max(1, b.maxX - b.minX + 1);
-      const height = Math.max(1, b.maxY - b.minY + 1);
-      const centroid = (b.minX + b.maxX) / 2;
-      const axis = refineAxisBySymmetry(dark, w, b.minX, b.maxX, b.minY, b.maxY, centroid);
-      const sym = computeSymmetryScore(dark, w, axis, b.minX, b.maxX, b.minY, b.maxY);
-      const center = (b.minX + b.maxX) / 2 / w;
-      const centerBonus = 1 - Math.min(1, Math.abs(center - 0.5) * 1.4);
-      const shapeBonus = Math.min(1, height / Math.max(1, width)) * 0.18;
-      const score = (b.count || 1) * (0.62 + sym * 0.55 + centerBonus * 0.10 + shapeBonus);
-      if (score > bestScore) {
-        bestScore = score;
-        bestIndex = i;
-      }
-    }
-    return bestIndex;
-  }
-
-  function computeRowSpans(mask, w, minX, maxX, minY, maxY) {
-    const spans = new Uint32Array(maxY + 1);
-    for (let y = minY; y <= maxY; y += 1) {
-      const base = y * w;
-      let left = -1, right = -1;
-      for (let x = minX; x <= maxX; x += 1) {
-        if (!mask[base + x]) continue;
-        if (left < 0) left = x;
-        right = x;
-      }
-      spans[y] = left >= 0 ? right - left + 1 : 0;
-    }
-    return spans;
-  }
-
-  // Longest contiguous dark run per row. Solid seam lines have a long single
-  // run; dense lace patterns have many short runs at high total density. This
-  // is the signal that lets the underbust-seam detector beat the lace band.
-  function computeRowMaxRun(mask, w, minX, maxX, minY, maxY) {
-    const runs = new Uint32Array(maxY + 1);
-    for (let y = minY; y <= maxY; y += 1) {
-      const base = y * w;
-      let cur = 0, best = 0;
-      for (let x = minX; x <= maxX; x += 1) {
-        if (mask[base + x]) {
-          cur += 1;
-          if (cur > best) best = cur;
-        } else {
-          cur = 0;
-        }
-      }
-      runs[y] = best;
-    }
-    return runs;
-  }
-
-  // Snap a detected band row to the SOLID bottom edge of the band, not a zig-zag
-  // elastic line drawn above it. Scanned row by row, a zig-zag has only short
-  // horizontal runs (its diagonal strokes crossing each row), while the solid
-  // edge is one long continuous run. We search a tight window around the detected
-  // band zone and take the LOWEST row that reads as solid, so the bottom-band and
-  // center-front-bottom anchors land on the real edge under any decorative
-  // stitching. Returns the original row when no solid line stands out (e.g. a
-  // band drawn only as a zig-zag), so non-banded sketches are untouched.
-  function snapBandToSolidEdge(rowRun, bandRow, minY, maxY, bandWidth, bandHeight) {
-    if (bandRow <= 0) return bandRow;
-    const lo = Math.max(minY, bandRow - Math.round(bandHeight * 0.04));
-    const hi = Math.min(maxY, bandRow + Math.round(bandHeight * 0.12));
-    let peakRun = 0;
-    for (let y = lo; y <= hi; y += 1) if (rowRun[y] > peakRun) peakRun = rowRun[y];
-    if (peakRun < bandWidth * 0.30) return bandRow;
-    const solidThresh = Math.max(bandWidth * 0.30, peakRun * 0.6);
-    for (let y = hi; y >= lo; y -= 1) if (rowRun[y] >= solidThresh) return y;
-    return bandRow;
-  }
-
-  function countDarkByColumnInRange(mask, w, minX, maxX, minY, maxY) {
-    const counts = new Uint32Array(w);
-    const y0 = Math.max(0, minY);
-    const y1 = Math.max(y0, maxY);
-    for (let y = y0; y <= y1; y += 1) {
-      const base = y * w;
-      for (let x = minX; x <= maxX; x += 1) {
-        if (mask[base + x]) counts[x] += 1;
-      }
-    }
-    return counts;
-  }
-
-  // Walk inward along a horizontal band of rows and return the first column
-  // where ink appears. Used to snap chest-left/right (and band-left/right) to
-  // the actual ink endpoints instead of view-box edges. halfBand widens the
-  // search vertically so a slightly-off chest row still finds the line.
-  function findHorizontalInkBound(dark, w, rowCenter, halfBand, fromX, toX, direction) {
-    const yLo = Math.max(0, rowCenter - halfBand);
-    const yHi = rowCenter + halfBand;
-    if (direction > 0) {
-      for (let x = fromX; x <= toX; x += 1) {
-        for (let y = yLo; y <= yHi; y += 1) {
-          if (dark[y * w + x]) return x;
-        }
-      }
-    } else {
-      for (let x = fromX; x >= toX; x -= 1) {
-        for (let y = yLo; y <= yHi; y += 1) {
-          if (dark[y * w + x]) return x;
-        }
-      }
-    }
-    return -1;
-  }
-
-  // Walk vertically along a thin column-band and return the first row with
-  // ink. Used to snap CF-top to where the cleavage actually begins instead of
-  // a hardcoded 4% offset from the view-box top.
-  function findVerticalInkBound(dark, w, colCenter, halfBand, fromY, toY, direction) {
-    const xLo = Math.max(0, colCenter - halfBand);
-    const xHi = colCenter + halfBand;
-    if (direction > 0) {
-      for (let y = fromY; y <= toY; y += 1) {
-        const base = y * w;
-        for (let x = xLo; x <= xHi; x += 1) {
-          if (dark[base + x]) return y;
-        }
-      }
-    } else {
-      for (let y = fromY; y >= toY; y -= 1) {
-        const base = y * w;
-        for (let x = xLo; x <= xHi; x += 1) {
-          if (dark[base + x]) return y;
-        }
-      }
-    }
-    return -1;
-  }
-
-  // Lowest inked row in a thin column band — the garment's drawn hem AT ONE x.
-  //
-  // bandY is a single horizontal row, which is right for a straight hem and
-  // wrong for a scalloped or arched one. Measured on Evelyn vA 3.0 (1830x711):
-  // the picot hem sits at 662px out at the sides and rises to 632px at centre
-  // front, a 30px arch, while bandY is a flat 659px — so the CF bottom anchor
-  // ends up 27px BELOW the artwork, floating in white space.
-  //
-  // Used ONLY by the POM 6 / POM 7 bottom anchors (US-061). band-left and
-  // band-right deliberately keep the flat row so POM 1 stays a level span.
-  //
-  // Scans UP from just below the band row and returns the first inked row.
-  // Returns null when the window holds no ink, so the caller keeps bandY and
-  // straight-hem sketches stay byte-identical.
-  function hemRowAtColumn(dark, w, h, colPx, bandRowPx, bboxH) {
-    if (!Number.isFinite(colPx) || !Number.isFinite(bandRowPx) || !(bboxH > 0)) return null;
-    const halfBand = Math.max(1, Math.round(bboxH * 0.006));
-    const fromY = Math.min(h - 1, Math.round(bandRowPx + bboxH * 0.06));
-    const toY = Math.max(0, Math.round(bandRowPx - bboxH * 0.12));
-    if (fromY < toY) return null;
-    const hit = findVerticalInkBound(dark, w, Math.round(colPx), halfBand, fromY, toY, -1);
-    return hit >= 0 ? hit : null;
-  }
-
-  // Potrace vector tracer — wraps the singleton Potrace API (potrace.js) into
-  // a Promise that takes the ink mask and returns normalized contour paths.
-  //
-  // Why we trace at all: the row/column peak detector finds straight reference
-  // lines well (chest, band, axis), but cup arcs, strap curves and the back
-  // hook are curved. Tracing gives real cubic-Bezier control points instead of
-  // hand-tuned guesses.
-  //
-  // Returns: { paths: [{ start: {x,y}, segments: [{type:'C'|'L', c1?, c2?, end}], bbox }], sampleWidth, sampleHeight }
-  // All coordinates are normalized to [0,1] of the source image.
-  function tracePotraceFromMask(dark, w, h) {
-    if (typeof Potrace === 'undefined' || !Potrace || typeof Potrace.process !== 'function') {
-      return Promise.resolve(null);
-    }
-    // Render the binary mask as black ink on white background. Potrace
-    // expects a normal raster image; it re-binarises from luminance.
-    const off = document.createElement('canvas');
-    off.width = w;
-    off.height = h;
-    const ctx = off.getContext('2d');
-    if (!ctx) return Promise.resolve(null);
-    const img = ctx.createImageData(w, h);
-    const data = img.data;
-    for (let p = 0, i = 0; p < dark.length; p += 1, i += 4) {
-      const v = dark[p] ? 0 : 255;
-      data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255;
-    }
-    ctx.putImageData(img, 0, 0);
-
-    let url;
-    try {
-      url = off.toDataURL('image/png');
-    } catch (err) {
-      console.warn('[Auto Mode] Potrace: cannot encode mask to PNG:', err);
-      return Promise.resolve(null);
-    }
-
-    // Tracing params tuned for technical-sketch ink: small turdsize so we
-    // keep thin strap edges; alphamax 1.0 keeps smooth curves; optcurve so we
-    // emit beziers instead of dense polylines.
-    Potrace.setParameter({
-      turdsize: 4,
-      alphamax: 1.0,
-      optcurve: true,
-      opttolerance: 0.2,
-      turnpolicy: 'minority',
-    });
-    Potrace.loadImageFromUrl(url);
-
-    return new Promise((resolve) => {
-      let waited = 0;
-      function tick() {
-        // potrace.js sets isReady inside img.onload — poll until it flips.
-        if (!Potrace.img || !Potrace.img.complete) {
-          waited += 1;
-          if (waited > 200) { resolve(null); return; } // 4s ceiling
-          setTimeout(tick, 20);
-          return;
-        }
-        try {
-          Potrace.process(() => {
-            try {
-              const svg = Potrace.getSVG(1, 'curve');
-              const paths = parsePotraceSvgPaths(svg, w, h);
-              resolve({ paths, sampleWidth: w, sampleHeight: h });
-            } catch (err) {
-              console.warn('[Auto Mode] Potrace: SVG parse failed:', err);
-              resolve(null);
-            }
-          });
-        } catch (err) {
-          console.warn('[Auto Mode] Potrace.process failed:', err);
-          resolve(null);
-        }
-      }
-      tick();
-    });
-  }
-
-  // Parse the SVG that Potrace emits. The SVG contains one <path d="...">
-  // built from absolute M / C / L commands (no relatives, no arcs). We split
-  // on M to get subpaths, then walk each subpath's commands.
-  function parsePotraceSvgPaths(svg, w, h) {
-    const match = /<path[^>]*\sd="([^"]+)"/.exec(svg);
-    if (!match) return [];
-    const d = match[1];
-    // Tokens: command letter OR a signed decimal number.
-    const tokens = d.match(/[MLC]|-?\d+(?:\.\d+)?/g) || [];
-    const paths = [];
-    let current = null;
-    let cursorX = 0, cursorY = 0;
-    let i = 0;
-    const num = () => parseFloat(tokens[i++]);
-    while (i < tokens.length) {
-      const t = tokens[i++];
-      if (t === 'M') {
-        if (current && current.segments.length) paths.push(finalizePath(current, w, h));
-        cursorX = num(); cursorY = num();
-        current = { start: { x: cursorX, y: cursorY }, segments: [] };
-      } else if (t === 'L' && current) {
-        // Potrace's CORNER segment emits FOUR numbers: an interior corner
-        // vertex then the endpoint ("L x1 y1 x2 y2"). Push both as polyline
-        // samples and advance the cursor to the true endpoint. (Reading only
-        // two took the corner as the endpoint and desynced every later segment.)
-        const x1 = num(); const y1 = num();
-        const x2 = num(); const y2 = num();
-        current.segments.push({ type: 'L', end: { x: x1, y: y1 } });
-        current.segments.push({ type: 'L', end: { x: x2, y: y2 } });
-        cursorX = x2; cursorY = y2;
-      } else if (t === 'C' && current) {
-        const c1x = num(); const c1y = num();
-        const c2x = num(); const c2y = num();
-        const ex  = num(); const ey  = num();
-        current.segments.push({
-          type: 'C',
-          c1: { x: c1x, y: c1y },
-          c2: { x: c2x, y: c2y },
-          end:{ x: ex,  y: ey  },
-        });
-        cursorX = ex; cursorY = ey;
-      } else {
-        // Unknown token — number outside a command (shouldn't happen with
-        // Potrace's output). Skip.
-      }
-    }
-    if (current && current.segments.length) paths.push(finalizePath(current, w, h));
-    return paths;
-  }
-
-  function finalizePath(path, w, h) {
-    const pts = [path.start, ...path.segments.map(s => s.end)];
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of pts) {
-      if (p.x < minX) minX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y > maxY) maxY = p.y;
-    }
-    // Normalize to [0,1] over the source image so the consumer doesn't need
-    // to know the analysis sample dimensions.
-    const norm = (p) => ({ x: p.x / w, y: p.y / h });
-    return {
-      start: norm(path.start),
-      segments: path.segments.map(s => {
-        if (s.type === 'C') return { type: 'C', c1: norm(s.c1), c2: norm(s.c2), end: norm(s.end) };
-        return { type: 'L', end: norm(s.end) };
-      }),
-      bbox: {
-        x: minX / w,
-        y: minY / h,
-        width: (maxX - minX) / w,
-        height: (maxY - minY) / h,
-      },
-      pointCount: pts.length,
-    };
-  }
-
-  // Score how well a traced contour fits the line segment AB. The returned
-  // shape contains bezier control points sampled from the matching arc — the
-  // POM generator uses these for POM 9 / 10 / 14 instead of guessed S-curves.
-  //
-  // "preferThin" weights thin contours (real seam lines, strap edges) higher
-  // than the bra outline.
-  function matchContourForCurve(paths, A, B, options) {
-    if (!paths || !paths.length || !A || !B) return null;
-    const preferThin = !!(options && options.preferThin);
-    const ax = A.x, ay = A.y, bx = B.x, by = B.y;
-    const lineLen = Math.hypot(bx - ax, by - ay);
-    if (lineLen < 1e-6) return null;
-    // Tolerance: how far from the AB line a contour's nearest sample can be.
-    const tol = Math.max(0.04, lineLen * 0.35);
-
-    let best = null;
-    let bestScore = -Infinity;
-    for (const path of paths) {
-      if (!path || !path.segments || !path.segments.length) continue;
-      const bbox = path.bbox || { width: 1, height: 1 };
-      // Reject paths whose bbox can't possibly contain both endpoints.
-      const x0 = bbox.x - tol, y0 = bbox.y - tol;
-      const x1 = bbox.x + bbox.width + tol, y1 = bbox.y + bbox.height + tol;
-      if (ax < x0 || ax > x1 || bx < x0 || bx > x1 ||
-          ay < y0 || ay > y1 || by < y0 || by > y1) continue;
-      const samples = samplePathPoints(path);
-      if (samples.length < 4) continue;
-      let nearestA = Infinity, nearestB = Infinity;
-      let idxA = -1, idxB = -1;
-      for (let i = 0; i < samples.length; i += 1) {
-        const dA = Math.hypot(samples[i].x - ax, samples[i].y - ay);
-        const dB = Math.hypot(samples[i].x - bx, samples[i].y - by);
-        if (dA < nearestA) { nearestA = dA; idxA = i; }
-        if (dB < nearestB) { nearestB = dB; idxB = i; }
-      }
-      if (nearestA > tol || nearestB > tol) continue;
-      // Thin contours score higher when preferThin is set — strap edges /
-      // seam lines beat the bra outline.
-      const aspect = Math.min(bbox.width, bbox.height) / Math.max(1e-6, Math.max(bbox.width, bbox.height));
-      const thinness = preferThin ? clamp01(1 - aspect) : 0;
-      const proximity = 1 - clamp01((nearestA + nearestB) / (2 * tol));
-      const score = proximity * 1.0 + thinness * 0.6;
-      if (score > bestScore) {
-        bestScore = score;
-        best = { path, samples, idxA, idxB };
-      }
-    }
-    if (!best) return null;
-
-    // Walk the closed contour from idxA → idxB the short way around (the seam
-    // is one side of the loop). Sample 4 evenly-spaced points along that arc
-    // and fit a cubic bezier to them by setting c1/c2 at the 1/3 and 2/3
-    // sample positions.
-    const arc = takeShortestArc(best.samples, best.idxA, best.idxB);
-    if (arc.length < 4) return null;
-    const p1 = arc[Math.floor(arc.length / 3)];
-    const p2 = arc[Math.floor((2 * arc.length) / 3)];
-    // A cubic does NOT pass through its control points, so using on-curve arc
-    // samples directly as controls makes the curve overshoot the seam. Solve in
-    // closed form for the controls C1,C2 of the cubic [A,C1,C2,B] that PASSES
-    // THROUGH p1 at t=1/3 and p2 at t=2/3. Controls may fall outside [0,1].
-    const fitControls = (a, b, q1, q2) => {
-      const u = 27 * q1 - 8 * a - b;
-      const v = 27 * q2 - a - 8 * b;
-      return { c1: (2 * u - v) / 18, c2: (2 * v - u) / 18 };
-    };
-    const fitX = fitControls(A.x, B.x, p1.x, p2.x);
-    const fitY = fitControls(A.y, B.y, p1.y, p2.y);
-    return {
-      c1: { x: fitX.c1, y: fitY.c1 },
-      c2: { x: fitX.c2, y: fitY.c2 },
-      arcLength: arc.length,
-      score: bestScore,
-    };
-  }
-
-  // Convert a path into a flat array of polyline samples. Cubic-segment
-  // sampling at 6 points is enough to find the nearest-to-endpoint vertex.
-  function samplePathPoints(path) {
-    const out = [path.start];
-    for (const seg of path.segments) {
-      if (seg.type === 'C') {
-        const prev = out[out.length - 1];
-        for (let t = 0.2; t < 1; t += 0.2) {
-          out.push(cubicBezierPoint(prev, seg.c1, seg.c2, seg.end, t));
-        }
-        out.push(seg.end);
-      } else {
-        out.push(seg.end);
-      }
-    }
-    return out;
-  }
-
-  function cubicBezierPoint(p0, p1, p2, p3, t) {
-    const u = 1 - t;
-    const uu = u * u;
-    const uuu = uu * u;
-    const tt = t * t;
-    const ttt = tt * t;
-    return {
-      x: uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x,
-      y: uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y,
-    };
-  }
-
-  function takeShortestArc(samples, idxA, idxB) {
-    if (samples.length === 0) return [];
-    const n = samples.length;
-    let a = idxA, b = idxB;
-    if (a === b) return [samples[a]];
-    // Forward arc length idxA→idxB
-    const forwardLen = (b - a + n) % n;
-    const backwardLen = n - forwardLen;
-    const arc = [];
-    if (forwardLen <= backwardLen) {
-      for (let k = 0; k <= forwardLen; k += 1) arc.push(samples[(a + k) % n]);
-    } else {
-      for (let k = 0; k <= backwardLen; k += 1) arc.push(samples[(a - k + n) % n]);
-    }
-    return arc;
-  }
-
-  // Per-view feature pass: a self-contained mini-detector that runs inside a
-  // single view's bounding box. Used to give the back view its own axis,
-  // chest/band rows, side seams, and ink endpoints — so back-view anchors
-  // snap to actual ink rather than hardcoded view-box ratios.
-  function detectFeaturesInViewBox(dark, w, h, viewBoxPx) {
-    if (!viewBoxPx) return null;
-    const minX = viewBoxPx.minX;
-    const minY = viewBoxPx.minY;
-    const maxX = viewBoxPx.maxX;
-    const maxY = viewBoxPx.maxY;
-    const bw = maxX - minX + 1;
-    const bh = maxY - minY + 1;
-    if (bw < 16 || bh < 16) return null;
-
-    // Local row/column ink counts restricted to the view box.
-    const rowDark = new Uint32Array(h);
-    const colDark = new Uint32Array(w);
-    let count = 0;
-    let xSum = 0;
-    for (let y = minY; y <= maxY; y += 1) {
-      const base = y * w;
-      let rowCount = 0;
-      for (let x = minX; x <= maxX; x += 1) {
-        if (dark[base + x]) {
-          rowCount += 1;
-          colDark[x] += 1;
-          xSum += x;
-          count += 1;
-        }
-      }
-      rowDark[y] = rowCount;
-    }
-    if (count < 60) return null;
-    const centroidX = xSum / count;
-    const axisPx = refineAxisBySymmetry(dark, w, minX, maxX, minY, maxY, centroidX);
-
-    // Smoothed peak picks (mirror of the front-view logic).
-    const rowSmooth = smooth1D(rowDark);
-    const colSmooth = smooth1D(colDark);
-
-    // Band: bottom 40% of the view height, strongest horizontal row.
-    const rowRun = computeRowMaxRun(dark, w, minX, maxX, minY, maxY);
-    const bandStart = Math.round(minY + bh * 0.58);
-    let bandRow = -1; let bandStrength = 0;
-    for (let y = bandStart; y <= maxY; y += 1) {
-      if (rowSmooth[y] > bandStrength) { bandStrength = rowSmooth[y]; bandRow = y; }
-    }
-    const bandEdgeRow = snapBandToSolidEdge(rowRun, bandRow, minY, maxY, bw, bh);
-    // Chest / top-band: upper 50% of the view height.
-    const chestEnd = Math.round(minY + bh * 0.50);
-    let chestRow = -1; let chestStrength = 0;
-    for (let y = minY + Math.round(bh * 0.06); y <= chestEnd; y += 1) {
-      if (rowSmooth[y] > chestStrength) { chestStrength = rowSmooth[y]; chestRow = y; }
-    }
-
-    // Side seams: strongest verticals on either side of the axis, with a
-    // small guard band so the centerline doesn't win.
-    const axisGuard = Math.max(4, Math.round(bw * 0.08));
-    let sideLeftCol = -1, sideLeftStrength = 0;
-    for (let x = minX + 1; x <= axisPx - axisGuard; x += 1) {
-      if (colSmooth[x] > sideLeftStrength) { sideLeftStrength = colSmooth[x]; sideLeftCol = x; }
-    }
-    let sideRightCol = -1, sideRightStrength = 0;
-    for (let x = axisPx + axisGuard; x <= maxX - 1; x += 1) {
-      if (colSmooth[x] > sideRightStrength) { sideRightStrength = colSmooth[x]; sideRightCol = x; }
-    }
-
-    // Walk inward along chest / band rows to find ink endpoints.
-    const halfRowBand = Math.max(2, Math.round(bh * 0.012));
-    const chestLeftPx  = chestRow > 0 ? findHorizontalInkBound(dark, w, chestRow, halfRowBand, minX, maxX, +1) : -1;
-    const chestRightPx = chestRow > 0 ? findHorizontalInkBound(dark, w, chestRow, halfRowBand, maxX, minX, -1) : -1;
-    const bandLeftPx   = bandEdgeRow > 0 ? findHorizontalInkBound(dark, w, bandEdgeRow, halfRowBand, minX, maxX, +1) : -1;
-    const bandRightPx  = bandEdgeRow > 0 ? findHorizontalInkBound(dark, w, bandEdgeRow, halfRowBand, maxX, minX, -1) : -1;
-
-    // Walk down the symmetry axis to find the topmost ink (cleavage / strap
-    // notch). halfColBand widens it slightly so a center-line off by 1px
-    // still scores.
-    const halfColBand = Math.max(2, Math.round(bw * 0.020));
-    const axisTopPx = findVerticalInkBound(dark, w, axisPx, halfColBand, minY, maxY, +1);
-    const axisBottomPx = findVerticalInkBound(dark, w, axisPx, halfColBand, maxY, minY, -1);
-
-    return {
-      bbox: {
-        x: minX / w, y: minY / h,
-        width: bw / w, height: bh / h,
-      },
-      axisX: axisPx / w,
-      chestY:    chestRow >= 0 ? chestRow / h : null,
-      bandY:     bandEdgeRow >= 0 ? bandEdgeRow / h : null,
-      sideLeftX: sideLeftCol  > 0 ? sideLeftCol  / w : null,
-      sideRightX:sideRightCol > 0 ? sideRightCol / w : null,
-      chestLeftX:  chestLeftPx  > 0 ? chestLeftPx  / w : null,
-      chestRightX: chestRightPx > 0 ? chestRightPx / w : null,
-      bandLeftX:   bandLeftPx   > 0 ? bandLeftPx   / w : null,
-      bandRightX:  bandRightPx  > 0 ? bandRightPx  / w : null,
-      axisTopY:    axisTopPx    >= 0 ? axisTopPx    / h : null,
-      axisBottomY: axisBottomPx >= 0 ? axisBottomPx / h : null,
-    };
-  }
-
-  // rowHintNorm (US-084, optional): when the other side's join is trusted, scan
-  // only a band around that row and score by PROXIMITY to it instead of by the
-  // topmost-run preference. The top preference is what takes the bait on a high
-  // stray feature, so a hinted retry must not reuse it — otherwise the retry
-  // simply re-picks the same wrong run inside a smaller window.
-  function findCupStrapJoinFromInk(dark, w, h, bounds, axisPx, chestRow, side, rowHintNorm) {
-    const bboxW = bounds.maxX - bounds.minX + 1;
-    const bboxH = bounds.maxY - bounds.minY + 1;
-    const guard = Math.max(4, Math.round(bboxW * 0.075));
-    let y1 = bounds.minY + Math.round(bboxH * 0.08);
-    let y2 = Math.min(
-      bounds.maxY,
-      chestRow > 0 ? chestRow + Math.round(bboxH * 0.05) : bounds.minY + Math.round(bboxH * 0.48)
-    );
-    // Band half-height for a hinted retry. Wide enough to absorb a real
-    // left/right height difference (TD pairs slant at most 0.0548) plus the
-    // run-centre quantisation, narrow enough to exclude the stray that caused
-    // the disagreement.
-    const hinted = Number.isFinite(rowHintNorm);
-    if (hinted) {
-      const hintPx = rowHintNorm * h;
-      const band = Math.max(3, Math.round(bboxH * 0.06));
-      y1 = Math.max(y1, Math.round(hintPx - band));
-      y2 = Math.min(y2, Math.round(hintPx + band));
-    }
-    const x1 = side < 0
-      ? bounds.minX + Math.round(bboxW * 0.05)
-      : axisPx + guard;
-    const x2 = side < 0
-      ? axisPx - guard
-      : bounds.maxX - Math.round(bboxW * 0.05);
-    if (x2 <= x1 || y2 <= y1) return null;
-
-    const minSupport = Math.max(3, Math.round(bboxW * 0.012));
-    const localRows = Math.max(5, Math.round(bboxH * 0.035));
-    let best = null;
-    for (let y = y1; y <= y2; y += 1) {
-      const base = y * w;
-      let runStart = -1;
-      for (let x = x1; x <= x2 + 1; x += 1) {
-        const on = x <= x2 && !!dark[base + x];
-        if (on && runStart < 0) {
-          runStart = x;
-          continue;
-        }
-        if (on) continue;
-        if (runStart < 0) continue;
-        const startX = runStart;
-        const runEnd = x - 1;
-        const runWidth = runEnd - startX + 1;
-        runStart = -1;
-        if (runWidth < minSupport) continue;
-        const cx = (startX + runEnd) / 2;
-        if (side < 0 && cx > axisPx - guard) continue;
-        if (side > 0 && cx < axisPx + guard) continue;
-
-        let support = 0;
-        let supportBottomY = y;
-        const sx1 = Math.max(x1, Math.round(cx - bboxW * 0.035));
-        const sx2 = Math.min(x2, Math.round(cx + bboxW * 0.035));
-        for (let yy = y; yy <= Math.min(y2, y + localRows); yy += 1) {
-          const b = yy * w;
-          let rowSupport = 0;
-          for (let xx = sx1; xx <= sx2; xx += 1) {
-            if (dark[b + xx]) rowSupport += 1;
-          }
-          support += rowSupport;
-          if (rowSupport > 0) supportBottomY = yy;
-        }
-        const verticalSpan = supportBottomY - y + 1;
-        if (support < Math.max(minSupport * 2, verticalSpan * 2)) continue;
-        // Reject decorative blobs (bow / scallop) sitting on the cup body
-        // top. A real cup-strap join is the upper-outer corner of the cup,
-        // so the cup BODY fills the rows below it — verticalSpan saturates
-        // at localRows. A bow inked into the cup body lasts only a few
-        // rows before its ribbon ends, leaving a gap below — verticalSpan
-        // small. Require ≥ 40% of the lookahead window to be supported.
-        if (verticalSpan < Math.max(3, Math.round((localRows + 1) * 0.4))) continue;
-
-        const edgeBias = side < 0
-          ? clamp01((axisPx - cx) / Math.max(1, bboxW * 0.45))
-          : clamp01((cx - axisPx) / Math.max(1, bboxW * 0.45));
-        const highCupBias = 1 - Math.min(1, (y - y1) / Math.max(1, y2 - y1));
-        // Strongly (nonlinearly) prefer the TOPMOST qualifying run so the cup
-        // top lands at the strap-cup join, not a denser lower band (e.g. lace
-        // scallops or a cup-body seam). A lower band only wins when its support
-        // dramatically outweighs the top's. The verticalSpan>=40% gate above
-        // still requires real cup body below the pick, so this cannot snap onto
-        // a thin strap-ribbon tick above the true cup seam.
-        const topPref = 0.5 + 0.5 * highCupBias * highCupBias;
-        // A hinted retry scores by nearness to the trusted row instead of by
-        // height in the window — see the rowHintNorm note on this function.
-        const rowPref = hinted
-          ? 1 - Math.min(1, Math.abs(y - rowHintNorm * h) / Math.max(1, y2 - y1))
-          : topPref;
-        const score = support * rowPref * (0.75 + edgeBias * 0.25);
-        // Tie-break: normally the higher run wins (cup top, not a lower seam);
-        // on a hinted retry the run nearer the trusted row wins instead.
-        const tieBreakWins = best && Math.abs(score - best.score) < 1e-6
-          && (hinted
-            ? Math.abs(y - rowHintNorm * h) < Math.abs(best.y - rowHintNorm * h)
-            : y < best.y);
-        if (!best || score > best.score || tieBreakWins) {
-          best = {
-            x: cx,
-            // Inner edge of the strap ribbon at the join row — the edge nearer
-            // the center front. POM 16 (apex distance) measures inner-edge to
-            // inner-edge across the cup/front-strap joining seams, so the left
-            // cup uses the run's right edge and the right cup its left edge.
-            innerX: side < 0 ? runEnd : startX,
-            // Outer edge (nearer the side seam) — POM 14's strap join anchor
-            // sits on the OUTER edge of the join (ADR 0017, TD correction).
-            outerX: side < 0 ? startX : runEnd,
-            y,
-            support,
-            verticalSpan,
-            score,
-          };
-        }
-      }
-    }
-    if (!best) return null;
-
-    const regionArea = Math.max(1, (x2 - x1 + 1) * (y2 - y1 + 1));
-    const confidence = clamp01(0.18 + Math.min(0.42, best.support / Math.max(1, regionArea * 0.012))
-      + Math.min(0.24, best.verticalSpan / Math.max(1, bboxH * 0.18))
-      + Math.min(0.16, best.score / Math.max(1, bboxW)));
-    if (confidence < 0.32) return null;
-    return {
-      point: { x: best.x / w, y: best.y / h },
-      innerEdgeX: best.innerX / w,
-      outerEdgeX: best.outerX / w,
-      confidence,
-      support: {
-        count: best.support,
-        verticalSpan: best.verticalSpan,
-        score: Math.round(best.score * 100) / 100,
-      },
-    };
-  }
-
-  // US-084: cross-check the two cup/strap joins against each other.
-  //
-  // findCupStrapJoinFromInk runs once per side with no knowledge of the other,
-  // and it deliberately prefers the TOPMOST qualifying run so the pick lands on
-  // the strap join rather than a lower cup-body seam. When one side carries an
-  // extra high feature that clears the support gates (a strap ribbon tick, a
-  // trim line, a neckline binding crossing the search window), that preference
-  // takes the bait on that side only. The result is a pair straddling two
-  // different rows, which no per-side check can see: on demo7.png the left join
-  // is exactly on the TD-labelled row while the right sits 0.134 above it.
-  //
-  // The two joins are near-symmetric features on a flat sketch. TD-labelled
-  // pairs slant (dy/dx) by at most 0.0548, so a pair beyond APEX_SLANT_LIMIT is
-  // a detection disagreement, not a garment property. Re-run the losing side
-  // with the trusted side's row as a hint and keep the result only if it
-  // genuinely reconciles the pair — otherwise leave both candidates untouched
-  // and let validateCupApexPair / the POM 16 slant gate handle it, so a sketch
-  // this cannot repair degrades exactly as before rather than getting a
-  // fabricated anchor.
-  const APEX_SLANT_LIMIT = 0.06;
-
-  function apexPairSlant(left, right) {
-    if (!left || !right) return null;
-    const dx = Math.abs(right.point.x - left.point.x);
-    if (!(dx > 0)) return Infinity;
-    return Math.abs(left.point.y - right.point.y) / dx;
-  }
-
-  function repairApexPairRow(left, right, dark, w, h, bounds, axisPx, chestRow) {
-    const slant = apexPairSlant(left, right);
-    if (slant == null || slant <= APEX_SLANT_LIMIT) return { left, right, repaired: null };
-
-    // Trust the more confident side; on a tie prefer the LOWER row, since the
-    // failure mode this repairs is a pick that jumped UP off the cup.
-    const leftWins = left.confidence > right.confidence + 1e-9
-      || (Math.abs(left.confidence - right.confidence) <= 1e-9 && left.point.y >= right.point.y);
-    const keep = leftWins ? left : right;
-    const side = leftWins ? +1 : -1;   // re-search the OTHER side
-    const retry = findCupStrapJoinFromInk(
-      dark, w, h, bounds, axisPx, chestRow, side, keep.point.y);
-    if (!retry) return { left, right, repaired: null };
-
-    const next = leftWins ? { left, right: retry } : { left: retry, right };
-    const nextSlant = apexPairSlant(next.left, next.right);
-    // Only accept a retry that actually reconciles the pair.
-    if (nextSlant == null || nextSlant > APEX_SLANT_LIMIT || nextSlant >= slant) {
-      return { left, right, repaired: null };
-    }
-    return {
-      left: next.left,
-      right: next.right,
-      repaired: {
-        side: leftWins ? 'right' : 'left',
-        fromY: (leftWins ? right : left).point.y,
-        toY: retry.point.y,
-        hintY: keep.point.y,
-        slantBefore: slant,
-        slantAfter: nextSlant,
-      },
-    };
-  }
-
-  function validateCupApexPair(left, right, bounds, w, h) {
-    if (!left || !right) return null;
-    const bboxW = bounds.maxX - bounds.minX + 1;
-    const bboxH = bounds.maxY - bounds.minY + 1;
-    const lx = left.point.x * w;
-    const rx = right.point.x * w;
-    const ly = left.point.y * h;
-    const ry = right.point.y * h;
-    if (rx <= lx + bboxW * 0.12) return null;
-    if (Math.abs(ly - ry) > bboxH * 0.22) return null;
-    if (left.confidence < 0.32 || right.confidence < 0.32) return null;
-    return { left, right };
-  }
-
-  // (Removed dead findCupApexFromInk: never referenced — the live pipeline
-  // uses findCupStrapJoinFromInk / buildCupModel for apex detection.)
-
-  // Front shoulder-strap start for POM 14. The TD measurement starts at the
-  // upper joining seam of the stitched/elastic front strap section (the first
-  // clear cross-strap seam above the cup), not at the cup/strap apex and not
-  // at the topmost silhouette ink. Search a narrow column around the validated
-  // left cup/strap join and choose the highest substantial horizontal run.
-  // apexInfo is the cup/strap join the strap rises from — the RIGHT join on a
-  // standard two-view sheet (ADR 0016), falling back to the left join when the
-  // right one wasn't validated.
-  function findFrontStrapStartFromInk(dark, w, h, bounds, apexInfo, chestRow) {
-    if (!apexInfo || !apexInfo.point) return null;
-    const bboxW = bounds.maxX - bounds.minX + 1;
-    const bboxH = bounds.maxY - bounds.minY + 1;
-    const cx = Math.round(apexInfo.point.x * w);
-    const apexY = Math.round(apexInfo.point.y * h);
-    const y1 = Math.max(bounds.minY + Math.round(bboxH * 0.025), 1);
-    const y2 = Math.min(
-      apexY - Math.max(3, Math.round(bboxH * 0.035)),
-      chestRow > 0 ? chestRow - 2 : bounds.maxY);
-    const halfWindow = Math.max(6, Math.round(bboxW * 0.055));
-    const x1 = Math.max(bounds.minX, cx - halfWindow);
-    const x2 = Math.min(bounds.maxX, cx + halfWindow);
-    const minRun = Math.max(4, Math.round(bboxW * 0.014));
-    const maxRun = Math.max(minRun + 2, Math.round(bboxW * 0.11));
-    if (y2 <= y1 || x2 <= x1) return null;
-
-    let best = null;
-    for (let y = y1; y <= y2; y += 1) {
-      const base = y * w;
-      let runStart = -1;
-      for (let x = x1; x <= x2 + 1; x += 1) {
-        const on = x <= x2 && !!dark[base + x];
-        if (on && runStart < 0) runStart = x;
-        if (on) continue;
-        if (runStart < 0) continue;
-        const runEnd = x - 1;
-        const runWidth = runEnd - runStart + 1;
-        const runCenter = (runStart + runEnd) / 2;
-        runStart = -1;
-        if (runWidth < minRun || runWidth > maxRun) continue;
-        if (Math.abs(runCenter - cx) > halfWindow * 0.62) continue;
-
-        // A joining seam is supported by strap ink immediately below it.
-        // This rejects an isolated crop/silhouette cap at the top of the view.
-        let belowSupport = 0;
-        const supportDepth = Math.max(4, Math.round(bboxH * 0.025));
-        for (let yy = y + 1; yy <= Math.min(y2, y + supportDepth); yy += 1) {
-          const b = yy * w;
-          for (let xx = Math.max(x1, Math.round(runCenter - minRun));
-            xx <= Math.min(x2, Math.round(runCenter + minRun)); xx += 1) {
-            if (dark[b + xx]) belowSupport += 1;
-          }
-        }
-        if (belowSupport < supportDepth * 2) continue;
-
-        // Prefer the LOWEST valid seam — the joining seam at the top of the
-        // stitched (zigzag) section sits nearest the cup join; the zigzag ink
-        // itself only yields sub-minRun runs so it can't win. Preferring the
-        // topmost run (pre-ADR-0016) landed on the strap cap / top of the
-        // elastic stripes, which the TD flagged as too high. Width/support
-        // break ties between adjacent antialiased rows of the same seam.
-        const score = runWidth + Math.min(minRun * 2, belowSupport / Math.max(1, supportDepth));
-        if (!best || y > best.y + 2 || (Math.abs(y - best.y) <= 2 && score > best.score)) {
-          best = { x: runCenter, y, runWidth, belowSupport, score };
-        }
-      }
-    }
-    if (!best) return null;
-    const confidence = clamp01(0.28
-      + Math.min(0.36, best.runWidth / Math.max(1, minRun * 2) * 0.22)
-      + Math.min(0.28, best.belowSupport / Math.max(1, bboxH * 0.08)));
-    return {
-      point: { x: best.x / w, y: best.y / h },
-      confidence,
-      support: { runWidth: best.runWidth, belowSupport: best.belowSupport },
-    };
-  }
-
-  function findStrapLandmarksFromInk(dark, w, h, bounds, axisPx, chestRow) {
-    const bboxW = bounds.maxX - bounds.minX + 1;
-    const bboxH = bounds.maxY - bounds.minY + 1;
-    const y1 = bounds.minY;
-    const y2 = Math.min(bounds.maxY, chestRow > 0 ? chestRow : bounds.minY + Math.round(bboxH * 0.34));
-    if (y2 <= y1 + 3) return null;
-
-    const scanSide = (side) => {
-      const x1 = side < 0 ? bounds.minX : axisPx + Math.round(bboxW * 0.08);
-      const x2 = side < 0 ? axisPx - Math.round(bboxW * 0.08) : bounds.maxX;
-      if (x2 <= x1) return null;
-      let count = 0;
-      let topY = h, topXSum = 0, topCount = 0;
-      let bottomY = -1, bottomXSum = 0, bottomCount = 0;
-      for (let y = y1; y <= y2; y += 1) {
-        const base = y * w;
-        let rowXSum = 0, rowCount = 0;
-        for (let x = x1; x <= x2; x += 1) {
-          if (!dark[base + x]) continue;
-          count += 1;
-          rowXSum += x;
-          rowCount += 1;
-        }
-        if (rowCount > 0) {
-          if (y < topY) { topY = y; topXSum = rowXSum; topCount = rowCount; }
-          if (y > bottomY) { bottomY = y; bottomXSum = rowXSum; bottomCount = rowCount; }
-        }
-      }
-      if (count < Math.max(6, (x2 - x1 + 1) * (y2 - y1 + 1) * 0.0015)) return null;
-      return {
-        count,
-        top: { x: (topXSum / Math.max(1, topCount)) / w, y: topY / h },
-        bottom: { x: (bottomXSum / Math.max(1, bottomCount)) / w, y: bottomY / h },
-      };
-    };
-
-    const left = scanSide(-1);
-    const right = scanSide(+1);
-    const chosen = right && (!left || right.count >= left.count * 0.85) ? right : left;
-    if (!chosen) return null;
-    return {
-      top: chosen.top,
-      bottom: chosen.bottom,
-      confidence: clamp01(0.25 + Math.min(0.65, chosen.count / Math.max(1, bboxW * bboxH * 0.03))),
-    };
-  }
-
-  // Back-view strap-top: walk the left strap zone above the back chest row to
-  // find the topmost ink. On a back technical sketch the strap rises from the
-  // back-panel top toward the shoulder. Returns null when the strap zone has
-  // no ink.
-  function findBackStrapTopFromInk(dark, w, h, viewBoxPx, chestRow) {
-    if (!viewBoxPx) return null;
-    const minX = viewBoxPx.minX;
-    const minY = viewBoxPx.minY;
-    const maxX = viewBoxPx.maxX;
-    const maxY = viewBoxPx.maxY;
-    const bw = maxX - minX + 1;
-    const bh = maxY - minY + 1;
-    if (bw < 16 || bh < 16) return null;
-    const yEnd = (chestRow > 0 && chestRow > minY)
-      ? Math.min(maxY, chestRow)
-      : minY + Math.round(bh * 0.45);
-    const xLo = minX + Math.round(bw * 0.05);
-    const xHi = minX + Math.round(bw * 0.32);
-    if (xHi <= xLo) return null;
-    let total = 0;
-    for (let y = minY; y <= yEnd; y += 1) {
-      const base = y * w;
-      let rowCount = 0;
-      let rowXSum = 0;
-      for (let x = xLo; x <= xHi; x += 1) {
-        if (dark[base + x]) { rowCount += 1; rowXSum += x; }
-      }
-      total += rowCount;
-      if (rowCount > 0) {
-        const cx = rowXSum / rowCount;
-        return {
-          point: { x: cx / w, y: y / h },
-          confidence: clamp01(0.3 + Math.min(0.55, total / Math.max(1, bw * bh * 0.02))),
-        };
-      }
-    }
-    return null;
-  }
-
-  // Back-view shoulder-strap INNER edges (POM 15, back strap distance).
-  // The two straps are near-vertical bands descending from the top of the back
-  // view down to the attach (chest) row; the panel body and wing outlines only
-  // begin AT/below that row, so scanning the zone [top .. chestRow] isolates the
-  // straps from everything else. For each column we count ink over the zone; a
-  // column that carries ink through most of the zone height is "strap ink". The
-  // LEFT strap's inner edge is the right-most strap column left of the axis; the
-  // RIGHT strap's inner edge is the left-most strap column right of the axis.
-  // A narrow dead-center guard keeps a center-back construction line from being
-  // mistaken for a strap edge. Returns normalized {left,right,confidence} or null.
-  function findBackStrapInnerEdges(dark, w, h, viewBoxPx, chestRow, axisPx) {
-    if (!viewBoxPx) return null;
-    const minX = viewBoxPx.minX, minY = viewBoxPx.minY;
-    const maxX = viewBoxPx.maxX, maxY = viewBoxPx.maxY;
-    const bw = maxX - minX + 1, bh = maxY - minY + 1;
-    if (bw < 24 || bh < 24) return null;
-    const yTop = minY;
-    const yBot = (chestRow > minY && chestRow < maxY)
-      ? chestRow
-      : minY + Math.round(bh * 0.32);
-    const zoneH = yBot - yTop;
-    if (zoneH < Math.max(8, Math.round(bh * 0.08))) return null;
-    const axis = (axisPx > minX && axisPx < maxX)
-      ? axisPx
-      : Math.round((minX + maxX) / 2);
-    // Per-column ink count over the strap zone.
-    const counts = new Array(bw).fill(0);
-    for (let y = yTop; y <= yBot; y += 1) {
-      const base = y * w;
-      for (let x = minX; x <= maxX; x += 1) {
-        if (dark[base + x]) counts[x - minX] += 1;
-      }
-    }
-    // Strap columns carry near-vertical ink over most of the zone height.
-    const colThresh = Math.max(3, Math.round(zoneH * 0.40));
-    // Dead-center guard: strap edges never sit on the axis (there is always a
-    // neckline gap), so ignore columns within ~2% of bbox width of the axis.
-    const guard = Math.max(1, Math.round(bw * 0.02));
-    let leftInnerI = -1, rightInnerI = -1;
-    for (let i = 0; i < bw; i += 1) {
-      if (counts[i] < colThresh) continue;
-      const x = minX + i;
-      if (x < axis - guard) leftInnerI = i;              // keep last → right-most
-      else if (x > axis + guard && rightInnerI < 0) rightInnerI = i; // first → left-most
-    }
-    if (leftInnerI < 0 || rightInnerI < 0) return null;
-    const leftInnerXpx = minX + leftInnerI;
-    const rightInnerXpx = minX + rightInnerI;
-    if (!(leftInnerXpx < axis && rightInnerXpx > axis)) return null;
-    // Require a real neckline gap between the inner edges.
-    if (rightInnerXpx - leftInnerXpx < Math.round(bw * 0.05)) return null;
-    const yPx = (chestRow > minY && chestRow < maxY) ? chestRow : yBot;
-    const edgeInk = (counts[leftInnerI] + counts[rightInnerI]) / (2 * Math.max(1, zoneH));
-    const confidence = clamp01(0.40 + 0.35 * Math.min(1, edgeInk));
-    return {
-      left:  { x: leftInnerXpx / w, y: yPx / h },
-      right: { x: rightInnerXpx / w, y: yPx / h },
-      confidence,
-    };
-  }
-
-  // Back-view landmarks. Given the back view's pixel-space bbox, finds:
-  //   - the back symmetry axis (vertical line through the center-back seam)
-  //   - back-center-top: topmost ink in a thin strip around the axis. On a
-  //     U-cutout back this is the bottom of the U; on a closed top this is the
-  //     band's top edge.
-  //   - back-center-bottom: bottommost ink in the same strip. The band's
-  //     bottom edge at center.
-  // POM 12 (back center length) is back-center-top → back-center-bottom.
-  function findBackCenterLandmarks(dark, w, h, bounds) {
-    const { minX, minY, maxX, maxY } = bounds;
-    const bboxW = maxX - minX + 1;
-    const bboxH = maxY - minY + 1;
-    if (bboxW < 8 || bboxH < 8) return null;
-
-    let xSum = 0, xWeight = 0;
-    for (let y = minY; y <= maxY; y += 1) {
-      const base = y * w;
-      for (let x = minX; x <= maxX; x += 1) {
-        if (dark[base + x]) { xSum += x; xWeight += 1; }
-      }
-    }
-    if (xWeight === 0) return null;
-    const centroidX = xSum / xWeight;
-    const axisPx = refineAxisBySymmetry(dark, w, minX, maxX, minY, maxY, centroidX);
-    const symmetry = computeSymmetryScore(dark, w, axisPx, minX, maxX, minY, maxY);
-
-    // Strip half-width around the axis. Wide enough to survive a faint U-curve
-    // crossing the axis at an angle, narrow enough to skip strap tabs at the
-    // top corners.
-    const halfStripPx = Math.max(2, Math.round(bboxW * 0.035));
-    const xLo = Math.max(minX, axisPx - halfStripPx);
-    const xHi = Math.min(maxX, axisPx + halfStripPx);
-
-    let topY = -1;
-    for (let y = minY; y <= maxY && topY < 0; y += 1) {
-      const base = y * w;
-      for (let x = xLo; x <= xHi; x += 1) {
-        if (dark[base + x]) { topY = y; break; }
-      }
-    }
-    let bottomY = -1;
-    for (let y = maxY; y >= minY && bottomY < 0; y -= 1) {
-      const base = y * w;
-      for (let x = xLo; x <= xHi; x += 1) {
-        if (dark[base + x]) { bottomY = y; break; }
-      }
-    }
-    if (topY < 0 || bottomY < 0) return null;
-    const spanPx = bottomY - topY;
-    if (spanPx < bboxH * 0.15) return null;
-
-    // Refine X at the top/bottom rows by taking the centroid of ink in the
-    // strip on that row. This keeps the point on the actual edge ink instead
-    // of pinning to the global symmetry axis when the edge curls slightly.
-    const rowCentroid = (y) => {
-      const base = y * w;
-      let sum = 0, count = 0;
-      for (let x = xLo; x <= xHi; x += 1) {
-        if (dark[base + x]) { sum += x; count += 1; }
-      }
-      return count > 0 ? sum / count : axisPx;
-    };
-    const topX = rowCentroid(topY);
-    const botX = rowCentroid(bottomY);
-
-    return {
-      axisX: axisPx / w,
-      top: { x: topX / w, y: topY / h },
-      bottom: { x: botX / w, y: bottomY / h },
-      symmetry,
-      bandHeightFrac: spanPx / Math.max(1, bboxH),
-      confidence: clamp01(0.30 + 0.45 * symmetry + Math.min(0.25, spanPx / Math.max(1, bboxH))),
-    };
-  }
-
-  // Topmost dark pixel in the +/-30% horizontal strip around the axis, BELOW
-  // chestRow. This is the high point of the inner-cup construction curves —
-  // the audit's anchor for POM 9 (inner cup height) and POM 10 (inner cup
-  // width). Returns { point: {x, y}, confidence } in normalized coords.
-  function findInnerCupTopFromInk(dark, w, h, bounds, axisPx, chestRow, bandRow) {
-    const { minX, minY, maxX, maxY } = bounds;
-    const bboxW = maxX - minX + 1;
-    const bboxH = maxY - minY + 1;
-    if (bboxW < 12 || bboxH < 12) return null;
-    const stripHalf = Math.max(4, Math.round(bboxW * 0.30));
-    const xLo = Math.max(minX, axisPx - stripHalf);
-    const xHi = Math.min(maxX, axisPx + stripHalf);
-    // Skip the chest-row band itself so we don't pin to the chest line ink.
-    const guardBelowChest = Math.max(3, Math.round(bboxH * 0.04));
-    const yLo = (chestRow > 0 ? chestRow : minY + Math.round(bboxH * 0.30)) + guardBelowChest;
-    const yHi = (bandRow > 0 ? bandRow : maxY) - Math.max(4, Math.round(bboxH * 0.10));
-    if (yHi <= yLo || xHi <= xLo) return null;
-    // Find first row in [yLo, yHi] with at least a few ink pixels in strip.
-    const minInkPerRow = Math.max(2, Math.round((xHi - xLo + 1) * 0.05));
-    let topY = -1, topX = axisPx, topInk = 0;
-    for (let y = yLo; y <= yHi; y += 1) {
-      const base = y * w;
-      let inkCount = 0, xSum = 0;
-      for (let x = xLo; x <= xHi; x += 1) {
-        if (dark[base + x]) { inkCount += 1; xSum += x; }
-      }
-      if (inkCount >= minInkPerRow) {
-        topY = y;
-        topX = xSum / inkCount;
-        topInk = inkCount;
-        break;
-      }
-    }
-    if (topY < 0) return null;
-    // Confidence scales with how much ink we found on the winning row.
-    const confidence = clamp01(0.35 + Math.min(0.45, topInk / Math.max(1, xHi - xLo + 1)));
-    return { point: { x: topX / w, y: topY / h }, confidence };
-  }
-
-  // POM 10 width from real cup ink. Walks the cup-body band [apexY..seamY]
-  // on the picked cup half, finds the widest ink-supported row, and returns
-  // its leftmost/rightmost ink columns re-labeled as inner (near CF axis) /
-  // outer (near side seam) for that side. Returns null when ink is too
-  // sparse or the widest row still doesn't span a real cup extent — the
-  // caller then keeps its fixed-inset priors so nothing downstream regresses.
-  function findCupWidthFromInk(dark, w, h, bounds, axisPx, sideColPx, apexY, seamY, side, targetY, searchWindow) {
-    if (!dark || !w || !h) return null;
-    if (apexY == null || seamY == null || seamY <= apexY) return null;
-    const { minX, minY, maxX, maxY } = bounds;
-    const bboxW = maxX - minX + 1;
-    const cupHeightPx = (seamY - apexY) * h;
-    if (cupHeightPx < 20) return null;
-    // Row band to scan. When a searchWindow {loY,hiY} is given, scan that whole
-    // caller-supplied band (already clamped to the A6-legal region) and take the
-    // widest coherent cup-ink run — used for deep cups whose true widest seam
-    // sits below the fixed upper-middle level. When a targetY is given, scan a
-    // narrow band around it (the legacy fixed-level probe). Otherwise scan the
-    // cup body proper — skipping the strap-junction band right below the apex
-    // (top 20%) and the cradle-transition band above the seam (bottom 15%) — and
-    // take the widest row overall.
-    let yLo, yHi;
-    if (searchWindow && Number.isFinite(searchWindow.loY) && Number.isFinite(searchWindow.hiY)
-        && searchWindow.hiY > searchWindow.loY) {
-      yLo = Math.max(minY + 1, Math.round(clamp01(searchWindow.loY) * h));
-      yHi = Math.min(maxY - 1, Math.round(clamp01(searchWindow.hiY) * h));
-    } else if (targetY != null) {
-      const bandPx = Math.max(3, Math.round(cupHeightPx * 0.06));
-      const cy = Math.round(clamp01(targetY) * h);
-      yLo = Math.max(minY + 1, cy - bandPx);
-      yHi = Math.min(maxY - 1, cy + bandPx);
-    } else {
-      yLo = Math.max(minY + 1, Math.round(apexY * h + cupHeightPx * 0.20));
-      yHi = Math.min(maxY - 1, Math.round(seamY * h - cupHeightPx * 0.15));
-    }
-    if (yHi <= yLo + 2) return null;
-    // Keep the x search clear of both the CF axis and the side seam so we
-    // never match seam ink itself.
-    const axisGuard = Math.max(2, Math.round(bboxW * 0.02));
-    const seamGuard = Math.max(2, Math.round(bboxW * 0.015));
-    let xLo, xHi;
-    if (side < 0) {
-      xLo = Math.max(minX + 1, sideColPx + seamGuard);
-      xHi = Math.min(maxX - 1, axisPx - axisGuard);
-    } else {
-      xLo = Math.max(minX + 1, axisPx + axisGuard);
-      xHi = Math.min(maxX - 1, sideColPx - seamGuard);
-    }
-    if (xHi <= xLo + 4) return null;
-    const cupHalfWidthPx = Math.max(1, Math.abs(sideColPx - axisPx));
-    // Require the run to span a real cup extent (≥45% of the cup half-width).
-    // A narrower run at the targeted upper level is usually a fragment trapped
-    // between internal cup seams (not the gore→outer span), so we reject it and
-    // let the caller use its straddling axis/side inset prior instead.
-    const minCupWidthPx = Math.max(6, Math.round(cupHalfWidthPx * 0.45));
-    let bestY = -1, bestLeft = -1, bestRight = -1, bestWidth = 0;
-    for (let y = yLo; y <= yHi; y += 1) {
-      const base = y * w;
-      let firstInk = -1, lastInk = -1;
-      for (let x = xLo; x <= xHi; x += 1) {
-        if (dark[base + x]) {
-          if (firstInk < 0) firstInk = x;
-          lastInk = x;
-        }
-      }
-      if (firstInk < 0) continue;
-      const runWidth = lastInk - firstInk + 1;
-      if (runWidth < minCupWidthPx) continue;
-      if (runWidth > bestWidth) {
-        bestWidth = runWidth;
-        bestLeft = firstInk;
-        bestRight = lastInk;
-        bestY = y;
-      }
-    }
-    if (bestY < 0) return null;
-    // On the LEFT cup the inner (near-axis) edge is the RIGHTMOST ink pixel
-    // and the outer (near-seam) edge is the LEFTMOST. On the RIGHT cup it
-    // flips. seed-anchors.js separately assigns inner-cup-left/right by x
-    // ordering so canvas geometry stays left→right regardless of cup side.
-    const innerPx = side < 0 ? bestRight : bestLeft;
-    const outerPx = side < 0 ? bestLeft  : bestRight;
-    return {
-      centerY: bestY / h,
-      innerX: innerPx / w,
-      outerX: outerPx / w,
-      widthPx: bestWidth,
-      widthFrac: bestWidth / cupHalfWidthPx,
-    };
-  }
-
-  // Cup OUTER silhouette edge at a single row. Scans INWARD from the view's
-  // outer (armhole-side) bbox edge toward the CF axis and returns the first
-  // coherent ink run — the cup's outer outline at that row. Unlike
-  // findCupWidthFromInk this is NOT capped at the detected side-seam column, so
-  // it recovers the true cup edge when sideColPx lands inboard of the silhouette
-  // (POM 10 must span the FULL cup width — CF gore → outer armhole edge).
-  // Returns the pixel x of the outline, or null. side<0 = left cup.
-  function findCupOuterSilhouettePx(dark, w, h, bounds, axisPx, rowPx, side) {
-    if (!dark || !w || !h) return null;
-    const { minX, minY, maxX, maxY } = bounds;
-    if (rowPx <= minY || rowPx >= maxY) return null;
-    const base = rowPx * w;
-    const guard = Math.max(2, Math.round((maxX - minX + 1) * 0.02));
-    if (side < 0) {
-      const xStop = axisPx - guard;
-      for (let x = minX + 1; x < xStop; x += 1) {
-        if (dark[base + x] && dark[base + x + 1]) return x; // first 2px run
-      }
-    } else {
-      const xStop = axisPx + guard;
-      for (let x = maxX - 1; x > xStop; x -= 1) {
-        if (dark[base + x] && dark[base + x - 1]) return x;
-      }
-    }
-    return null;
-  }
-
-  // Cup INNER silhouette (seam) at a single row. Scans from just off the CF
-  // axis OUTWARD toward the cup center and returns the first coherent ink run —
-  // the cup's inner seam where it meets the center gore. On wide-gore styles
-  // the gore is faint mesh (below the ink threshold), so the scan skips it and
-  // lands on the cup panel's inner edge; on narrow gores it stops near the axis
-  // ≈ the gore inset. Bounded by cupCenterPx so it never crosses to the outer
-  // half. Returns the pixel x, or null. side<0 = left cup (inner edge is right).
-  function findCupInnerSilhouettePx(dark, w, h, bounds, axisPx, cupCenterPx, rowPx, side, startInsetPx) {
-    if (!dark || !w || !h) return null;
-    const { minX, minY, maxX, maxY } = bounds;
-    if (rowPx <= minY || rowPx >= maxY) return null;
-    const base = rowPx * w;
-    if (side < 0) {
-      const xStart = Math.min(maxX - 1, axisPx - startInsetPx);
-      const xStop = Math.max(minX + 1, cupCenterPx);   // don't cross cup center
-      for (let x = xStart; x > xStop; x -= 1) {
-        if (dark[base + x] && dark[base + x - 1]) return x;
-      }
-    } else {
-      const xStart = Math.max(minX + 1, axisPx + startInsetPx);
-      const xStop = Math.min(maxX - 1, cupCenterPx);
-      for (let x = xStart; x < xStop; x += 1) {
-        if (dark[base + x] && dark[base + x + 1]) return x;
-      }
-    }
-    return null;
-  }
-
-  // Confirm/refine the cup's OWN underwire bottom from the dark mask. The
-  // global cradleY is a single horizontal row for the whole garment; this
-  // instead looks for the lowest COHERENT ink arc within the cup's central
-  // columns — the underwire dips near cup center (per the POM 9 reference,
-  // cup height runs to that lowest wire point). We keep the result close to
-  // cradleY (a validation, not a relocation): if a real arc is found near the
-  // cradle row under this cup, POM 9's bottom becomes trustworthy (earned
-  // confidence) instead of a flat guess. Returns { bottomY, support } or null.
-  function findCupBottomFromInk(dark, w, h, bounds, axisPx, sideColPx, apexY, cradleY, side) {
-    if (!dark || !w || !h) return null;
-    if (apexY == null || cradleY == null) return null;
-    const { minX, minY, maxX, maxY } = bounds;
-    const bboxH = maxY - minY + 1;
-    // Central portion of the cup x-band — the wire bottoms near cup center,
-    // not out at the side seam nor hard against the CF gore.
-    const loX = Math.min(axisPx, sideColPx);
-    const hiX = Math.max(axisPx, sideColPx);
-    const bandW = hiX - loX;
-    if (bandW < 8) return null;
-    const cLo = Math.max(minX + 1, Math.round(loX + bandW * 0.20));
-    const cHi = Math.min(maxX - 1, Math.round(hiX - bandW * 0.20));
-    if (cHi <= cLo + 2) return null;
-    // Vertical window: clearly below the apex, down to just past the cradle
-    // row (the wire can dip a little below it) but never into the band hem.
-    const yTop = Math.round(apexY * h + bboxH * 0.10);
-    const yBot = Math.min(maxY - 1, Math.round(clamp01(cradleY + 0.05) * h));
-    if (yBot <= yTop + 4) return null;
-    let cols = 0, hit = 0;
-    const bottoms = [];
-    for (let x = cLo; x <= cHi; x += 1) {
-      cols += 1;
-      let low = -1;
-      for (let y = yBot; y >= yTop; y -= 1) {
-        if (dark[y * w + x]) {
-          // Require a short vertical run so a lone speck doesn't win.
-          let run = 0;
-          for (let k = 0; k < 4 && (y - k) >= yTop; k += 1) if (dark[(y - k) * w + x]) run += 1;
-          if (run >= 2) { low = y; break; }
-        }
-      }
-      if (low >= 0) { bottoms.push({ x, low }); hit += 1; }
-    }
-    if (hit < Math.max(3, Math.round(cols * 0.30))) return null; // not a coherent arc
-    const lows = bottoms.slice();  // (x, low) pairs preserved below
-    bottoms.sort((a, b) => a.low - b.low);
-    // 80th percentile of per-column lowest points — robust to a few short cols.
-    const idx = Math.min(bottoms.length - 1, Math.round(bottoms.length * 0.80));
-    const chosenY = bottoms[idx].low;
-    // Arc-bottom column: median x of the columns within 2px of the deepest
-    // point — the flat center of the wire dip (used by the POM 7 arc tier).
-    const deep = lows.filter((b) => b.low >= chosenY - 2).map((b) => b.x).sort((a, b) => a - b);
-    const bottomX = deep.length ? deep[Math.floor(deep.length / 2)] / w : null;
-    return { bottomY: chosenY / h, bottomX, support: hit / cols };
-  }
-
-  // POM 9 / POM 10 share one cup model so they describe the same physical cup.
-  // The model selects ONE cup side (left or right) and one view, then derives
-  // its top / bottom / inner-edge / outer-edge / center from real structure
-  // signals (apex = cup-strap join, cradleCupTop = cup-bottom seam, side seam,
-  // CF axis). It never snaps to the topmost dark pixel inside a broad strip.
-  //
-  // visibility (POMs 9/10 are the cup drawn on the FRONT/outer view; a front_inner
-  // cutaway is a bonus, never a precondition — DETECTION_AND_MEASUREMENT_CONTRACT.md):
-  //   - 'direct'   : cup read from real structure at both ends — a validated apex
-  //                  AND a real cup-bottom (committed seam or traced arc), OR a
-  //                  front_inner cutaway view exists
-  //   - 'inferred' : endpoints placeable but one is only extrapolated (flat-cradle
-  //                  bottom, or no real apex)
-  //   - 'hidden'   : neither apex nor cup-bottom reference is reliable
-  //
-  // When visibility is 'hidden' the model still returns a stub (topPoint / etc
-  // may be null) so the seeding layer can skip inner-cup-* anchors and POM 9/10
-  // demote to REVIEW_ONLY via the requiredAnchors guard. No ratio fallback.
-  function buildCupModel(ctx) {
-    const {
-      bounds, w, h, dark, axisPx, cradleY,
-      apexLeft, apexLeftConf, apexRight, apexRightConf,
-      cradleCupTop, cradleCupSide, cradleCupTier, cradleCupConfidence,
-      sideLeftX, sideRightX,
-      hasFrontInner,
-    } = ctx;
-    const { minX, maxX } = bounds;
-    const bboxW = maxX - minX + 1;
-
-    // -------- 1. Pick cup side from positive structure evidence -------------
-    // Only trusted seam tiers may influence the cup side. 'guide'/'arc' tier
-    // commits (ADR 0021/0022) are review-grade POM 7 evidence and must leave
-    // the cupModel — including its side selection — byte-identical.
-    const trustedSeamTier = cradleCupTier === 'strong' || cradleCupTier === 'seam';
-    const seamSide = trustedSeamTier ? cradleCupSide : 0;
-    let side = 0;
-    let sideReason = '';
-    const lConf = apexLeftConf || 0;
-    const rConf = apexRightConf || 0;
-    if (apexLeft && apexRight && Math.abs(lConf - rConf) < 0.08) {
-      // Symmetric apex evidence — pick the side whose cup-bottom seam was
-      // accepted by the POM 7 detector. Fall back to left when neither side
-      // dominates.
-      if (seamSide === +1) { side = +1; sideReason = 'symmetric apex pair; cup-bottom seam confirms right cup'; }
-      else if (seamSide === -1) { side = -1; sideReason = 'symmetric apex pair; cup-bottom seam confirms left cup'; }
-      else { side = -1; sideReason = 'symmetric apex pair without cup-bottom seam evidence; default left cup'; }
-    } else if (lConf > 0 || rConf > 0) {
-      side = lConf >= rConf ? -1 : +1;
-      sideReason = `stronger ${side < 0 ? 'left' : 'right'} apex confidence (${lConf.toFixed(2)} vs ${rConf.toFixed(2)})`;
-    } else if (seamSide === -1 || seamSide === +1) {
-      side = seamSide;
-      sideReason = `no apex; cup side taken from POM 7 cup-bottom seam (side=${side})`;
-    } else {
-      side = -1;
-      sideReason = 'no apex and no cup-bottom seam evidence; default left cup';
-    }
-
-    // Cup columns (needed early so the cup-bottom ink trace in step 3 can scan
-    // the cup's central band). The cup occupies [sideColPx .. axisPx] for a
-    // left cup and [axisPx .. sideColPx] for right; the HEIGHT runs through the
-    // vertical median cupCenterX.
-    const sideColPx = side < 0
-      ? (Number.isFinite(sideLeftX)  ? Math.round(sideLeftX  * w) : minX + Math.round(bboxW * 0.05))
-      : (Number.isFinite(sideRightX) ? Math.round(sideRightX * w) : maxX - Math.round(bboxW * 0.05));
-    const cupCenterXpx = Math.round((axisPx + sideColPx) / 2);
-    const cupCenterX = cupCenterXpx / w;
-
-    // -------- 2. View role and visibility ----------------------------------
-    const viewRole = hasFrontInner ? 'front_inner' : 'front_outer';
-    const apexPoint = side < 0 ? apexLeft : apexRight;
-    const apexConf  = side < 0 ? lConf    : rConf;
-
-    // -------- 3. Y references — apex row (cup top) and seam row (cup bottom)
-    // We separate Y from X here: a "cup height" measurement must use a
-    // SINGLE column for both endpoints — taking topPoint.x from apex and
-    // bottomPoint.x from the POM 7 seam column produces a diagonal line that
-    // is NOT what a TD reads as cup height. So we record y-only references
-    // and project them onto the cup center column in step 7.
-    let apexY = null;
-    let topFromApex = false;
-    if (apexPoint) {
-      apexY = apexPoint.y;
-      topFromApex = true;
-    }
-
-    let seamY = null;
-    let bottomFromSeam = false;
-    let bottomFromInk = false;      // cup-bottom confirmed by a traced ink arc
-    let bottomInkSupport = 0;
-    let seamRawX = null;        // raw seam column (debug only)
-    if (cradleCupTop && cradleCupSide === side && trustedSeamTier) {
-      // Only strong/pattern-3 seams may relocate the cup bottom. Guide-tier
-      // (sparse dashed, ADR 0021) and arc-tier (traced underwire, ADR 0022)
-      // commits are weak evidence drawn for TD review — letting them in here
-      // is exactly what shifted inner-cup geometry and broke invariant B3 in
-      // the reverted 2026-07-09 prototype.
-      seamY = cradleCupTop.y;
-      seamRawX = cradleCupTop.x;
-      bottomFromSeam = true;
-    } else if (cradleY != null) {
-      // POM 7 didn't commit a column on this side. Before falling back to the
-      // flat global cradle row, try to CONFIRM the cup's own underwire bottom
-      // as a coherent ink arc under the cup center (rule.md: "POM 7 can help
-      // locate the lower cup reference, but only when POM 7 confidence is
-      // reliable" — here we earn our own reliability). The trace is kept near
-      // the cradle row (±0.05), so this refines/validates rather than relocates
-      // the bottom, but converts an unearned guess into a trusted endpoint.
-      const inkBottom = (apexY != null)
-        ? findCupBottomFromInk(dark, w, h, bounds, axisPx, sideColPx, apexY, cradleY, side)
-        : null;
-      if (inkBottom
-          && inkBottom.support >= 0.30
-          && inkBottom.bottomY > apexY + 0.08
-          && inkBottom.bottomY >= cradleY - 0.05) {
-        seamY = clamp01(inkBottom.bottomY);
-        bottomFromInk = true;
-        bottomInkSupport = inkBottom.support;
-      } else {
-        seamY = cradleY;
-      }
-      bottomFromSeam = false;
-    }
-
-    // -------- 4. Visibility classification ---------------------------------
-    // 'direct' still requires SOMETHING to anchor Y — front_inner alone with
-    // no apex AND no cradle reference cannot place real endpoints, so it
-    // falls through to 'hidden' rather than build geometry from null y's.
-    // A cup is read DIRECTLY when it rests on real drawn structure at both ends —
-    // a validated apex (cup top) AND a real cup-bottom (a committed POM 7 seam or a
-    // traced underwire arc) — regardless of whether a separate front_inner cutaway
-    // view exists. Per the 2026-07-09 TD correction (DETECTION_AND_MEASUREMENT_CONTRACT.md
-    // Part 1 "Cup group"), POMs 9/10 are the cup as drawn on the FRONT (outer) view;
-    // a front_inner cutaway is a bonus, never a precondition. 'inferred' is the
-    // genuinely weaker case: endpoints are placeable but one is only extrapolated —
-    // a bare flat-cradle-row bottom, or no real apex. 'hidden' = endpoints unplaceable.
-    const bottomReal = bottomFromSeam || bottomFromInk;
-    let visibility;
-    let visibilityReason;
-    if ((topFromApex && bottomReal) || (hasFrontInner && (apexY != null || seamY != null))) {
-      visibility = 'direct';
-      visibilityReason = hasFrontInner
-        ? 'front_inner view detected; inner cup is drawn directly'
-        : (bottomFromSeam
-          ? 'front cup read directly: apex (cup top) + committed cup-bottom seam'
-          : 'front cup read directly: apex (cup top) + traced cup-bottom underwire arc');
-    } else if (apexY != null && seamY != null) {
-      visibility = 'inferred';
-      visibilityReason = topFromApex
-        ? 'apex anchors the cup top; cup bottom only inferred from the flat cradle row'
-        : 'cup top not on a real apex; endpoints partially inferred';
-    } else {
-      visibility = 'hidden';
-      visibilityReason = hasFrontInner
-        ? 'front_inner view present but no apex and no cup-bottom reference — cannot anchor endpoints'
-        : 'no apex AND no cup-bottom reference — cup model cannot be located';
-    }
-
-    // POM 9/10 silent-demotion diagnostics. Captures every upstream signal we
-    // checked so a TD can answer "which input was missing?" without re-running
-    // the detector with extra console.logs. Surfaced via detection.debug.cupModel.
-    const diagnostics = {
-      hasFrontInner: !!hasFrontInner,
-      apexLeftPresent: !!apexLeft,
-      apexRightPresent: !!apexRight,
-      apexLeftConf: Number.isFinite(lConf) ? lConf : 0,
-      apexRightConf: Number.isFinite(rConf) ? rConf : 0,
-      sidePicked: side,
-      apexPointPresent: !!apexPoint,
-      apexConfPicked: Number.isFinite(apexConf) ? apexConf : 0,
-      cradleCupTopPresent: !!cradleCupTop,
-      cradleCupSide,
-      cradleCupSideMatches: !!(cradleCupTop && cradleCupSide === side),
-      cradleYPresent: cradleY != null,
-      cradleCupConfidence: Number.isFinite(cradleCupConfidence) ? cradleCupConfidence : 0,
-      apexY,
-      seamY,
-      topFromApex,
-      bottomFromSeam,
-      bottomFromInk,
-      bottomInkSupport: Number.isFinite(bottomInkSupport) ? bottomInkSupport : 0,
-      visibility,
-      visibilityReason,
-    };
-    if (visibility === 'hidden' && typeof console !== 'undefined' && console.warn) {
-      console.warn('[Auto Mode] cupModel hidden → POM 9/10 will demote to REVIEW_ONLY', diagnostics);
-    }
-
-    // For 'direct' with only one of (apexY, seamY) present, extrapolate the
-    // missing endpoint by a typical cup-height fraction of the normalized
-    // image height (apexY / seamY are already 0–1 normalized). 0.28 is a
-    // reasonable approximation across the demo sketches.
-    if (visibility === 'direct') {
-      const fallbackCupHeight = 0.28;
-      if (apexY == null && seamY != null) apexY = clamp01(seamY - fallbackCupHeight);
-      if (seamY == null && apexY != null) seamY = clamp01(apexY + fallbackCupHeight);
-    }
-
-    // -------- 5. Reject decorative/texture-only evidence -------------------
-    // Per rule.md "Reject lace/flower/texture as primary cup evidence". We
-    // don't run a dedicated texture detector here; instead we delegate to the
-    // two upstream detectors whose validation already excludes decorative
-    // candidates:
-    //   - apex: validateCupApexPair rejects strap-join candidates that aren't
-    //     symmetric and bounded inside the cup region
-    //   - cradleCupTop: the POM 7 column scan rejects short decorative ticks,
-    //     side-seam-like vertical runs, and ratio-only candidates
-    // So a cupModel sourced from (apex, cradleCupTop) is texture-free by
-    // construction. The only remaining failure mode is "neither signal fires";
-    // that maps to visibility='hidden' above. texturePenalty stays 0 unless a
-    // dedicated detector is added later.
-    const texturePenalty = 0;
-    const contourConfidence = clamp01(topFromApex ? apexConf : (apexConf * 0.4));
-    // Bottom-endpoint provenance & confidence. A committed POM 7 seam is best;
-    // a traced underwire arc (bottomFromInk) earns confidence from its column
-    // support (0.30..1.0 support -> ~0.5..0.85) instead of the flat 0.25 guess
-    // used when only the global cradle row is available.
-    const bottomEvidence = bottomFromSeam ? 'seam'
-      : (bottomFromInk ? 'ink'
-        : (seamY != null ? 'cradleRow' : 'none'));
-    const seamConfidence = bottomFromSeam
-      ? clamp01(cradleCupConfidence || 0)
-      : (bottomFromInk
-        ? clamp01(0.35 + 0.5 * bottomInkSupport)
-        : (seamY != null ? 0.25 : 0));
-
-    if (visibility === 'hidden') {
-      return {
-        side, viewRole, visibility,
-        topPoint: null, bottomPoint: null,
-        innerEdge: null, outerEdgeNearArmhole: null, centerPoint: null,
-        contourConfidence, seamConfidence, texturePenalty,
-        sideReason, visibilityReason,
-        topFromApex: false, bottomFromSeam: false, bottomFromInk: false, bottomEvidence: 'none',
-        apexAnchor: null, seamAnchor: null,
-        rejectedTextureReason: null,
-        diagnostics,
-        reason: `cup model hidden: ${visibilityReason}`,
-      };
-    }
-
-    // -------- 6. Cup geometry — shared columns, coherent endpoints ---------
-    // The cup occupies the band [sideColPx .. axisPx] for a left cup (and
-    // [axisPx .. sideColPx] for right). The HEIGHT measurement runs through
-    // the cup's vertical median (cupCenterX); the WIDTH measurement spans
-    // the cup's full horizontal extent (innerEdge → outerEdge) at the cup's
-    // vertical mid (centerY). sideColPx / cupCenterX are computed in step 1.
-
-    // POM 10 endpoints — the reference draws cup width at the UPPER-MIDDLE of
-    // the cup (from the center gore junction out to the outer cup edge), not at
-    // the fullest row. We target that level and snap to the real cup ink there
-    // when the dark mask is available, otherwise fall back to fixed insets from
-    // the CF axis and side seam at the same level. Ink-based snapping picks the
-    // inner (gore-side) and outer (side-seam-side) ink pixels on the picked cup
-    // half so the width follows the drawn cup outline instead of a geometric
-    // prior.
-    //
-    // Fallback rationale — see the historical note preserved below.
-    //   A previous attempt swapped innerEdge to cradleCupTop.x assuming it
-    //   marked the cup-gore boundary. It does not — cradleCupTop sits in the
-    //   OUTER cup zone (where the cup-bottom seam rises toward chest near the
-    //   side seam), so using it as the inner edge collapsed POM 10 width to
-    //   near-zero. The inner edge is therefore always derived from the CF-axis
-    //   side (ink edge, else a 3% axis inset), never a side-zone landmark.
-    //
-    // widthLevelY = apex + 0.42·(seam−apex): the fixed upper-middle level. It is
-    // the fallback and also the upper floor of the widest-row search below (kept
-    // above 0.40 so it stays within 0.08 of POM 9 mid-y, invariant A6).
-    const widthLevelY = clamp01(apexY + 0.42 * (seamY - apexY));
-    const pom9Mid = (apexY + seamY) / 2;
-
-    // Deep cups: cup width is measured at the cup's WIDEST horizontal cross-
-    // section, which on a deep cup sits BELOW the fixed 0.42 level. Search a
-    // body-bounded, A6-clamped window for the widest coherent cup-ink row and
-    // place the width line there. The window is ONE-SIDED — its floor is
-    // widthLevelY, so it can only move the row DOWN — meaning shallow cups
-    // (widest already at/above 0.42) keep today's placement and only cups with a
-    // genuinely wider seam lower down descend. Capping hiY at pom9Mid+0.07
-    // guarantees invariant A6 (|width_y−pom9Mid| < 0.08) by construction: 0.07 +
-    // pixel rounding < 0.075 usability gate < 0.08. bodyHiY keeps the row off the
-    // underwire/cradle band. Shallow cups skip the search entirely (byte-
-    // identical output → no golden drift).
-    const cupSpan = seamY - apexY;
-    const DEEP_CUP_FRAC = 0.24;
-    const bodyHiY = seamY - 0.15 * cupSpan;
-    const widthWindow = {
-      loY: widthLevelY,
-      hiY: clamp01(Math.min(bodyHiY, pom9Mid + 0.07)),
-    };
-    // The legacy fixed-level probe is always computed — both as the fallback and
-    // as the baseline width the widest-row search must clearly beat.
-    const atLevel = findCupWidthFromInk(
-      dark, w, h, bounds, axisPx, sideColPx, apexY, seamY, side, widthLevelY
-    );
-    let inkWidth = atLevel;
-    if (cupSpan >= DEEP_CUP_FRAC && widthWindow.hiY > widthWindow.loY) {
-      const windowed = findCupWidthFromInk(
-        dark, w, h, bounds, axisPx, sideColPx, apexY, seamY, side, null, widthWindow
-      );
-      // Only descend to the lower row when the cup is MEANINGFULLY wider there
-      // (a genuine deep bulge) — ≥12% wider than at the fixed level, and at least
-      // 3% of cup span lower. This keeps roughly-uniform cups at today's level
-      // (no spurious drift) and moves only the deep cups the fixed 0.42 level
-      // strands too high.
-      if (windowed
-          && windowed.widthPx >= (atLevel ? atLevel.widthPx * 1.12 : 0)
-          && windowed.centerY > widthLevelY + 0.03 * cupSpan) {
-        inkWidth = windowed;
-      }
-    }
-    // Guard against a stray-ink row that would violate invariant A6 (POM 10
-    // row must lie within 0.08 of POM 9 mid-y). Also require the found row
-    // to sit clearly BELOW the apex — otherwise it's likely strap-junction
-    // ink, not a cup body row.
-    const inkWidthUsable = !!(inkWidth
-      && Math.abs(inkWidth.centerY - pom9Mid) < 0.075
-      && inkWidth.centerY > apexY + 0.02);
-
-    // Cup-width vertical reference — the widest ink row when accepted, else the
-    // geometric upper-middle level.
-    const centerY = inkWidthUsable
-      ? clamp01(inkWidth.centerY)
-      : widthLevelY;
-
-    // POM 9 endpoints — cup height runs from the APEX (cup-strap join, the true
-    // top of the cup) down to the cup-bottom at the cup's vertical median. A TD
-    // reads cup height from the apex, so the top anchor sits on the detected
-    // apex point rather than being projected onto the cup-center column (which
-    // floated above the cup edge, since the cup top dips from the apex toward
-    // the gore). The bottom stays on the cup-center column at the cup-bottom
-    // seam. The line therefore tilts slightly apex→bottom (rendered as a curve)
-    // — that matches the TD's cup-height convention. When no apex fired
-    // (topFromApex false) there is no real top landmark, so fall back to the
-    // cup-center column for a coherent vertical estimate.
-    const topX = (topFromApex && apexPoint) ? apexPoint.x : cupCenterX;
-    const topPoint    = { x: clamp01(topX), y: clamp01(apexY) };
-    // Bottom sits under the cup BODY, not at the geometric side↔CF midpoint.
-    // When the apex is at the outer-top (strap join near the side seam), the
-    // plain cup-center leans toward CF and the bottom drifts off the cup; bias
-    // it halfway from the apex column toward the cup center so POM 9 runs down
-    // the cup body. Falls back to the cup center when no apex fired.
-    const bottomXraw = (topFromApex && apexPoint) ? (apexPoint.x + cupCenterX) / 2 : cupCenterX;
-    // bottomPoint is created AFTER the width endpoints below, so it can be
-    // clamped to sit between them (invariant A5).
-
-    // Inner endpoint = the CENTER-FRONT gore junction (where the two cups meet),
-    // per the reference. That is a STRUCTURAL point at the CF, not the cup's ink
-    // edge at this level — near the top the cup's inner edge curves inward under
-    // the neckline V, which would shorten the width. So anchor the inner
-    // endpoint just off the CF axis (a small gore inset, ≥ invariant B3's 0.5%),
-    // guaranteeing it sits at the gore and that POM 9's column falls between the
-    // two POM 10 endpoints (invariant A5).
-    const axisPadPx = Math.max(2, Math.round(bboxW * 0.006));
-    // Size the gore inset in IMAGE-width terms (0.8% of w) so the inner
-    // endpoint always clears invariant B3 (>0.5% of image width off the CF
-    // axis) regardless of how much of the frame the cup bbox fills — a bbox-
-    // relative inset can shrink below the B3 floor on wide two-view sketches.
-    const goreInsetPx = Math.max(axisPadPx, Math.ceil(w * 0.008));
-    const goreInsetXpx = side < 0 ? axisPx - goreInsetPx : axisPx + goreInsetPx;
-    // On a WIDE center gore the cups are separated by a broad (often faint mesh)
-    // panel; the gore inset then floats the inner endpoint in the gore instead
-    // of on the cup. Trace the cup's inner seam at the width row and pull the
-    // endpoint OUTWARD onto it. Only ever moves away from the axis (never past
-    // the gore inset toward center), so invariant B3 (>0.5% off CF axis) holds.
-    const innerSilPx = findCupInnerSilhouettePx(
-      dark, w, h, bounds, axisPx, cupCenterXpx, Math.round(centerY * h), side, goreInsetPx);
-    let innerEdgeXpx = goreInsetXpx;
-    if (innerSilPx != null) {
-      innerEdgeXpx = side < 0
-        ? Math.min(goreInsetXpx, innerSilPx)   // smaller x = further from axis (left cup)
-        : Math.max(goreInsetXpx, innerSilPx);
-    }
-    const innerEdge = { x: clamp01(innerEdgeXpx / w), y: centerY };
-    diagnostics.innerEdgeSilhouettePx = innerSilPx;
-    diagnostics.innerEdgeExtendedToSeam = innerSilPx != null && innerEdgeXpx !== goreInsetXpx;
-    // Ink support for the inner endpoint. The gore inset is a FABRICATED
-    // fallback — legitimate only when the point lies inside the garment. On
-    // front-closure styles whose apex fires on the strap top, the width row
-    // crosses the OPEN neckline V and the inset point floats in blank
-    // background. Consumers (landmark-qa cupModelUsable, seed
-    // innerCupFromCupModel) treat innerEdgeSupported === false as "cup model
-    // not usable for anchors" so the seed falls down the existing precedence
-    // chain (innerCupTopInk → view ratios → delete) instead.
-    // "Inside the garment" test: faint fills (lace texture) don't register in
-    // the dark mask, so ink-proximity alone can't tell garment interior from
-    // the neckline opening. But every garment-interior point has the
-    // neckline/top edge line somewhere ABOVE it, while a point in the open
-    // neckline V sees nothing but background all the way to the ink-bbox top.
-    let innerEdgeSupported = innerSilPx != null;
-    if (!innerEdgeSupported && dark) {
-      const rowPx = Math.min(h - 1, Math.max(0, Math.round(centerY * h)));
-      const cLo = Math.max(minX, innerEdgeXpx - 2);
-      const cHi = Math.min(maxX, innerEdgeXpx + 2);
-      scan: for (let y = rowPx - 1; y >= Math.max(0, bounds.minY); y -= 1) {
-        const rowBase = y * w;
-        for (let x = cLo; x <= cHi; x += 1) {
-          if (dark[rowBase + x]) { innerEdgeSupported = true; break scan; }
-        }
-      }
-    }
-    diagnostics.innerEdgeSupported = innerEdgeSupported;
-    if (!innerEdgeSupported && typeof console !== 'undefined' && console.warn) {
-      console.warn('[Auto Mode] cupModel inner edge unsupported (width row crosses a void) → cup model not usable for POM 9/10 anchors');
-    }
-
-    // Outer endpoint = the cup's OUTER edge near the armhole. Prefer the traced
-    // outer ink edge when it is a valid outer boundary (on the side-seam side of
-    // the cup center); otherwise a small inset from the detected side-seam
-    // column. Invariant B4 keeps it ≥0.3% off the side seam.
-    const outerInsetPx = Math.max(2, Math.round(bboxW * 0.02));
-    const outerFallbackXpx = side < 0 ? sideColPx + outerInsetPx : sideColPx - outerInsetPx;
-    // Size the seam pad in IMAGE-width terms as well (0.4% of w): invariant B4
-    // measures the seam gap as a fraction of the full image (>0.3%), and a
-    // purely bbox-relative pad bottoms out at 2px on multi-view sketches whose
-    // ink bbox is a small fraction of the frame — landing the outer endpoint
-    // inside the B4 floor (same failure class as the B3 gore inset above).
-    const seamPadPx = Math.max(2, Math.round(bboxW * 0.004), Math.ceil(w * 0.004));
-    const outerInkValid = inkWidthUsable
-      && (side < 0 ? inkWidth.outerX < cupCenterX : inkWidth.outerX > cupCenterX);
-    // POM 10 must span the full cup — CF gore → outer side seam. The traced ink
-    // edge may pull the outer endpoint FURTHER OUT toward the seam, but must
-    // never narrow the cup inward: sketches with interior panel/princess seams
-    // were snapping the ink to an inner seam, ending POM 10 ~30% short of the
-    // cup. Reach the detected side seam (outerFallbackXpx) and let ink only
-    // extend it outward, floored a hair inside the seam (invariant B4).
-    const inkOuterXpx = outerInkValid ? Math.round(inkWidth.outerX * w) : outerFallbackXpx;
-    const outerEdgeSeamXpx = side < 0
-      ? Math.max(sideColPx + seamPadPx, Math.min(outerFallbackXpx, inkOuterXpx))
-      : Math.min(sideColPx - seamPadPx, Math.max(outerFallbackXpx, inkOuterXpx));
-    // The side-seam column can land INBOARD of the cup's true outer outline
-    // (interior/princess seams, faint side seams). Trace the outer silhouette at
-    // the width row and let it extend the endpoint OUTWARD to the real cup edge
-    // (floored a hair inside the outline, invariant B4). Never narrows the cup.
-    const silhouettePx = findCupOuterSilhouettePx(dark, w, h, bounds, axisPx, Math.round(centerY * h), side);
-    let outerEdgeXpx = outerEdgeSeamXpx;
-    if (silhouettePx != null) {
-      const silPadded = side < 0 ? silhouettePx + seamPadPx : silhouettePx - seamPadPx;
-      outerEdgeXpx = side < 0
-        ? Math.min(outerEdgeSeamXpx, silPadded)   // smaller x = further outboard
-        : Math.max(outerEdgeSeamXpx, silPadded);
-    }
-    const outerEdgeNearArmhole = { x: clamp01(outerEdgeXpx / w), y: centerY };
-    diagnostics.outerEdgeSilhouettePx = silhouettePx;
-    diagnostics.outerEdgeExtendedToSilhouette = silhouettePx != null && outerEdgeXpx !== outerEdgeSeamXpx;
-    // POM 9 bottom (deferred from above): clamp the apex-biased column to sit
-    // between the POM 10 width endpoints so the height line stays on the cup
-    // body (invariant A5) — on a degenerate narrow cup the raw column can fall
-    // just outside the span.
-    const bottomLoX = Math.min(innerEdge.x, outerEdgeNearArmhole.x);
-    const bottomHiX = Math.max(innerEdge.x, outerEdgeNearArmhole.x);
-    const bottomPoint = { x: clamp01(Math.max(bottomLoX, Math.min(bottomHiX, bottomXraw))), y: clamp01(seamY) };
-    diagnostics.innerEdgeSource = 'goreAnchor';
-    diagnostics.outerEdgeSource = outerInkValid ? 'ink' : 'sideInset';
-    diagnostics.innerEdgeX = innerEdge.x;
-    diagnostics.outerEdgeX = outerEdgeNearArmhole.x;
-    if (inkWidth) {
-      diagnostics.cupWidthInkRow = inkWidth.centerY;
-      diagnostics.cupWidthInkFrac = inkWidth.widthFrac;
-      diagnostics.cupWidthInkUsable = inkWidthUsable;
-    }
-
-    // Cup geometric center (debug only — POM 10 spans inner→outer, NOT
-    // center→outer).
-    const centerPoint = { x: clamp01(cupCenterX), y: centerY };
-
-    // Raw landmark sources kept for debug/inspection.
-    const apexAnchor = apexPoint
-      ? { x: apexPoint.x, y: apexPoint.y }
-      : null;
-    const seamAnchor = (seamRawX != null && seamY != null)
-      ? { x: seamRawX, y: seamY }
-      : null;
-
-    return {
-      side, viewRole, visibility,
-      topPoint, bottomPoint, innerEdge, outerEdgeNearArmhole, centerPoint,
-      innerEdgeSupported,
-      contourConfidence, seamConfidence, texturePenalty,
-      sideReason, visibilityReason,
-      topFromApex, bottomFromSeam, bottomFromInk, bottomEvidence,
-      apexAnchor, seamAnchor,
-      rejectedTextureReason: null,
-      diagnostics,
-      reason: visibility === 'direct'
-        ? (hasFrontInner
-          ? `direct cup view (front_inner): ${sideReason}`
-          : `direct front cup (apex + ${bottomFromSeam ? 'cup-bottom seam' : 'traced underwire arc'}): ${sideReason}`)
-        : `inferred cup model from ${topFromApex ? 'apex' : 'no apex'} + ${bottomFromSeam ? 'cup-bottom seam' : (bottomFromInk ? 'traced underwire arc' : 'cradle row reference')}: ${sideReason}`,
-    };
-  }
-
-  // Underarm notch on one side: starting at the detected side-seam column,
-  // scan upward from chestRow looking for the topmost dark pixel within a
-  // small lateral window. The result is the side-top anchor for POM 11.
-  function findSideTopFromInk(dark, w, h, bounds, sideCol, chestRow, side) {
-    if (sideCol == null || sideCol < 0) return null;
-    const { minX, minY, maxX } = bounds;
-    const bboxW = maxX - minX + 1;
-    const lateralHalf = Math.max(3, Math.round(bboxW * 0.025));
-    const xLo = Math.max(minX, sideCol - lateralHalf);
-    const xHi = Math.min(maxX, sideCol + lateralHalf);
-    const yLo = minY;
-    const yHi = chestRow > 0 ? chestRow : bounds.maxY;
-    if (yHi <= yLo || xHi <= xLo) return null;
-    let topY = -1, topXSum = 0, topCount = 0;
-    for (let y = yLo; y <= yHi; y += 1) {
-      const base = y * w;
-      let rowSum = 0, rowCount = 0;
-      for (let x = xLo; x <= xHi; x += 1) {
-        if (dark[base + x]) { rowSum += x; rowCount += 1; }
-      }
-      if (rowCount > 0) {
-        topY = y; topXSum = rowSum; topCount = rowCount;
-        break;
-      }
-    }
-    if (topY < 0) return null;
-    const topX = topXSum / topCount;
-    const confidence = clamp01(0.4 + Math.min(0.4, (chestRow > 0 ? (chestRow - topY) / Math.max(1, bounds.maxY - bounds.minY) : 0) * 1.5));
-    return { point: { x: topX / w, y: topY / h }, confidence, side };
-  }
-
-  // From a detected side-top, follow the side-seam OUTLINE downward to the
-  // bottom hem. A real side seam slants inward (it is rarely a vertical edge),
-  // so we edge-walk the ink nearest the previous column each row — tolerating
-  // small gaps where the band line crosses — instead of holding the top column.
-  // The lowest tracked point is the side-bottom anchor for POM 11.
-  function findSideBottomFromInk(dark, w, h, bounds, topPoint) {
-    if (!topPoint) return null;
-    const { minX, minY, maxX, maxY } = bounds;
-    const bboxW = maxX - minX + 1;
-    let lastX = Math.round(topPoint.x * w);
-    const startY = Math.round(topPoint.y * h) + 1;
-    if (startY >= maxY || lastX < minX || lastX > maxX) return null;
-    const lateralHalf = Math.max(3, Math.round(bboxW * 0.05));
-    const maxGap = Math.max(4, Math.round((maxY - minY) * 0.05));
-    let bestX = lastX, bestY = -1, gap = 0, rows = 0;
-    for (let y = startY; y <= maxY; y += 1) {
-      const base = y * w;
-      const xLo = Math.max(minX, lastX - lateralHalf);
-      const xHi = Math.min(maxX, lastX + lateralHalf);
-      let nearestX = -1, nearestDist = Infinity;
-      for (let x = xLo; x <= xHi; x += 1) {
-        if (dark[base + x]) {
-          const d = Math.abs(x - lastX);
-          if (d < nearestDist) { nearestDist = d; nearestX = x; }
-        }
-      }
-      if (nearestX < 0) { gap += 1; if (gap > maxGap) break; continue; }
-      gap = 0; lastX = nearestX; bestX = nearestX; bestY = y; rows += 1;
-    }
-    if (bestY < 0 || rows < 3) return null;
-    const confidence = clamp01(0.35 + Math.min(0.45, rows / Math.max(1, maxY - minY)));
-    return { point: { x: bestX / w, y: bestY / h }, confidence };
-  }
-
-  // Back-view side seam as CORNER endpoints, not silhouette guesses. The side
-  // seam's two ends are junctions: the TOP is where the side meets the armhole
-  // (the armpit), the BOTTOM is where the side meets the band. We walk the outer
-  // silhouette (leftmost ink per row — the back view's side is on its left),
-  // find the armpit as the outermost extremum (a corner that exists at any
-  // proportion, no fixed ratio), fit a line to the straight seam between, and
-  // place the bottom corner on that line at the detected band row so POM 11 and
-  // the band agree at the same point. `bandYpx` is the back band row (full-image
-  // px), or <0 to fall back to the hem.
-  function findBackSideSeam(dark, w, h, bounds, bandYpx) {
-    const { minX, minY, maxX, maxY } = bounds;
-    const H = maxY - minY + 1;
-    if (H < 24) return null;
-    const leftEdge = (y) => { const base = y * w; for (let x = minX; x <= maxX; x += 1) if (dark[base + x]) return x; return -1; };
-
-    const ys = [], xs = [];
-    for (let y = minY; y <= maxY; y += 1) { const x = leftEdge(y); if (x >= 0) { ys.push(y); xs.push(x); } }
-    if (ys.length < 8) return null;
-    const yHem = ys[ys.length - 1];
-
-    // TOP corner = armpit: outermost (leftmost) silhouette point below the strap
-    // sliver. A true extremum, so it lands on the armhole∩side junction whatever
-    // the style's vertical proportions are.
-    const skipTop = minY + Math.round(H * 0.10);
-    const armMax = minY + Math.round(H * 0.72);
-    let yTop = -1, xTop = Infinity;
-    for (let i = 0; i < ys.length; i += 1) {
-      if (ys[i] < skipTop || ys[i] > armMax) continue;
-      if (xs[i] < xTop) { xTop = xs[i]; yTop = ys[i]; }
-    }
-    if (yTop < 0) return null;
-
-    // Fit x = m*y + b to the straight seam rows (below the armpit, above the
-    // hem). POM 11 is a straight line between its corners, so this denoises the
-    // seam and lets the bottom corner sit exactly on it.
-    let n = 0, sy = 0, sx = 0, syy = 0, sxy = 0;
-    const fitLo = yTop + Math.round(H * 0.06), fitHi = yHem - Math.round(H * 0.05);
-    for (let i = 0; i < ys.length; i += 1) {
-      const y = ys[i];
-      if (y < fitLo || y > fitHi) continue;
-      n += 1; sy += y; sx += xs[i]; syy += y * y; sxy += xs[i] * y;
-    }
-    let m = 0, b = xTop;
-    if (n >= 4) { const d = n * syy - sy * sy; if (Math.abs(d) > 1e-6) { m = (n * sxy - sy * sx) / d; b = (sx - m * sy) / n; } }
-    const lineX = (y) => m * y + b;
-
-    // BOTTOM corner = side∩band junction, on the SOLID hem line — not a zig-zag
-    // elastic line drawn above it. Scanned row by row, a zig-zag has only short
-    // horizontal runs (its diagonal strokes crossing each row), while the hem is
-    // one long continuous run. So we pick the LOWEST row whose max horizontal run
-    // reads as a solid line: that lands the corner on the bottom edge under any
-    // decorative stitching. The band/hem fallback covers sketches with no clear
-    // solid line.
-    const W = maxX - minX + 1;
-    const rowRun = computeRowMaxRun(dark, w, minX, maxX, minY, maxY);
-    const yLo = minY + Math.round(H * 0.45);
-    let peakRun = 0;
-    for (let y = yLo; y <= maxY; y += 1) if (rowRun[y] > peakRun) peakRun = rowRun[y];
-    let yBottom = (bandYpx != null && bandYpx > yTop && bandYpx <= maxY) ? bandYpx : yHem;
-    if (peakRun >= W * 0.18) {
-      const solidThresh = Math.max(W * 0.18, peakRun * 0.5);
-      for (let y = maxY; y >= yLo; y -= 1) { if (rowRun[y] >= solidThresh) { yBottom = y; break; } }
-    }
-    let xBottom = n >= 4 ? lineX(yBottom) : (leftEdge(yBottom) >= 0 ? leftEdge(yBottom) : xTop);
-    xBottom = Math.max(minX, Math.min(maxX, xBottom));
-
-    return { top: { x: xTop / w, y: yTop / h }, bottom: { x: xBottom / w, y: yBottom / h }, confidence: 0.55 };
-  }
-
-  // Back-panel edges: contour-following at ~22% from the back-view's left.
-  // The audit calls out the existing inView(b, 0.225, 0.439) and especially
-  // inView(b, 0.232, 1.005) — the latter clamps off-image. Find real ink
-  // top/bottom along that strip instead.
-  function findBackPanelEdges(dark, w, h, bounds) {
-    const { minX, minY, maxX, maxY } = bounds;
-    const bboxW = maxX - minX + 1;
-    const bboxH = maxY - minY + 1;
-    if (bboxW < 16 || bboxH < 16) return null;
-    // Find the strongest vertical-ink column in the inner 10–45% zone of the
-    // back view. This adapts to panel width instead of assuming a fixed 22.5%.
-    // A minimum ink count guards against stray dots winning over real seams.
-    const searchLo = minX + Math.round(bboxW * 0.10);
-    const searchHi = minX + Math.round(bboxW * 0.45);
-    const colCounts = new Uint32Array(w);
-    for (let y = minY; y <= maxY; y += 1) {
-      const base = y * w;
-      for (let x = searchLo; x <= searchHi; x += 1) {
-        if (dark[base + x]) colCounts[x] += 1;
-      }
-    }
-    let bestCol = -1, bestCount = 0;
-    for (let x = searchLo; x <= searchHi; x += 1) {
-      if (colCounts[x] > bestCount) { bestCount = colCounts[x]; bestCol = x; }
-    }
-    // Require meaningful ink density — rejects empty strips and stray dots.
-    if (bestCol < 0 || bestCount < Math.max(8, Math.round(bboxH * 0.15))) return null;
-    const stripCenter = bestCol;
-    const stripHalf = Math.max(3, Math.round(bboxW * 0.04));
-    const xLo = Math.max(minX, stripCenter - stripHalf);
-    const xHi = Math.min(maxX, stripCenter + stripHalf);
-    if (xHi <= xLo) return null;
-    let topY = -1, topXSum = 0, topCount = 0;
-    for (let y = minY; y <= maxY && topY < 0; y += 1) {
-      const base = y * w;
-      let rowSum = 0, rowCount = 0;
-      for (let x = xLo; x <= xHi; x += 1) {
-        if (dark[base + x]) { rowSum += x; rowCount += 1; }
-      }
-      if (rowCount > 0) { topY = y; topXSum = rowSum; topCount = rowCount; }
-    }
-    let botY = -1, botXSum = 0, botCount = 0;
-    for (let y = maxY; y >= minY && botY < 0; y -= 1) {
-      const base = y * w;
-      let rowSum = 0, rowCount = 0;
-      for (let x = xLo; x <= xHi; x += 1) {
-        if (dark[base + x]) { rowSum += x; rowCount += 1; }
-      }
-      if (rowCount > 0) { botY = y; botXSum = rowSum; botCount = rowCount; }
-    }
-    if (topY < 0 || botY < 0 || botY <= topY) return null;
-    // Reject if the span is implausibly small (likely a stray dot).
-    if ((botY - topY) < bboxH * 0.20) return null;
-    const topX = topXSum / topCount;
-    const botX = botXSum / botCount;
-    const confidence = clamp01(0.30 + Math.min(0.45, (botY - topY) / Math.max(1, bboxH)));
-    return {
-      top: { x: topX / w, y: topY / h },
-      bottom: { x: botX / w, y: botY / h },
-      confidence,
-    };
-  }
-
-  // Back-panel HEIGHT (POM 13) the way a TD measures it: a vertical drop from the
-  // shoulder strap's JOINING point (where the strap meets the panel's top edge)
-  // down to the bottom band. This is NOT findBackPanelEdges, which measures an
-  // interior seam column's ink extent and lands its top up on the strap/hardware.
-  // Key idea: the panel's top edge is the back chest row, and ABOVE that row the
-  // only ink in the inner-left column is the shoulder strap — so the strap's x is
-  // just the centroid of that ink. The join sits at (strapX, chestRow); the
-  // bottom is the band edge straight below it, so the result is a true vertical
-  // height that bottoms out on the solid band (see snapBandToSolidEdge).
-  function findBackPanelHeight(dark, w, h, bounds, bandYpx, chestRowPx) {
-    const { minX, minY, maxX, maxY } = bounds;
-    const bw = maxX - minX + 1;
-    const bh = maxY - minY + 1;
-    if (bw < 16 || bh < 16) return null;
-    if (!(chestRowPx > minY + bh * 0.05 && chestRowPx < maxY)) return null;
-    // Inner-left strap zone (the left strap; the right strap sits past 0.42·bw).
-    const xLo = minX + Math.round(bw * 0.04);
-    const xHi = minX + Math.round(bw * 0.42);
-    if (xHi <= xLo) return null;
-    let sum = 0, cnt = 0;
-    for (let y = minY; y <= chestRowPx; y += 1) {
-      const base = y * w;
-      for (let x = xLo; x <= xHi; x += 1) if (dark[base + x]) { sum += x; cnt += 1; }
-    }
-    // Require real strap ink, else let the caller fall back.
-    if (cnt < Math.max(8, Math.round(bh * 0.05))) return null;
-    const strapX = sum / cnt;
-    const yBot = (bandYpx != null && bandYpx > chestRowPx && bandYpx <= maxY) ? bandYpx : maxY;
-    const confidence = clamp01(0.35 + Math.min(0.45, cnt / Math.max(1, bw * bh * 0.02)));
-    return {
-      top:    { x: strapX / w, y: chestRowPx / h },
-      bottom: { x: strapX / w, y: yBot / h },
-      confidence,
-    };
-  }
-
-  // When the connected-component grouping returns ONE bbox that spans a wide
-  // chunk of the canvas, the most common reason is that two technical-sketch
-  // views (front + back) got merged because stray ink (background texture,
-  // lace mesh) connects them through the gap. Detect such a "merged" view by
-  // looking for a low-density vertical alley in its middle and, if found,
-  // split it into [leftSub, rightSub]. Returns [view] unchanged when no
-  // confident alley is detected.
-  // Compute every back-view landmark from a back view box (pixel-space
-  // {minX,minY,maxX,maxY}) against the ink mask. Extracted verbatim from
-  // detectLandmarks so the SAME pass can re-run when the TD reassigns the back
-  // role in the view-role dialog (redetectBackLandmarks). Returns null-valued
-  // fields when backBox is null.
-  function detectBackLandmarks(dark, w, h, backBox) {
-    if (!backBox) {
-      return {
-        backInfo: null, backFeatures: null, backPanelInfo: null, backPanelHeightInfo: null,
-        backStrapTopInfo: null, backStrapInnerInfo: null, backSideTopInfo: null,
-        backSideBottomInfo: null, backSideInfo: null,
-      };
-    }
-    const backInfo = findBackCenterLandmarks(dark, w, h, backBox);
-    // Per-view feature pass: the back view's OWN axis, chest/band rows, side
-    // seams, and ink endpoints so back anchors snap to ink, not box ratios.
-    const backFeatures = detectFeaturesInViewBox(dark, w, h, backBox);
-    // Back-panel top/bottom (POM 13) from contour-following near the left edge.
-    const backPanelInfo = findBackPanelEdges(dark, w, h, backBox);
-    // POM 13 back-panel height: strap-joining point → bottom band (vertical).
-    const backPanelHeightInfo = backFeatures
-      ? findBackPanelHeight(
-          dark, w, h, backBox,
-          backFeatures.bandY  != null ? Math.round(backFeatures.bandY  * h) : -1,
-          backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1
-        )
-      : null;
-    // Back-view strap-top: topmost ink in the back's left strap zone (POM 14 back).
-    const backStrapTopInfo = findBackStrapTopFromInk(
-      dark, w, h, backBox,
-      backFeatures && backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1
-    );
-    // Back-view strap INNER edges (POM 15) where each strap meets the back band.
-    const backStrapInnerInfo = findBackStrapInnerEdges(
-      dark, w, h, backBox,
-      backFeatures && backFeatures.chestY != null ? Math.round(backFeatures.chestY * h) : -1,
-      backFeatures && backFeatures.axisX  != null ? Math.round(backFeatures.axisX  * w) : -1
-    );
-    // Back-view side-top (POM 11): topmost ink at the left-edge column.
-    const backSideTopInfo = findSideTopFromInk(dark, w, h, backBox, backBox.minX + 1, -1, -1);
-    const backSideBottomInfo = backSideTopInfo
-      ? findSideBottomFromInk(dark, w, h, backBox, backSideTopInfo.point)
-      : null;
-    // Preferred POM-11 source: the outer-silhouette seam (top=armpit, bottom=hem).
-    const backSideInfo = findBackSideSeam(
-      dark, w, h, backBox,
-      backFeatures && backFeatures.bandY != null ? Math.round(backFeatures.bandY * h) : -1
-    );
-    return {
-      backInfo, backFeatures, backPanelInfo, backPanelHeightInfo,
-      backStrapTopInfo, backStrapInnerInfo, backSideTopInfo, backSideBottomInfo, backSideInfo,
-    };
-  }
-
-  // Re-run back-view landmark detection against the CURRENT detection.backViewIndex
-  // and overwrite the back-* fields, so a TD role correction (back moved to a
-  // different panel) re-places the back POMs (11/12/13/15) on the new panel. Uses
-  // the retained ink mask (detection.inkMask, dimensions inkMaskW/H). No-op when
-  // the mask or a back box is unavailable. Mirrors the field mapping in
-  // detectLandmarks' detection assembly.
-  function redetectBackLandmarks(detection) {
-    if (!detection || !detection.inkMask || !detection.inkMaskW || !detection.inkMaskH) return;
-    const views = detection.views || detection.viewBoxes || [];
-    const idx = detection.backViewIndex;
-    const vb = (Number.isFinite(idx) && idx >= 0) ? views[idx] : null;
-    if (!vb || !(vb.width > 0) || !(vb.height > 0)) return;
-    const mw = detection.inkMaskW;
-    const mh = detection.inkMaskH;
-    const backBox = {
-      minX: Math.max(0, Math.round(vb.x * mw)),
-      minY: Math.max(0, Math.round(vb.y * mh)),
-      maxX: Math.min(mw - 1, Math.round((vb.x + vb.width) * mw)),
-      maxY: Math.min(mh - 1, Math.round((vb.y + vb.height) * mh)),
-      count: 0,
-    };
-    const bl = detectBackLandmarks(detection.inkMask, mw, mh, backBox);
-    detection.back = bl.backInfo;
-    detection.backFeatures = bl.backFeatures;
-    detection.backPanel = bl.backPanelInfo;
-    detection.backPanelHeight = bl.backPanelHeightInfo;
-    detection.backStrapInner = bl.backStrapInnerInfo;
-    detection.backStrapTop = bl.backStrapTopInfo ? bl.backStrapTopInfo.point : null;
-    detection.backSideTop = bl.backSideTopInfo ? bl.backSideTopInfo.point : null;
-    detection.backSideBottom = bl.backSideBottomInfo ? bl.backSideBottomInfo.point : null;
-    detection.backSide = bl.backSideInfo;
-  }
-
-  // Split every view box wide enough to plausibly hold more than one panel at
-  // its internal vertical alley, recursing so a board whose panels merged in
-  // component-grouping separates into one box per panel. This generalizes the
-  // former lone-box-only special case: a box is split-eligible when it spans
-  // more than half the canvas (>0.50w). A single garment panel on a multi-panel
-  // board is never that wide — there would be no room for the others — so a box
-  // over that gate is a merge of >=2 panels (e.g. EvelynBliss's back+inner
-  // grouped into one 0.565w box). Correct 2-panel boards keep two sub-half
-  // boxes and are untouched, which is why golden is unaffected. The per-box
-  // sanity gates inside splitMergedViewByVerticalValley (empty-alley run length
-  // + >=20% ink share each side) additionally reject splitting a genuine single
-  // view (deep-V neckline, wide back panel).
-  function splitWideViewBoxes(boxes, dark, w, h) {
-    if (!boxes || boxes.length === 0) return boxes;
-    const out = [];
-    for (const box of boxes) {
-      const parts = splitMergedViewByVerticalValley(dark, w, h, box, 0.50);
-      if (parts.length > 1) {
-        // Recurse at the SAME 0.50 gate so a box holding 3+ merged panels keeps
-        // splitting while any resulting piece still spans more than half the
-        // canvas. The gate stays at 0.50 (never lower) because a lone wide
-        // single panel — demo1/demo2 group into one >0.50w box that the split
-        // separates into front+back — must not have its halves re-split; a
-        // lower gate over-splits those legitimate single panels (golden regress).
-        out.push(...splitWideViewBoxes(parts, dark, w, h));
-      } else {
-        out.push(box);
-      }
-    }
-    return out;
-  }
-
-  function splitMergedViewByVerticalValley(dark, w, h, view, minWidthRatio = 0.50) {
-    const { minX, minY, maxX, maxY } = view;
-    const bw = maxX - minX + 1;
-    const bh = maxY - minY + 1;
-    // Require a fairly wide bbox before we even try to split — narrow boxes
-    // are almost certainly a single view that just happens to be off-center.
-    if (bw < w * minWidthRatio || bh < 16) return [view];
-
-    // Column density restricted to the view's bbox.
-    const colDark = new Uint32Array(bw);
-    for (let y = minY; y <= maxY; y += 1) {
-      const base = y * w;
-      for (let x = minX; x <= maxX; x += 1) {
-        if (dark[base + x]) colDark[x - minX] += 1;
-      }
-    }
-    // Walk the center 30..70% range, looking for the LONGEST run of columns
-    // whose density is below 8% of the bbox height (i.e. nearly empty).
-    const lo = Math.floor(bw * 0.30);
-    const hi = Math.floor(bw * 0.70);
-    const emptyThreshold = Math.max(1, Math.round(bh * 0.08));
-    let bestStart = -1, bestEnd = -1, bestLen = 0;
-    let curStart = -1;
-    for (let i = lo; i <= hi; i += 1) {
-      if (colDark[i] <= emptyThreshold) {
-        if (curStart < 0) curStart = i;
-        // Track true run length (end - start + 1); the old `end - start`
-        // comparison against a -1/-1 sentinel could never record a 1-col run.
-        const curLen = i - curStart + 1;
-        if (curLen > bestLen) {
-          bestLen = curLen;
-          bestStart = curStart;
-          bestEnd = i;
-        }
-      } else {
-        curStart = -1;
-      }
-    }
-    const runLen = bestLen;
-    // Need a noticeable alley — at least 4% of the bbox width — before splitting.
-    if (bestStart < 0 || runLen < Math.max(4, bw * 0.04)) return [view];
-
-    // Use the MIDDLE of the alley as the split point. Recompute each sub-view's
-    // ink-bbox by scanning its columns; this snaps the bbox to the actual ink
-    // (so the FRONT/BACK overlay doesn't include the gap or stray ink).
-    const splitX = minX + Math.round((bestStart + bestEnd) / 2);
-    const subBounds = (xStart, xEnd) => {
-      let lMinX = w, lMaxX = -1, lMinY = h, lMaxY = -1, lCount = 0;
-      for (let y = minY; y <= maxY; y += 1) {
-        const base = y * w;
-        for (let x = xStart; x <= xEnd; x += 1) {
-          if (!dark[base + x]) continue;
-          lCount += 1;
-          if (x < lMinX) lMinX = x;
-          if (x > lMaxX) lMaxX = x;
-          if (y < lMinY) lMinY = y;
-          if (y > lMaxY) lMaxY = y;
-        }
-      }
-      return lMaxX < 0 ? null : { minX: lMinX, minY: lMinY, maxX: lMaxX, maxY: lMaxY, count: lCount };
-    };
-    const left = subBounds(minX, splitX - 1);
-    const right = subBounds(splitX + 1, maxX);
-    if (!left || !right) return [view];
-    // Sanity check the split: each side should hold a non-trivial share of
-    // the original ink. Otherwise the alley was probably just a real empty
-    // space inside a single view (e.g. a deep V neckline).
-    const total = Math.max(1, view.count || (left.count + right.count));
-    const minShare = 0.20;
-    if (left.count / total < minShare || right.count / total < minShare) return [view];
-    return [left, right];
-  }
-
-  // Decide each detected garment component's semantic role. Visual features
-  // get first vote; layout only breaks ties. This keeps two-view styles
-  // working while allowing a third inner-cup/front-lining detail view.
-  function classifySketchViewRoles(dark, w, h, viewBoxes) {
-    const scores = (viewBoxes || []).map((view) => scoreViewLayout(view, w, dark, h));
-    const roles = new Array(scores.length).fill('unknown');
-    if (!viewBoxes || !viewBoxes.length) {
-      return {
-        roles,
-        frontOuterIndex: -1,
-        backIndex: -1,
-        frontInnerIndex: -1,
-        scores,
-        reviewRequired: true,
-      };
-    }
-    if (viewBoxes.length === 1) {
-      roles[0] = 'front_outer';
-      scores[0].roleConfidence = 0.55;
-      return {
-        roles,
-        frontOuterIndex: 0,
-        backIndex: -1,
-        frontInnerIndex: -1,
-        scores,
-        reviewRequired: false,
-      };
-    }
-
-    const largest = viewBoxes.reduce((m, v) => Math.max(m, v.count || 0), 0);
-    const minQualifyingCount = Math.max(1, largest * 0.05);
-    const eligible = viewBoxes
-      .map((view, index) => ({ view, index, score: scores[index] }))
-      .filter((item) => (item.view.count || 0) >= minQualifyingCount);
-    if (!eligible.length) {
-      roles[0] = 'front_outer';
-      scores[0].roleConfidence = 0.35;
-      return {
-        roles,
-        frontOuterIndex: 0,
-        backIndex: -1,
-        frontInnerIndex: -1,
-        scores,
-        reviewRequired: true,
-      };
-    }
-
-    const assignBest = (role, metric, exclude) => {
-      let best = null;
-      for (const item of eligible) {
-        if (exclude && exclude.has(item.index)) continue;
-        if (!best || item.score[metric] > best.score[metric]) best = item;
-      }
-      if (!best) return -1;
-      roles[best.index] = role;
-      return best.index;
-    };
-
-    const used = new Set();
-    let backIndex = -1;
-    let frontInnerIndex = -1;
-    let frontOuterIndex = -1;
-
-    if (eligible.length >= 3) {
-      // Panel order on a technical board is a fixed TD convention, left to
-      // right: front_outer, back, front_inner. Position is a far more reliable
-      // signal than the visual scores — a symmetric racerback back and a
-      // molded-cup inner cutaway score too alike to tell apart — so assign the
-      // three roles by centroidX order. Take the three highest-ink eligible
-      // views first so a stray 4th blob can't shift the mapping; any extra
-      // panel stays 'unknown' and trips reviewRequired below.
-      const trio = eligible
-        .slice()
-        .sort((a, b) => (b.view.count || 0) - (a.view.count || 0))
-        .slice(0, 3)
-        .sort((a, b) => a.score.centroidX - b.score.centroidX);
-      frontOuterIndex = trio[0].index; roles[frontOuterIndex] = 'front_outer';
-      backIndex       = trio[1].index; roles[backIndex] = 'back';
-      frontInnerIndex = trio[2].index; roles[frontInnerIndex] = 'front_inner';
-      used.add(frontOuterIndex); used.add(backIndex); used.add(frontInnerIndex);
-      // Position is authoritative for the 3-view layout, so assign a confident
-      // role score — the review dialog is NOT forced on a clean 3-panel board
-      // (the TD can still nudge anchors if a board ever breaks the convention).
-      for (const idx of [frontOuterIndex, backIndex, frontInnerIndex]) {
-        if (scores[idx]) scores[idx].roleConfidence = 0.75;
-      }
-    } else {
-      // Two panels (the common front + back board): back by best backScore, the
-      // remaining view is front_outer. Unchanged from the long-standing path.
-      backIndex = assignBest('back', 'backScore', used);
-      if (backIndex >= 0) used.add(backIndex);
-
-      frontOuterIndex = assignBest('front_outer', 'frontOuterScore', used);
-      if (frontOuterIndex < 0) {
-        const fallback = eligible
-          .filter(item => !used.has(item.index))
-          .sort((a, b) => a.score.centroidX - b.score.centroidX)[0] || eligible[0];
-        frontOuterIndex = fallback.index;
-        roles[frontOuterIndex] = 'front_outer';
-      }
-    }
-
-    const roleConfidence = (index, metric) => {
-      if (index < 0 || !scores[index]) return 0;
-      const values = eligible
-        .filter(item => item.index !== index)
-        .map(item => item.score[metric])
-        .sort((a, b) => b - a);
-      const runnerUp = values.length ? values[0] : 0;
-      return clamp01(0.45 + (scores[index][metric] - runnerUp) * 0.55);
-    };
-    // The ≤2-panel path derives confidence from the visual score margin. The
-    // 3-view path already set a fixed positional confidence above (position is
-    // authoritative there), so it is not recomputed from scores here.
-    if (eligible.length < 3) {
-      if (frontOuterIndex >= 0) scores[frontOuterIndex].roleConfidence = roleConfidence(frontOuterIndex, 'frontOuterScore');
-      if (backIndex >= 0) scores[backIndex].roleConfidence = roleConfidence(backIndex, 'backScore');
-    }
-
-    const reviewRequired =
-      eligible.length > 3 ||
-      eligible.some(item => roles[item.index] === 'unknown') ||
-      eligible.some(item => {
-        const role = roles[item.index];
-        if (role === 'front_outer') return (scores[item.index].roleConfidence || 0) < 0.52;
-        if (role === 'front_inner') return (scores[item.index].roleConfidence || 0) < 0.52;
-        if (role === 'back') return (scores[item.index].roleConfidence || 0) < 0.52;
-        return true;
-      });
-
-    return { roles, frontOuterIndex, backIndex, frontInnerIndex, scores, reviewRequired };
-  }
-
-  function scoreViewLayout(view, w, dark, h) {
-    const bw = (view.maxX - view.minX + 1);
-    const bh = (view.maxY - view.minY + 1);
-    const cx = (view.minX + view.maxX) / 2;
-    const ink = view.count || 1;
-    let edgeInk = 0;
-    let centerVerticalInk = 0;
-    if (dark && w && h && bw > 0 && bh > 0) {
-      const insetX = Math.max(2, Math.round(bw * 0.16));
-      const insetY = Math.max(2, Math.round(bh * 0.12));
-      const centerLo = Math.round(view.minX + bw * 0.42);
-      const centerHi = Math.round(view.minX + bw * 0.58);
-      for (let y = view.minY; y <= view.maxY; y += 1) {
-        const base = y * w;
-        for (let x = view.minX; x <= view.maxX; x += 1) {
-          if (!dark[base + x]) continue;
-          const inInner = x >= view.minX + insetX && x <= view.maxX - insetX
-            && y >= view.minY + insetY && y <= view.maxY - insetY;
-          if (!inInner) edgeInk += 1;
-          if (x >= centerLo && x <= centerHi) centerVerticalInk += 1;
-        }
-      }
-    }
-    const widthRatio = w > 0 ? bw / w : 0;
-    const aspect = bh / Math.max(1, bw);
-    const edgeRatio = edgeInk / ink;
-    const centerVerticalRatio = centerVerticalInk / ink;
-    const leftness = 1 - clamp01(cx / Math.max(1, w));
-    const rightness = clamp01(cx / Math.max(1, w));
-    const symmetry = computeSymmetryScore(
-      dark,
-      w,
-      Math.round(cx),
-      view.minX,
-      view.maxX,
-      view.minY,
-      view.maxY
-    );
-    const frontOuterScore =
-      symmetry * 0.34 +
-      widthRatio * 0.22 +
-      edgeRatio * 0.16 +
-      leftness * 0.14 +
-      (1 - clamp01(Math.abs(aspect - 1.05))) * 0.14;
-    const backScore =
-      rightness * 0.30 +
-      centerVerticalRatio * 0.24 +
-      edgeRatio * 0.20 +
-      clamp01(aspect / 1.45) * 0.16 +
-      (1 - symmetry) * 0.10;
-    return {
-      centroidX: w > 0 ? cx / w : 0,
-      widthRatio,
-      count: view.count || 0,
-      edgeRatio,
-      centerVerticalRatio,
-      symmetry,
-      frontOuterScore,
-      backScore,
-      roleConfidence: 0,
-    };
-  }
-
-  // Otsu's method — picks the threshold that maximizes between-class variance.
-  function otsuThreshold(hist, total) {
-    let sum = 0;
-    for (let i = 0; i < 256; i += 1) sum += i * hist[i];
-    let sumB = 0;
-    let wB = 0;
-    let maxVar = -1;
-    let bestT = 128;
-    for (let t = 0; t < 256; t += 1) {
-      wB += hist[t];
-      if (wB === 0) continue;
-      const wF = total - wB;
-      if (wF === 0) break;
-      sumB += t * hist[t];
-      const mB = sumB / wB;
-      const mF = (sum - sumB) / wF;
-      const diff = mB - mF;
-      const v = wB * wF * diff * diff;
-      if (v > maxVar) { maxVar = v; bestT = t; }
-    }
-    if (maxVar < 0) {
-      // Degenerate histogram (e.g. a single-valued / blank image): no
-      // between-class split exists, so the loop never updated bestT. Return
-      // the mean intensity — the single populated bin for a one-value image —
-      // instead of a misleading hard-coded 128.
-      return total > 0 ? Math.round(sum / total) : 128;
-    }
-    return bestT;
-  }
-
-  // 1-2-1 smoothing kernel — cheap, removes single-row/single-column jitter
-  // without flattening real peaks.
-  function smooth1D(arr) {
-    const n = arr.length;
-    const out = new Float32Array(n);
-    if (n === 0) return out;
-    for (let i = 0; i < n; i += 1) {
-      const a = i > 0 ? arr[i - 1] : arr[i];
-      const b = arr[i];
-      const c = i < n - 1 ? arr[i + 1] : arr[i];
-      out[i] = (a + 2 * b + c) / 4;
-    }
-    return out;
-  }
-
-  // Search centroid ± 5% bboxWidth (2px steps) and pick the candidate whose
-  // mirror-fold around the binary dark map gives the best symmetry score.
-  function refineAxisBySymmetry(dark, w, minX, maxX, minY, maxY, centroid) {
-    const searchHalf = Math.max(3, Math.round((maxX - minX) * 0.05));
-    const center = Math.round(centroid);
-    let bestX = center;
-    let bestScore = -1;
-    for (let dx = -searchHalf; dx <= searchHalf; dx += 2) {
-      const candidate = center + dx;
-      if (candidate <= minX + 2 || candidate >= maxX - 2) continue;
-      const score = computeSymmetryScore(dark, w, candidate, minX, maxX, minY, maxY);
-      if (score > bestScore) { bestScore = score; bestX = candidate; }
-    }
-    return bestX;
-  }
-
-  // Symmetry score: of all dark pixels in scan range, share that have a dark
-  // partner mirrored across `axisX`. Subsamples by 2 for speed.
-  function computeSymmetryScore(dark, w, axisX, minX, maxX, minY, maxY) {
-    const half = Math.min(axisX - minX, maxX - axisX);
-    if (half < 4) return 0;
-    let matches = 0;
-    let total = 0;
-    const step = 2;
-    for (let y = minY; y <= maxY; y += step) {
-      const rowBase = y * w;
-      for (let d = 1; d <= half; d += step) {
-        const li = rowBase + (axisX - d);
-        const ri = rowBase + (axisX + d);
-        const ld = dark[li];
-        const rd = dark[ri];
-        if (ld) { total += 1; if (rd) matches += 1; }
-        if (rd) { total += 1; if (ld) matches += 1; }
-      }
-    }
-    return total > 0 ? matches / total : 0;
-  }
-
-  function approxMedianNonZero(arr, lo, hi) {
-    const vals = [];
-    for (let i = lo; i <= hi; i += 1) {
-      if (arr[i] > 0) vals.push(arr[i]);
-    }
-    if (!vals.length) return 0;
-    vals.sort((a, b) => a - b);
-    return vals[Math.floor(vals.length / 2)];
-  }
-
-  // ---- src/auto/anchors/seed-anchors.js ----
-// Seed anchors from a detection result: walk the ANCHOR_SCHEMA and
-// place each anchor in its normalized [0, 1] position on the source
-// image. Source part for app.js. Run `npm run build` after editing.
+  // ---- src/auto-detection.js ----
+// Detection pipeline composer. Wires the four named stages together —
+// segment -> contours -> geometry -> landmarks — with per-stage wall-clock
+// timing, and holds Stage 3 itself (the contour / topology extraction glue and
+// its serializable evidence summary).
 //
-// Anchors live between detection and POM generation: Detect Sketch seeds
-// them, the TD drags any wrong ones, the POM generator reads them. The
-// schema-driven layout means a new anchor name does not require new
-// seeding code, only a row in auto_mode_rules/anchor-schema.json.
+// The other stages live beside it under src/auto/detect/: segmentation.js
+// (Stage 2), geometry-stage.js (Stage 4), landmark-stage.js (Stage 5) and the
+// finder / model parts those call. The Auto Mode DOM + state edge that drives
+// this composer — Detect Sketch, anchor seeding, aux views, the view-role
+// dialog, the CV adapter pick — lives in src/auto/mode/offline-detection-run.js.
+// Source part for app.js. Run `npm run build` after editing.
 
-  // -------- Anchor layer (Phase 2 of the offline engine) --------
+  // detectSketchFromImage — offline shape analysis pipeline.
   //
-  // Anchors live between detection and POM generation. Detect Sketch seeds
-  // them with rough positions; the TD drags any wrong ones; the POM
-  // generator then reads anchor positions to lay down 18 draft lines.
-  // Anchors x/y are normalized [0, 1] in the source image's pixel space, so
-  // they travel with the image (pan / zoom / resize / save).
+  // Reads pixels into an offscreen canvas, estimates the paper/background,
+  // builds an "ink" mask, removes speckle via connected components, groups
+  // likely sketch views, then picks a primary view for landmark extraction.
+  // Feature detection is still fully local: no API, no network, no model.
+  //
+  // All returned coordinates are normalized [0, 1] relative to the source
+  // image's native pixel size so they travel with the image.
+  // Orchestrator that keeps the public callsite unchanged.
+  // 1. Builds the ink analysis from the source image (DOM I/O edge).
+  // 2. Hands it to the pure detection pipeline along with the same CV adapter
+  //    used for the ink mask, so the components stage stays on one backend.
+  function detectSketchFromImage(image, options) {
+    const cvAnalysis = buildInkAnalysisFromImage(image);
+    return detectSketchFromInkAnalysis(cvAnalysis, {
+      // Reuse the exact backend that built the ink mask — do NOT re-pick with
+      // getCvApi(), which can flip mid-pipeline and feed a free-path mask into
+      // the real-backend component pass (an untested, nondeterministic path).
+      cv: cvAnalysis.inkBackend || null,
+      params: activeDetectionParams(options),
+      debug: !!(options && options.debug),
+      // singleView: treat the whole photo as ONE garment view — skip the
+      // front/back/inner panel split. Used for auxiliary photos (e.g. a
+      // front-inner cutaway added as its own image), which are a single view;
+      // the split otherwise carves the cutaway's gore/shading alleys into 3
+      // boxes and collapses the "front" onto one cup.
+      singleView: !!(options && options.singleView),
+    });
+  }
 
-  function seedAnchorsFromDetection(detection, sourceImage, options) {
-    if (!detection || !detection.bbox || !sourceImage) return [];
+  // Pure detection pipeline: ink mask + stats → detection object.
+  //
+  // From this point on the pipeline is data-in / data-out — no DOM, no state,
+  // no globals. The CV adapter (opts.cv) is injected so callers can swap or
+  // omit it; passing null forces the in-house components path, which keeps the
+  // pipeline runnable from Node with a synthetic ink analysis. Per-stage
+  // durations are recorded on detection.stageTimingsMs so each stage can be
+  // independently timed.
+  // Pure detection pipeline, now composed from four named stage functions:
+  //   segmentSketch    → ink mask + connected-component cleanup
+  //   extractContours  → junction / endpoint topology on the cleaned mask
+  //   analyzeGeometry  → view boxes, symmetry axis, band/chest/cradle rows,
+  //                      side-seam columns (geometry facts in pixel space)
+  //   detectLandmarks  → apex/strap/cup/back landmarks, confidence, and the
+  //                      assembled detection result
+  // The stages thread explicit context objects between them (no shared closure
+  // state beyond the injected stage marker), and the composed output is the
+  // same detection object shape the rest of the app already consumed. This is
+  // a pure structural refactor — see Engineering Workflow Phase 2.
+  function detectSketchFromInkAnalysis(cvAnalysis, opts) {
+    const cv = (opts && opts.cv) || null;
+    const detectionParams = normalizeDetectionParams(opts && opts.params);
+    const debugEnabled = !!(opts && opts.debug);
+    const stageTimingsMs = {};
+    const mark = makeStageMarker(stageTimingsMs);
 
+    // Stage 2: segmentation (ink mask + connected-component cleanup).
+    const seg = segmentSketch(cvAnalysis, { cv, mark, stageTimingsMs });
+    if (seg.earlyReturn) return seg.earlyReturn;
+
+    // Stage 3: contour / topology extraction (the clean evidence bundle).
+    const contours = extractContours(seg, { mark });
+
+    // Stage 4: geometry analysis (view roles, axis, band/cup rows, seams).
+    // The contour-evidence bundle is threaded in so the geometry stage CAN read
+    // endpoints / curve candidates (Phase 4, item 3); geometry decisions are
+    // unchanged in this phase — it is availability, not forced consumption.
+    const geometry = analyzeGeometry(seg, {
+      detectionParams, mark, stageTimingsMs, contourEvidence: contours,
+      singleView: !!(opts && opts.singleView),
+    });
+    if (geometry.earlyReturn) return geometry.earlyReturn;
+
+    // Stage 5: landmark construction + confidence + assembly.
+    return detectLandmarks(cvAnalysis, seg, geometry, contours, {
+      detectionParams, debugEnabled, stageTimingsMs, mark,
+    });
+  }
+
+  // Per-stage wall-clock marker. Records the delta (ms, 2dp) since the last
+  // mark under `name` on the shared timings object. Timings are diagnostic
+  // only and inherently non-deterministic — nothing downstream keys on them.
+  function makeStageMarker(timings) {
+    const now = (typeof performance !== 'undefined' && performance.now)
+      ? () => performance.now()
+      : () => Date.now();
+    let last = now();
+    return function markStage(name) {
+      const t = now();
+      timings[name] = Math.max(0, Math.round((t - last) * 100) / 100);
+      last = t;
+    };
+  }
+
+  // ---- Stage 3: contour / topology extraction (Engineering Workflow Phase 4) ----
+  // Input: the cleaned mask from segmentSketch. Output: a clean CONTOUR-EVIDENCE
+  // bundle — { contours, endpoints, junctions, corners, curves, strokeStats }
+  // (plus the raw junctionMap handle for back-compat). This is deliberately a
+  // bag of SHAPE EVIDENCE, not geometry decisions: nothing here is an anchor or
+  // a garment-level verdict, and downstream stages only READ it. Keeping the
+  // raw contour data separate from technical meaning is the whole point of the
+  // phase (see Engineering Workflow.md §3, "Keep raw contour data separate").
+  //
+  // Two fields are populated lazily by the deferred Potrace edge pass (its
+  // duration is non-deterministic, so it runs at the orchestrator edge, not in
+  // this pure stage): `contours` (traced outlines → detection.contours) and
+  // `curves` (reusable curve candidates → detection.curveCandidates, built by
+  // buildContourCurveCandidates). They are null here by design.
+  // Auxiliary data only — a failure here must never sink the detection.
+  function extractContours(seg, ctx) {
+    const _stageMark = ctx.mark;
+    const { dark, w, h } = seg;
+
+    // ---- Stage: junction / endpoint / corner map (Phase 1, plan 2) ----
+    // Skeleton-topology features on the CLEANED mask. A failure here must never
+    // sink the detection — hence the catch.
+    let junctionMap = null;
+    try {
+      junctionMap = detectJunctions(dark, w, h);
+    } catch (err) {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[Auto Mode] junction detection failed (non-fatal):', err);
+      }
+      junctionMap = null;
+    }
+    _stageMark('junctions');
+
+    // Split the raw feature points by type and roll up stroke statistics. The
+    // shaping lives in the junction module (buildContourTopology) so it stays
+    // testable next to detectJunctions.
+    const topology = buildContourTopology(junctionMap);
+
+    return {
+      // Raw traced outlines — filled by the deferred Potrace edge pass.
+      contours: null,
+      // Skeleton topology, split so consumers don't re-filter by type.
+      junctions: topology.junctions,
+      endpoints: topology.endpoints,
+      corners: topology.corners,
+      // Reusable curve candidates — populated from the trace (see
+      // buildContourCurveCandidates) once detection.contours exists.
+      curves: null,
+      // Deterministic skeleton stroke statistics (px, iterations, counts).
+      strokeStats: topology.strokeStats,
+      // Internal handle: detectLandmarks maps this to the unchanged
+      // detection.junctions / detection.junctionSummary contract.
+      junctionMap,
+    };
+  }
+
+  // Phase 4: build a compact, serializable summary of the contour-evidence
+  // bundle for the detection result. Deterministic skeleton-derived counts +
+  // stroke stats; the trace-dependent fields (traced / contourCount /
+  // curveCandidateCount) start empty here and are filled at the Potrace edge.
+  function buildContourEvidenceSummary(contourEvidence) {
+    const ce = contourEvidence || {};
+    const stroke = ce.strokeStats || null;
+    return {
+      junctionCount: Array.isArray(ce.junctions) ? ce.junctions.length : 0,
+      endpointCount: Array.isArray(ce.endpoints) ? ce.endpoints.length : 0,
+      cornerCount: Array.isArray(ce.corners) ? ce.corners.length : 0,
+      strokeStats: stroke ? { ...stroke } : null,
+      // Raw traced outlines are optional shape evidence attached at the edge.
+      traced: false,
+      contourCount: null,
+      curveCandidateCount: 0,
+    };
+  }
+
+  // ---- src/auto/anchors/seed-view-resolution.js ----
+// Detection-view resolution for the anchor seed pass: which view box is
+// front_outer / back / front_inner, the formula-fallback landmark rows
+// (chest / cradle / band / side seams) used when detection surfaced no ink,
+// and the baseline `seeds` literal that the later branches overwrite.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Everything downstream reads the context produced here:
+// seed-cradle-cf.js (POM 6/8 gore geometry), seed-cup-width.js (POM 9/10 cup
+// geometry), seed-front-view.js, seed-back-view.js, and the seed-anchors.js
+// orchestrator all consume frontView / backView / frontInnerView and the
+// chest / band / cradle / side-seam rows resolved below.
+
+  function inView(view, rx, ry) {
+    return {
+      x: clamp01(view.x + view.width * rx),
+      y: clamp01(view.y + view.height * ry),
+    };
+  }
+  // x-only view-box fallback, for a landmark whose y must come from a SHARED
+  // row rather than from this side's own ratio (see the band/chest seeds).
+  function inViewX(view, rx) { return clamp01(view.x + view.width * rx); }
+
+  function resolveSeedViewContext(detection) {
     const views = Array.isArray(detection.views) && detection.views.length
       ? detection.views
       : (Array.isArray(detection.viewBoxes) ? detection.viewBoxes : []);
@@ -26160,13 +26090,6 @@ function getAnnotationsOnImage(image) {
         .sort((a, b) => (b.view.count || 0) - (a.view.count || 0))[0];
       backView = fallback ? fallback.view : null;
     }
-    const inView = (view, rx, ry) => ({
-      x: clamp01(view.x + view.width * rx),
-      y: clamp01(view.y + view.height * ry),
-    });
-    // x-only view-box fallback, for a landmark whose y must come from a SHARED
-    // row rather than from this side's own ratio (see the band/chest seeds).
-    const inViewX = (view, rx) => clamp01(view.x + view.width * rx);
     const roleByKind = Object.create(null);
     for (const schema of ANCHOR_SCHEMA) {
       roleByKind[schema.kind] = defaultViewRoleForAnchorKind(schema.kind);
@@ -26213,41 +26136,133 @@ function getAnnotationsOnImage(image) {
     // back strap/panel join. The back end seeds only inside the back-view branch
     // below; a front-only sketch has no back end, so POM 14 → REVIEW_ONLY.
 
-    // POM 6 rescue: when the direct CF-seam detector missed (no cradleCfTop)
-    // but the bottom-cup cradle seam WAS found (cradleCupTop — the POM 7 top),
-    // extend that detected seam horizontally to the CF axis as an APPROXIMATE
-    // POM 6 top. It seeds low-confidence + reviewRequired (the landmark QA
-    // layer downstream tags it accordingly) so the TD still verifies; this only replaces a hard
-    // REVIEW_ONLY demotion with a reviewable starting line, and degrades
-    // gracefully — POM 6 stays REVIEW_ONLY when cradleCupTop is also missing.
-    // No rule-JSON change: cf-bottom still derives onto the band line via the
-    // existing anchor-schema drop_to_line rule.
-    // Gate the projection to trusted seam tiers ('strong'/'seam'): a
-    // guide/arc-tier POM 7 commit (ADR 0021/0022) follows a curved wire whose
-    // bottom-cup y says nothing about the CF gore boundary — projecting it
-    // would seed a confidently-wrong POM 6/8 top (e.g. demo5's plunge gore).
-    const cradleCfFromCupSeam = !detection.cradleCfTop
-      && !!detection.cradleCupTop
-      && (detection.cradleCupTier === 'strong' || detection.cradleCupTier === 'seam');
+    // Prefer ink-derived inner-cup top / side-top from the audit-driven
+    // detectors. Each helper returns null when the signal is too weak, so
+    // formula-based fallbacks below still apply.
+    //
+    // Per rule.md POM 9/10: the inner-cup anchors must come from the shared
+    // cupModel (one side, one view, derived from real structure) — NOT from
+    // a "topmost dark pixel" snap. cupModel is preferred wherever it is
+    // present and not 'hidden'. The legacy innerCupTopInk is kept only as a
+    // last-resort fallback for sketches where the cupModel can't be built
+    // (e.g. apex + cradle-cup both missing) AND the front_inner view branch
+    // below isn't used either.
+    const cupModel = detection.cupModel || null;
+    const innerCupTopInk = detection.innerCupTop || null;
+    const sideTopRightInk = detection.sideTopRight || null;
+    const sideTopLeftInk  = detection.sideTopLeft  || null;
+    const backPanelInk = detection.backPanel || null;
+    const backPanelHeightInk = detection.backPanelHeight || null;
 
-    // Gore bottom (POM 6/8 cradle-cf-top refinement). detection.cradleCfTop pins
-    // to the global cradle ROW (the strongest horizontal band), which can sit
-    // BELOW the true cup↔cradle seam at CF. Two contour shapes are valid:
-    //   1. a symmetric CREST at CF whose same traced edge descends on both
-    //      sides (the center-front top edge in the TD-corrected demo/1.jpg),
-    //   2. a short horizontal seam crossing the axis (legacy fallback).
-    // Prefer the crest when it is present. This prevents a lower horizontal
-    // lace/seam row from winning merely because it is denser. Returns y/null.
-    // Returns { refinedY, crestY, crestBelowCfY }: refinedY = the US-012
-    // refinement result (guarded crest, else legacy horizontal seam, else
-    // null) used to snap an EXISTING direct detection up to the seam; crestY
-    // = the raw topmost symmetric crest regardless of the raised-panel
-    // guards; crestBelowCfY = the topmost crest sitting BELOW cf-top (POM 8
-    // ordering) — on a plunge gore the neckline-V samples just above cf-top
-    // and the gore-top samples just below it belong to the same contour, so
-    // the standalone crest tier (US-015 / ADR 0023) must select with the
-    // cf-top floor applied, not filter afterwards.
-    const goreBottomYFromContours = () => {
+    return {
+      frontView, frontInnerView, backView, roleByKind,
+      bb, left, right, top, halfW, ax, band, cfBottomY, chest, cradle, cupMid,
+      sideL, sideR, icSide, icX, icHalf,
+      cupModel, innerCupTopInk, sideTopRightInk, sideTopLeftInk,
+      backPanelInk, backPanelHeightInk,
+    };
+  }
+
+  // The baseline seed set: formula/fallback positions for every anchor kind,
+  // plus the cradle-cf-top / cradle-cup-* seeds that depend on the CF cradle
+  // analysis in seed-cradle-cf.js. The front-outer, front-inner, and back
+  // branches overwrite whatever they can source from real ink.
+  function buildBaselineAnchorSeeds(detection, seedCtx, cradleCfSeed) {
+    const {
+      bb, left, right, top, halfW, ax, band, cfBottomY, chest, cradle, cupMid,
+      sideL, sideR, icSide, icX, icHalf,
+    } = seedCtx;
+    const { cradleCfFromCupSeam, cradleCfTopY, cradleCfCrestY } = cradleCfSeed;
+
+    return {
+      'cf-top':         { x: ax, y: clamp01(top + bb.height * 0.04) },
+      // POM 6's bottom follows the hem at the CF column, not the flat band row
+      // (US-061). detection.cfBottomHemY equals bandY on a straight hem, so
+      // this is a no-op there; on an arched hem it keeps the anchor on the
+      // artwork instead of floating below it.
+      'cf-bottom':      { x: ax, y: clamp01(cfBottomY) },
+      // cradle-cf-top: seeded from direct CF-seam detection when present;
+      // else from the contour crest tier (US-015 / ADR 0023, review-flagged);
+      // else from the POM 7 cradle seam projected to the CF axis (the
+      // cradleCfFromCupSeam rescue). Missing ALL means POM 6 stays REVIEW_ONLY.
+      ...(detection.cradleCfTop
+        ? { 'cradle-cf-top': {
+            x: clamp01(detection.cradleCfTop.x),
+            y: clamp01(cradleCfTopY != null ? cradleCfTopY : detection.cradleCfTop.y),
+          } }
+        : (cradleCfCrestY != null
+          ? { 'cradle-cf-top': {
+              x: clamp01(ax),
+              y: clamp01(cradleCfCrestY),
+            } }
+          : (cradleCfFromCupSeam
+            ? { 'cradle-cf-top': {
+                x: clamp01(ax),
+                y: clamp01(detection.cradleCupTop.y),
+              } }
+            : {}))),
+      // cradle-cup-top / -bottom: seeded ONLY when the bottom-cup detector
+      // found ink support both at the cradle row and the band row (away from
+      // CF and side seam). No horizontal-ratio fallback — missing means POM 7
+      // demotes to REVIEW_ONLY via the missing-anchor guard.
+      ...(detection.cradleCupTop && detection.cradleCupBottom
+        ? {
+            'cradle-cup-top': {
+              x: clamp01(detection.cradleCupTop.x),
+              y: clamp01(detection.cradleCupTop.y),
+            },
+            'cradle-cup-bottom': {
+              x: clamp01(detection.cradleCupBottom.x),
+              y: clamp01(detection.cradleCupBottom.y),
+            },
+          }
+        : {}),
+      'band-left':      { x: clamp01(left),  y: clamp01(band) },
+      'band-right':     { x: clamp01(right), y: clamp01(band) },
+      'chest-left':     { x: clamp01(left),  y: clamp01(chest) },
+      'chest-right':    { x: clamp01(right), y: clamp01(chest) },
+      'inner-cup-top':    { x: clamp01(icX), y: clamp01(chest + (band - chest) * 0.10) },
+      'inner-cup-bottom': { x: clamp01(icX + icSide * halfW * 0.02), y: clamp01(cradle) },
+      'inner-cup-left':   { x: clamp01(icX - icHalf), y: clamp01(cupMid) },
+      'inner-cup-right':  { x: clamp01(icX + icHalf), y: clamp01(cupMid) },
+      'side-top':       { x: clamp01(sideR), y: clamp01(chest) },
+      'side-bottom':    { x: clamp01(sideR), y: clamp01(band) },
+      'back-top':       { x: clamp01(sideL), y: clamp01(chest) },
+      'back-bottom':    { x: clamp01(sideL), y: clamp01(band) },
+    };
+  }
+
+  // ---- src/auto/anchors/seed-cradle-cf.js ----
+// POM 6 / POM 8 center-front cradle geometry for the anchor seed pass: the
+// gore-bottom contour analysis (symmetric CF crest, legacy horizontal-seam
+// fallback), the cradleCfFromCupSeam rescue projection, and the standalone
+// crest tier (US-015 / ADR 0023) that seeds cradle-cf-top when the direct
+// CF-seam detector missed.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Pure contour geometry over detection.contours plus the frontView box that
+// seed-view-resolution.js resolved. Its result feeds the cradle-cf-top seed
+// built by buildBaselineAnchorSeeds (seed-view-resolution.js) and is stashed
+// on `detection` for the landmark-QA layer the orchestrator runs next.
+
+  // Gore bottom (POM 6/8 cradle-cf-top refinement). detection.cradleCfTop pins
+  // to the global cradle ROW (the strongest horizontal band), which can sit
+  // BELOW the true cup↔cradle seam at CF. Two contour shapes are valid:
+  //   1. a symmetric CREST at CF whose same traced edge descends on both
+  //      sides (the center-front top edge in the TD-corrected demo/1.jpg),
+  //   2. a short horizontal seam crossing the axis (legacy fallback).
+  // Prefer the crest when it is present. This prevents a lower horizontal
+  // lace/seam row from winning merely because it is denser. Returns y/null.
+  // Returns { refinedY, crestY, crestBelowCfY }: refinedY = the US-012
+  // refinement result (guarded crest, else legacy horizontal seam, else
+  // null) used to snap an EXISTING direct detection up to the seam; crestY
+  // = the raw topmost symmetric crest regardless of the raised-panel
+  // guards; crestBelowCfY = the topmost crest sitting BELOW cf-top (POM 8
+  // ordering) — on a plunge gore the neckline-V samples just above cf-top
+  // and the gore-top samples just below it belong to the same contour, so
+  // the standalone crest tier (US-015 / ADR 0023) must select with the
+  // cf-top floor applied, not filter afterwards.
+  function goreBottomYFromContours(detection, frontView) {
       const none = { refinedY: null, crestY: null, crestBelowCfY: null };
       const C = detection.contours;
       if (!C || !Array.isArray(C.paths) || detection.axisX == null) return none;
@@ -26366,9 +26381,35 @@ function getAnnotationsOnImage(image) {
         }
       }
       return { refinedY: refined, crestY: crestRawY, crestBelowCfY };
-    };
+  }
+
+  // Resolves the three cradle-cf inputs the baseline seed set needs:
+  // cradleCfFromCupSeam (the POM 7 seam rescue gate), cradleCfTopY (the
+  // US-012 snap-up refinement of a direct detection), and cradleCfCrestY
+  // (the standalone US-015 / ADR 0023 crest tier). Also stashes the crest
+  // decision on `detection` for the landmark-QA layer.
+  function resolveCradleCfSeed(detection, seedCtx) {
+    const { frontView } = seedCtx;
+
+    // POM 6 rescue: when the direct CF-seam detector missed (no cradleCfTop)
+    // but the bottom-cup cradle seam WAS found (cradleCupTop — the POM 7 top),
+    // extend that detected seam horizontally to the CF axis as an APPROXIMATE
+    // POM 6 top. It seeds low-confidence + reviewRequired (the landmark QA
+    // layer downstream tags it accordingly) so the TD still verifies; this only replaces a hard
+    // REVIEW_ONLY demotion with a reviewable starting line, and degrades
+    // gracefully — POM 6 stays REVIEW_ONLY when cradleCupTop is also missing.
+    // No rule-JSON change: cf-bottom still derives onto the band line via the
+    // existing anchor-schema drop_to_line rule.
+    // Gate the projection to trusted seam tiers ('strong'/'seam'): a
+    // guide/arc-tier POM 7 commit (ADR 0021/0022) follows a curved wire whose
+    // bottom-cup y says nothing about the CF gore boundary — projecting it
+    // would seed a confidently-wrong POM 6/8 top (e.g. demo5's plunge gore).
+    const cradleCfFromCupSeam = !detection.cradleCfTop
+      && !!detection.cradleCupTop
+      && (detection.cradleCupTier === 'strong' || detection.cradleCupTier === 'seam');
+
     const detCradleCfY = detection.cradleCfTop ? detection.cradleCfTop.y : null;
-    const goreBottom = goreBottomYFromContours();
+    const goreBottom = goreBottomYFromContours(detection, frontView);
     const goreBottomY = goreBottom.refinedY;
     // Only snap UP to the seam (never below the detected cradle row).
     const cradleCfTopY = (detCradleCfY != null && goreBottomY != null && goreBottomY < detCradleCfY)
@@ -26389,94 +26430,20 @@ function getAnnotationsOnImage(image) {
       ? goreBottom.crestBelowCfY : null;
     detection.cradleCfCrestSeedY = cradleCfCrestY;
 
-    // Landmark QA layer (Engineering Workflow Phase 6): the per-landmark
-    // verdicts — source class, confidence tier, reviewRequired, QA notes —
-    // that this seed layer consumes below instead of recomputing its own
-    // tables. Computed HERE (not reused from detection time) because the
-    // detection object can be mutated between seedings (e.g. the front_inner
-    // branch backfills detection.innerCupTop), and it must run BEFORE that
-    // mutation so its evidence reads match this seeding pass — and AFTER the
-    // crest-tier decision above, which it classifies via
-    // detection.cradleCfCrestSeedY. Re-attached so debug consumers always see
-    // the verdicts the current anchors came from.
-    const landmarkQa = buildLandmarkQaFromDetection(detection);
-    if (landmarkQa) detection.landmarkQa = landmarkQa;
-    const qaByKind = (landmarkQa && landmarkQa.byKind) || {};
+    return { cradleCfFromCupSeam, cradleCfTopY, cradleCfCrestY };
+  }
 
-    let seeds = {
-      'cf-top':         { x: ax, y: clamp01(top + bb.height * 0.04) },
-      // POM 6's bottom follows the hem at the CF column, not the flat band row
-      // (US-061). detection.cfBottomHemY equals bandY on a straight hem, so
-      // this is a no-op there; on an arched hem it keeps the anchor on the
-      // artwork instead of floating below it.
-      'cf-bottom':      { x: ax, y: clamp01(cfBottomY) },
-      // cradle-cf-top: seeded from direct CF-seam detection when present;
-      // else from the contour crest tier (US-015 / ADR 0023, review-flagged);
-      // else from the POM 7 cradle seam projected to the CF axis (the
-      // cradleCfFromCupSeam rescue). Missing ALL means POM 6 stays REVIEW_ONLY.
-      ...(detection.cradleCfTop
-        ? { 'cradle-cf-top': {
-            x: clamp01(detection.cradleCfTop.x),
-            y: clamp01(cradleCfTopY != null ? cradleCfTopY : detection.cradleCfTop.y),
-          } }
-        : (cradleCfCrestY != null
-          ? { 'cradle-cf-top': {
-              x: clamp01(ax),
-              y: clamp01(cradleCfCrestY),
-            } }
-          : (cradleCfFromCupSeam
-            ? { 'cradle-cf-top': {
-                x: clamp01(ax),
-                y: clamp01(detection.cradleCupTop.y),
-              } }
-            : {}))),
-      // cradle-cup-top / -bottom: seeded ONLY when the bottom-cup detector
-      // found ink support both at the cradle row and the band row (away from
-      // CF and side seam). No horizontal-ratio fallback — missing means POM 7
-      // demotes to REVIEW_ONLY via the missing-anchor guard.
-      ...(detection.cradleCupTop && detection.cradleCupBottom
-        ? {
-            'cradle-cup-top': {
-              x: clamp01(detection.cradleCupTop.x),
-              y: clamp01(detection.cradleCupTop.y),
-            },
-            'cradle-cup-bottom': {
-              x: clamp01(detection.cradleCupBottom.x),
-              y: clamp01(detection.cradleCupBottom.y),
-            },
-          }
-        : {}),
-      'band-left':      { x: clamp01(left),  y: clamp01(band) },
-      'band-right':     { x: clamp01(right), y: clamp01(band) },
-      'chest-left':     { x: clamp01(left),  y: clamp01(chest) },
-      'chest-right':    { x: clamp01(right), y: clamp01(chest) },
-      'inner-cup-top':    { x: clamp01(icX), y: clamp01(chest + (band - chest) * 0.10) },
-      'inner-cup-bottom': { x: clamp01(icX + icSide * halfW * 0.02), y: clamp01(cradle) },
-      'inner-cup-left':   { x: clamp01(icX - icHalf), y: clamp01(cupMid) },
-      'inner-cup-right':  { x: clamp01(icX + icHalf), y: clamp01(cupMid) },
-      'side-top':       { x: clamp01(sideR), y: clamp01(chest) },
-      'side-bottom':    { x: clamp01(sideR), y: clamp01(band) },
-      'back-top':       { x: clamp01(sideL), y: clamp01(chest) },
-      'back-bottom':    { x: clamp01(sideL), y: clamp01(band) },
-    };
-
-    // Prefer ink-derived inner-cup top / side-top from the audit-driven
-    // detectors. Each helper returns null when the signal is too weak, so
-    // formula-based fallbacks below still apply.
-    //
-    // Per rule.md POM 9/10: the inner-cup anchors must come from the shared
-    // cupModel (one side, one view, derived from real structure) — NOT from
-    // a "topmost dark pixel" snap. cupModel is preferred wherever it is
-    // present and not 'hidden'. The legacy innerCupTopInk is kept only as a
-    // last-resort fallback for sketches where the cupModel can't be built
-    // (e.g. apex + cradle-cup both missing) AND the front_inner view branch
-    // below isn't used either.
-    const cupModel = detection.cupModel || null;
-    const innerCupTopInk = detection.innerCupTop || null;
-    const sideTopRightInk = detection.sideTopRight || null;
-    const sideTopLeftInk  = detection.sideTopLeft  || null;
-    const backPanelInk = detection.backPanel || null;
-    const backPanelHeightInk = detection.backPanelHeight || null;
+  // ---- src/auto/anchors/seed-cup-width.js ----
+// POM 9 / POM 10 cup geometry for the anchor seed pass: the shared-cupModel
+// endpoints, the contour-traced cup inner seam, and the ADR 0036 cup-width
+// extremes (each endpoint carrying its own height) plus the two appliers that
+// layer them onto a seed set.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Everything here needs only `detection`, a `cupModel`, and the frontView box
+// resolved in seed-view-resolution.js — none of the front/back branch
+// bookkeeping. seed-front-view.js is the caller; the CF cradle geometry for
+// POM 6/8 lives in seed-cradle-cf.js.
 
     // POM 9/10 inner-cup endpoints from the shared cupModel, in source-image
     // [0,1] space. Returns null when the model isn't usable (hidden or missing
@@ -26484,7 +26451,7 @@ function getAnnotationsOnImage(image) {
     // always gets the smaller x so canvas geometry stays "left → right"
     // regardless of which cup side the model picked. Single source of truth for
     // both the frontView and frontInnerView branches below.
-    const innerCupFromCupModel = (cm) => {
+  function innerCupFromCupModel(cm) {
       // innerEdgeSupported === false: the model's width row crosses a void
       // (open neckline V) and the inner endpoint is a fabricated gore inset
       // with no ink near it — fall down the precedence chain instead of
@@ -26506,7 +26473,7 @@ function getAnnotationsOnImage(image) {
         left:   { x: clamp01(leftPt.x),  y: clamp01(leftPt.y) },
         right:  { x: clamp01(rightPt.x), y: clamp01(rightPt.y) },
       };
-    };
+  }
 
     // Contour-based cup INNER seam (POM 10 width). buildCupModel runs BEFORE the
     // vector trace, so its innerEdge is a pixel guess that a solid center-gore
@@ -26514,7 +26481,7 @@ function getAnnotationsOnImage(image) {
     // floating in the gore instead of on the cup. detection.contours is traced
     // by the time we seed, so use the cup panel's outline: its edge nearest the
     // axis is the true inner seam. Returns the seam x (normalized) or null.
-    const cupInnerSeamFromContours = (cm) => {
+  function cupInnerSeamFromContours(cm, detection, frontView) {
       const C = detection.contours;
       if (!C || !Array.isArray(C.paths) || !cm) return null;
       const side = cm.side;
@@ -26581,7 +26548,7 @@ function getAnnotationsOnImage(image) {
         }
       }
       return innerX == null ? null : clamp01(innerX);
-    };
+  }
 
     // POM 10 cup width, TD convention (2026-07-25): the line spans the cup's TRUE
     // horizontal extremes — the gore contact on the inner side, the wire/side-seam
@@ -26593,7 +26560,7 @@ function getAnnotationsOnImage(image) {
     // with a forced centerY, which planted the anchor at a height the cup never
     // reaches. Returns { inner, outer } in source-image [0,1] space, or null so
     // callers fall back to the row-crossing snap below.
-    const cupWidthExtremesFromContours = (cm) => {
+  function cupWidthExtremesFromContours(cm, detection, frontView) {
       const C = detection.contours;
       if (!C || !Array.isArray(C.paths) || !cm || cm.side == null) return null;
       const side = cm.side;
@@ -26740,7 +26707,7 @@ function getAnnotationsOnImage(image) {
         inner: { x: clamp01(inner.x), y: clamp01(inner.y) },
         outer: { x: clamp01(outer.x), y: clamp01(outer.y) },
       };
-    };
+  }
 
     // Pull POM 10's inner endpoint onto the contour-detected cup inner seam,
     // then re-clamp the POM 9 bottom to stay between the endpoints (A5).
@@ -26752,9 +26719,9 @@ function getAnnotationsOnImage(image) {
     // is that the inner endpoint stays ordered against the outer endpoint;
     // cupInnerSeamFromContours already keeps seamX between the cup center and
     // just inside the CF axis, so it can't collide with the gore or cross over.
-    const applyContourInnerSeam = (pts, cm) => {
+  function applyContourInnerSeam(pts, cm, detection, frontView) {
       if (!pts || !cm) return pts;
-      const seamX = cupInnerSeamFromContours(cm);
+      const seamX = cupInnerSeamFromContours(cm, detection, frontView);
       if (seamX == null) return pts;
       let { top, bottom, left, right } = pts;
       if (cm.side < 0) {
@@ -26767,16 +26734,16 @@ function getAnnotationsOnImage(image) {
       const lo = Math.min(left.x, right.x), hi = Math.max(left.x, right.x);
       bottom = { x: clamp01(Math.max(lo, Math.min(hi, bottom.x))), y: bottom.y };
       return { top, bottom, left, right };
-    };
+  }
 
     // Preferred POM 10 placement: both endpoints from the traced cup extremes,
     // each carrying its own y (see cupWidthExtremesFromContours). Falls back to
     // the single-row inner-seam snap when the trace can't supply a clean span, so
     // styles without usable contours keep their previous behaviour. POM 9's bottom
     // column is re-clamped into the span either way (invariant A5).
-    const applyContourCupWidth = (pts, cm) => {
+  function applyContourCupWidth(pts, cm, detection, frontView) {
       if (!pts || !cm) return pts;
-      const ext = cupWidthExtremesFromContours(cm);
+      const ext = cupWidthExtremesFromContours(cm, detection, frontView);
       // Record WHICH placement ran. This fallback used to be silent, which is how a
       // 2-image board (primary + separate front-inner cutaway) kept the old
       // shared-row POM 10 while every single-image suite passed: the aux photo had
@@ -26796,7 +26763,7 @@ function getAnnotationsOnImage(image) {
             + ' (cupWidthSource=' + detection.cupWidthSource + ') — ADR 0036 placement unavailable'
             + (detection.sourceImageId != null ? ' for image ' + detection.sourceImageId : '') + '.');
         }
-        return applyContourInnerSeam(pts, cm);
+        return applyContourInnerSeam(pts, cm, detection, frontView);
       }
       const a = ext.inner, b = ext.outer;
       const left  = a.x <= b.x ? a : b;
@@ -26807,8 +26774,26 @@ function getAnnotationsOnImage(image) {
         y: pts.bottom.y,
       };
       return { top: pts.top, bottom, left, right };
-    };
+  }
 
+  // ---- src/auto/anchors/seed-front-view.js ----
+// Front-view anchor seeding: the front-outer branch (chest / band / CF /
+// inner-cup / apex POM 16 / strap-top POM 14 / neckline POM 17 / armhole
+// POM 18) and the front-inner remap branch that transfers those anchors onto
+// a 3-view board's front-inner panel (ADR 0034).
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Both branches run over the context resolved in seed-view-resolution.js and
+// the POM 9/10 cup geometry in seed-cup-width.js; the back-view counterpart
+// lives in seed-back-view.js. The front-inner branch is a coordinate remap of
+// the front-outer branch's output, so the two stay in one file.
+
+  function seedFrontViewAnchors(detection, seeds, seedCtx) {
+    const {
+      frontView, backView, roleByKind,
+      left, halfW, ax, band, cfBottomY, chest, cradle, sideL, sideR, icSide,
+      cupModel, innerCupTopInk, sideTopRightInk,
+    } = seedCtx;
     if (frontView && frontView.width > 0 && frontView.height > 0) {
       const f = frontView;
       // Prefer ink-derived endpoints (chest L/R, band L/R, CF top) from the
@@ -26892,7 +26877,7 @@ function getAnnotationsOnImage(image) {
         };
       };
       let useIcTop, useIcBottomFromCup, useIcLeft, useIcRight;
-      const frontCupPts = applyContourCupWidth(innerCupFromCupModel(cupModel), cupModel);
+      const frontCupPts = applyContourCupWidth(innerCupFromCupModel(cupModel), cupModel, detection, frontView);
       if (frontCupPts) {
         // POM 9/10 endpoints from the shared cup model — see
         // innerCupFromCupModel. POM 10 cup width spans the cup's FULL
@@ -27118,7 +27103,11 @@ function getAnnotationsOnImage(image) {
         roleByKind['side-bottom'] = 'front_outer';
       }
     }
+    return seeds;
+  }
 
+  function seedFrontInnerViewAnchors(detection, seeds, seedCtx) {
+    const { frontView, frontInnerView, roleByKind } = seedCtx;
     if (frontInnerView && frontInnerView.width > 0 && frontInnerView.height > 0
         && frontView && frontView.width > 0 && frontView.height > 0
         && frontInnerView !== frontView) {
@@ -27156,37 +27145,21 @@ function getAnnotationsOnImage(image) {
       if (detection.cradleY == null) detection.cradleY = i.y + i.height * 0.92;
       if (detection.underbustY == null) detection.underbustY = i.y + i.height * 0.54;
     }
+    return seeds;
+  }
 
-    // Demote POM 9 / POM 10 to REVIEW_ONLY when no coherent cup model could
-    // be built. The requiredAnchors guard in auto-drafts.js promotes a row to
-    // REVIEW_ONLY when ANY required anchor is missing from the seed list, so
-    // we remove the inner-cup-* seeds entirely in the "hidden + no fallback"
-    // case (per rule.md "If REVIEW_ONLY, do not fabricate start/end from
-    // fixed ratios"). When the front_inner view fires the seeds above are
-    // direct evidence (not ratio fabrication) and we keep them. When the
-    // legacy innerCupTopInk fires we keep them too — that's a heuristic but
-    // it carries some structure information, and the existing flow has shown
-    // it usable on a number of sketches.
-    // Anchor-gate diagnostic — which source path POM 9/10 ended up using.
-    // Computed by the landmark QA layer (single source of truth for the gate
-    // predicate); surfaced via detection.debug.cupAnchorGate so debug
-    // consumers (rule.md 'why was this row demoted?' question) can see the
-    // gate decision without re-running detection.
-    const cupAnchorGate = landmarkQa ? landmarkQa.cupGate : null;
-    const anchorGateWillDelete = !!(cupAnchorGate && cupAnchorGate.willDelete);
-    if (detection && detection.debug && typeof detection.debug === 'object') {
-      detection.debug.cupAnchorGate = cupAnchorGate;
-    }
-    if (anchorGateWillDelete) {
-      delete seeds['inner-cup-top'];
-      delete seeds['inner-cup-bottom'];
-      delete seeds['inner-cup-left'];
-      delete seeds['inner-cup-right'];
-      if (typeof console !== 'undefined' && console.warn) {
-        console.warn('[Auto Mode] inner-cup-* anchors deleted → POM 9/10 demoted', cupAnchorGate);
-      }
-    }
+  // ---- src/auto/anchors/seed-back-view.js ----
+// Back-view anchor seeding: POM 11 (back side seam), POM 12 (back center
+// length), POM 13 (back panel height), the back end of POM 14 (strap-bottom),
+// and POM 15 (back strap distance), all from the back-* ink detectors.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Self-contained: it needs only the backView box resolved in
+// seed-view-resolution.js plus detection's back-* fields — no cup-width or
+// front-branch state. The front counterpart lives in seed-front-view.js.
 
+  function seedBackViewAnchors(detection, seeds, seedCtx) {
+    const { backView, roleByKind, backPanelInk, backPanelHeightInk } = seedCtx;
     if (backView && backView.width > 0 && backView.height > 0) {
       const b = backView;
       // POM 12 (back center length) is a VERTICAL line down the center-back
@@ -27304,6 +27277,92 @@ function getAnnotationsOnImage(image) {
       // Only the ending strap anchor lives on the back view.
       roleByKind['strap-bottom'] = 'back';
     }
+    return seeds;
+  }
+
+  // ---- src/auto/anchors/seed-anchors.js ----
+// Seed anchors from a detection result: walk the ANCHOR_SCHEMA and
+// place each anchor in its normalized [0, 1] position on the source
+// image. Source part for app.js. Run `npm run build` after editing.
+//
+// Anchors live between detection and POM generation: Detect Sketch seeds
+// them, the TD drags any wrong ones, the POM generator reads them. The
+// schema-driven layout means a new anchor name does not require new
+// seeding code, only a row in auto_mode_rules/anchor-schema.json.
+//
+// seedAnchorsFromDetection is the orchestrator: it composes the per-concern
+// seeding stages — seed-view-resolution.js (views + fallback landmark rows +
+// the baseline seed set), seed-cradle-cf.js (POM 6/8 CF cradle geometry),
+// seed-cup-width.js (POM 9/10 cup geometry, used by the front branch),
+// seed-front-view.js and seed-back-view.js — and then runs the cup-anchor QA
+// gate, the anchor-record assembly, and the learning-bias hook that live here.
+
+  // -------- Anchor layer (Phase 2 of the offline engine) --------
+  //
+  // Anchors live between detection and POM generation. Detect Sketch seeds
+  // them with rough positions; the TD drags any wrong ones; the POM
+  // generator then reads anchor positions to lay down 18 draft lines.
+  // Anchors x/y are normalized [0, 1] in the source image's pixel space, so
+  // they travel with the image (pan / zoom / resize / save).
+
+  function seedAnchorsFromDetection(detection, sourceImage, options) {
+    if (!detection || !detection.bbox || !sourceImage) return [];
+
+    const seedCtx = resolveSeedViewContext(detection);
+    const roleByKind = seedCtx.roleByKind;
+
+    const cradleCfSeed = resolveCradleCfSeed(detection, seedCtx);
+
+    // Landmark QA layer (Engineering Workflow Phase 6): the per-landmark
+    // verdicts — source class, confidence tier, reviewRequired, QA notes —
+    // that this seed layer consumes below instead of recomputing its own
+    // tables. Computed HERE (not reused from detection time) because the
+    // detection object can be mutated between seedings (e.g. the front_inner
+    // branch backfills detection.innerCupTop), and it must run BEFORE that
+    // mutation so its evidence reads match this seeding pass — and AFTER the
+    // crest-tier decision above, which it classifies via
+    // detection.cradleCfCrestSeedY. Re-attached so debug consumers always see
+    // the verdicts the current anchors came from.
+    const landmarkQa = buildLandmarkQaFromDetection(detection);
+    if (landmarkQa) detection.landmarkQa = landmarkQa;
+    const qaByKind = (landmarkQa && landmarkQa.byKind) || {};
+
+    let seeds = buildBaselineAnchorSeeds(detection, seedCtx, cradleCfSeed);
+
+    seeds = seedFrontViewAnchors(detection, seeds, seedCtx);
+    seeds = seedFrontInnerViewAnchors(detection, seeds, seedCtx);
+
+    // Demote POM 9 / POM 10 to REVIEW_ONLY when no coherent cup model could
+    // be built. The requiredAnchors guard in auto-drafts.js promotes a row to
+    // REVIEW_ONLY when ANY required anchor is missing from the seed list, so
+    // we remove the inner-cup-* seeds entirely in the "hidden + no fallback"
+    // case (per rule.md "If REVIEW_ONLY, do not fabricate start/end from
+    // fixed ratios"). When the front_inner view fires the seeds above are
+    // direct evidence (not ratio fabrication) and we keep them. When the
+    // legacy innerCupTopInk fires we keep them too — that's a heuristic but
+    // it carries some structure information, and the existing flow has shown
+    // it usable on a number of sketches.
+    // Anchor-gate diagnostic — which source path POM 9/10 ended up using.
+    // Computed by the landmark QA layer (single source of truth for the gate
+    // predicate); surfaced via detection.debug.cupAnchorGate so debug
+    // consumers (rule.md 'why was this row demoted?' question) can see the
+    // gate decision without re-running detection.
+    const cupAnchorGate = landmarkQa ? landmarkQa.cupGate : null;
+    const anchorGateWillDelete = !!(cupAnchorGate && cupAnchorGate.willDelete);
+    if (detection && detection.debug && typeof detection.debug === 'object') {
+      detection.debug.cupAnchorGate = cupAnchorGate;
+    }
+    if (anchorGateWillDelete) {
+      delete seeds['inner-cup-top'];
+      delete seeds['inner-cup-bottom'];
+      delete seeds['inner-cup-left'];
+      delete seeds['inner-cup-right'];
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[Auto Mode] inner-cup-* anchors deleted → POM 9/10 demoted', cupAnchorGate);
+      }
+    }
+
+    seeds = seedBackViewAnchors(detection, seeds, seedCtx);
 
     // Anchor confidence, provenance, and reviewRequired come from the landmark
     // QA layer (Engineering Workflow Phase 6 — see buildLandmarkQaFromDetection
@@ -27402,25 +27461,465 @@ function getAnnotationsOnImage(image) {
     return 'front_outer';
   }
 
-  function resetAnchorsToDetection() {
-    const detection = state.autoMode.detection;
-    if (!detection) {
-      showToast('Run Detect Sketch first.');
+  // ---- src/auto/mode/offline-detection-run.js ----
+// Auto Mode's "Detect Sketch" edge: the DOM / state glue wrapped around the
+// pure detection pipeline. Runs the detector from the toolbar (toasts,
+// state.autoMode.* writes, telemetry, history), seeds and relocates anchors,
+// recognizes extra board photos as auxiliary views (US-039 / US-049), runs the
+// deferred Potrace trace, lets the TD confirm ambiguous view roles, and reads
+// the ?cvDebug=1 / ?freeCv=1 URL flags and picks the OpenCV adapter.
+//
+// Categorically different from the pure stages under src/auto/detect/, which
+// take no state and touch no DOM beyond canvas pixel reads. buildAuxViews and
+// maybePromptForViewRoles deliberately mutate an already-finished detection
+// object in place — they are post-pipeline edge operations (ADR 0035 / US-045 /
+// US-049), not stages, and must stay that way.
+//
+// Registered AFTER src/auto/anchors/seed-anchors.js because runOfflineDetection
+// -> seedAndRelocateAnchors calls seedAnchorsFromDetection. That call previously
+// survived only on function-declaration hoisting inside the shared IIFE, which
+// the project's own ordering rule (CLAUDE.md: "a part must appear after anything
+// it references") does not actually guarantee.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // -------- Offline sketch detection --------
+  //
+  // First pass of "Detect Sketch": pure pixel analysis on the source image,
+  // no model. Estimates a bounding box of the dark line art, the vertical
+  // symmetry axis, and the bottom-band y. These will feed anchor placement
+  // in the next phase. Everything is normalized to the image's native
+  // pixel space [0, 1]^2 so it survives image scaling / canvas pans.
+
+  async function runOfflineDetection() {
+    // ---- Edge: precondition checks (state read + toast on failure) ----
+    if (state.appMode !== 'auto') {
+      showToast('Switch to Auto Mode first.');
       return;
     }
-    const sourceImage = getImageById(detection.sourceImageId) || pickAutoSourceImage();
+    const sourceImage = pickAutoSourceImage();
     if (!sourceImage) {
-      showToast('No source image for the current detection.');
+      showToast('Add or select an image first, then click Detect Sketch.', 3600);
       return;
     }
-    state.autoMode.anchors = seedAnchorsFromDetection(detection, sourceImage);
+    if (!sourceImage.img || !sourceImage.img.complete) {
+      showToast('Source image is not ready yet — try again in a moment.');
+      return;
+    }
+
+    recordAutoTelemetryEvent('detect_clicked', {
+      sourceImageId: sourceImage.id,
+    });
+
+    // ---- Edge: status flip + render so the chip updates before the scan ----
+    state.autoMode.status = 'detecting';
+    state.autoMode.lastError = null;
+    updateUI();
+    requestRender();
+    await new Promise((r) => setTimeout(r, 0));
+    // Give real opencv.js a short grace window to finish compiling (the
+    // vendored script loads from disk; S1 warms it up from init(), so by the
+    // first Detect this is usually already settled). Skipped entirely when
+    // the harness pins the free path.
+    if (!FORCE_FREE_CV && window.RealOpenCVAPI && typeof window.RealOpenCVAPI.whenReady === 'function') {
+      try { await window.RealOpenCVAPI.whenReady(2500); } catch (_) { /* fall through */ }
+    }
+
+    // ---- Pure middle: image → ink analysis → detection ----
+    // detectSketchFromImage is a thin wrapper: buildInkAnalysisFromImage
+    // (DOM read) → detectSketchFromInkAnalysis (pure pipeline with per-stage
+    // timings on detection.stageTimingsMs).
+    // CV debug capture is opt-in: state flag (set via the debug API) OR a
+    // ?cvDebug=1 URL flag. The flag is consulted once per detection so a
+    // mid-run toggle takes effect on the next click.
+    syncCvDebugFromUrl();
+    const cvDebugOn = !!(state.autoMode.cvDebug && state.autoMode.cvDebug.enabled);
+    let detection;
+    const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    try {
+      detection = detectSketchFromImage(sourceImage, { debug: cvDebugOn });
+    } catch (err) {
+      console.warn('[Auto Mode] Detect Sketch failed:', err);
+      state.autoMode.status = 'error';
+      state.autoMode.lastError = 'Detect Sketch failed: ' + (err && err.message ? err.message : err);
+      showToast(state.autoMode.lastError, 4200);
+      updateUI();
+      requestRender();
+      return;
+    }
+    const t1 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+    if (!detection || !detection.bbox || detection.coverage < 0.001) {
+      state.autoMode.detection = null;
+      state.autoMode.status = state.autoMode.draftAnnotations.length > 0 ? 'reviewing' : 'ready';
+      state.autoMode.lastError = 'Detect Sketch found no dark line art in the source image.';
+      showToast(state.autoMode.lastError, 4200);
+      updateUI();
+      requestRender();
+      return;
+    }
+
+    // ---- Edge: post-pipeline annotation + optional Potrace contour pass ----
+    // Stamping identity / timing onto the detection counts as a side effect
+    // because the pure pipeline produced an opaque value; we attach the
+    // context only the orchestrator knows. Potrace tracing is async DOM-free
+    // work but is non-deterministic in duration, so it lives at the edge.
+    detection.sourceImageId = sourceImage.id;
+    detection.computedAt = new Date().toISOString();
+    detection.durationMs = Math.round(t1 - t0);
+    // Mask is normally consumed (and stripped) by the Potrace pass. When CV
+    // debug is on, render a PNG of it FIRST so the debug snapshot has an
+    // image to display — otherwise the mask is gone before debug runs.
+    if (cvDebugOn && detection.debug && detection._mask) {
+      try {
+        detection.debug.maskPng = encodeMaskToPng(
+          detection._mask, detection._maskW, detection._maskH
+        );
+      } catch (err) {
+        console.warn('[Auto Mode] CV debug: mask PNG encode failed:', err);
+      }
+    }
+    await applyPotraceContoursToDetection(detection);
+    // Mirror the latest debug capture onto state so it can be exported
+    // independently of the live detection object (which gets cleared on
+    // mode switches).
+    if (state.autoMode.cvDebug) {
+      state.autoMode.cvDebug.lastDebug = cvDebugOn && detection.debug
+        ? detection.debug
+        : null;
+    }
+
+    // ---- Edge: commit detection + seed anchors + notify ----
+    state.autoMode.detection = detection;
+    // US-039: recognize EXTRA board photos (beyond the single detection source)
+    // as auxiliary views — e.g. a front-inner cutaway the TD added as its own
+    // image. Recognition + labeling ONLY: measurement stays on the source image
+    // and no POM moves to these views (ADR 0011).
+    detection.auxViews = await buildAuxViews(sourceImage);
+    // When view-role classification is uncertain — e.g. a 3-panel board where
+    // "back" vs "front_inner" is genuinely ambiguous from the sketch — let the
+    // TD confirm/correct the roles BEFORE anchors are seeded, so a corrected
+    // front/back/inner assignment places anchors on the right panels. Awaited so
+    // seeding uses the confirmed roles. In test/label modes it returns
+    // immediately (see maybePromptForViewRoles) and seeding proceeds with the
+    // auto roles, so headless suites are unaffected.
+    await maybePromptForViewRoles(detection, sourceImage);
+    seedAndRelocateAnchors(detection, sourceImage);
+    recordAutoTelemetryEvent('anchor_seeded', {
+      sourceImageId: sourceImage.id,
+      count: state.autoMode.anchors.length,
+      duration_ms: detection.durationMs,
+    });
     state.autoMode.anchorSelectedId = null;
     state.autoMode.anchorsHidden = false;
-    state.autoMode.hiddenAnchorKinds = []; // US-038: fresh seed shows all
+    state.autoMode.hiddenAnchorKinds = []; // US-038: fresh detect shows all anchors
+    state.autoMode.status = 'detected';
+    state.autoMode.lastError = null;
+    recordAutoTelemetryEvent('detect_finished', {
+      sourceImageId: sourceImage.id,
+      duration_ms: detection.durationMs,
+      status: 'ok',
+    });
+
     pushHistoryIfChanged();
     updateUI();
     requestRender();
-    showToast('Anchors reset from detection.');
+    const traceInfo = detection.contours
+      ? ' + ' + detection.contourCount + ' contours (' + detection.traceDurationMs + 'ms)'
+      : '';
+    showToast('Detected sketch (' + detection.durationMs + 'ms)' + traceInfo + '. Anchors seeded — drag any that look wrong, then Generate POM Drafts.');
+  }
+
+  // Seed anchors from the committed detection, then apply the US-049 relocation
+  // that moves the cup / neckline / armhole POMs (9/10/17/18) onto a SEPARATE
+  // front-inner PHOTO's own seeded anchors when one was recognized as an aux
+  // view. (An in-image front-inner PANEL — a 3-view board in a single photo — is
+  // handled inside seedAnchorsFromDetection itself, which transfers those anchors
+  // from the front-outer box onto the inner box.) Extracted so it can re-run
+  // after the TD confirms/corrects view roles, re-placing anchors to follow the
+  // corrected front/back/inner assignment.
+  function seedAndRelocateAnchors(detection, sourceImage) {
+    state.autoMode.anchors = seedAnchorsFromDetection(detection, sourceImage);
+    const innerViewSeed = (detection.auxViews || [])
+      .find(v => v && v.viewRole === 'front_inner' && Array.isArray(v.anchors) && v.anchors.length);
+    if (innerViewSeed) {
+      const MOVED_ANCHOR_KINDS = ['inner-cup-top', 'inner-cup-bottom', 'inner-cup-left', 'inner-cup-right', '171', '172', '181', '182'];
+      const innerByKind = Object.create(null);
+      for (const an of innerViewSeed.anchors) innerByKind[an.kind] = an;
+      state.autoMode.anchors = state.autoMode.anchors.map(an =>
+        (MOVED_ANCHOR_KINDS.indexOf(an.kind) >= 0 && innerByKind[an.kind]) ? innerByKind[an.kind] : an);
+    }
+  }
+
+  // US-039: recognize EXTRA board photos as auxiliary views. The main pipeline
+  // detects/measures ONE source image; a TD may add a front-inner cutaway (or
+  // other reference) as its OWN photo. Each such photo becomes one aux view: an
+  // ink bbox normalized to that photo (so it follows pans / zooms / resizes),
+  // with a display role. This is recognition + labeling only — no anchors, no
+  // POM placement, no change to the measurement detection (ADR 0011: the inner
+  // cutaway is a bonus, never a precondition). The primary image already holds
+  // front_outer + back, so the first extra photo defaults to the front-inner
+  // view; further extras stay 'unknown' for the TD to interpret.
+  async function buildAuxViews(sourceImage) {
+    if (!sourceImage) return [];
+    const others = state.images.filter(
+      (im) => im && im.id !== sourceImage.id && im.img && im.img.complete
+    );
+    const auxViews = [];
+    let innerAssigned = false;
+    for (const im of others) {
+      let box = { x: 0, y: 0, width: 1, height: 1 }; // fallback: whole photo
+      let det = null;
+      try {
+        // singleView: an aux photo is ONE garment view (front-inner cutaway),
+        // so detect it without the panel split — otherwise its gore/shading
+        // alleys split it into 3 boxes and the cup/neckline/armhole anchors
+        // seed off one cup instead of the whole, centered garment.
+        det = detectSketchFromImage(im, { debug: false, singleView: true });
+        // Union of every detected view box = the full drawn extent, so the
+        // label hugs the whole sketch even when an extra photo has more than
+        // one panel (or its cups split at the gore). detection.bbox alone is
+        // only the primary view's bounds, so it can undercover. Fall back to
+        // bbox, then to the whole photo.
+        const views = det && Array.isArray(det.viewBoxes) ? det.viewBoxes.filter(Boolean) : [];
+        if (views.length) {
+          const minX = Math.min(...views.map((v) => v.x));
+          const minY = Math.min(...views.map((v) => v.y));
+          const maxX = Math.max(...views.map((v) => v.x + v.width));
+          const maxY = Math.max(...views.map((v) => v.y + v.height));
+          if (maxX > minX && maxY > minY) box = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        } else if (det && det.bbox && det.bbox.width > 0 && det.bbox.height > 0) {
+          box = { x: det.bbox.x, y: det.bbox.y, width: det.bbox.width, height: det.bbox.height };
+        }
+      } catch (err) {
+        console.warn('[Auto Mode] aux-view bbox failed; boxing whole image:', err);
+      }
+      const viewRole = innerAssigned ? 'unknown' : 'front_inner';
+      innerAssigned = true;
+      const auxView = {
+        sourceImageId: im.id,
+        aux: true,
+        viewRole,
+        x: box.x,
+        y: box.y,
+        width: box.width,
+        height: box.height,
+      };
+      // US-049: the front-inner view is a MEASUREMENT surface for the cup /
+      // neckline / armhole POMs (9, 10, 17, 18 — POM 8 stays on front-outer,
+      // ADR 0011 amendment). Persist its detection (minus the heavy ink mask,
+      // session-only) plus a full anchor set seeded on THIS photo, so
+      // generatePOMDraftsFromAnchors can run a second pass that places those
+      // POMs on the inner view.
+      if (viewRole === 'front_inner' && det && det.bbox) {
+        try {
+          det.sourceImageId = im.id;
+          // Mark the detection as a single-view (front-inner cutaway) so the
+          // anchor seeder drops the top-of-cup POMs (172/182/IC-top) to the
+          // strap→cup seam for this view — the front-outer strap-join fraction
+          // lands them up at the apex on a molded cutaway.
+          det.singleView = true;
+          // Trace this photo's contours BEFORE the mask is dropped. The primary
+          // pipeline traces only the SOURCE image, but seedAnchorsFromDetection's
+          // cup-width extremes (ADR 0036) require detection.contours — without
+          // them it silently fell back to the pre-ADR-0036 shared-row placement,
+          // so a 2-image board (primary + separate front-inner cutaway) kept the
+          // old narrow POM 10 while a single 3-view photo got the new one.
+          await applyPotraceContoursToDetection(det);
+          delete det._mask; delete det._maskW; delete det._maskH; delete det.debug;
+          // Keep the promise in the comment above buildAuxViews: the persisted aux
+          // detection carries no heavy raster payload.
+          delete det.inkMask; delete det.inkMaskW; delete det.inkMaskH;
+          auxView.detection = det;
+          auxView.anchors = seedAnchorsFromDetection(det, im);
+        } catch (err) {
+          console.warn('[Auto Mode] inner-view anchor seeding failed:', err);
+        }
+      }
+      auxViews.push(auxView);
+    }
+    return auxViews;
+  }
+
+  // Vector tracing pass — runs after the raster feature pass so curved
+  // landmarks (cup arcs, strap, back hook) have real bezier control points
+  // available to the POM generator. Failure is non-fatal: the rest of the
+  // pipeline keeps working with the hand-tuned curves. Mutates `detection`
+  // in place (adds contours / contourCount / traceDurationMs / engine suffix).
+  async function applyPotraceContoursToDetection(detection) {
+    const mask = detection._mask;
+    const maskW = detection._maskW;
+    const maskH = detection._maskH;
+    delete detection._mask;
+    delete detection._maskW;
+    delete detection._maskH;
+    if (!mask || !maskW || !maskH) return;
+    // U2: keep the binary ink mask (~1 byte per sample px, session-only —
+    // detection is never persisted or snapshotted) so snapAnchorToInk can
+    // pull a released anchor onto the nearest sketch ink. Moved off the
+    // underscore keys, which the debug/PNG path above treats as consumed.
+    detection.inkMask = mask;
+    detection.inkMaskW = maskW;
+    detection.inkMaskH = maskH;
+    const traceT0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    try {
+      const traced = await tracePotraceFromMask(mask, maskW, maskH);
+      if (traced) {
+        detection.contours = traced;
+        detection.contourCount = traced.paths.length;
+        detection.traceDurationMs = Math.round(
+          (typeof performance !== 'undefined' ? performance.now() : Date.now()) - traceT0
+        );
+        detection.engine += '+potrace';
+        // Phase 4: normalize the traced outlines into reusable curve candidates
+        // (one shared classification pass) and complete the contour-evidence
+        // summary. Both are the deferred half of extractContours' bundle —
+        // shape evidence only, no geometry decision.
+        detection.curveCandidates = buildContourCurveCandidates(traced, detection);
+        if (detection.contourEvidence) {
+          detection.contourEvidence.traced = true;
+          detection.contourEvidence.contourCount = traced.paths.length;
+          detection.contourEvidence.curveCandidateCount = detection.curveCandidates.length;
+        }
+      }
+    } catch (err) {
+      console.warn('[Auto Mode] Potrace tracing failed:', err);
+    }
+  }
+
+  async function maybePromptForViewRoles(detection, sourceImage) {
+    if (!detection || !Array.isArray(detection.views) || detection.views.length < 2) return;
+    if (!detection.viewRoleReviewRequired && !detection.views.some(v => !v.viewRole || v.viewRole === 'unknown')) return;
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search || '');
+    if (params.has('autoDraft') || params.has('smoke') || params.has('learningTests') || params.has('meaningTests') || params.has('evidenceTests') || params.has('golden') || params.has('accuracy') || params.has('invariants') || params.has('contract') || params.get('label') === '1') return;
+    const roles = await askForViewRoles(detection, sourceImage);
+    if (!roles || !roles.length) return;
+    for (let i = 0; i < detection.views.length && i < roles.length; i += 1) {
+      const role = roles[i] || 'unknown';
+      detection.views[i].viewRole = role;
+      detection.views[i].role = role;
+      if (detection.viewBoxes && detection.viewBoxes[i]) {
+        detection.viewBoxes[i].viewRole = role;
+        detection.viewBoxes[i].role = role === 'front_outer' ? 'front' : role;
+      }
+    }
+    syncDetectionRoleIndexes(detection);
+    // The TD may have moved the back role to a different panel than the auto
+    // pick. Back POM landmarks (POM 11/12/13/15) were detected on the auto back
+    // box, so re-run that detection on the confirmed back box before anchors are
+    // (re-)seeded. Cup/neckline/armhole (front-inner) anchors are box-relative
+    // and follow the corrected role without re-detection.
+    redetectBackLandmarks(detection);
+    detection.viewRoleReviewRequired = false;
+  }
+
+  // Prefer the in-app dialog (thumbnails + one click per view); fall back to
+  // the legacy letter-code window.prompt only where the dialog can't run
+  // (no DOM dialog shell available, e.g. stripped-down test harnesses).
+  async function askForViewRoles(detection, sourceImage) {
+    if (typeof openViewRolesDialog === 'function' && typeof document !== 'undefined' && document.body) {
+      return openViewRolesDialog({ views: detection.views, sourceImage });
+    }
+    if (typeof window.prompt !== 'function') return null;
+    const current = detection.views
+      .map((v, i) => (i + 1) + ':' + shortViewRole(v.viewRole || v.role || 'unknown'))
+      .join(', ');
+    const answer = window.prompt(
+      'Confirm view roles. Use F=Front Outer, B=Back, I=Front Inner, U=Unknown.\n' +
+      'Current: ' + current + '\n' +
+      'Enter one letter per detected view, left to right:',
+      detection.views.map(v => roleToPromptLetter(v.viewRole || v.role)).join('')
+    );
+    if (!answer) return null;
+    const letters = String(answer).toUpperCase().replace(/[^FBIU]/g, '').split('');
+    if (!letters.length) return null;
+    const roleByLetter = { F: 'front_outer', B: 'back', I: 'front_inner', U: 'unknown' };
+    return letters.map(l => roleByLetter[l] || 'unknown');
+  }
+
+  function roleToPromptLetter(role) {
+    if (role === 'front_outer' || role === 'front') return 'F';
+    if (role === 'back') return 'B';
+    if (role === 'front_inner') return 'I';
+    return 'U';
+  }
+
+  function shortViewRole(role) {
+    if (role === 'front_outer' || role === 'front') return 'F';
+    if (role === 'back') return 'B';
+    if (role === 'front_inner') return 'I';
+    return 'U';
+  }
+
+  function syncDetectionRoleIndexes(detection) {
+    const views = detection.views || detection.viewBoxes || [];
+    const roleAt = (role) => views.findIndex(v => v && (v.viewRole === role || v.role === role));
+    detection.frontOuterViewIndex = roleAt('front_outer');
+    detection.frontViewIndex = detection.frontOuterViewIndex;
+    detection.backViewIndex = roleAt('back');
+    detection.frontInnerViewIndex = roleAt('front_inner');
+    detection.primaryViewIndex = detection.frontOuterViewIndex >= 0
+      ? detection.frontOuterViewIndex
+      : (detection.primaryViewIndex || 0);
+  }
+
+  // Read the ?cvDebug=1 flag once per detection and reflect it into state.
+  // Lets a URL-flagged session capture intermediate detector data without
+  // requiring the caller to also flip the flag through the debug API.
+  // Skipped silently when window/URLSearchParams isn't available (Node tests).
+  function syncCvDebugFromUrl() {
+    if (typeof window === 'undefined' || !window.location) return;
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      if (!params.has('cvDebug')) return;
+      const raw = params.get('cvDebug');
+      const on = raw === '1' || raw === 'true' || raw === 'on';
+      if (state && state.autoMode && state.autoMode.cvDebug) {
+        state.autoMode.cvDebug.enabled = on;
+      }
+    } catch (_) { /* no-op */ }
+  }
+
+  // Encode a binary ink mask (1 byte per pixel, row-major) as a base64
+  // PNG data URL so the CV debug payload includes a visual mask the TD can
+  // open in an image viewer. Dark pixels become black on white.
+  function encodeMaskToPng(mask, w, h) {
+    if (typeof document === 'undefined' || !mask || !w || !h) return null;
+    const off = document.createElement('canvas');
+    off.width = w;
+    off.height = h;
+    const ctx = off.getContext('2d');
+    if (!ctx) return null;
+    const img = ctx.createImageData(w, h);
+    const data = img.data;
+    for (let p = 0, i = 0; p < mask.length; p += 1, i += 4) {
+      const v = mask[p] ? 0 : 255;
+      data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    try { return off.toDataURL('image/png'); }
+    catch (_) { return null; }
+  }
+
+  // Test-harness pin: ?freeCv=1 forces the deterministic FreeOpenCVAPI
+  // backend. With opencv.js vendored (served same-origin from vendor/), the
+  // harnesses' old `--host-resolver-rules=MAP docs.opencv.org …` CDN block
+  // can no longer starve the real backend, so the pin must be explicit.
+  // Read once per page load — the golden/accuracy/invariant/contract/demo
+  // runners all append it to their target URL.
+  const FORCE_FREE_CV = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('freeCv') === '1';
+
+  // Prefer real opencv.js when its WASM has finished compiling; fall back
+  // to the in-house FreeOpenCVAPI while the vendored script is still
+  // loading (or if it failed). Both adapters return the same data shape,
+  // so detectSketchFromImage() never branches on which one it got.
+  function getCvApi() {
+    if (typeof window === 'undefined') return null;
+    if (FORCE_FREE_CV) return window.FreeOpenCVAPI || null;
+    const real = window.RealOpenCVAPI;
+    if (real && typeof real.isReady === 'function' && real.isReady()) return real;
+    return window.FreeOpenCVAPI || null;
   }
 
   // ---- src/auto/anchors/derive-anchors.js ----
@@ -27575,17 +28074,15 @@ function getAnnotationsOnImage(image) {
     return deriveAnchors(state.autoMode.anchors, { changedKind: changedAnchor.kind });
   }
 
-  // ---- src/auto/anchors/anchor-interaction.js ----
-// Anchor lookup, world-space position, hit testing, drag start, keyboard
-// nudge, and snap-to-ink.
+  // ---- src/auto/anchors/anchor-visibility.js ----
+// Anchor lookup by id, plus the US-038 per-anchor visibility state the
+// Anchor Manager panel drives (hide / show / isolate / group-toggle).
 // Source part for app.js. Run `npm run build` after editing.
 //
-// hitTestAnchors funnels into onMouseDown so anchor pins beat annotation
-// hits in Auto Mode. startAnchorDrag captures a learnOrigin so the
-// learning loop sees one (anchor pre-drag → anchor post-drag) sample per
-// commit, regardless of how the mouse moved in between. moveAnchorBy is
-// the single mutation path for every anchor move (drag, nudge, snap), so
-// the derived-pin / cascade / draft-sync side effects can't diverge.
+// This is "which pins does the TD choose to see", not "how does a pin move":
+// the pointer/keyboard drag-nudge-snap pipeline lives in
+// anchor-interaction.js, which also consumes isAnchorHidden so hidden pins
+// stay ungrabbable.
 
   function getAnchorById(id) {
     return state.autoMode.anchors.find(a => a.id === id) || null;
@@ -27645,6 +28142,22 @@ function getAnnotationsOnImage(image) {
     state.autoMode.hiddenAnchorKinds = [...set];
     requestRender();
   }
+
+  // ---- src/auto/anchors/anchor-interaction.js ----
+// World-space anchor position, hit testing, drag start, keyboard nudge, and
+// snap-to-ink — the pointer/keyboard mutation pipeline.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// hitTestAnchors funnels into onMouseDown so anchor pins beat annotation
+// hits in Auto Mode. startAnchorDrag captures a learnOrigin so the
+// learning loop sees one (anchor pre-drag → anchor post-drag) sample per
+// commit, regardless of how the mouse moved in between. moveAnchorBy is
+// the single mutation path for every anchor move (drag, nudge, snap), so
+// the derived-pin / cascade / draft-sync side effects can't diverge.
+//
+// getAnchorById and the US-038 hide/show/isolate state live in
+// anchor-visibility.js; this file consumes isAnchorHidden so hidden pins
+// stay ungrabbable.
 
   // Learning origin = the UNBIASED predicted position when learning stashed one
   // (predictedX/Y set by applyLearningBiasToAnchors), else the current position.
@@ -27856,165 +28369,53 @@ function getAnnotationsOnImage(image) {
     showToast('Anchor snapped to the sketch ink — hold ⌥ (Alt) while releasing to place it freely.', 4200);
   }
 
-  // ---- src/auto/drafts/generate-pom-fixture.js ----
-// Auto Mode POM fixture generator: turn the current anchor positions
-// into 16 fixture rows that buildDraftAnnotation can convert into drafts.
+  // ---- src/auto/drafts/view-role-helpers.js ----
+// Auto Mode view-role resolution: which detected view box a POM renders in.
 // Source part for app.js. Run `npm run build` after editing.
 //
+// effectivePomViewRole picks the view box each POM renders in, so a 3-view
+// sketch can place front-outer-only POMs in the outer column without
+// disturbing the back view. These helpers are consumed by the fixture
+// builder (pom-fixture-builder.js), the draft record builder
+// (build-draft-annotation.js), the fixture validator (validate-fixture.js)
+// and the apply pipeline (apply-drafts.js), so this part loads first in the
+// drafts cluster.
+
+  function findDetectedViewForRole(detection, role) {
+    const views = Array.isArray(detection && detection.views) && detection.views.length
+      ? detection.views
+      : (Array.isArray(detection && detection.viewBoxes) ? detection.viewBoxes : []);
+    return views.find(v => v && (v.viewRole === role || v.role === role || (role === 'front_outer' && v.role === 'front'))) || null;
+  }
+
+  function hasDetectedViewRole(role) {
+    const det = state.autoMode && state.autoMode.detection;
+    return !!findDetectedViewForRole(det, role);
+  }
+
+  function defaultPomViewRole(pom) {
+    const entry = POM_TEMPLATE[String(pom)];
+    return entry && entry.viewRole ? entry.viewRole : 'front_outer';
+  }
+
+  function effectivePomViewRole(pom) {
+    const role = defaultPomViewRole(pom);
+    if (role === 'front_inner' && !hasDetectedViewRole('front_inner')) return 'front_outer';
+    return role;
+  }
+
+  // ---- src/auto/drafts/pom-fixture-builder.js ----
+// Auto Mode POM fixture builder: turn the current anchor positions into 18
+// fixture rows that buildDraftAnnotation can convert into drafts.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// This is the measurement-rules engine — anchors in, fixture rows out, with
+// no DOM or state mutation of its own (it only reads state.autoMode.detection).
 // The fixture is the contract between the anchor model and the draft
-// annotation builder. effectivePomViewRole picks the view box each POM
-// renders in, so a 3-view sketch can place front-outer-only POMs in the
-// outer column without disturbing the back view.
-
-  // -------- Rule-based POM generator (Phase 3 of the offline engine) --------
-  //
-  // Reads the current anchor positions and emits 16 fixture-shaped rows that
-  // are then funneled through the existing validateAutoFixture +
-  // buildDraftAnnotation pipeline.
-  function generatePOMDraftsFromAnchors(options = {}) {
-    if (state.appMode !== 'auto') {
-      showToast('Switch to Auto Mode first.');
-      return;
-    }
-    const sourceImage = pickAutoSourceImage();
-    if (!sourceImage) {
-      showToast('Add or select an image first, then generate POM drafts.', 3600);
-      return;
-    }
-    if (!state.autoMode.anchors.length) {
-      showToast('Place anchors first — run Detect Sketch.');
-      return;
-    }
-    // Replacing drafts is a destructive action if the TD already approved
-    // some rows; confirm so they don't lose work.
-    const approvedCount = state.autoMode.draftAnnotations
-      .filter(d => d.tdApproved && !isReviewOnlyDraft(d)).length;
-    if (state.autoMode.draftAnnotations.length > 0 && !options.suppressReplacePrompt) {
-      const msg = approvedCount > 0
-        ? `Generate will replace ${state.autoMode.draftAnnotations.length} existing draft(s), including ${approvedCount} approved one(s). Continue?`
-        : `Generate will replace ${state.autoMode.draftAnnotations.length} existing draft(s). Continue?`;
-      if (!window.confirm(msg)) return;
-    }
-
-    // US-049: the front-outer pass measures against the ONE detection source
-    // image. Anchors relocated to the front-inner view (POM 9/10/17/18) carry
-    // that photo's id, so exclude them here — those POMs are (re)generated in
-    // the inner pass below. With no inner view every anchor is on the source
-    // image, so this filter is a no-op and behaviour is unchanged.
-    const frontAnchors = state.autoMode.anchors.filter(an => an.sourceImageId === sourceImage.id);
-    const fixture = buildPOMFixtureFromAnchors(frontAnchors);
-    const runId = makeRunId();
-    const validation = validateAutoFixture(fixture);
-    if (validation.status === 'fail') {
-      state.autoMode.validation = validation;
-      state.autoMode.status = 'error';
-      state.autoMode.lastError = 'Generated drafts failed validation. The board was not changed. See panel for details.';
-      console.warn('[Auto Mode] Generated fixture failed validation:', validation.errors);
-      pushHistoryIfChanged();
-      updateUI();
-      requestRender();
-      return;
-    }
-
-    const drafts = fixture.annotations.map(row => buildDraftAnnotation(row, sourceImage, fixture, runId));
-    if (typeof applyStyleAbsenceEvidenceToDrafts === 'function') {
-      applyStyleAbsenceEvidenceToDrafts(drafts);
-    }
-    // Soft-pull endpoints toward the median of recent TD-confirmed lines
-    // for this style. Runs after the absence pass so REVIEW_ONLY drafts
-    // stay wiped, and before label collision avoidance so labels follow
-    // the nudged endpoints.
-    if (typeof applyStyleConfirmedEvidenceToDrafts === 'function') {
-      applyStyleConfirmedEvidenceToDrafts(drafts, sourceImage);
-    }
-
-    // US-049: second pass — measure POM 9/10/17/18 on the front-inner view when
-    // one is present. The inner photo carries its OWN detection + anchor set
-    // (seeded in buildAuxViews); build a fixture against it — temporarily
-    // swapping the active detection so cupModel/landmark reads come from the
-    // inner photo — and REPLACE the front-outer placeholders for those POMs
-    // (which came out REVIEW_ONLY once their anchors moved off the source
-    // image). POM 8 and every other POM keep their front-outer geometry.
-    let finalDrafts = drafts;
-    const innerView = (state.autoMode.detection && Array.isArray(state.autoMode.detection.auxViews))
-      ? state.autoMode.detection.auxViews.find(v => v && v.viewRole === 'front_inner' && v.detection && Array.isArray(v.anchors) && v.anchors.length)
-      : null;
-    if (innerView) {
-      const innerImage = getImageById(innerView.sourceImageId);
-      if (innerImage && innerImage.width) {
-        const MOVED_POMS = ['9', '10', '17', '18'];
-        const savedDet = state.autoMode.detection;
-        let innerFixture = null;
-        try {
-          state.autoMode.detection = innerView.detection;
-          innerFixture = buildPOMFixtureFromAnchors(innerView.anchors);
-        } finally {
-          state.autoMode.detection = savedDet;
-        }
-        const innerValidation = innerFixture ? validateAutoFixture(innerFixture) : { status: 'fail' };
-        if (innerFixture && innerValidation.status !== 'fail') {
-          const innerDrafts = innerFixture.annotations
-            .filter(row => MOVED_POMS.indexOf(String(row.pom)) >= 0)
-            .map(row => buildDraftAnnotation(row, innerImage, innerFixture, runId));
-          finalDrafts = drafts.filter(d => MOVED_POMS.indexOf(String(d.seq)) < 0).concat(innerDrafts);
-        }
-      }
-    }
-
-    nudgeAutoLabelsToAvoidCollisions(finalDrafts);
-
-    state.autoMode.draftAnnotations = finalDrafts;
-    state.autoMode.validation = validation;
-    state.autoMode.runId = runId;
-    state.autoMode.status = 'reviewing';
-    state.autoMode.lastError = null;
-    state.selection = { kind: null, id: null };
-    recordAutoTelemetryEvent('drafts_generated', {
-      sourceImageId: sourceImage.id,
-      run_id: runId,
-      draft_count: finalDrafts.length,
-    });
-
-    pushHistoryIfChanged();
-    updateUI();
-    requestRender();
-
-    // Test/debug hook: keep the drafts on the board for row-by-row review
-    // instead of committing them (used by the smoke and pipeline runners).
-    if (options.keepDraftsForReview) {
-      showToast('Generated ' + drafts.length + ' POM draft(s). Review and approve each row.');
-      return;
-    }
-    autoApplyGeneratedDrafts(drafts.length);
-  }
-
-  // Streamlined flow: after Generate Drafts, auto-approve every drawable
-  // draft and commit it as a real annotation immediately — the TD is not
-  // asked to approve rows one by one. Review-only rows have no drawable
-  // line, so they are dropped with a note in the toast. If apply fails
-  // (e.g. duplicate POM rows on the same image) the drafts stay on the
-  // board so the TD can resolve the issue with the review controls.
-  function autoApplyGeneratedDrafts(generatedCount) {
-    const drawable = state.autoMode.draftAnnotations.filter(d => !isReviewOnlyDraft(d));
-    if (drawable.length === 0) {
-      showToast('Generated ' + generatedCount + ' draft(s), but none were drawable. Review and resolve them.', 4200);
-      return;
-    }
-    for (const draft of drawable) approveDraftAnnotation(draft);
-    const applied = applyApprovedDraftsAtomically();
-    if (!applied) {
-      for (const draft of drawable) draft.tdApproved = false;
-      updateUI();
-      return;
-    }
-    const reviewOnlyLeft = state.autoMode.draftAnnotations.length;
-    if (reviewOnlyLeft > 0) discardAutoDrafts(true);
-    let msg = 'Applied ' + drawable.length + ' POM line' + (drawable.length === 1 ? '' : 's') + '.';
-    if (reviewOnlyLeft > 0) {
-      msg += ' (' + reviewOnlyLeft + ' review-only row' + (reviewOnlyLeft === 1 ? '' : 's') + ' dropped — no reliable line could be placed.)';
-    }
-    showToast(msg, 4200);
-  }
+// annotation builder; the view box each POM renders in comes from
+// effectivePomViewRole (view-role-helpers.js). The UI action that calls this
+// lives in generate-drafts-action.js; the live-drag counterpart that keeps a
+// handful of drafts in step with their anchors lives in anchor-drag-sync.js.
 
   function buildPOMFixtureFromAnchors(anchorList) {
     const a = Object.create(null);
@@ -28774,6 +29175,17 @@ function getAnnotationsOnImage(image) {
     };
   }
 
+  // ---- src/auto/drafts/anchor-drag-sync.js ----
+// Auto Mode live anchor-drag sync: keep the POM 1/2/3/4/16 draft lines in
+// step with their anchors while the TD drags a pin.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Called from the drag-anchor mouse-move loop in
+// src/auto/anchors/anchor-interaction.js. This is the live counterpart to the
+// full fixture rebuild in pom-fixture-builder.js; the POM 16 slant limit below
+// is a hand-kept duplicate of that file's APEX_MAX_SLANT (see the comment at
+// its use site).
+
   // Keep Auto Mode POM 1/2/3/4/16 drafts geometrically tied to their anchors
   // while the TD is dragging. POM 1 follows band-{left,right}; POM 3 follows
   // chest-{left,right}; POMs 2 and 4 are dashed extensions that always read
@@ -28881,29 +29293,6 @@ function getAnnotationsOnImage(image) {
         }
       }
     }
-  }
-
-  function findDetectedViewForRole(detection, role) {
-    const views = Array.isArray(detection && detection.views) && detection.views.length
-      ? detection.views
-      : (Array.isArray(detection && detection.viewBoxes) ? detection.viewBoxes : []);
-    return views.find(v => v && (v.viewRole === role || v.role === role || (role === 'front_outer' && v.role === 'front'))) || null;
-  }
-
-  function hasDetectedViewRole(role) {
-    const det = state.autoMode && state.autoMode.detection;
-    return !!findDetectedViewForRole(det, role);
-  }
-
-  function defaultPomViewRole(pom) {
-    const entry = POM_TEMPLATE[String(pom)];
-    return entry && entry.viewRole ? entry.viewRole : 'front_outer';
-  }
-
-  function effectivePomViewRole(pom) {
-    const role = defaultPomViewRole(pom);
-    if (role === 'front_inner' && !hasDetectedViewRole('front_inner')) return 'front_outer';
-    return role;
   }
 
   // ---- src/auto/drafts/build-draft-annotation.js ----
@@ -29217,13 +29606,14 @@ function getAnnotationsOnImage(image) {
   }
 
   // ---- src/auto/drafts/draft-actions.js ----
-// TD review actions on drafts: approve, mark review-only, apply
-// approved set atomically, discard, and reset working board.
+// TD review actions on a single draft: mark touched, approve, mark
+// review-only — plus the toolbar action that resets the anchors from the
+// current detection.
 // Source part for app.js. Run `npm run build` after editing.
 //
-// applyApprovedDraftsAtomically is the only path that mutates
-// state.annotations during Auto Mode. It refuses to apply a partial
-// approved set (atomic = all-or-nothing) so the audit trail stays clean.
+// These mutate one draft's tdApproved / drawability / telemetry fields. The
+// atomic commit-to-board pipeline lives in apply-drafts.js, and the
+// whole-board discard / reset operations in board-reset.js.
 
   // -------- TD review actions on drafts --------
 
@@ -29286,6 +29676,45 @@ function getAnnotationsOnImage(image) {
       pom_id: ann.seq != null ? String(ann.seq) : (ann.text != null ? String(ann.text) : null),
     });
   }
+
+  // Toolbar action: throw away every TD anchor correction and re-seed the
+  // whole anchor set from the current detection.
+  function resetAnchorsToDetection() {
+    const detection = state.autoMode.detection;
+    if (!detection) {
+      showToast('Run Detect Sketch first.');
+      return;
+    }
+    const sourceImage = getImageById(detection.sourceImageId) || pickAutoSourceImage();
+    if (!sourceImage) {
+      showToast('No source image for the current detection.');
+      return;
+    }
+    state.autoMode.anchors = seedAnchorsFromDetection(detection, sourceImage);
+    state.autoMode.anchorSelectedId = null;
+    state.autoMode.anchorsHidden = false;
+    state.autoMode.hiddenAnchorKinds = []; // US-038: fresh seed shows all
+    pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+    showToast('Anchors reset from detection.');
+  }
+
+  // ---- src/auto/drafts/apply-drafts.js ----
+// Auto Mode atomic apply-to-board pipeline: commit the approved draft set as
+// real annotations, plus the duplicate / geometry-conflict recovery dialog and
+// the draft -> permanent annotation record builder.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// applyApprovedDraftsAtomically is the only path that mutates
+// state.annotations during Auto Mode. It refuses to apply a partial
+// approved set (atomic = all-or-nothing) so the audit trail stays clean.
+//
+// buildAppliedAnnotation is the mirror image of buildDraftAnnotation in
+// build-draft-annotation.js — a new Auto Mode metadata field must be added to
+// both or it silently vanishes on Apply. The single-draft TD state
+// transitions that lead here live in draft-actions.js; the whole-board
+// discard/reset counterparts live in board-reset.js.
 
   // -------- Apply / Discard --------
 
@@ -29509,6 +29938,21 @@ function getAnnotationsOnImage(image) {
     return !!(p && Number.isFinite(p.x) && Number.isFinite(p.y));
   }
 
+  // ---- src/auto/drafts/board-reset.js ----
+// Whole-board destructive operations: discard the current Auto Mode drafts,
+// wipe the working board (photos + lines + detection), or delete every line
+// while keeping the photo.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// These four act on the whole board (state.images, state.eraseStrokes,
+// state.calibration, state.autoMode as a whole), not on one draft — the
+// single-draft TD review actions live in draft-actions.js and the apply
+// pipeline in apply-drafts.js. resetWorkingBoard and clearAllLinesKeepImage
+// are asymmetric siblings (wipe-everything vs wipe-lines-only) and must stay
+// behaviourally distinct.
+
+  // -------- Discard / whole-board resets --------
+
   function discardAutoDrafts(silent) {
     if (state.autoMode.draftAnnotations.length === 0) return;
     if (!silent && !window.confirm('Discard all current Auto Mode drafts? Project annotations are not affected.')) return;
@@ -29623,6 +30067,170 @@ function getAnnotationsOnImage(image) {
     updateUI();
     requestRender();
     showToast('All lines deleted. Photo kept — Undo to restore.');
+  }
+
+  // ---- src/auto/drafts/generate-drafts-action.js ----
+// Auto Mode "Generate Drafts" action: the UI-action orchestration around the
+// fixture engine — mode/image/anchor guards, the destructive-replace confirm,
+// the front-outer / front-inner two-pass build (US-049), learning-evidence
+// hooks, telemetry, and the history/UI/render side effects.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// The geometry itself lives in pom-fixture-builder.js
+// (buildPOMFixtureFromAnchors); the fixture is validated by
+// validate-fixture.js and turned into draft records by
+// build-draft-annotation.js. autoApplyGeneratedDrafts hands off to
+// approveDraftAnnotation (draft-actions.js) and applyApprovedDraftsAtomically
+// (apply-drafts.js).
+
+  // -------- Rule-based POM generator (Phase 3 of the offline engine) --------
+  //
+  // Reads the current anchor positions and emits 16 fixture-shaped rows that
+  // are then funneled through the existing validateAutoFixture +
+  // buildDraftAnnotation pipeline.
+  function generatePOMDraftsFromAnchors(options = {}) {
+    if (state.appMode !== 'auto') {
+      showToast('Switch to Auto Mode first.');
+      return;
+    }
+    const sourceImage = pickAutoSourceImage();
+    if (!sourceImage) {
+      showToast('Add or select an image first, then generate POM drafts.', 3600);
+      return;
+    }
+    if (!state.autoMode.anchors.length) {
+      showToast('Place anchors first — run Detect Sketch.');
+      return;
+    }
+    // Replacing drafts is a destructive action if the TD already approved
+    // some rows; confirm so they don't lose work.
+    const approvedCount = state.autoMode.draftAnnotations
+      .filter(d => d.tdApproved && !isReviewOnlyDraft(d)).length;
+    if (state.autoMode.draftAnnotations.length > 0 && !options.suppressReplacePrompt) {
+      const msg = approvedCount > 0
+        ? `Generate will replace ${state.autoMode.draftAnnotations.length} existing draft(s), including ${approvedCount} approved one(s). Continue?`
+        : `Generate will replace ${state.autoMode.draftAnnotations.length} existing draft(s). Continue?`;
+      if (!window.confirm(msg)) return;
+    }
+
+    // US-049: the front-outer pass measures against the ONE detection source
+    // image. Anchors relocated to the front-inner view (POM 9/10/17/18) carry
+    // that photo's id, so exclude them here — those POMs are (re)generated in
+    // the inner pass below. With no inner view every anchor is on the source
+    // image, so this filter is a no-op and behaviour is unchanged.
+    const frontAnchors = state.autoMode.anchors.filter(an => an.sourceImageId === sourceImage.id);
+    const fixture = buildPOMFixtureFromAnchors(frontAnchors);
+    const runId = makeRunId();
+    const validation = validateAutoFixture(fixture);
+    if (validation.status === 'fail') {
+      state.autoMode.validation = validation;
+      state.autoMode.status = 'error';
+      state.autoMode.lastError = 'Generated drafts failed validation. The board was not changed. See panel for details.';
+      console.warn('[Auto Mode] Generated fixture failed validation:', validation.errors);
+      pushHistoryIfChanged();
+      updateUI();
+      requestRender();
+      return;
+    }
+
+    const drafts = fixture.annotations.map(row => buildDraftAnnotation(row, sourceImage, fixture, runId));
+    if (typeof applyStyleAbsenceEvidenceToDrafts === 'function') {
+      applyStyleAbsenceEvidenceToDrafts(drafts);
+    }
+    // Soft-pull endpoints toward the median of recent TD-confirmed lines
+    // for this style. Runs after the absence pass so REVIEW_ONLY drafts
+    // stay wiped, and before label collision avoidance so labels follow
+    // the nudged endpoints.
+    if (typeof applyStyleConfirmedEvidenceToDrafts === 'function') {
+      applyStyleConfirmedEvidenceToDrafts(drafts, sourceImage);
+    }
+
+    // US-049: second pass — measure POM 9/10/17/18 on the front-inner view when
+    // one is present. The inner photo carries its OWN detection + anchor set
+    // (seeded in buildAuxViews); build a fixture against it — temporarily
+    // swapping the active detection so cupModel/landmark reads come from the
+    // inner photo — and REPLACE the front-outer placeholders for those POMs
+    // (which came out REVIEW_ONLY once their anchors moved off the source
+    // image). POM 8 and every other POM keep their front-outer geometry.
+    let finalDrafts = drafts;
+    const innerView = (state.autoMode.detection && Array.isArray(state.autoMode.detection.auxViews))
+      ? state.autoMode.detection.auxViews.find(v => v && v.viewRole === 'front_inner' && v.detection && Array.isArray(v.anchors) && v.anchors.length)
+      : null;
+    if (innerView) {
+      const innerImage = getImageById(innerView.sourceImageId);
+      if (innerImage && innerImage.width) {
+        const MOVED_POMS = ['9', '10', '17', '18'];
+        const savedDet = state.autoMode.detection;
+        let innerFixture = null;
+        try {
+          state.autoMode.detection = innerView.detection;
+          innerFixture = buildPOMFixtureFromAnchors(innerView.anchors);
+        } finally {
+          state.autoMode.detection = savedDet;
+        }
+        const innerValidation = innerFixture ? validateAutoFixture(innerFixture) : { status: 'fail' };
+        if (innerFixture && innerValidation.status !== 'fail') {
+          const innerDrafts = innerFixture.annotations
+            .filter(row => MOVED_POMS.indexOf(String(row.pom)) >= 0)
+            .map(row => buildDraftAnnotation(row, innerImage, innerFixture, runId));
+          finalDrafts = drafts.filter(d => MOVED_POMS.indexOf(String(d.seq)) < 0).concat(innerDrafts);
+        }
+      }
+    }
+
+    nudgeAutoLabelsToAvoidCollisions(finalDrafts);
+
+    state.autoMode.draftAnnotations = finalDrafts;
+    state.autoMode.validation = validation;
+    state.autoMode.runId = runId;
+    state.autoMode.status = 'reviewing';
+    state.autoMode.lastError = null;
+    state.selection = { kind: null, id: null };
+    recordAutoTelemetryEvent('drafts_generated', {
+      sourceImageId: sourceImage.id,
+      run_id: runId,
+      draft_count: finalDrafts.length,
+    });
+
+    pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+
+    // Test/debug hook: keep the drafts on the board for row-by-row review
+    // instead of committing them (used by the smoke and pipeline runners).
+    if (options.keepDraftsForReview) {
+      showToast('Generated ' + drafts.length + ' POM draft(s). Review and approve each row.');
+      return;
+    }
+    autoApplyGeneratedDrafts(drafts.length);
+  }
+
+  // Streamlined flow: after Generate Drafts, auto-approve every drawable
+  // draft and commit it as a real annotation immediately — the TD is not
+  // asked to approve rows one by one. Review-only rows have no drawable
+  // line, so they are dropped with a note in the toast. If apply fails
+  // (e.g. duplicate POM rows on the same image) the drafts stay on the
+  // board so the TD can resolve the issue with the review controls.
+  function autoApplyGeneratedDrafts(generatedCount) {
+    const drawable = state.autoMode.draftAnnotations.filter(d => !isReviewOnlyDraft(d));
+    if (drawable.length === 0) {
+      showToast('Generated ' + generatedCount + ' draft(s), but none were drawable. Review and resolve them.', 4200);
+      return;
+    }
+    for (const draft of drawable) approveDraftAnnotation(draft);
+    const applied = applyApprovedDraftsAtomically();
+    if (!applied) {
+      for (const draft of drawable) draft.tdApproved = false;
+      updateUI();
+      return;
+    }
+    const reviewOnlyLeft = state.autoMode.draftAnnotations.length;
+    if (reviewOnlyLeft > 0) discardAutoDrafts(true);
+    let msg = 'Applied ' + drawable.length + ' POM line' + (drawable.length === 1 ? '' : 's') + '.';
+    if (reviewOnlyLeft > 0) {
+      msg += ' (' + reviewOnlyLeft + ' review-only row' + (reviewOnlyLeft === 1 ? '' : 's') + ' dropped — no reliable line could be placed.)';
+    }
+    showToast(msg, 4200);
   }
 
   // ---- src/auto/learning/acceptance-stats.js ----
