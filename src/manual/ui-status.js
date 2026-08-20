@@ -14,6 +14,9 @@
     el.toolCurved.classList.toggle('active', state.tool === 'curved');
     el.toolEraser.classList.toggle('active', state.tool === 'eraser');
     el.toolEraser.disabled = state.images.length === 0;
+    // US-092: the Text tool has no image requirement — a note can be a title or
+    // a general remark on an otherwise empty board.
+    el.toolText.classList.toggle('active', state.tool === 'text');
     el.lineStyleControl.hidden = state.tool === 'eraser';
     el.lineWidthChip.hidden = state.tool === 'eraser';
     el.brushSizeChip.hidden = state.tool !== 'eraser';
@@ -27,13 +30,26 @@
     const imageCount = state.images.length;
     const selectedAnnotation = getSelectedAnnotation();
     const selectedImage = getSelectedImage();
+    const selectedNote = getSelectedNote();
+    // US-092: the note's size chip lives beside Line, gated on a note being
+    // selected OR the Text tool being ready to place one — never both chips
+    // hidden at once for a note, never both shown at once for a line.
+    el.fontSizeChip.hidden = !(selectedNote || state.tool === 'text');
     const activeStyle = selectedAnnotation ? getLineStyle(selectedAnnotation) : state.drawStyle;
-    const activeColor = selectedAnnotation ? normalizeColorKey(selectedAnnotation.color) : state.drawColor;
+    // A selected note owns the swatch too — read from the note itself rather
+    // than from state.drawColor, so an Undo that restores its old colour shows
+    // up in the toolbar instead of leaving the stale draw default on display.
+    const activeColor = selectedAnnotation ? normalizeColorKey(selectedAnnotation.color)
+      : selectedNote ? normalizeColorKey(selectedNote.color)
+        : state.drawColor;
     const activeArrowType = selectedAnnotation ? getArrowType(selectedAnnotation) : state.arrowType;
     const activeLineWidth = getActiveLineWidth();
     updateLineStyleControl(activeStyle);
     if (el.lineWidthInput && document.activeElement !== el.lineWidthInput) {
       el.lineWidthInput.value = formatLineWidth(activeLineWidth);
+    }
+    if (el.fontSizeInput && document.activeElement !== el.fontSizeInput) {
+      el.fontSizeInput.value = formatNoteFontSize(getActiveNoteFontSize());
     }
     el.arrowDoubleBtn.classList.toggle('active', activeArrowType === 'double');
     el.arrowSingleBtn.classList.toggle('active', activeArrowType === 'single');
@@ -49,8 +65,14 @@
     el.arrowNoneBtn.disabled = false;
 
     let toolText = '';
-    if (state.tool === 'select') {
-      if (selectedAnnotation) {
+    if (state.tool === 'text') {
+      toolText = 'Text – Click the board to write a note. <span class="kbd">Enter</span> makes a new line; <span class="kbd">⌘/Ctrl</span>+<span class="kbd">Enter</span> or a click on the board finishes it.';
+    } else if (state.tool === 'select') {
+      if (selectedNote) {
+        toolText = selectedNote.leaders && selectedNote.leaders.length
+          ? 'Select – Drag the note or an arrow tip to move it, double-click a tip to remove that arrow, double-click the text to edit it, <span class="kbd">⌫</span> deletes the note.'
+          : 'Select – Drag the note to move it, drag the <strong>+</strong> handle out to point an arrow at a detail, double-click to edit the text, <span class="kbd">⌫</span> deletes it.';
+      } else if (selectedAnnotation) {
         toolText = 'Select – Drag line, endpoints, curve shape handle, or label. <span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
       } else if (selectedImage) {
         toolText = 'Select – Drag the image to move it, drag a corner handle to resize, use wheel to zoom, or hold <span class="kbd">Space</span> to pan.';
@@ -94,7 +116,7 @@
     el.imageStatus.innerHTML = modeTag + boardHtml;
 
     el.countStatus.innerHTML = '<strong>Images:</strong> ' + imageCount + ' &nbsp;•&nbsp; <strong>Annotations:</strong> ' + annotationCount;
-    el.deleteBtn.disabled = !(selectedAnnotation || (selectedImage && !selectedImage.locked));
+    el.deleteBtn.disabled = !(selectedAnnotation || selectedNote || (selectedImage && !selectedImage.locked));
     const lineActionsEnabled = state.appMode !== 'auto';
     el.copyLineBtn.disabled = !(selectedAnnotation && lineActionsEnabled);
     el.reflectLineBtn.disabled = !(selectedAnnotation && lineActionsEnabled);
@@ -182,6 +204,9 @@
     // Lock manual creation/edit tools while in Auto Mode.
     el.toolStraight.disabled = isAuto;
     el.toolCurved.disabled = isAuto;
+    // US-092: notes are Manual-only to CREATE. They still RENDER in Auto (they
+    // are board content, like applied lines) — this only closes the tool.
+    el.toolText.disabled = isAuto;
     if (isAuto) {
       el.toolEraser.disabled = true;
       // US-052: Delete in Auto Mode removes a selected PHOTO only (annotations/

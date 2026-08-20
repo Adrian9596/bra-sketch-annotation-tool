@@ -55,6 +55,13 @@
         const label = String(getLabelText(ann));
         if (label && !state.deletedPomKeys.includes(label)) state.deletedPomKeys.push(label);
       }
+    } else if (state.selection.kind === 'note') {
+      // US-092: a note is drawing content, not a measurement. Nothing to record
+      // in deletedPomKeys, no evidence entry, no exported row to keep in sync —
+      // the whole point of keeping notes out of state.annotations.
+      const before = (state.notes || []).length;
+      state.notes = (state.notes || []).filter(note => note.id !== state.selection.id);
+      if (state.notes.length === before) return;
     } else if (state.selection.kind === 'image') {
       // Delete every selected photo (Cmd/Ctrl+click group), skipping locked
       // ones. US-052: deleteImageById purges each photo's Auto Mode state.
@@ -79,6 +86,21 @@
     pushHistoryIfChanged();
     updateUI();
     requestRender();
+  }
+
+  // US-092 step 6: remove ONE arrow from a note, leaving the note and its other
+  // arrows alone. Delete on a selected note removes the whole note; this is the
+  // finer gesture — double-click the arrow's tip — and follows the Construction
+  // page's precedent, where double-clicking a callout's anchor deletes just that
+  // leader line (ADR 0040). Returns true when something was removed.
+  function removeNoteLeader(note, index) {
+    if (!note || !Array.isArray(note.leaders)) return false;
+    if (!Number.isInteger(index) || index < 0 || index >= note.leaders.length) return false;
+    note.leaders.splice(index, 1);
+    pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+    return true;
   }
 
   function clearAllAnnotations() {

@@ -89,9 +89,7 @@
       ctx.save();
       ctx.translate(state.panX, state.panY);
       ctx.scale(state.zoom, state.zoom);
-      for (const image of state.images) drawImageItem(image);
-      for (const stroke of state.eraseStrokes) drawEraseStroke(stroke);
-      for (const ann of visibleExportAnnotations()) drawAnnotationForExport(ann);
+      drawBoardContentForExport();
       ctx.restore();
     } finally {
       ctx = oldCtx;

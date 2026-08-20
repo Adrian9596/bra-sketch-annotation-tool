@@ -43,6 +43,7 @@
   function isWorkingBoardEmpty() {
     return state.images.length === 0
       && state.annotations.length === 0
+      && (state.notes || []).length === 0
       && state.eraseStrokes.length === 0
       && state.autoMode.draftAnnotations.length === 0
       && !state.autoMode.detection;
@@ -64,12 +65,16 @@
     state.deletedAutoAnnotations = [];
     state.images = [];
     state.eraseStrokes = [];
+    // US-092: notes are board content, so a whole-board reset takes them too.
+    // clearAllLinesKeepImage deliberately does NOT — a note is not a line.
+    state.notes = [];
     state.nextSequence = 1;
     state.selection = { kind: null, id: null };
     state.drawSession = null;
     state.eraseSession = null;
     state.interaction = null;
     state.editingLabelId = null;
+    discardNoteEditorSession();
     state.calibration = { unitsPerPx: null, unit: 'in' };
     state.autoMode = makeInitialAutoModeState();
     state.hiddenAnnIds = [];
@@ -113,6 +118,7 @@
     state.drawSession = null;
     state.editingLabelId = null;
     el.labelEditor.style.display = 'none';
+    discardNoteEditorSession();
 
     // Lines are gone but the photo + detection remain — reveal the anchor
     // pins (they are hidden after an apply) so the board shows a clear next

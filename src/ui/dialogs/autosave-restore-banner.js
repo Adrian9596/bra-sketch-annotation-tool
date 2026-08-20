@@ -46,8 +46,15 @@
     const record = readAutosave();
     if (!record) return;
     const s = record.snapshot && record.snapshot.state;
+    // US-092: notes count here, and this is not cosmetic. hasContent and
+    // hasUnsavedWork() are a matched pair — the first decides whether a record is
+    // OFFERED BACK, the second whether it is WRITTEN — and the miss below is
+    // destructive, not merely quiet: a false here falls through to clearAutosave()
+    // and deletes the record. Teaching only hasUnsavedWork about notes would have
+    // meant a notes-only board autosaves correctly and is then wiped at next boot.
     const hasContent = s && ((Array.isArray(s.annotations) && s.annotations.length)
       || (Array.isArray(s.images) && s.images.length)
+      || (Array.isArray(s.notes) && s.notes.length)
       || (s.construction && ((s.construction.callouts || []).length
         || (s.construction.images && ['solid', 'lace'].some(sheet => ['outer', 'inner'].some(view =>
           ((((s.construction.images[sheet] || {})[view]) || []).length))))

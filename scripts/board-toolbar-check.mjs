@@ -73,7 +73,18 @@ async function main() {
     units: Array.from(document.querySelectorAll('#boardToolbarGroups > :not(.toolbar-spacer)'))
       .filter(el => { const r=el.getBoundingClientRect(); return !el.hidden && getComputedStyle(el).display !== 'none' && r.width > 0 && r.height > 0; }).length,
   })`);
-  check(emptyManual.buttons.length === 9, `empty Manual should expose 9 direct buttons, got ${emptyManual.buttons.length}`);
+  // The exact SET, not a count. US-092 added a fifth drawing tool and this
+  // assertion failed as "9 direct buttons, got 10" — true, but it does not say
+  // WHICH control appeared, which is the only thing a reviewer needs to decide
+  // whether the change belongs. The Text tool does: a note needs no photo, so
+  // it is an authoring entry point exactly like Straight and Curved, and the
+  // three claims this section really makes (no line settings, no selection
+  // actions, no Export on an empty board) are asserted separately below.
+  check(JSON.stringify(emptyManual.buttons) === JSON.stringify([
+    'modeManualBtn', 'modeAutoBtn', 'addImageBtn',
+    'toolSelect', 'toolStraight', 'toolCurved', 'toolText',
+    'stitchesBtn', 'fileMenuBtn', 'moreMenuBtn',
+  ]), `empty Manual controls wrong: ${JSON.stringify(emptyManual.buttons)}`);
   check(emptyManual.contextHidden, 'selection actions should be hidden with no selection/history');
   check(emptyManual.lineSettingsHidden, 'line settings should be hidden on an empty Manual Board');
   check(emptyManual.exportHidden, 'Export should be hidden on an empty Manual Board');

@@ -65,3 +65,12 @@
     const selectedAnnotation = getSelectedAnnotation();
     return selectedAnnotation ? getLineWidth(selectedAnnotation) : normalizeLineWidth(state.lineWidth);
   }
+
+  // A note's own size control (US-092), mirroring getActiveLineWidth exactly:
+  // a selected note's chip reads and writes THAT note's fontSize directly, and
+  // falls back to the sticky "next note" default only when nothing is
+  // selected — so the chip never needs state.noteFontSize resynced on select.
+  function getActiveNoteFontSize() {
+    const selectedNote = getSelectedNote();
+    return selectedNote ? noteFontSizeOf(selectedNote) : normalizeNoteFontSize(state.noteFontSize);
+  }

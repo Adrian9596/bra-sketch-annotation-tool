@@ -97,6 +97,7 @@
     const empty = imageCount === 0 && annotationCount === 0;
     const selectedAnnotation = getSelectedAnnotation();
     const selectedImage = getSelectedImage();
+    const selectedNote = getSelectedNote();
     const auto = state.autoMode;
     const hasSource = !!pickAutoSourceImage();
     const hasAnchors = auto.anchors.length > 0;
@@ -126,7 +127,9 @@
     setBoardToolbarHidden(el.copyLineBtn, !selectionMode || !selectedAnnotation);
     setBoardToolbarHidden(el.reflectLineBtn, !selectionMode || !selectedAnnotation);
     setBoardToolbarHidden(el.pasteLineBtn, !selectionMode || el.pasteLineBtn.disabled);
-    setBoardToolbarHidden(el.deleteBtn, !selectionMode || !(selectedAnnotation || selectedImage));
+    // US-092: Delete is the note's only toolbar action — Copy / Reflect / Paste
+    // are line operations and stay hidden for a selected note.
+    setBoardToolbarHidden(el.deleteBtn, !selectionMode || !(selectedAnnotation || selectedImage || selectedNote));
     setBoardToolbarHidden(el.lockImageBtn, !selectionMode || !selectedImage);
     const contextGroup = document.getElementById('boardContextActions');
     if (contextGroup) {

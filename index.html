@@ -1339,6 +1339,30 @@
   }
   .label-editor:focus{ outline:none; }
 
+  /* Floating multi-line note editor over the canvas (US-092). Anchored at the
+     note's TOP-LEFT — no translate(-50%,-50%) like the label editor above —
+     because note.pos IS the box's top-left, so what the TD types sits where the
+     committed note will draw. Font size, width and padding are set from the
+     note's own world geometry on every frame (positionNoteEditor), so this rule
+     only owns the chrome. */
+  .note-editor{
+    position:absolute;
+    z-index:31;
+    display:none;
+    box-sizing:border-box;
+    border:2px solid var(--select);
+    border-radius:8px;
+    background:#fff;
+    color:var(--text);
+    font-family:system-ui, -apple-system, sans-serif;
+    font-weight:500;
+    resize:none;
+    overflow:hidden;
+    min-width:90px;
+    box-shadow:0 4px 14px rgba(17,24,39,.18);
+  }
+  .note-editor:focus{ outline:none; }
+
   /* Learning data dialog (Transparent Learning) */
   .dialog-panel.ld-wide{ width:min(820px, 100%); }
   .dialog-body.learning-data-body{
@@ -2797,21 +2821,27 @@
 
     <div class="group manual-only board-drawing-group">
       <div class="toolset" role="group" aria-label="Drawing tools">
-        <button id="toolSelect" data-key="S" class="tool-btn active has-ico" type="button" title="Select & move — click a line, label, or image to edit it (S)">
+        <button id="toolSelect" data-key="S" class="tool-btn active has-ico" type="button" aria-label="Select and move" title="Select & move — click a line, label, or image to edit it (S)">
           <svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.4 3.1l13 6.1c.74.35.6 1.43-.2 1.59l-5 1-2 5c-.3.78-1.4.7-1.6-.1L4.2 4.4c-.2-.83.6-1.55 1.2-1.3z"/></svg>
-          Select
         </button>
-        <button id="toolStraight" data-key="0" class="tool-btn has-ico" type="button" title="Straight line — click the start point, then the end point (0)">
+        <button id="toolStraight" data-key="0" class="tool-btn has-ico" type="button" aria-label="Straight line" title="Straight line — click the start point, then the end point (0)">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.7" fill="currentColor" stroke="none"/></svg>
-          Straight
         </button>
-        <button id="toolCurved" data-key="C" class="tool-btn has-ico" type="button" title="Curved line — click the start point, then the end point (C)">
+        <button id="toolCurved" data-key="C" class="tool-btn has-ico" type="button" aria-label="Curved line" title="Curved line — click the start point, then the end point (C)">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 17C8 7 16 7 20 11"/><circle cx="4" cy="17" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="11" r="1.7" fill="currentColor" stroke="none"/></svg>
-          Curved
         </button>
-        <button id="toolEraser" data-key="X" class="tool-btn has-ico" type="button" title="Eraser – paint white over unwanted lines in the photo (X)">
+        <button id="toolEraser" data-key="X" class="tool-btn has-ico" type="button" aria-label="Eraser" title="Eraser – paint white over unwanted lines in the photo (X)">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 18.5l-3-3a2 2 0 0 1 0-2.8l7-7a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8l-6.8 6.8z"/><line x1="8.5" y1="18.5" x2="20" y2="18.5"/></svg>
-          Eraser
+        </button>
+        <!-- US-092: all five tool buttons are icon-only. Measured: the four
+             labelled ones were 110/121/116/111 px and the fifth would not fit —
+             the toolbar grew from 96 px to 131 px, i.e. an extra row. Dropping
+             the labels takes each to 64 px (the data-key badge is a ::after
+             pseudo-element and is unaffected), which is why every one of them
+             carries an explicit aria-label: with no text node, `title` alone is
+             a weak accessible name. -->
+        <button id="toolText" data-key="T" class="tool-btn has-ico manual-only" type="button" aria-label="Text note" title="Text note — click the board to write a remark (T)">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6.5V5h14v1.5"/><path d="M12 5v14"/><path d="M9 19h6"/></svg>
         </button>
       </div>
       <div id="lineStyleControl" class="style-menu">
@@ -2844,6 +2874,13 @@
       <label id="lineWidthChip" class="chip" title="Line thickness in pixels for the active drawing tool or selected line">
         <span>Line</span>
         <input id="lineWidthInput" type="number" min="1" max="16" step="0.5" />
+      </label>
+      <!-- US-092: a note's own size control — separate from Line above, since a
+           note has no line-thickness meaning and a line has no font. Shown for
+           a selected note or with the Text tool active, hidden otherwise. -->
+      <label id="fontSizeChip" class="chip" title="Note text size in pixels for the Text tool or the selected note" hidden>
+        <span>Size</span>
+        <input id="fontSizeInput" type="number" min="5" max="200" step="1" />
       </label>
       <label id="brushSizeChip" class="chip" title="Eraser brush size in image pixels — use [ and ] to adjust" hidden>
         <span>Size</span>
@@ -3003,6 +3040,7 @@
           </div>
         </div>
         <input id="labelEditor" class="label-editor" type="text" autocomplete="off" spellcheck="false" aria-label="Edit label text" />
+        <textarea id="noteEditor" class="note-editor" rows="2" autocomplete="off" spellcheck="false" aria-label="Edit note text"></textarea>
         <div id="toast" class="toast" role="status" aria-live="polite"></div>
       </div>
     </div>
@@ -3210,6 +3248,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=5e0247a29ec6"></script>
+<script src="app.js?v=ac50c477a731"></script>
 </body>
 </html>

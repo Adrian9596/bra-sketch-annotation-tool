@@ -32,10 +32,16 @@
       state.tool = 'select';
       document.body.classList.remove('tool-eraser');
       // Clear any project selection so the user does not accidentally edit
-      // locked annotations.
-      if (state.selection.kind === 'annotation' || state.selection.kind === 'image') {
+      // locked annotations. US-092 adds 'note': notes are Manual-only to edit,
+      // and a selection carried into Auto would keep painting its outline over
+      // a board where nothing can act on it. Any open note editor closes with
+      // its text committed — losing what the TD typed because they clicked the
+      // mode toggle would be the worse of the two answers.
+      if (state.selection.kind === 'annotation' || state.selection.kind === 'image'
+          || state.selection.kind === 'note') {
         state.selection = { kind: null, id: null };
       }
+      commitNoteEditor();
       ensureAutoModeStatus();
     } else {
       // Leaving Auto Mode: clear draft selection + drop detection /

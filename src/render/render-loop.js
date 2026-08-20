@@ -95,6 +95,24 @@ function requestRender() {
       }
     }
 
+    // US-092: text notes sit above every line body — a note is the TD's remark
+    // ON the drawing — but BELOW the anchor layer, so a note can never hide an
+    // anchor pin in Auto Mode (notes are not editable there; anchors are the
+    // whole job). The POM number pass below still paints last, so a note never
+    // covers a callout number either.
+    // The note currently OPEN in the editor keeps its ARROWS but loses its box
+    // and text: the textarea is sitting over that exact spot showing the live
+    // text, and painting the committed text underneath it would show a stale
+    // copy peeking out whenever the box grew — but the arrows are not chrome,
+    // they say what the note points at, which is what the TD is looking at while
+    // deciding what to write. Exports are unaffected either way; they draw from
+    // exportNotes(), not from here.
+    const editingNoteId = state.noteEditor && state.noteEditor.id != null ? state.noteEditor.id : null;
+    for (const note of (state.notes || [])) {
+      if (note.id === editingNoteId) drawNoteLeadersOnly(note);
+      else drawNote(note);
+    }
+
     // Anchors render above drafts so they always stay grabbable.
     if (state.appMode === 'auto') {
       drawAnchors();
@@ -154,6 +172,27 @@ function requestRender() {
       }
     }
 
+    // US-092: the selected note's outline. Manual only — notes are not editable
+    // in Auto Mode, so selection chrome there would advertise a gesture that
+    // does nothing.
+    //
+    // Audit-found bug: also skipped for the note currently open in the editor —
+    // same `editingNoteId` as the box+text suppression above, and for the same
+    // reason, one layer late. drawNoteSelection derives the dashed rectangle and
+    // both handle kinds from noteBounds(note), which reads note.text; typing in
+    // the textarea never touches note.text (only commitNoteEditor does) and
+    // never calls requestRender(), so this chrome would sit frozen at the
+    // PRE-EDIT box while the textarea grows or shrinks under it — a stale
+    // outline, and handles that end up floating detached (note shrank) or
+    // buried under the textarea (note grew). It cannot be clicked either way:
+    // any mousedown while the editor is open commits and returns before any
+    // hit-test runs. Hiding it is simpler and more honest than trying to make
+    // dashed-canvas-chrome track a live DOM textarea's measured size.
+    if (state.appMode !== 'auto') {
+      const selectedNote = getSelectedNote();
+      if (selectedNote && selectedNote.id !== editingNoteId) drawNoteSelection(selectedNote);
+    }
+
     if (state.appMode === 'auto') {
       const selectedDraft = getSelectedDraft();
       if (selectedDraft
@@ -177,6 +216,7 @@ function requestRender() {
 
     ctx.restore();
     positionLabelEditor();
+    positionNoteEditor();
   }
 
   function drawLengthReadoutDuringHandleDrag() {

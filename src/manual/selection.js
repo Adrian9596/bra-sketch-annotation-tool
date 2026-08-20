@@ -24,6 +24,14 @@ function setSelection(kind, id) {
         state.arrowType = getArrowType(ann);
       }
     }
+    // US-092: a selected note adopts the colour swatch the same way, so the
+    // toolbar shows the note's own colour and a click on another swatch
+    // retints THAT note instead of silently changing the draw default.
+    // Style / arrow / width have no meaning for a note and stay untouched.
+    if (kind === 'note') {
+      const note = getNoteById(id);
+      if (note) state.drawColor = normalizeColorKey(note.color);
+    }
     updateUI();
     requestRender();
   }
@@ -237,6 +245,12 @@ function setSelection(kind, id) {
     return state.selection.kind === 'annotation'
       ? state.annotations.find(a => a.id === state.selection.id) || null
       : null;
+  }
+
+  // US-092. Notes have no multi-selection in v1 (the marquee stays lines-only),
+  // so unlike images and annotations there is no id-set helper beside this one.
+  function getSelectedNote() {
+    return state.selection.kind === 'note' ? getNoteById(state.selection.id) : null;
   }
 
   function getSelectedImage() {

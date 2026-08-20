@@ -105,6 +105,48 @@
         };
       },
       getAnnotations: () => clone(state.annotations),
+      // US-092 Board text notes. getNotes is the read side; addNote is the
+      // test seam that stands in for the Text tool before the pointer layer
+      // exists, and behaves like it will — one history entry per note, so a
+      // suite can assert undo/redo and the save round-trip.
+      getNotes: () => clone(state.notes || []),
+      addNote: (text, pos, options) => {
+        const note = createNote(text, pos, options);
+        state.notes.push(note);
+        pushHistoryIfChanged();
+        if (typeof requestRender === 'function') requestRender();
+        return clone(note);
+      },
+      // US-092 step 6: where a note's grabbable geometry actually is — its
+      // shrink-wrapped box, its leader tips, and the handle that pulls a new
+      // arrow out. A test must AIM at these, and noteBounds depends on measured
+      // text so it cannot be recomputed outside the app; guessing the box from
+      // pos + boxWidth would mean the suite silently tests empty canvas the day
+      // the padding changes. Read-only, same spirit as getView.
+      getNoteHandles: (id) => {
+        const note = getNoteById(id);
+        if (!note) return null;
+        const box = noteBounds(note);
+        return {
+          box: box ? { x: box.x, y: box.y, width: box.width, height: box.height } : null,
+          add: clone(noteLeaderAddHandle(note)),
+          leaders: clone(note.leaders || []),
+        };
+      },
+      // US-092 step 5: the note editor's live session, so a suite can assert
+      // that a Text-tool click OPENED an editor and what it holds, rather than
+      // inferring it from a note that may not exist yet. `mode` distinguishes
+      // placing a new note from re-opening one — the two commit paths differ.
+      getNoteEditor: () => {
+        const session = state.noteEditor;
+        if (!session) return null;
+        return {
+          mode: session.id != null ? 'edit' : 'create',
+          noteId: session.id != null ? session.id : null,
+          value: String(el.noteEditor.value || ''),
+          visible: el.noteEditor.style.display === 'block',
+        };
+      },
       // Test-only: set the review-time hidden POM lines by annotation id — the
       // same session-only state the panel's × toggle writes (state.hiddenAnnIds).
       // Lets the export suite assert hidden lines are omitted from the spec
@@ -243,6 +285,13 @@
       getState: () => ({
         appMode: state.appMode,
         activePage: state.activePage,
+        // US-092: the pointer layer's own outputs. `state` itself is inside the
+        // bundle's IIFE and unreachable from a test page, so "which tool is
+        // active" and "what is selected" have to come through here — a click
+        // that selected the wrong KIND of thing is otherwise invisible.
+        tool: state.tool,
+        selection: { kind: state.selection.kind, id: state.selection.id != null ? state.selection.id : null },
+        noteCount: (state.notes || []).length,
         autoStatus: state.autoMode.status,
         lastError: state.autoMode.lastError,
         validation: clone(state.autoMode.validation),

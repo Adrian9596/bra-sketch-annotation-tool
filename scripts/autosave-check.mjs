@@ -170,7 +170,98 @@ async function main() {
   assert(bomRestored.rows === 1 && bomRestored.description === 'BOM-only edited material', 'BOM autosave restore lost table edits');
   assert(bomRestored.images === 1 && bomRestored.bitmap, 'BOM autosave restore lost Material Key image data');
 
+  // Step 7 (US-092) — Board text notes are project data: they persist, they
+  // undo, and they never leak into the measurement set. A note that reached
+  // state.annotations would be bucketed by getLabelText() and rendered as an
+  // extra POM row, then exported into the spec workbook — the exact corruption
+  // this feature exists to remove — so "the spec row count did not move" is the
+  // load-bearing assertion here, not a nicety.
+  const noteSeed = await session4.eval(`(async () => {
+    const api = window.__braAutoModeDebug;
+    // A project written BEFORE US-092: no notes key at all. It must open clean.
+    await api.loadProject({
+      format: 'bra-sketch-project', version: 1, savedAt: new Date().toISOString(),
+      state: {
+        annotations: [], images: [], eraseStrokes: [], brushSize: 24, showLabels: true,
+        calibration: { unitsPerPx: null, unit: 'cm' }, nextSequence: 1, idCounter: 10,
+        drawStyle: 'solid', drawColor: 'red', arrowType: 'double', lineWidth: 2.5,
+        zoom: 1, panX: 0, panY: 0, styleId: '', pomSpecs: {},
+        bom: { schemaVersion: 2, seedId: 'rsl-vdraft-1.0', rows: [], callouts: [], images: { solid: [], lace: [] } },
+      },
+    });
+    const legacyNotes = api.getNotes().length;
+    const rowsBefore = document.querySelectorAll('#specBody tr').length;
+    const added = api.addNote('Lace edge must sit 2cm\\nbelow the cradle seam',
+      { x: 140, y: 260 }, { color: 'blue', fontSize: 18, boxWidth: 190, leaders: [{ x: 300, y: 310 }] });
+    api.autosave.flush();
+    return {
+      legacyNotes,
+      rowsBefore,
+      rowsAfter: document.querySelectorAll('#specBody tr').length,
+      added,
+      annotations: api.getAnnotations().length,
+      exported: api.exportProject().state.notes,
+      autosaved: JSON.parse(api.autosave.peek()).snapshot.state.notes,
+    };
+  })()`);
+  assert(noteSeed.legacyNotes === 0, 'a pre-US-092 project file must open with no notes, got ' + noteSeed.legacyNotes);
+  assert(noteSeed.added && Number.isFinite(noteSeed.added.id), 'addNote did not return a note record');
+  assert(noteSeed.annotations === 0, 'a note leaked into state.annotations (' + noteSeed.annotations + ')');
+  assert(noteSeed.rowsAfter === noteSeed.rowsBefore,
+    `a note changed the Measurements panel: ${noteSeed.rowsBefore} rows -> ${noteSeed.rowsAfter}`);
+  assert(Array.isArray(noteSeed.exported) && noteSeed.exported.length === 1,
+    'the saved project did not carry the note');
+  assert(noteSeed.exported[0].text === 'Lace edge must sit 2cm\nbelow the cradle seam',
+    'the saved note lost its text (newline included): ' + JSON.stringify(noteSeed.exported[0].text));
+  assert(noteSeed.exported[0].color === 'blue' && noteSeed.exported[0].fontSize === 18
+    && noteSeed.exported[0].boxWidth === 190,
+    'the saved note lost its styling: ' + JSON.stringify(noteSeed.exported[0]));
+  assert(noteSeed.exported[0].leaders.length === 1
+    && noteSeed.exported[0].leaders[0].x === 300 && noteSeed.exported[0].leaders[0].y === 310,
+    'the saved note lost its leader: ' + JSON.stringify(noteSeed.exported[0].leaders));
+  assert(Array.isArray(noteSeed.autosaved) && noteSeed.autosaved.length === 1,
+    'autosave did not carry the note');
+
+  // Undo/redo: adding a note is one history step.
+  const noteHistory = await session4.eval(`(async () => {
+    const api = window.__braAutoModeDebug;
+    const wait = () => new Promise(r => setTimeout(r, 120));
+    document.getElementById('undoBtn').click();
+    await wait();
+    const afterUndo = api.getNotes().length;
+    document.getElementById('redoBtn').click();
+    await wait();
+    const notes = api.getNotes();
+    return { afterUndo, afterRedo: notes.length, text: notes[0] && notes[0].text,
+      leaders: notes[0] && notes[0].leaders.length };
+  })()`);
+  assert(noteHistory.afterUndo === 0, 'Undo did not remove the note (' + noteHistory.afterUndo + ' left)');
+  assert(noteHistory.afterRedo === 1, 'Redo did not restore the note');
+  assert(noteHistory.text === 'Lace edge must sit 2cm\nbelow the cradle seam',
+    'Redo restored the note without its text');
+  assert(noteHistory.leaders === 1, 'Redo restored the note without its leader');
+
+  // Reload -> Restore: the note comes back off the autosave slot.
+  await session4.eval(`window.__braAutoModeDebug.autosave.flush()`);
+  await session4.eval(`window.location.reload()`);
+  await sleep(400);
   await session4.close();
+  const session5 = await openCdpSession(cdpPort);
+  await session5.waitFor(`!!document.getElementById('autosaveRestoreBanner')`, 8000);
+  await session5.eval(`Array.from(document.querySelectorAll('#autosaveRestoreBanner button')).find(b => /Restore/i.test(b.textContent)).click()`);
+  await session5.waitFor(`window.__braAutoModeDebug.getNotes().length === 1`, 6000);
+  const noteRestored = await session5.eval(`(() => {
+    const n = window.__braAutoModeDebug.getNotes()[0];
+    return { text: n.text, color: n.color, fontSize: n.fontSize, leaders: n.leaders.length,
+      annotations: window.__braAutoModeDebug.getAnnotations().length };
+  })()`);
+  assert(noteRestored.text === 'Lace edge must sit 2cm\nbelow the cradle seam',
+    'the restored note lost its text');
+  assert(noteRestored.color === 'blue' && noteRestored.fontSize === 18, 'the restored note lost its styling');
+  assert(noteRestored.leaders === 1, 'the restored note lost its leader');
+  assert(noteRestored.annotations === 0, 'restore put the note into state.annotations');
+
+  await session5.close();
   console.log('PASS  autosave-check');
 }
 

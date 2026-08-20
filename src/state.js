@@ -35,12 +35,29 @@
   const ZOOM_SENSITIVITY = 0.0018;
   const PRECISE_ZOOM_SENSITIVITY = 0.00105;
 
+  // US-092 Board text notes. Every size is in WORLD pixels, not screen pixels,
+  // so a note keeps its size relative to the sketch it annotates — resizing the
+  // photo scales the note with it (scaleNoteAbout), exactly as it scales the POM
+  // lines drawn on that photo (US-091).
+  const NOTE_DEFAULT_FONT_SIZE = 16;
+  const NOTE_MIN_FONT_SIZE = 5;
+  const NOTE_MAX_FONT_SIZE = 200;
+  const NOTE_DEFAULT_BOX_WIDTH = 220;
+  const NOTE_MIN_BOX_WIDTH = 40;
+  const NOTE_MAX_BOX_WIDTH = 4000;
+  const NOTE_LINE_HEIGHT_RATIO = 1.32;
+  const NOTE_PADDING_RATIO = 0.35; // box padding as a fraction of the font size
+
   const state = {
     tool: 'select',
     drawStyle: 'solid',
     drawColor: 'red',
     arrowType: 'double',
     lineWidth: DEFAULT_LINE_WIDTH,
+    // The size a newly-placed note (or the next chip edit with none selected)
+    // uses — the note's own equivalent of lineWidth. Persisted with the
+    // project + history exactly like lineWidth/drawColor.
+    noteFontSize: NOTE_DEFAULT_FONT_SIZE,
     annotations: [],
     deletedAutoAnnotations: [],
     // US-047: POM labels whose drawn line the TD deleted. Excluded from the
@@ -49,6 +66,14 @@
     deletedPomKeys: [],
     images: [],
     eraseStrokes: [],
+    // US-092: free text the TD places on the Board — a factory remark, a
+    // reminder, a label on a detail — with 0+ leader arrows pointing at the
+    // spot it refers to. Deliberately its OWN collection, never part of
+    // state.annotations: annotations are the measurement set (the spec panel,
+    // the tolerance check, grading, the Excel table and deletedPomKeys all
+    // derive from them by label), so a note living there would become a POM
+    // row. Persisted with the project and captured in history.
+    notes: [],
     brushSize: 24,
     showLabels: true,
     nextSequence: 1,
@@ -92,6 +117,13 @@
 
     calibration: { unitsPerPx: null, unit: 'in' },
     editingLabelId: null,
+    // US-092: the Board note editor's live session, or null when it is closed.
+    // `id` is set when re-opening an existing note; `pos` (plus the styling the
+    // note will be born with) when the Text tool is placing a new one. Exactly
+    // one of the two is ever non-null. Session state only — deliberately absent
+    // from makeSnapshot, so an editor left open at save time cannot travel into
+    // the project file or into a history entry.
+    noteEditor: null,
 
     history: {
       past: [],

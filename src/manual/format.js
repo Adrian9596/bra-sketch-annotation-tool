@@ -6,6 +6,10 @@
     return String(Math.round(normalizeLineWidth(value) * 10) / 10).replace(/\.0$/, '');
   }
 
+  function formatNoteFontSize(value) {
+    return String(Math.round(normalizeNoteFontSize(value)));
+  }
+
   function formatMeasure(value) {
     const rounded = Math.round(value * 10) / 10;
     return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);

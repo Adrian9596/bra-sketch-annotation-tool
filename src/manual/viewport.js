@@ -251,16 +251,63 @@ function scalePointAbout(point, origin, factor) {
   point.y = origin.y + (point.y - origin.y) * factor;
 }
 
+// Split out (audit fix) so a GROUP resize can apply this to one annotation
+// exactly once, instead of once per grouped image whose bounds happen to
+// contain it. See scaleAnnotationsForImageResize below and
+// resizeImagesFromCorner (pointer-events.js) for why that distinction matters.
+function scaleAnnotationAbout(ann, origin, factor) {
+  scalePointAbout(ann.start, origin, factor);
+  scalePointAbout(ann.end, origin, factor);
+  for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
+    if (ann[key]) scalePointAbout(ann[key], origin, factor);
+  }
+  scalePointAbout(ann.label, origin, factor);
+  ann.measureScale = (ann.measureScale || 1) * factor;
+}
+
 function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
   if (!previousBounds || !origin) return;
   if (!Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 1e-9) return;
-  for (const ann of annotationsWithinBounds(previousBounds)) {
-    scalePointAbout(ann.start, origin, factor);
-    scalePointAbout(ann.end, origin, factor);
-    for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
-      if (ann[key]) scalePointAbout(ann[key], origin, factor);
+  for (const ann of annotationsWithinBounds(previousBounds)) scaleAnnotationAbout(ann, origin, factor);
+}
+
+// US-092: text notes ride with their sketch exactly as lines do.
+function getNotesOnImage(image) {
+  return notesWithinBounds(getImageBounds(image));
+}
+
+// Which notes belong to this sketch. A line answers that with its midpoint, and
+// a note's box centre is the direct analogue — but a note has a second, stronger
+// claim a line does not: its LEADER. The commonest way a TD writes one is to
+// park the text in the white space beside the sketch and point an arrow at the
+// detail, which puts the box centre outside the photo entirely. Going by the box
+// alone, that note would sit still while the sketch moved out from under its
+// arrow — the same detachment US-089 and US-091 fixed for lines, reintroduced by
+// the very feature meant to annotate them. So: the box centre inside the bounds,
+// OR any leader tip inside them.
+//
+// A note whose arrows point into two different photos follows whichever one is
+// dragged. That is the honest answer to an ambiguous question, and a group drag
+// de-duplicates through a Set so it can never be moved twice.
+function notesWithinBounds(bounds) {
+  const inside = (x, y) => x >= bounds.x && x <= bounds.x + bounds.width
+    && y >= bounds.y && y <= bounds.y + bounds.height;
+  return (state.notes || []).filter(note => {
+    if (!note || !note.pos) return false;
+    const box = noteBounds(note);
+    if (box && inside(box.x + box.width / 2, box.y + box.height / 2)) return true;
+    for (const leader of (note.leaders || [])) {
+      if (inside(leader.x, leader.y)) return true;
     }
-    scalePointAbout(ann.label, origin, factor);
-    ann.measureScale = (ann.measureScale || 1) * factor;
-  }
+    return false;
+  });
+}
+
+// The note counterpart of scaleAnnotationsForImageResize. No measureScale
+// equivalent: a note carries no measurement, so scaling it restates nothing —
+// which is why this is a plain geometric scale and the annotation version is not.
+function scaleNotesForImageResize(previousBounds, origin, factor) {
+  if (!previousBounds || !origin) return;
+  if (!Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 1e-9) return;
+  for (const note of notesWithinBounds(previousBounds)) scaleNoteAbout(note, origin, factor);
 }

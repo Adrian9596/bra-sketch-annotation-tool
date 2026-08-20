@@ -12,6 +12,7 @@
     el.toolStraight.addEventListener('click', () => setTool('straight'));
     el.toolCurved.addEventListener('click', () => setTool('curved'));
     el.toolEraser.addEventListener('click', () => setTool('eraser'));
+    el.toolText.addEventListener('click', () => setTool('text'));
 
     el.stitchesBtn.addEventListener('click', toggleLineStyleMenu);
     el.styleOptionBtns.forEach((button) => {
@@ -27,6 +28,14 @@
     });
     el.lineWidthInput.addEventListener('change', () => {
       el.lineWidthInput.value = formatLineWidth(getActiveLineWidth());
+    });
+
+    el.fontSizeInput.addEventListener('input', () => {
+      const n = parseFloat(el.fontSizeInput.value);
+      if (Number.isFinite(n)) setNoteFontSize(n);
+    });
+    el.fontSizeInput.addEventListener('change', () => {
+      el.fontSizeInput.value = formatNoteFontSize(getActiveNoteFontSize());
     });
 
     el.brushSizeInput.addEventListener('input', () => {
@@ -171,6 +180,13 @@
     el.labelEditor.addEventListener('keydown', onLabelEditorKeyDown);
     el.labelEditor.addEventListener('blur', commitLabelEditor);
 
+    // US-092. The blur commit covers every way focus can leave the note editor
+    // EXCEPT a press on the board — that one is claimed by onMouseDown, which
+    // runs before the focus change it causes (see note-editor.js).
+    el.noteEditor.addEventListener('keydown', onNoteEditorKeyDown);
+    el.noteEditor.addEventListener('input', onNoteEditorInput);
+    el.noteEditor.addEventListener('blur', commitNoteEditor);
+
     el.canvas.addEventListener('mousedown', onMouseDown);
     el.canvas.addEventListener('dblclick', onDoubleClick);
     el.canvas.addEventListener('mousemove', onMouseMove);
@@ -285,9 +301,58 @@
     applyToSelectedAnnotation({ lineWidth: normalized });
   }
 
+  // A note's own size control (US-092), mirroring setLineWidth exactly — it
+  // never touches applyToSelectedAnnotation, since a line and a note are never
+  // selected at once (single-kind selection model).
+  function setNoteFontSize(fontSize) {
+    const normalized = normalizeNoteFontSize(fontSize);
+    state.noteFontSize = normalized;
+    applyFontSizeToSelectedNote(normalized);
+  }
+
   function setDrawColor(color) {
     state.drawColor = color;
+    // US-092: the same four swatches retint a selected NOTE. The selection model
+    // is single-kind, so a note and a line can never both be selected and this
+    // can never double-apply; when nothing is selected both calls fall through
+    // to just updating the draw default.
+    if (applyColorToSelectedNote(color)) return;
     applyToSelectedAnnotation({ color });
+  }
+
+  // Returns true when a note claimed the change, so the caller stops. Style
+  // and arrow type have no meaning for a note and deliberately have no
+  // equivalent; line width and font size are each the OTHER kind's own
+  // control (setLineWidth / setNoteFontSize above) rather than a shared one,
+  // because "how thick" and "how big the text is" are not the same question.
+  function applyColorToSelectedNote(color) {
+    const note = getSelectedNote();
+    if (!note) return false;
+    const next = normalizeColorKey(color);
+    if (note.color !== next) {
+      note.color = next;
+      pushHistoryIfChanged();
+    }
+    updateUI();
+    requestRender();
+    return true;
+  }
+
+  // Mirrors applyColorToSelectedNote: mutate the selected note's own fontSize
+  // directly and ride the generic snapshot-diff into history exactly the way
+  // note.color already does — notes carry no per-object lineWidth/arrowType,
+  // so there is nothing else here to fall through to.
+  function applyFontSizeToSelectedNote(fontSize) {
+    const note = getSelectedNote();
+    if (!note) return false;
+    const next = normalizeNoteFontSize(fontSize);
+    if (note.fontSize !== next) {
+      note.fontSize = next;
+      pushHistoryIfChanged();
+    }
+    updateUI();
+    requestRender();
+    return true;
   }
 
   function applyToSelectedAnnotation(settings) {

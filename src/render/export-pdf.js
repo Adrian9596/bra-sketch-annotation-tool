@@ -3,9 +3,12 @@
 // Source part for app.js. Run `npm run build` after editing.
 //
 // exportPdf orchestrates: createExportCanvas redirects the global ctx onto
-// a high-DPI temp canvas, drawAnnotationForExport draws each annotation at
-// full alpha, then dataURLToUint8Array + makeSinglePagePdfBlob assemble a
-// PDF 1.4 byte stream that downloadBlob hands off to the browser.
+// a high-DPI temp canvas, drawBoardContentForExport paints the board at full
+// alpha, then dataURLToUint8Array + makeSinglePagePdfBlob assemble a PDF 1.4
+// byte stream that downloadBlob hands off to the browser.
+//
+// drawBoardContentForExport is also Copy Image's painter (copy-image.js), so
+// the export z-order is defined once and cannot drift between the two.
 
 async function exportPdf() {
   const bounds = getContentBounds();
@@ -37,10 +40,42 @@ function visibleExportAnnotations() {
   return state.annotations.filter(ann => !isAnnHidden(ann.id));
 }
 
+// US-092: every note exports. Notes carry no hide toggle — the review × on the
+// spec panel hides a POM row, and a note is not a POM. Kept as a named function
+// beside visibleExportAnnotations so a future per-note toggle has one place to
+// land instead of three export call sites.
+function exportNotes() {
+  return state.notes || [];
+}
+
+// The one definition of what an export paints and in what order, shared by
+// Export PDF and Copy Image (and through Copy Image, by the Excel embedded
+// sketch and the Preview board sheet). Two passes over the annotations, not one:
+// POM numbers go on top of everything, exactly as the live board draws them
+// (see the label pass in render()). Before US-092 the export drew each line and
+// its own number together, so a later line could paint over an earlier number —
+// the same clutter the screen renderer had already been fixed for.
+function drawBoardContentForExport() {
+  for (const image of state.images) drawImageItem(image);
+  for (const stroke of state.eraseStrokes) drawEraseStroke(stroke);
+  const annotations = visibleExportAnnotations();
+  for (const ann of annotations) drawLineCore(ann, 1);
+  for (const note of exportNotes()) drawNote(note);
+  if (!labelsVisible()) return;
+  for (const ann of annotations) {
+    drawLabel(ann.label, getLabelText(ann), false, 1, getAnnotationColor(ann));
+  }
+}
+
 function getContentBounds() {
   const boxes = [];
   for (const image of state.images) boxes.push(getImageBounds(image));
   for (const ann of visibleExportAnnotations()) boxes.push(getAnnotationBounds(ann));
+  // A note at the edge of the board must widen the frame, or the export crops
+  // the very remark it was written to deliver. Leader tips count too — they
+  // reach away from the box, and an arrow with its head sliced off is worse
+  // than no arrow.
+  for (const note of exportNotes()) boxes.push(noteOuterBounds(note));
   const validBoxes = boxes.filter(box => box && isFinite(box.x) && isFinite(box.y) && isFinite(box.width) && isFinite(box.height));
   if (!validBoxes.length) return null;
   let minX = validBoxes[0].x;
@@ -120,9 +155,7 @@ function createExportCanvas(bounds) {
   ctx.save();
   ctx.translate(state.panX, state.panY);
   ctx.scale(state.zoom, state.zoom);
-  for (const image of state.images) drawImageItem(image);
-  for (const stroke of state.eraseStrokes) drawEraseStroke(stroke);
-  for (const ann of visibleExportAnnotations()) drawAnnotationForExport(ann);
+  drawBoardContentForExport();
   ctx.restore();
   ctx = oldCtx;
   state.zoom = oldZoom;
@@ -131,12 +164,6 @@ function createExportCanvas(bounds) {
   state.panY = oldPanY;
   requestRender();
   return { canvas: exportCanvas, pageWidthPt: pageWidthMm * 72 / 25.4, pageHeightPt: pageHeightMm * 72 / 25.4 };
-}
-
-function drawAnnotationForExport(ann) {
-  drawLineCore(ann, 1);
-  if (!labelsVisible()) return;
-  drawLabel(ann.label, getLabelText(ann), false, 1, getAnnotationColor(ann));
 }
 
 function dataURLToUint8Array(dataURL) {

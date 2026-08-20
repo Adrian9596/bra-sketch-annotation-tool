@@ -227,6 +227,14 @@
         setTool('eraser');
         return;
       }
+
+      // US-092: T = Text note. No image requirement, unlike the eraser — a
+      // note may be a title or a general remark on an empty board.
+      if (!isMeta && key === 't') {
+        e.preventDefault();
+        setTool('text');
+        return;
+      }
     }
 
     // E exports the Excel measurement spec (same as the toolbar button;
@@ -291,7 +299,8 @@
         showToast('Erase canceled.');
         updateUI();
         requestRender();
-      } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'eraser') {
+      } else if (state.tool === 'straight' || state.tool === 'curved'
+                 || state.tool === 'eraser' || state.tool === 'text') {
         setTool('select');
       } else if (state.selection.kind === 'annotation' && state.selection.part) {
         // First Escape drops back to whole-line nudging; the next one

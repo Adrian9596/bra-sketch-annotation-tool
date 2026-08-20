@@ -19,9 +19,11 @@
       drawColor: state.drawColor,
       arrowType: state.arrowType,
       lineWidth: state.lineWidth,
+      noteFontSize: state.noteFontSize,
       annotations: clone(state.annotations),
       images: state.images.map(stripImageForSnapshot),
       eraseStrokes: clone(state.eraseStrokes),
+      notes: clone(state.notes || []),
       nextSequence: state.nextSequence,
       selection: clone(state.selection),
       idCounter: state.idCounter,
@@ -76,9 +78,11 @@
     state.drawColor = snapshot.drawColor || 'red';
     state.arrowType = snapshot.arrowType || 'double';
     state.lineWidth = normalizeLineWidth(snapshot.lineWidth);
+    state.noteFontSize = normalizeNoteFontSize(snapshot.noteFontSize);
     state.annotations = clone(snapshot.annotations || []);
     state.annotations.forEach(ensureCurveControls);
     state.eraseStrokes = clone(snapshot.eraseStrokes || []);
+    state.notes = (snapshot.notes || []).map(normalizeNote).filter(Boolean);
     state.nextSequence = snapshot.nextSequence || (state.annotations.length + 1);
     state.selection = snapshot.selection || { kind: null, id: null };
     state.idCounter = snapshot.idCounter || inferNextIdCounter();
@@ -113,6 +117,9 @@
       state.selection = { kind: null, id: null };
     }
     if (state.selection.kind === 'image' && !state.images.some(i => i.id === state.selection.id)) {
+      state.selection = { kind: null, id: null };
+    }
+    if (state.selection.kind === 'note' && !state.notes.some(n => n.id === state.selection.id)) {
       state.selection = { kind: null, id: null };
     }
 

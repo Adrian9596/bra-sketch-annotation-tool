@@ -15,6 +15,9 @@
     for (const ann of state.annotations) max = Math.max(max, Number(ann.id) || 0);
     for (const image of state.images) max = Math.max(max, Number(image.id) || 0);
     for (const draft of state.autoMode.draftAnnotations) max = Math.max(max, Number(draft.id) || 0);
+    // US-092: notes draw from the same id counter, so a file with no idCounter
+    // would otherwise re-issue their ids and break getNoteById lookups.
+    for (const note of state.notes || []) max = Math.max(max, Number(note.id) || 0);
     // BOM rows/callouts/groupIds draw from the same counter (and since
     // US-074 every project has seeded rows) — skipping them here would let a
     // project file with a missing idCounter re-issue their ids to new

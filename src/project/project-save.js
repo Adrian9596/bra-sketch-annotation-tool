@@ -19,6 +19,9 @@
           locked: !!img.locked,
         })),
         eraseStrokes: clone(state.eraseStrokes),
+        // US-092: Board text notes. Additive — files saved before US-092 have
+        // no key and open with an empty note list.
+        notes: clone(state.notes || []),
         brushSize: state.brushSize,
         showLabels: state.showLabels,
         calibration: clone(state.calibration),
@@ -28,6 +31,7 @@
         drawColor: state.drawColor,
         arrowType: state.arrowType,
         lineWidth: state.lineWidth,
+        noteFontSize: state.noteFontSize,
         zoom: state.zoom,
         panX: state.panX,
         panY: state.panY,

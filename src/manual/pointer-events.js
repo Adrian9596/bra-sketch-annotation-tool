@@ -24,6 +24,18 @@
     }
     if (e.button !== 0) return;
 
+    // US-092: a press on the board while the note editor is open FINISHES that
+    // note and does nothing else. The blur listener cannot own this by itself —
+    // a focus change is the DEFAULT ACTION of mousedown, so blur arrives after
+    // this handler, and letting the same press also place the next note would
+    // have that late blur commit the new, empty session and close the editor
+    // the TD had just opened. Click-away-to-finish costs one extra click to
+    // place a second note and is worth it for a deterministic editor.
+    if (isNoteEditorOpen()) {
+      commitNoteEditor();
+      return;
+    }
+
     const screen = getMousePos(e);
     const world = screenToWorld(screen.x, screen.y);
 
@@ -118,6 +130,14 @@
       return;
     }
 
+    // US-092: the Text tool places a note where it is clicked. Like the drawing
+    // tools it STAYS active afterwards, so a run of remarks needs no trip back
+    // to the toolbar; S or Escape returns to Select.
+    if (state.tool === 'text') {
+      openNoteEditorForNewNote(world);
+      return;
+    }
+
     const selectedAnnotation = getSelectedAnnotation();
     // Endpoint/handle editing is a single-line action — a multi-selection is
     // for moving/copying the group, so skip handles when more than one is picked.
@@ -125,6 +145,24 @@
       ? hitTestSelectedHandles(world, selectedAnnotation) : null;
     if (handleHit) {
       startHandleDrag(selectedAnnotation.id, handleHit.part, world);
+      return;
+    }
+
+    // US-092 step 6: the selected note's leader tips and its leader-add handle
+    // hold exactly the privilege the selected LINE's handles hold above — small,
+    // deliberate targets on the thing the TD is already working on, so they beat
+    // the endpoint test further down. No modifier guard, matching
+    // hitTestSelectedHandles: Shift and Cmd build LINE and PHOTO groups, and a
+    // press this precise on the selected note is not a group-building gesture.
+    const selectedNoteForHandles = getSelectedNote();
+    const noteHandleHit = selectedNoteForHandles
+      ? hitTestSelectedNoteHandles(world, selectedNoteForHandles) : null;
+    if (noteHandleHit) {
+      if (noteHandleHit.part === 'leader-add') {
+        startNoteLeaderCreate(selectedNoteForHandles.id, world);
+      } else {
+        startNoteLeaderDrag(selectedNoteForHandles.id, noteHandleHit.index, world);
+      }
       return;
     }
 
@@ -159,6 +197,26 @@
       if (endpointHit) {
         setSelection('annotation', endpointHit.id);
         startHandleDrag(endpointHit.id, endpointHit.part, world);
+        return;
+      }
+    }
+
+    // US-092: a note box sits between the endpoints above and the line BODY
+    // below. It loses to any endpoint because lines are the work (ADR 0050) and
+    // an endpoint is the most precise target on the board. It beats the line
+    // body because a note is an opaque filled box: the line under it is not
+    // visible, so a press there cannot have meant that line — the same reason
+    // hitTestAnnotations already skips hidden lines. And it must beat the photo,
+    // or a note written on the sketch could never be picked up again.
+    //
+    // Shift is excluded: it belongs to the line multi-selection, and taking the
+    // press here would call setSelection('note', …) and wipe the group the TD is
+    // assembling — the same trap the Shift+miss marquee below was added for.
+    if (!e.shiftKey) {
+      const noteHit = hitTestNotes(world);
+      if (noteHit) {
+        setSelection('note', noteHit.id);
+        startNoteDrag(noteHit.id, world);
         return;
       }
     }
@@ -279,6 +337,54 @@
       return;
     }
 
+    // US-092 step 6: moving an arrow's tip, or pulling a brand-new one out of
+    // the note. One branch, because after the first armed frame the two are the
+    // same gesture — the only difference is that the "new" flavour has no
+    // leader to move until it arms.
+    if (interaction.type === 'drag-note-leader' || interaction.type === 'drag-note-leader-new') {
+      const note = getNoteById(interaction.id);
+      if (!note) return;
+      if (!dragArmed(interaction, world)) return;
+      if (interaction.index < 0) {
+        // Created on the ARMING frame, not on the press: a stray click on the
+        // add handle must leave no zero-length arrow (and no history entry)
+        // behind, and an arrow pointing at its own note means nothing.
+        note.leaders = note.leaders || [];
+        note.leaders.push({ x: world.x, y: world.y });
+        interaction.index = note.leaders.length - 1;
+      }
+      const tip = (note.leaders || [])[interaction.index];
+      if (!tip) return;
+      // Same grab offset the line endpoints use (US-086): the catch radius is
+      // deliberately generous, so without it a tip caught from 10px away
+      // teleports to the cursor on the first move — and the arrow is a pointer
+      // at a detail, so where it lands is the whole content of the gesture.
+      const off = interaction.grabOffset || { x: 0, y: 0 };
+      tip.x = world.x + off.x;
+      tip.y = world.y + off.y;
+      interaction.changed = true;
+      requestRender();
+      return;
+    }
+
+    // US-092. Armed like every other geometry drag: the press that SELECTS a
+    // note must not also shift it by a pixel of hand jitter.
+    if (interaction.type === 'drag-note') {
+      const note = getNoteById(interaction.id);
+      if (!note) return;
+      if (!dragArmed(interaction, world)) return;
+      const dx = world.x - interaction.prevWorld.x;
+      const dy = world.y - interaction.prevWorld.y;
+      if (dx || dy) {
+        // moveNote carries the leaders too, so the whole callout travels as one.
+        moveNote(note, dx, dy);
+        interaction.changed = true;
+        interaction.prevWorld = world;
+        requestRender();
+      }
+      return;
+    }
+
     if (interaction.type === 'marquee') {
       interaction.currentWorld = { x: world.x, y: world.y };
       const dx = interaction.currentWorld.x - interaction.startWorld.x;
@@ -339,6 +445,12 @@
           for (const annId of interaction.groupedAnnotationIds) {
             const ann = getAnnotationById(annId);
             if (ann) moveAnnotation(ann, dx, dy);
+          }
+        }
+        if (interaction.groupedNoteIds) {
+          for (const noteId of interaction.groupedNoteIds) {
+            const note = getNoteById(noteId);
+            if (note) moveNote(note, dx, dy);
           }
         }
         interaction.changed = true;
@@ -578,6 +690,42 @@ function startHandleDrag(id, part, world) {
   });
 }
 
+// US-092. No group set: notes have no multi-selection in v1, so exactly one
+// note moves. History is handled by the generic changed -> fingerprint path in
+// onMouseUp, which already sees notes because makeSnapshot captures them.
+function startNoteDrag(id, world) {
+  beginTrackedInteraction('drag-note', {
+    id, prevWorld: world,
+    startWorld: { x: world.x, y: world.y }, armed: false,
+  });
+}
+
+// US-092 step 6. The grab offset is captured against the tip's CURRENT position
+// so a catch from up to 11px away drags 1:1 instead of snapping the arrow to
+// the cursor. prevWorld carries the same offset, matching startHandleDrag.
+function startNoteLeaderDrag(id, index, world) {
+  const note = getNoteById(id);
+  const tip = note && (note.leaders || [])[index];
+  const grabOffset = (tip && Number.isFinite(tip.x) && Number.isFinite(tip.y))
+    ? { x: tip.x - world.x, y: tip.y - world.y }
+    : { x: 0, y: 0 };
+  beginTrackedInteraction('drag-note-leader', {
+    id, index, grabOffset,
+    prevWorld: { x: world.x + grabOffset.x, y: world.y + grabOffset.y },
+    startWorld: { x: world.x, y: world.y }, armed: false,
+  });
+}
+
+// index -1 means "no leader yet" — the move handler creates it on the frame the
+// drag arms. No grab offset: a new arrow starts exactly under the cursor.
+function startNoteLeaderCreate(id, world) {
+  beginTrackedInteraction('drag-note-leader-new', {
+    id, index: -1,
+    prevWorld: { x: world.x, y: world.y },
+    startWorld: { x: world.x, y: world.y }, armed: false,
+  });
+}
+
 function startImageDrag(id, world) {
   // Move every selected image together (Cmd/Ctrl+click multi-selection), or
   // just the clicked one when nothing else is selected. Locked images never
@@ -588,10 +736,14 @@ function startImageDrag(id, world) {
     .filter((imgId) => { const im = getImageById(imgId); return im && !im.locked; });
   if (!movingIds.includes(id)) movingIds.push(id);
   const annIdSet = new Set();
+  const noteIdSet = new Set();
   for (const imgId of movingIds) {
     const im = getImageById(imgId);
     if (!im) continue;
     for (const ann of getAnnotationsOnImage(im)) annIdSet.add(ann.id);
+    // US-092: and the text notes written on it — a remark whose arrow points at
+    // a detail has to keep pointing at it.
+    for (const note of getNotesOnImage(im)) noteIdSet.add(note.id);
   }
   beginTrackedInteraction('drag-image', {
     id,
@@ -600,6 +752,7 @@ function startImageDrag(id, world) {
     armed: false,
     imageIds: movingIds,
     groupedAnnotationIds: Array.from(annIdSet),
+    groupedNoteIds: Array.from(noteIdSet),
   });
 }
 
@@ -666,16 +819,57 @@ function resizeImagesFromCorner(interaction, world) {
   // photo scale with it, about the GROUP anchor every photo is scaling about.
   // `scale` here is absolute against the gesture's start snapshot, so the
   // per-frame factor is the ratio against the rect the image has right now.
+  //
+  // Audit-found bug: membership and scaling used to run PER IMAGE in one pass —
+  // for each grouped image, ask what belongs to it, then scale it right there.
+  // That double-scales anything claimed by TWO grouped images in the same
+  // frame, which the single-line-midpoint test makes rare for annotations but
+  // notesWithinBounds makes ORDINARY for notes: its membership rule is "box
+  // centre inside these bounds OR any leader tip inside them" (viewport.js), so
+  // a caption parked on photo A with its arrow pointing at a detail on
+  // neighbouring photo B — the commonest way a TD writes one — qualifies under
+  // BOTH images' bounds at once. Because every grouped image scales by
+  // essentially the same per-frame factor (they all track one shared `scale`
+  // from one shared `anchor`), a double-scaled object doesn't just double —
+  // it compounds toward the SQUARE of the intended factor over the drag,
+  // silently detaching a note from the feature its arrow points at.
+  // startImageDrag (above) already solved the identical ambiguity for a PAN by
+  // de-duplicating through a Set before applying any delta; this is the same
+  // fix shaped for a scale: collect every claim against each image's
+  // PRE-mutation bounds first, keep only the first claim per id, move every
+  // image, THEN scale each claimed object exactly once.
+  const claimedAnnotations = new Map();
+  const claimedNotes = new Map();
+  const perImage = [];
   for (const s of start) {
     const image = getImageById(s.id);
     if (!image) continue;
     const previousBounds = getImageBounds(image);
     const factor = image.width > 0 ? (s.width * scale) / image.width : 1;
+    perImage.push({ s, factor });
+    for (const ann of annotationsWithinBounds(previousBounds)) {
+      if (!claimedAnnotations.has(ann.id)) claimedAnnotations.set(ann.id, factor);
+    }
+    for (const note of notesWithinBounds(previousBounds)) {
+      if (!claimedNotes.has(note.id)) claimedNotes.set(note.id, factor);
+    }
+  }
+  for (const { s, factor } of perImage) {
+    const image = getImageById(s.id);
+    if (!image) continue;
     image.x = anchor.x + (s.x - anchor.x) * scale;
     image.y = anchor.y + (s.y - anchor.y) * scale;
     image.width = s.width * scale;
     image.height = s.height * scale;
-    scaleAnnotationsForImageResize(previousBounds, anchor, factor);
+  }
+  const validFactor = (f) => Number.isFinite(f) && f > 0 && Math.abs(f - 1) > 1e-9;
+  for (const [id, factor] of claimedAnnotations) {
+    const ann = getAnnotationById(id);
+    if (ann && validFactor(factor)) scaleAnnotationAbout(ann, anchor, factor);
+  }
+  for (const [id, factor] of claimedNotes) {
+    const note = getNoteById(id);
+    if (note && validFactor(factor)) scaleNoteAbout(note, anchor, factor);
   }
 }
 

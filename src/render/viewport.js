@@ -78,6 +78,39 @@ function onDoubleClick(e) {
   if (state.tool !== 'select') return;
   const mouse = getMousePos(e);
   const world = screenToWorld(mouse.x, mouse.y);
+  // Audit-found bug: notes are Manual-only to edit, and onMouseDown's Auto-Mode
+  // branch (top of the function, above) never reaches a note hit-test at all —
+  // but this function had no equivalent gate, so a genuine double-click bypassed
+  // the lock completely. It could open the live #noteEditor over a read-only
+  // Auto Mode board, and an empty commit from there deletes the note even
+  // though deleteSelected() explicitly refuses to while state.appMode is
+  // 'auto'. Both note gestures below (remove-a-tip, edit-the-text) go behind
+  // the same gate.
+  if (state.appMode !== 'auto') {
+    // US-092 step 6: double-click an arrow's TIP to remove just that arrow.
+    // Ahead of the note-box test below because a tip is a far smaller and more
+    // specific target, and because a note whose box a leader happens to cross
+    // must still give up the tip. Selected-note only, matching where the grab
+    // handles are drawn and hit-tested.
+    const selectedNoteForTips = getSelectedNote();
+    const tipHit = selectedNoteForTips
+      ? hitTestSelectedNoteHandles(world, selectedNoteForTips) : null;
+    if (tipHit && tipHit.part === 'leader') {
+      removeNoteLeader(selectedNoteForTips, tipHit.index);
+      return;
+    }
+
+    // US-092: double-click a note to edit its text — the same gesture that
+    // opens a line's label editor. Tested before the line body for the reason
+    // the press chain uses: the note's box is opaque, so a line under it is
+    // not what the TD is aiming at.
+    const noteHit = hitTestNotes(world);
+    if (noteHit) {
+      setSelection('note', noteHit.id);
+      openNoteEditor(noteHit.id);
+      return;
+    }
+  }
   const annHit = hitTestAnnotations(world);
   if (annHit) {
     setSelection('annotation', annHit.id);

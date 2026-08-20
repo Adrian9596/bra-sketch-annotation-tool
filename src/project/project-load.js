@@ -75,6 +75,12 @@
       state.annotations = clone(s.annotations || []);
       state.annotations.forEach(ensureCurveControls);
       state.eraseStrokes = clone(s.eraseStrokes || []);
+      // US-092. normalizeNote drops a record that could not be placed rather
+      // than failing the whole load, and fills in fields a file written by an
+      // older build would not carry.
+      state.notes = Array.isArray(s.notes)
+        ? s.notes.map(normalizeNote).filter(Boolean)
+        : [];
       state.brushSize = s.brushSize || 24;
       state.showLabels = s.showLabels !== false;
       state.calibration = s.calibration || { unitsPerPx: null, unit: 'in' };
@@ -83,6 +89,9 @@
       state.drawColor = s.drawColor || 'red';
       state.arrowType = s.arrowType || 'double';
       state.lineWidth = normalizeLineWidth(s.lineWidth);
+      // Additive like lineWidth: a file saved before this control existed has
+      // no key, and normalizeNoteFontSize's own NaN fallback covers it.
+      state.noteFontSize = normalizeNoteFontSize(s.noteFontSize);
       state.tool = 'select';
       state.selection = { kind: null, id: null };
       state.drawSession = null;
@@ -100,6 +109,7 @@
       document.body.classList.toggle('app-auto', state.appMode === 'auto');
       document.body.classList.remove('tool-eraser');
       el.labelEditor.style.display = 'none';
+      discardNoteEditorSession();
 
       imageDataById.clear();
       // Autosave's quota-fallback strips image bitmap data (dataURL: null).

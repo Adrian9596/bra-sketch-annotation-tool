@@ -92,6 +92,57 @@
     return false;
   }
 
+  // US-092 step 6: the SELECTED note's own small handles — the tip of each
+  // leader arrow, and the handle that pulls a new one out. Selected-only, which
+  // mirrors hitTestSelectedHandles for lines and, more importantly, mirrors
+  // what is DRAWN: these handles appear only on the selected note, and making
+  // an invisible target grabbable is worse than asking for a click first.
+  //
+  // Tips are tested before the add handle so a leader dropped near the box's
+  // bottom-right corner stays grabbable rather than being shadowed by it.
+  // Nearest tip wins, not first — two arrows pointing at nearby details is a
+  // normal thing for a TD to draw.
+  function hitTestSelectedNoteHandles(world, note) {
+    if (!note) return null;
+    const radius = 11 / state.zoom;
+    const leaders = note.leaders || [];
+    let best = null;
+    let bestDist = Infinity;
+    for (let i = 0; i < leaders.length; i += 1) {
+      const dist = distance(world, leaders[i]);
+      // `<=` so a later (drawn-on-top) tip wins an exact tie.
+      if (dist <= radius && dist <= bestDist) {
+        bestDist = dist;
+        best = { part: 'leader', index: i };
+      }
+    }
+    if (best) return best;
+    const add = noteLeaderAddHandle(note);
+    if (add && distance(world, add) <= radius) return { part: 'leader-add', index: -1 };
+    return null;
+  }
+
+  // US-092: which text note is under this point. Topmost-first, like the line
+  // and photo tests — the last note in the array draws last, so it is the one
+  // the TD sees on top and the one a click should take.
+  //
+  // No forgiving catch ribbon here, unlike a line: a note is a filled box, so
+  // its visible edge IS its target, and padding it would only steal presses
+  // from the sketch around it.
+  function hitTestNotes(world) {
+    const notes = state.notes || [];
+    for (let i = notes.length - 1; i >= 0; i -= 1) {
+      const note = notes[i];
+      const box = noteBounds(note);
+      if (!box) continue;
+      if (world.x >= box.x && world.x <= box.x + box.width
+        && world.y >= box.y && world.y <= box.y + box.height) {
+        return { id: note.id, part: 'box' };
+      }
+    }
+    return null;
+  }
+
   function hitTestImages(world) {
     for (let i = state.images.length - 1; i >= 0; i -= 1) {
       const image = state.images[i];
@@ -207,8 +258,10 @@
     image.width = width;
     image.height = height;
 
-    // The photo scales about the opposite corner, so its lines do too.
+    // The photo scales about the opposite corner, so its lines and its notes do
+    // too — both are absolute world geometry that nothing else would move.
     scaleAnnotationsForImageResize(previousBounds, anchor, factor);
+    scaleNotesForImageResize(previousBounds, anchor, factor);
   }
 
   function pointInLabelBounds(point, labelPos, seq, padding) {

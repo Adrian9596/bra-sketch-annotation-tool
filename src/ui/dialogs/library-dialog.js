@@ -202,7 +202,13 @@
         } else {
           return;
         }
-      } else if (state.annotations.length || state.images.length) {
+      } else if (typeof hasUnsavedWork === 'function'
+        ? hasUnsavedWork()
+        : (state.annotations.length || state.images.length)) {
+        // US-092: ask hasUnsavedWork() rather than re-deriving "is there work
+        // here" from two collections. This gate had drifted behind the one in
+        // onProjectFileChosen (project-load.js) and silently replaced a board
+        // holding only notes — or only BOM/Construction work — with no prompt.
         const ok = window.confirm('Open this project? Your current board will be replaced. Save it first if you want to keep it.');
         if (!ok) return;
       }

@@ -242,12 +242,29 @@
   const ZOOM_SENSITIVITY = 0.0018;
   const PRECISE_ZOOM_SENSITIVITY = 0.00105;
 
+  // US-092 Board text notes. Every size is in WORLD pixels, not screen pixels,
+  // so a note keeps its size relative to the sketch it annotates — resizing the
+  // photo scales the note with it (scaleNoteAbout), exactly as it scales the POM
+  // lines drawn on that photo (US-091).
+  const NOTE_DEFAULT_FONT_SIZE = 16;
+  const NOTE_MIN_FONT_SIZE = 5;
+  const NOTE_MAX_FONT_SIZE = 200;
+  const NOTE_DEFAULT_BOX_WIDTH = 220;
+  const NOTE_MIN_BOX_WIDTH = 40;
+  const NOTE_MAX_BOX_WIDTH = 4000;
+  const NOTE_LINE_HEIGHT_RATIO = 1.32;
+  const NOTE_PADDING_RATIO = 0.35; // box padding as a fraction of the font size
+
   const state = {
     tool: 'select',
     drawStyle: 'solid',
     drawColor: 'red',
     arrowType: 'double',
     lineWidth: DEFAULT_LINE_WIDTH,
+    // The size a newly-placed note (or the next chip edit with none selected)
+    // uses — the note's own equivalent of lineWidth. Persisted with the
+    // project + history exactly like lineWidth/drawColor.
+    noteFontSize: NOTE_DEFAULT_FONT_SIZE,
     annotations: [],
     deletedAutoAnnotations: [],
     // US-047: POM labels whose drawn line the TD deleted. Excluded from the
@@ -256,6 +273,14 @@
     deletedPomKeys: [],
     images: [],
     eraseStrokes: [],
+    // US-092: free text the TD places on the Board — a factory remark, a
+    // reminder, a label on a detail — with 0+ leader arrows pointing at the
+    // spot it refers to. Deliberately its OWN collection, never part of
+    // state.annotations: annotations are the measurement set (the spec panel,
+    // the tolerance check, grading, the Excel table and deletedPomKeys all
+    // derive from them by label), so a note living there would become a POM
+    // row. Persisted with the project and captured in history.
+    notes: [],
     brushSize: 24,
     showLabels: true,
     nextSequence: 1,
@@ -299,6 +324,13 @@
 
     calibration: { unitsPerPx: null, unit: 'in' },
     editingLabelId: null,
+    // US-092: the Board note editor's live session, or null when it is closed.
+    // `id` is set when re-opening an existing note; `pos` (plus the styling the
+    // note will be born with) when the Text tool is placing a new one. Exactly
+    // one of the two is ever non-null. Session state only — deliberately absent
+    // from makeSnapshot, so an editor left open at save time cannot travel into
+    // the project file or into a history entry.
+    noteEditor: null,
 
     history: {
       past: [],
@@ -460,6 +492,7 @@
     toolStraight: document.getElementById('toolStraight'),
     toolCurved: document.getElementById('toolCurved'),
     toolEraser: document.getElementById('toolEraser'),
+    toolText: document.getElementById('toolText'),
     lineStyleControl: document.getElementById('lineStyleControl'),
     stitchesBtn: document.getElementById('stitchesBtn'),
     stitchesBtnLabel: document.getElementById('stitchesBtnLabel'),
@@ -467,6 +500,8 @@
     styleOptionBtns: Array.from(document.querySelectorAll('.style-option')),
     lineWidthChip: document.getElementById('lineWidthChip'),
     lineWidthInput: document.getElementById('lineWidthInput'),
+    fontSizeChip: document.getElementById('fontSizeChip'),
+    fontSizeInput: document.getElementById('fontSizeInput'),
     brushSizeChip: document.getElementById('brushSizeChip'),
     brushSizeInput: document.getElementById('brushSizeInput'),
     arrowDoubleBtn: document.getElementById('arrowDoubleBtn'),
@@ -504,6 +539,9 @@
     libraryBtn: document.getElementById('libraryBtn'),
     projectFileInput: document.getElementById('projectFileInput'),
     labelEditor: document.getElementById('labelEditor'),
+    // US-092: a TEXTAREA, not an input — a note is multi-line by design, which
+    // is the whole reason it cannot reuse #labelEditor.
+    noteEditor: document.getElementById('noteEditor'),
     specBody: document.getElementById('specBody'),
     specEmpty: document.getElementById('specEmpty'),
     specCal: document.getElementById('specCal'),
@@ -3333,7 +3371,13 @@
         } else {
           return;
         }
-      } else if (state.annotations.length || state.images.length) {
+      } else if (typeof hasUnsavedWork === 'function'
+        ? hasUnsavedWork()
+        : (state.annotations.length || state.images.length)) {
+        // US-092: ask hasUnsavedWork() rather than re-deriving "is there work
+        // here" from two collections. This gate had drifted behind the one in
+        // onProjectFileChosen (project-load.js) and silently replaced a board
+        // holding only notes — or only BOM/Construction work — with no prompt.
         const ok = window.confirm('Open this project? Your current board will be replaced. Save it first if you want to keep it.');
         if (!ok) return;
       }
@@ -14308,6 +14352,7 @@ const BOM_MATERIAL_LIBRARY = [
     const empty = imageCount === 0 && annotationCount === 0;
     const selectedAnnotation = getSelectedAnnotation();
     const selectedImage = getSelectedImage();
+    const selectedNote = getSelectedNote();
     const auto = state.autoMode;
     const hasSource = !!pickAutoSourceImage();
     const hasAnchors = auto.anchors.length > 0;
@@ -14337,7 +14382,9 @@ const BOM_MATERIAL_LIBRARY = [
     setBoardToolbarHidden(el.copyLineBtn, !selectionMode || !selectedAnnotation);
     setBoardToolbarHidden(el.reflectLineBtn, !selectionMode || !selectedAnnotation);
     setBoardToolbarHidden(el.pasteLineBtn, !selectionMode || el.pasteLineBtn.disabled);
-    setBoardToolbarHidden(el.deleteBtn, !selectionMode || !(selectedAnnotation || selectedImage));
+    // US-092: Delete is the note's only toolbar action — Copy / Reflect / Paste
+    // are line operations and stay hidden for a selected note.
+    setBoardToolbarHidden(el.deleteBtn, !selectionMode || !(selectedAnnotation || selectedImage || selectedNote));
     setBoardToolbarHidden(el.lockImageBtn, !selectionMode || !selectedImage);
     const contextGroup = document.getElementById('boardContextActions');
     if (contextGroup) {
@@ -14451,6 +14498,234 @@ const BOM_MATERIAL_LIBRARY = [
     requestRender();
   }
 
+  // ---- src/ui/note-editor.js ----
+// The Board note editor (US-092): a floating <textarea> over the canvas that
+// either places a NEW note where the Text tool was clicked, or re-opens an
+// existing one for editing. The note record and its geometry live in
+// src/manual/note-model.js; drawing in src/render/render-notes.js.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Why not reuse #labelEditor: that one is a single-line <input> whose Enter
+// COMMITS, because a POM callout label is one short token. A note is prose —
+// multi-line by design — so Enter has to insert a newline, and the commit keys
+// move to ⌘/Ctrl+Enter, Escape-cancels, and click-away.
+//
+// The one piece of real timing here is that click-away. A focus change is the
+// DEFAULT ACTION of mousedown, so `blur` arrives AFTER the canvas mousedown
+// handler has already run. If that same press were allowed to also place the
+// next note, the sequence would be: open editor #2, then blur commits… whatever
+// state.noteEditor now holds, which is #2's empty session — closing the editor
+// the TD just opened. So onMouseDown commits and stops (see pointer-events.js),
+// and by the time blur fires there is nothing open for it to act on. The blur
+// listener still matters for every OTHER way focus can leave: a toolbar click,
+// Tab, the window losing focus.
+
+  function isNoteEditorOpen() {
+    return !!state.noteEditor;
+  }
+
+  // A brand-new note is sized so it appears at the default size on SCREEN,
+  // whatever the board zoom happens to be — then it is world geometry like ink
+  // and scales with the sketch from that moment on (scaleNoteAbout, US-091).
+  // Without the compensation a note placed on a zoomed-out board is written at
+  // a few screen pixels and reads as broken; the clamps in note-model.js keep
+  // the extremes sane.
+  function newNoteWorldFontSize() {
+    // state.noteFontSize is the TD's own sticky preference (the size chip,
+    // Manual Mode change request 2026-08-20) — falls back to
+    // NOTE_DEFAULT_FONT_SIZE only if it is somehow unset, exactly like
+    // normalizeNoteFontSize's own NaN fallback.
+    const target = Number(state.noteFontSize) || NOTE_DEFAULT_FONT_SIZE;
+    return normalizeNoteFontSize(target / Math.max(state.zoom, 0.0001));
+  }
+
+  function newNoteWorldBoxWidth() {
+    return normalizeNoteBoxWidth(NOTE_DEFAULT_BOX_WIDTH / Math.max(state.zoom, 0.0001));
+  }
+
+  function openNoteEditorForNewNote(world) {
+    // Whatever was open finishes first, so two sessions can never overlap.
+    commitNoteEditor();
+    state.noteEditor = {
+      id: null,
+      pos: { x: world.x, y: world.y },
+      color: normalizeColorKey(state.drawColor),
+      fontSize: newNoteWorldFontSize(),
+      boxWidth: newNoteWorldBoxWidth(),
+    };
+    showNoteEditor('');
+  }
+
+  function openNoteEditor(id) {
+    const note = getNoteById(id);
+    if (!note) return;
+    commitNoteEditor();
+    state.noteEditor = { id, pos: null };
+    showNoteEditor(note.text);
+  }
+
+  function showNoteEditor(value) {
+    el.noteEditor.value = String(value == null ? '' : value);
+    el.noteEditor.style.display = 'block';
+    positionNoteEditor(); // sizes, colours and grows it to fit
+    requestRender();
+    // Focus on the next frame for the same reason openLabelEditor does: the
+    // element was display:none until a moment ago, and focusing a box the
+    // browser has not laid out yet silently does nothing.
+    requestAnimationFrame(() => {
+      if (!isNoteEditorOpen()) return;
+      el.noteEditor.focus();
+      // Caret at the END, deliberately NOT select-all the way openLabelEditor
+      // does. A callout label is one short token that is almost always being
+      // replaced; a note is prose, and re-opening one is nearly always to fix a
+      // word or add a line. Select-all there means the TD's next keystroke
+      // silently destroys a paragraph they wrote.
+      const end = el.noteEditor.value.length;
+      el.noteEditor.setSelectionRange(end, end);
+    });
+  }
+
+  // Runs from render(), so the editor tracks the note through pan, zoom and a
+  // photo drag rather than sitting where the board used to be.
+  function positionNoteEditor() {
+    const session = state.noteEditor;
+    if (!session) return;
+    const note = session.id != null ? getNoteById(session.id) : null;
+    // The note being edited can vanish under us — an Undo, or a photo delete
+    // that took it along. Close rather than editing a ghost.
+    if (session.id != null && !note) { cancelNoteEditor(); return; }
+    const pos = note ? note.pos : session.pos;
+    const worldFont = note ? noteFontSizeOf(note) : normalizeNoteFontSize(session.fontSize);
+    const worldWidth = normalizeNoteBoxWidth(note ? note.boxWidth : session.boxWidth);
+    const colorKey = normalizeColorKey(note ? note.color : session.color);
+    const color = LINE_COLORS[colorKey] || LINE_COLOR;
+    const screen = worldToScreen(pos.x, pos.y);
+    const style = el.noteEditor.style;
+    style.left = screen.x + 'px';
+    style.top = screen.y + 'px';
+    style.width = Math.max(90, worldWidth * state.zoom) + 'px';
+    // Legibility floor and ceiling on the EDITOR only. A note itself may be any
+    // size in the clamp range, but 4px text cannot be typed into and 200px text
+    // does not fit on screen. The committed note re-wraps on the canvas, so a
+    // clamped editor can differ from the final wrap by a word — cosmetic, and
+    // far better than an unusable box.
+    style.fontSize = clamp(worldFont * state.zoom, 11, 40) + 'px';
+    style.lineHeight = String(NOTE_LINE_HEIGHT_RATIO);
+    style.padding = Math.max(2, worldFont * NOTE_PADDING_RATIO * state.zoom) + 'px';
+    style.color = color;
+    // Same inversion the renderer applies: white ink needs a dark ground or the
+    // TD is typing invisibly (see noteGroundFill).
+    style.background = noteGroundFill(color);
+    // The height is a function of the font size just set, so it has to follow a
+    // zoom change — wheel-zooming mid-edit is entirely normal on this board.
+    // Only ever runs while an editor is open, which is a rare state, and the
+    // element is absolutely positioned so resizing it cannot reflow the canvas.
+    autoGrowNoteEditor();
+  }
+
+  // Grow to fit the text instead of scrolling: a note the TD cannot see all of
+  // while typing is worse than a tall box.
+  function autoGrowNoteEditor() {
+    if (!isNoteEditorOpen()) return;
+    el.noteEditor.style.height = 'auto';
+    el.noteEditor.style.height = (el.noteEditor.scrollHeight + 2) + 'px';
+  }
+
+  function onNoteEditorInput() {
+    autoGrowNoteEditor();
+  }
+
+  function onNoteEditorKeyDown(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelNoteEditor();
+    } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      commitNoteEditor();
+    }
+    // A plain Enter is deliberately left alone — it inserts a newline. Every
+    // key stops here so the board-level shortcut router never sees a keystroke
+    // meant for the text being typed.
+    e.stopPropagation();
+  }
+
+  function closeNoteEditorElement() {
+    el.noteEditor.style.display = 'none';
+    el.noteEditor.value = '';
+    el.noteEditor.style.height = '';
+  }
+
+  // Teardown with NO side effects — no history entry, no updateUI, no render.
+  // The board-teardown paths (Reset Board, Clear Lines, opening a project) call
+  // this exactly where they already drop the label editor: mid-rebuild, with
+  // their own updateUI() to come. Discarding rather than committing matches
+  // what those paths do to a half-typed label today.
+  function discardNoteEditorSession() {
+    state.noteEditor = null;
+    closeNoteEditorElement();
+  }
+
+  function commitNoteEditor() {
+    const session = state.noteEditor;
+    if (!session) return;
+    // Clear the session BEFORE doing any work: pushHistoryIfChanged and
+    // requestRender can both reach back into positionNoteEditor, and a
+    // half-committed session there would reopen what we are closing.
+    state.noteEditor = null;
+    const raw = String(el.noteEditor.value || '').replace(/\s+$/, '');
+    closeNoteEditorElement();
+
+    if (session.id != null) {
+      const note = getNoteById(session.id);
+      if (note) {
+        if (raw === '') {
+          // Emptying a note removes it. The alternative is an empty box the TD
+          // then has to find, select and delete — content nobody asked for. One
+          // history step, so Undo brings the text back.
+          state.notes = (state.notes || []).filter(n => n.id !== note.id);
+          if (state.selection.kind === 'note' && state.selection.id === note.id) {
+            state.selection = { kind: null, id: null };
+          }
+          pushHistoryIfChanged();
+          showToast('Empty note removed.');
+        } else if (note.text !== raw) {
+          note.text = raw;
+          pushHistoryIfChanged();
+        }
+      }
+    } else if (raw !== '') {
+      // An empty commit creates nothing — a stray click with the Text tool is
+      // the commonest way to open this editor by accident.
+      const note = createNote(raw, session.pos, {
+        color: session.color,
+        fontSize: session.fontSize,
+        boxWidth: session.boxWidth,
+      });
+      state.notes.push(note);
+      // Audit-found bug: every OTHER creation gesture in this codebase selects
+      // what it just made (handleDrawToolClick does this for every completed
+      // line) — this one didn't, so state.selection kept pointing at whatever
+      // was selected before the TD switched to the Text tool. The Text tool
+      // deliberately stays active after a commit (so a run of remarks needs no
+      // trip back to the toolbar), which made the stale selection persist
+      // indefinitely: switching back to Select doesn't touch it either. A TD
+      // who had a POM line selected, jotted a note, and then pressed Delete to
+      // tidy up got the OLD LINE deleted instead of the note they just typed —
+      // recoverable via Undo, but with no on-screen sign anything was wrong.
+      setSelection('note', note.id);
+      pushHistoryIfChanged();
+    }
+    updateUI();
+    requestRender();
+  }
+
+  function cancelNoteEditor() {
+    if (!state.noteEditor) return;
+    discardNoteEditorSession();
+    updateUI();
+    requestRender();
+  }
+
   // ---- src/ui/bindings.js ----
 // Top-level UI bindings: bindUI() wires the toolbar, dropdowns, file
 // inputs, the canvas, the label editor, and keyboard shortcuts. Tool and
@@ -14466,6 +14741,7 @@ const BOM_MATERIAL_LIBRARY = [
     el.toolStraight.addEventListener('click', () => setTool('straight'));
     el.toolCurved.addEventListener('click', () => setTool('curved'));
     el.toolEraser.addEventListener('click', () => setTool('eraser'));
+    el.toolText.addEventListener('click', () => setTool('text'));
 
     el.stitchesBtn.addEventListener('click', toggleLineStyleMenu);
     el.styleOptionBtns.forEach((button) => {
@@ -14481,6 +14757,14 @@ const BOM_MATERIAL_LIBRARY = [
     });
     el.lineWidthInput.addEventListener('change', () => {
       el.lineWidthInput.value = formatLineWidth(getActiveLineWidth());
+    });
+
+    el.fontSizeInput.addEventListener('input', () => {
+      const n = parseFloat(el.fontSizeInput.value);
+      if (Number.isFinite(n)) setNoteFontSize(n);
+    });
+    el.fontSizeInput.addEventListener('change', () => {
+      el.fontSizeInput.value = formatNoteFontSize(getActiveNoteFontSize());
     });
 
     el.brushSizeInput.addEventListener('input', () => {
@@ -14625,6 +14909,13 @@ const BOM_MATERIAL_LIBRARY = [
     el.labelEditor.addEventListener('keydown', onLabelEditorKeyDown);
     el.labelEditor.addEventListener('blur', commitLabelEditor);
 
+    // US-092. The blur commit covers every way focus can leave the note editor
+    // EXCEPT a press on the board — that one is claimed by onMouseDown, which
+    // runs before the focus change it causes (see note-editor.js).
+    el.noteEditor.addEventListener('keydown', onNoteEditorKeyDown);
+    el.noteEditor.addEventListener('input', onNoteEditorInput);
+    el.noteEditor.addEventListener('blur', commitNoteEditor);
+
     el.canvas.addEventListener('mousedown', onMouseDown);
     el.canvas.addEventListener('dblclick', onDoubleClick);
     el.canvas.addEventListener('mousemove', onMouseMove);
@@ -14739,9 +15030,58 @@ const BOM_MATERIAL_LIBRARY = [
     applyToSelectedAnnotation({ lineWidth: normalized });
   }
 
+  // A note's own size control (US-092), mirroring setLineWidth exactly — it
+  // never touches applyToSelectedAnnotation, since a line and a note are never
+  // selected at once (single-kind selection model).
+  function setNoteFontSize(fontSize) {
+    const normalized = normalizeNoteFontSize(fontSize);
+    state.noteFontSize = normalized;
+    applyFontSizeToSelectedNote(normalized);
+  }
+
   function setDrawColor(color) {
     state.drawColor = color;
+    // US-092: the same four swatches retint a selected NOTE. The selection model
+    // is single-kind, so a note and a line can never both be selected and this
+    // can never double-apply; when nothing is selected both calls fall through
+    // to just updating the draw default.
+    if (applyColorToSelectedNote(color)) return;
     applyToSelectedAnnotation({ color });
+  }
+
+  // Returns true when a note claimed the change, so the caller stops. Style
+  // and arrow type have no meaning for a note and deliberately have no
+  // equivalent; line width and font size are each the OTHER kind's own
+  // control (setLineWidth / setNoteFontSize above) rather than a shared one,
+  // because "how thick" and "how big the text is" are not the same question.
+  function applyColorToSelectedNote(color) {
+    const note = getSelectedNote();
+    if (!note) return false;
+    const next = normalizeColorKey(color);
+    if (note.color !== next) {
+      note.color = next;
+      pushHistoryIfChanged();
+    }
+    updateUI();
+    requestRender();
+    return true;
+  }
+
+  // Mirrors applyColorToSelectedNote: mutate the selected note's own fontSize
+  // directly and ride the generic snapshot-diff into history exactly the way
+  // note.color already does — notes carry no per-object lineWidth/arrowType,
+  // so there is nothing else here to fall through to.
+  function applyFontSizeToSelectedNote(fontSize) {
+    const note = getSelectedNote();
+    if (!note) return false;
+    const next = normalizeNoteFontSize(fontSize);
+    if (note.fontSize !== next) {
+      note.fontSize = next;
+      pushHistoryIfChanged();
+    }
+    updateUI();
+    requestRender();
+    return true;
   }
 
   function applyToSelectedAnnotation(settings) {
@@ -14806,9 +15146,11 @@ const BOM_MATERIAL_LIBRARY = [
       drawColor: state.drawColor,
       arrowType: state.arrowType,
       lineWidth: state.lineWidth,
+      noteFontSize: state.noteFontSize,
       annotations: clone(state.annotations),
       images: state.images.map(stripImageForSnapshot),
       eraseStrokes: clone(state.eraseStrokes),
+      notes: clone(state.notes || []),
       nextSequence: state.nextSequence,
       selection: clone(state.selection),
       idCounter: state.idCounter,
@@ -14863,9 +15205,11 @@ const BOM_MATERIAL_LIBRARY = [
     state.drawColor = snapshot.drawColor || 'red';
     state.arrowType = snapshot.arrowType || 'double';
     state.lineWidth = normalizeLineWidth(snapshot.lineWidth);
+    state.noteFontSize = normalizeNoteFontSize(snapshot.noteFontSize);
     state.annotations = clone(snapshot.annotations || []);
     state.annotations.forEach(ensureCurveControls);
     state.eraseStrokes = clone(snapshot.eraseStrokes || []);
+    state.notes = (snapshot.notes || []).map(normalizeNote).filter(Boolean);
     state.nextSequence = snapshot.nextSequence || (state.annotations.length + 1);
     state.selection = snapshot.selection || { kind: null, id: null };
     state.idCounter = snapshot.idCounter || inferNextIdCounter();
@@ -14900,6 +15244,9 @@ const BOM_MATERIAL_LIBRARY = [
       state.selection = { kind: null, id: null };
     }
     if (state.selection.kind === 'image' && !state.images.some(i => i.id === state.selection.id)) {
+      state.selection = { kind: null, id: null };
+    }
+    if (state.selection.kind === 'note' && !state.notes.some(n => n.id === state.selection.id)) {
       state.selection = { kind: null, id: null };
     }
 
@@ -14946,6 +15293,9 @@ const BOM_MATERIAL_LIBRARY = [
           locked: !!img.locked,
         })),
         eraseStrokes: clone(state.eraseStrokes),
+        // US-092: Board text notes. Additive — files saved before US-092 have
+        // no key and open with an empty note list.
+        notes: clone(state.notes || []),
         brushSize: state.brushSize,
         showLabels: state.showLabels,
         calibration: clone(state.calibration),
@@ -14955,6 +15305,7 @@ const BOM_MATERIAL_LIBRARY = [
         drawColor: state.drawColor,
         arrowType: state.arrowType,
         lineWidth: state.lineWidth,
+        noteFontSize: state.noteFontSize,
         zoom: state.zoom,
         panX: state.panX,
         panY: state.panY,
@@ -15141,6 +15492,12 @@ const BOM_MATERIAL_LIBRARY = [
       state.annotations = clone(s.annotations || []);
       state.annotations.forEach(ensureCurveControls);
       state.eraseStrokes = clone(s.eraseStrokes || []);
+      // US-092. normalizeNote drops a record that could not be placed rather
+      // than failing the whole load, and fills in fields a file written by an
+      // older build would not carry.
+      state.notes = Array.isArray(s.notes)
+        ? s.notes.map(normalizeNote).filter(Boolean)
+        : [];
       state.brushSize = s.brushSize || 24;
       state.showLabels = s.showLabels !== false;
       state.calibration = s.calibration || { unitsPerPx: null, unit: 'in' };
@@ -15149,6 +15506,9 @@ const BOM_MATERIAL_LIBRARY = [
       state.drawColor = s.drawColor || 'red';
       state.arrowType = s.arrowType || 'double';
       state.lineWidth = normalizeLineWidth(s.lineWidth);
+      // Additive like lineWidth: a file saved before this control existed has
+      // no key, and normalizeNoteFontSize's own NaN fallback covers it.
+      state.noteFontSize = normalizeNoteFontSize(s.noteFontSize);
       state.tool = 'select';
       state.selection = { kind: null, id: null };
       state.drawSession = null;
@@ -15166,6 +15526,7 @@ const BOM_MATERIAL_LIBRARY = [
       document.body.classList.toggle('app-auto', state.appMode === 'auto');
       document.body.classList.remove('tool-eraser');
       el.labelEditor.style.display = 'none';
+      discardNoteEditorSession();
 
       imageDataById.clear();
       // Autosave's quota-fallback strips image bitmap data (dataURL: null).
@@ -15298,6 +15659,8 @@ const BOM_MATERIAL_LIBRARY = [
     if (!state) return false;
     if (state.annotations && state.annotations.length > 0) return true;
     if (state.images && state.images.length > 0) return true;
+    // US-092: a board holding only text notes is still work worth saving.
+    if (state.notes && state.notes.length > 0) return true;
     if (typeof hasMeaningfulConstructionWork === 'function' && hasMeaningfulConstructionWork()) return true;
     if (typeof hasMeaningfulBomWork === 'function' && hasMeaningfulBomWork()) return true;
     if (state.autoMode && state.autoMode.draftAnnotations && state.autoMode.draftAnnotations.length > 0) return true;
@@ -15456,8 +15819,15 @@ const BOM_MATERIAL_LIBRARY = [
     const record = readAutosave();
     if (!record) return;
     const s = record.snapshot && record.snapshot.state;
+    // US-092: notes count here, and this is not cosmetic. hasContent and
+    // hasUnsavedWork() are a matched pair — the first decides whether a record is
+    // OFFERED BACK, the second whether it is WRITTEN — and the miss below is
+    // destructive, not merely quiet: a false here falls through to clearAutosave()
+    // and deletes the record. Teaching only hasUnsavedWork about notes would have
+    // meant a notes-only board autosaves correctly and is then wiped at next boot.
     const hasContent = s && ((Array.isArray(s.annotations) && s.annotations.length)
       || (Array.isArray(s.images) && s.images.length)
+      || (Array.isArray(s.notes) && s.notes.length)
       || (s.construction && ((s.construction.callouts || []).length
         || (s.construction.images && ['solid', 'lace'].some(sheet => ['outer', 'inner'].some(view =>
           ((((s.construction.images[sheet] || {})[view]) || []).length))))
@@ -16381,6 +16751,13 @@ const BOM_MATERIAL_LIBRARY = [
         const label = String(getLabelText(ann));
         if (label && !state.deletedPomKeys.includes(label)) state.deletedPomKeys.push(label);
       }
+    } else if (state.selection.kind === 'note') {
+      // US-092: a note is drawing content, not a measurement. Nothing to record
+      // in deletedPomKeys, no evidence entry, no exported row to keep in sync —
+      // the whole point of keeping notes out of state.annotations.
+      const before = (state.notes || []).length;
+      state.notes = (state.notes || []).filter(note => note.id !== state.selection.id);
+      if (state.notes.length === before) return;
     } else if (state.selection.kind === 'image') {
       // Delete every selected photo (Cmd/Ctrl+click group), skipping locked
       // ones. US-052: deleteImageById purges each photo's Auto Mode state.
@@ -16405,6 +16782,21 @@ const BOM_MATERIAL_LIBRARY = [
     pushHistoryIfChanged();
     updateUI();
     requestRender();
+  }
+
+  // US-092 step 6: remove ONE arrow from a note, leaving the note and its other
+  // arrows alone. Delete on a selected note removes the whole note; this is the
+  // finer gesture — double-click the arrow's tip — and follows the Construction
+  // page's precedent, where double-clicking a callout's anchor deletes just that
+  // leader line (ADR 0040). Returns true when something was removed.
+  function removeNoteLeader(note, index) {
+    if (!note || !Array.isArray(note.leaders)) return false;
+    if (!Number.isInteger(index) || index < 0 || index >= note.leaders.length) return false;
+    note.leaders.splice(index, 1);
+    pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+    return true;
   }
 
   function clearAllAnnotations() {
@@ -16625,6 +17017,14 @@ function setSelection(kind, id) {
         state.arrowType = getArrowType(ann);
       }
     }
+    // US-092: a selected note adopts the colour swatch the same way, so the
+    // toolbar shows the note's own colour and a click on another swatch
+    // retints THAT note instead of silently changing the draw default.
+    // Style / arrow / width have no meaning for a note and stay untouched.
+    if (kind === 'note') {
+      const note = getNoteById(id);
+      if (note) state.drawColor = normalizeColorKey(note.color);
+    }
     updateUI();
     requestRender();
   }
@@ -16840,6 +17240,12 @@ function setSelection(kind, id) {
       : null;
   }
 
+  // US-092. Notes have no multi-selection in v1 (the marquee stays lines-only),
+  // so unlike images and annotations there is no id-set helper beside this one.
+  function getSelectedNote() {
+    return state.selection.kind === 'note' ? getNoteById(state.selection.id) : null;
+  }
+
   function getSelectedImage() {
     return state.selection.kind === 'image'
       ? state.images.find(image => image.id === state.selection.id) || null
@@ -16904,6 +17310,18 @@ function setSelection(kind, id) {
       return;
     }
     if (e.button !== 0) return;
+
+    // US-092: a press on the board while the note editor is open FINISHES that
+    // note and does nothing else. The blur listener cannot own this by itself —
+    // a focus change is the DEFAULT ACTION of mousedown, so blur arrives after
+    // this handler, and letting the same press also place the next note would
+    // have that late blur commit the new, empty session and close the editor
+    // the TD had just opened. Click-away-to-finish costs one extra click to
+    // place a second note and is worth it for a deterministic editor.
+    if (isNoteEditorOpen()) {
+      commitNoteEditor();
+      return;
+    }
 
     const screen = getMousePos(e);
     const world = screenToWorld(screen.x, screen.y);
@@ -16999,6 +17417,14 @@ function setSelection(kind, id) {
       return;
     }
 
+    // US-092: the Text tool places a note where it is clicked. Like the drawing
+    // tools it STAYS active afterwards, so a run of remarks needs no trip back
+    // to the toolbar; S or Escape returns to Select.
+    if (state.tool === 'text') {
+      openNoteEditorForNewNote(world);
+      return;
+    }
+
     const selectedAnnotation = getSelectedAnnotation();
     // Endpoint/handle editing is a single-line action — a multi-selection is
     // for moving/copying the group, so skip handles when more than one is picked.
@@ -17006,6 +17432,24 @@ function setSelection(kind, id) {
       ? hitTestSelectedHandles(world, selectedAnnotation) : null;
     if (handleHit) {
       startHandleDrag(selectedAnnotation.id, handleHit.part, world);
+      return;
+    }
+
+    // US-092 step 6: the selected note's leader tips and its leader-add handle
+    // hold exactly the privilege the selected LINE's handles hold above — small,
+    // deliberate targets on the thing the TD is already working on, so they beat
+    // the endpoint test further down. No modifier guard, matching
+    // hitTestSelectedHandles: Shift and Cmd build LINE and PHOTO groups, and a
+    // press this precise on the selected note is not a group-building gesture.
+    const selectedNoteForHandles = getSelectedNote();
+    const noteHandleHit = selectedNoteForHandles
+      ? hitTestSelectedNoteHandles(world, selectedNoteForHandles) : null;
+    if (noteHandleHit) {
+      if (noteHandleHit.part === 'leader-add') {
+        startNoteLeaderCreate(selectedNoteForHandles.id, world);
+      } else {
+        startNoteLeaderDrag(selectedNoteForHandles.id, noteHandleHit.index, world);
+      }
       return;
     }
 
@@ -17040,6 +17484,26 @@ function setSelection(kind, id) {
       if (endpointHit) {
         setSelection('annotation', endpointHit.id);
         startHandleDrag(endpointHit.id, endpointHit.part, world);
+        return;
+      }
+    }
+
+    // US-092: a note box sits between the endpoints above and the line BODY
+    // below. It loses to any endpoint because lines are the work (ADR 0050) and
+    // an endpoint is the most precise target on the board. It beats the line
+    // body because a note is an opaque filled box: the line under it is not
+    // visible, so a press there cannot have meant that line — the same reason
+    // hitTestAnnotations already skips hidden lines. And it must beat the photo,
+    // or a note written on the sketch could never be picked up again.
+    //
+    // Shift is excluded: it belongs to the line multi-selection, and taking the
+    // press here would call setSelection('note', …) and wipe the group the TD is
+    // assembling — the same trap the Shift+miss marquee below was added for.
+    if (!e.shiftKey) {
+      const noteHit = hitTestNotes(world);
+      if (noteHit) {
+        setSelection('note', noteHit.id);
+        startNoteDrag(noteHit.id, world);
         return;
       }
     }
@@ -17160,6 +17624,54 @@ function setSelection(kind, id) {
       return;
     }
 
+    // US-092 step 6: moving an arrow's tip, or pulling a brand-new one out of
+    // the note. One branch, because after the first armed frame the two are the
+    // same gesture — the only difference is that the "new" flavour has no
+    // leader to move until it arms.
+    if (interaction.type === 'drag-note-leader' || interaction.type === 'drag-note-leader-new') {
+      const note = getNoteById(interaction.id);
+      if (!note) return;
+      if (!dragArmed(interaction, world)) return;
+      if (interaction.index < 0) {
+        // Created on the ARMING frame, not on the press: a stray click on the
+        // add handle must leave no zero-length arrow (and no history entry)
+        // behind, and an arrow pointing at its own note means nothing.
+        note.leaders = note.leaders || [];
+        note.leaders.push({ x: world.x, y: world.y });
+        interaction.index = note.leaders.length - 1;
+      }
+      const tip = (note.leaders || [])[interaction.index];
+      if (!tip) return;
+      // Same grab offset the line endpoints use (US-086): the catch radius is
+      // deliberately generous, so without it a tip caught from 10px away
+      // teleports to the cursor on the first move — and the arrow is a pointer
+      // at a detail, so where it lands is the whole content of the gesture.
+      const off = interaction.grabOffset || { x: 0, y: 0 };
+      tip.x = world.x + off.x;
+      tip.y = world.y + off.y;
+      interaction.changed = true;
+      requestRender();
+      return;
+    }
+
+    // US-092. Armed like every other geometry drag: the press that SELECTS a
+    // note must not also shift it by a pixel of hand jitter.
+    if (interaction.type === 'drag-note') {
+      const note = getNoteById(interaction.id);
+      if (!note) return;
+      if (!dragArmed(interaction, world)) return;
+      const dx = world.x - interaction.prevWorld.x;
+      const dy = world.y - interaction.prevWorld.y;
+      if (dx || dy) {
+        // moveNote carries the leaders too, so the whole callout travels as one.
+        moveNote(note, dx, dy);
+        interaction.changed = true;
+        interaction.prevWorld = world;
+        requestRender();
+      }
+      return;
+    }
+
     if (interaction.type === 'marquee') {
       interaction.currentWorld = { x: world.x, y: world.y };
       const dx = interaction.currentWorld.x - interaction.startWorld.x;
@@ -17220,6 +17732,12 @@ function setSelection(kind, id) {
           for (const annId of interaction.groupedAnnotationIds) {
             const ann = getAnnotationById(annId);
             if (ann) moveAnnotation(ann, dx, dy);
+          }
+        }
+        if (interaction.groupedNoteIds) {
+          for (const noteId of interaction.groupedNoteIds) {
+            const note = getNoteById(noteId);
+            if (note) moveNote(note, dx, dy);
           }
         }
         interaction.changed = true;
@@ -17459,6 +17977,42 @@ function startHandleDrag(id, part, world) {
   });
 }
 
+// US-092. No group set: notes have no multi-selection in v1, so exactly one
+// note moves. History is handled by the generic changed -> fingerprint path in
+// onMouseUp, which already sees notes because makeSnapshot captures them.
+function startNoteDrag(id, world) {
+  beginTrackedInteraction('drag-note', {
+    id, prevWorld: world,
+    startWorld: { x: world.x, y: world.y }, armed: false,
+  });
+}
+
+// US-092 step 6. The grab offset is captured against the tip's CURRENT position
+// so a catch from up to 11px away drags 1:1 instead of snapping the arrow to
+// the cursor. prevWorld carries the same offset, matching startHandleDrag.
+function startNoteLeaderDrag(id, index, world) {
+  const note = getNoteById(id);
+  const tip = note && (note.leaders || [])[index];
+  const grabOffset = (tip && Number.isFinite(tip.x) && Number.isFinite(tip.y))
+    ? { x: tip.x - world.x, y: tip.y - world.y }
+    : { x: 0, y: 0 };
+  beginTrackedInteraction('drag-note-leader', {
+    id, index, grabOffset,
+    prevWorld: { x: world.x + grabOffset.x, y: world.y + grabOffset.y },
+    startWorld: { x: world.x, y: world.y }, armed: false,
+  });
+}
+
+// index -1 means "no leader yet" — the move handler creates it on the frame the
+// drag arms. No grab offset: a new arrow starts exactly under the cursor.
+function startNoteLeaderCreate(id, world) {
+  beginTrackedInteraction('drag-note-leader-new', {
+    id, index: -1,
+    prevWorld: { x: world.x, y: world.y },
+    startWorld: { x: world.x, y: world.y }, armed: false,
+  });
+}
+
 function startImageDrag(id, world) {
   // Move every selected image together (Cmd/Ctrl+click multi-selection), or
   // just the clicked one when nothing else is selected. Locked images never
@@ -17469,10 +18023,14 @@ function startImageDrag(id, world) {
     .filter((imgId) => { const im = getImageById(imgId); return im && !im.locked; });
   if (!movingIds.includes(id)) movingIds.push(id);
   const annIdSet = new Set();
+  const noteIdSet = new Set();
   for (const imgId of movingIds) {
     const im = getImageById(imgId);
     if (!im) continue;
     for (const ann of getAnnotationsOnImage(im)) annIdSet.add(ann.id);
+    // US-092: and the text notes written on it — a remark whose arrow points at
+    // a detail has to keep pointing at it.
+    for (const note of getNotesOnImage(im)) noteIdSet.add(note.id);
   }
   beginTrackedInteraction('drag-image', {
     id,
@@ -17481,6 +18039,7 @@ function startImageDrag(id, world) {
     armed: false,
     imageIds: movingIds,
     groupedAnnotationIds: Array.from(annIdSet),
+    groupedNoteIds: Array.from(noteIdSet),
   });
 }
 
@@ -17547,16 +18106,57 @@ function resizeImagesFromCorner(interaction, world) {
   // photo scale with it, about the GROUP anchor every photo is scaling about.
   // `scale` here is absolute against the gesture's start snapshot, so the
   // per-frame factor is the ratio against the rect the image has right now.
+  //
+  // Audit-found bug: membership and scaling used to run PER IMAGE in one pass —
+  // for each grouped image, ask what belongs to it, then scale it right there.
+  // That double-scales anything claimed by TWO grouped images in the same
+  // frame, which the single-line-midpoint test makes rare for annotations but
+  // notesWithinBounds makes ORDINARY for notes: its membership rule is "box
+  // centre inside these bounds OR any leader tip inside them" (viewport.js), so
+  // a caption parked on photo A with its arrow pointing at a detail on
+  // neighbouring photo B — the commonest way a TD writes one — qualifies under
+  // BOTH images' bounds at once. Because every grouped image scales by
+  // essentially the same per-frame factor (they all track one shared `scale`
+  // from one shared `anchor`), a double-scaled object doesn't just double —
+  // it compounds toward the SQUARE of the intended factor over the drag,
+  // silently detaching a note from the feature its arrow points at.
+  // startImageDrag (above) already solved the identical ambiguity for a PAN by
+  // de-duplicating through a Set before applying any delta; this is the same
+  // fix shaped for a scale: collect every claim against each image's
+  // PRE-mutation bounds first, keep only the first claim per id, move every
+  // image, THEN scale each claimed object exactly once.
+  const claimedAnnotations = new Map();
+  const claimedNotes = new Map();
+  const perImage = [];
   for (const s of start) {
     const image = getImageById(s.id);
     if (!image) continue;
     const previousBounds = getImageBounds(image);
     const factor = image.width > 0 ? (s.width * scale) / image.width : 1;
+    perImage.push({ s, factor });
+    for (const ann of annotationsWithinBounds(previousBounds)) {
+      if (!claimedAnnotations.has(ann.id)) claimedAnnotations.set(ann.id, factor);
+    }
+    for (const note of notesWithinBounds(previousBounds)) {
+      if (!claimedNotes.has(note.id)) claimedNotes.set(note.id, factor);
+    }
+  }
+  for (const { s, factor } of perImage) {
+    const image = getImageById(s.id);
+    if (!image) continue;
     image.x = anchor.x + (s.x - anchor.x) * scale;
     image.y = anchor.y + (s.y - anchor.y) * scale;
     image.width = s.width * scale;
     image.height = s.height * scale;
-    scaleAnnotationsForImageResize(previousBounds, anchor, factor);
+  }
+  const validFactor = (f) => Number.isFinite(f) && f > 0 && Math.abs(f - 1) > 1e-9;
+  for (const [id, factor] of claimedAnnotations) {
+    const ann = getAnnotationById(id);
+    if (ann && validFactor(factor)) scaleAnnotationAbout(ann, anchor, factor);
+  }
+  for (const [id, factor] of claimedNotes) {
+    const note = getNoteById(id);
+    if (note && validFactor(factor)) scaleNoteAbout(note, anchor, factor);
   }
 }
 
@@ -18305,6 +18905,14 @@ function onWheel(e) {
         setTool('eraser');
         return;
       }
+
+      // US-092: T = Text note. No image requirement, unlike the eraser — a
+      // note may be a title or a general remark on an empty board.
+      if (!isMeta && key === 't') {
+        e.preventDefault();
+        setTool('text');
+        return;
+      }
     }
 
     // E exports the Excel measurement spec (same as the toolbar button;
@@ -18369,7 +18977,8 @@ function onWheel(e) {
         showToast('Erase canceled.');
         updateUI();
         requestRender();
-      } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'eraser') {
+      } else if (state.tool === 'straight' || state.tool === 'curved'
+                 || state.tool === 'eraser' || state.tool === 'text') {
         setTool('select');
       } else if (state.selection.kind === 'annotation' && state.selection.part) {
         // First Escape drops back to whole-line nudging; the next one
@@ -18398,6 +19007,10 @@ function onWheel(e) {
 
   function formatLineWidth(value) {
     return String(Math.round(normalizeLineWidth(value) * 10) / 10).replace(/\.0$/, '');
+  }
+
+  function formatNoteFontSize(value) {
+    return String(Math.round(normalizeNoteFontSize(value)));
   }
 
   function formatMeasure(value) {
@@ -18480,6 +19093,15 @@ function onWheel(e) {
   function getActiveLineWidth() {
     const selectedAnnotation = getSelectedAnnotation();
     return selectedAnnotation ? getLineWidth(selectedAnnotation) : normalizeLineWidth(state.lineWidth);
+  }
+
+  // A note's own size control (US-092), mirroring getActiveLineWidth exactly:
+  // a selected note's chip reads and writes THAT note's fontSize directly, and
+  // falls back to the sticky "next note" default only when nothing is
+  // selected — so the chip never needs state.noteFontSize resynced on select.
+  function getActiveNoteFontSize() {
+    const selectedNote = getSelectedNote();
+    return selectedNote ? noteFontSizeOf(selectedNote) : normalizeNoteFontSize(state.noteFontSize);
   }
 
   // ---- src/manual/viewport.js ----
@@ -18736,18 +19358,65 @@ function scalePointAbout(point, origin, factor) {
   point.y = origin.y + (point.y - origin.y) * factor;
 }
 
+// Split out (audit fix) so a GROUP resize can apply this to one annotation
+// exactly once, instead of once per grouped image whose bounds happen to
+// contain it. See scaleAnnotationsForImageResize below and
+// resizeImagesFromCorner (pointer-events.js) for why that distinction matters.
+function scaleAnnotationAbout(ann, origin, factor) {
+  scalePointAbout(ann.start, origin, factor);
+  scalePointAbout(ann.end, origin, factor);
+  for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
+    if (ann[key]) scalePointAbout(ann[key], origin, factor);
+  }
+  scalePointAbout(ann.label, origin, factor);
+  ann.measureScale = (ann.measureScale || 1) * factor;
+}
+
 function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
   if (!previousBounds || !origin) return;
   if (!Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 1e-9) return;
-  for (const ann of annotationsWithinBounds(previousBounds)) {
-    scalePointAbout(ann.start, origin, factor);
-    scalePointAbout(ann.end, origin, factor);
-    for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
-      if (ann[key]) scalePointAbout(ann[key], origin, factor);
+  for (const ann of annotationsWithinBounds(previousBounds)) scaleAnnotationAbout(ann, origin, factor);
+}
+
+// US-092: text notes ride with their sketch exactly as lines do.
+function getNotesOnImage(image) {
+  return notesWithinBounds(getImageBounds(image));
+}
+
+// Which notes belong to this sketch. A line answers that with its midpoint, and
+// a note's box centre is the direct analogue — but a note has a second, stronger
+// claim a line does not: its LEADER. The commonest way a TD writes one is to
+// park the text in the white space beside the sketch and point an arrow at the
+// detail, which puts the box centre outside the photo entirely. Going by the box
+// alone, that note would sit still while the sketch moved out from under its
+// arrow — the same detachment US-089 and US-091 fixed for lines, reintroduced by
+// the very feature meant to annotate them. So: the box centre inside the bounds,
+// OR any leader tip inside them.
+//
+// A note whose arrows point into two different photos follows whichever one is
+// dragged. That is the honest answer to an ambiguous question, and a group drag
+// de-duplicates through a Set so it can never be moved twice.
+function notesWithinBounds(bounds) {
+  const inside = (x, y) => x >= bounds.x && x <= bounds.x + bounds.width
+    && y >= bounds.y && y <= bounds.y + bounds.height;
+  return (state.notes || []).filter(note => {
+    if (!note || !note.pos) return false;
+    const box = noteBounds(note);
+    if (box && inside(box.x + box.width / 2, box.y + box.height / 2)) return true;
+    for (const leader of (note.leaders || [])) {
+      if (inside(leader.x, leader.y)) return true;
     }
-    scalePointAbout(ann.label, origin, factor);
-    ann.measureScale = (ann.measureScale || 1) * factor;
-  }
+    return false;
+  });
+}
+
+// The note counterpart of scaleAnnotationsForImageResize. No measureScale
+// equivalent: a note carries no measurement, so scaling it restates nothing —
+// which is why this is a plain geometric scale and the annotation version is not.
+function scaleNotesForImageResize(previousBounds, origin, factor) {
+  if (!previousBounds || !origin) return;
+  if (!Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 1e-9) return;
+  for (const note of notesWithinBounds(previousBounds)) scaleNoteAbout(note, origin, factor);
 }
 
   // ---- src/manual/image-records.js ----
@@ -18834,6 +19503,9 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
     el.toolCurved.classList.toggle('active', state.tool === 'curved');
     el.toolEraser.classList.toggle('active', state.tool === 'eraser');
     el.toolEraser.disabled = state.images.length === 0;
+    // US-092: the Text tool has no image requirement — a note can be a title or
+    // a general remark on an otherwise empty board.
+    el.toolText.classList.toggle('active', state.tool === 'text');
     el.lineStyleControl.hidden = state.tool === 'eraser';
     el.lineWidthChip.hidden = state.tool === 'eraser';
     el.brushSizeChip.hidden = state.tool !== 'eraser';
@@ -18847,13 +19519,26 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
     const imageCount = state.images.length;
     const selectedAnnotation = getSelectedAnnotation();
     const selectedImage = getSelectedImage();
+    const selectedNote = getSelectedNote();
+    // US-092: the note's size chip lives beside Line, gated on a note being
+    // selected OR the Text tool being ready to place one — never both chips
+    // hidden at once for a note, never both shown at once for a line.
+    el.fontSizeChip.hidden = !(selectedNote || state.tool === 'text');
     const activeStyle = selectedAnnotation ? getLineStyle(selectedAnnotation) : state.drawStyle;
-    const activeColor = selectedAnnotation ? normalizeColorKey(selectedAnnotation.color) : state.drawColor;
+    // A selected note owns the swatch too — read from the note itself rather
+    // than from state.drawColor, so an Undo that restores its old colour shows
+    // up in the toolbar instead of leaving the stale draw default on display.
+    const activeColor = selectedAnnotation ? normalizeColorKey(selectedAnnotation.color)
+      : selectedNote ? normalizeColorKey(selectedNote.color)
+        : state.drawColor;
     const activeArrowType = selectedAnnotation ? getArrowType(selectedAnnotation) : state.arrowType;
     const activeLineWidth = getActiveLineWidth();
     updateLineStyleControl(activeStyle);
     if (el.lineWidthInput && document.activeElement !== el.lineWidthInput) {
       el.lineWidthInput.value = formatLineWidth(activeLineWidth);
+    }
+    if (el.fontSizeInput && document.activeElement !== el.fontSizeInput) {
+      el.fontSizeInput.value = formatNoteFontSize(getActiveNoteFontSize());
     }
     el.arrowDoubleBtn.classList.toggle('active', activeArrowType === 'double');
     el.arrowSingleBtn.classList.toggle('active', activeArrowType === 'single');
@@ -18869,8 +19554,14 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
     el.arrowNoneBtn.disabled = false;
 
     let toolText = '';
-    if (state.tool === 'select') {
-      if (selectedAnnotation) {
+    if (state.tool === 'text') {
+      toolText = 'Text – Click the board to write a note. <span class="kbd">Enter</span> makes a new line; <span class="kbd">⌘/Ctrl</span>+<span class="kbd">Enter</span> or a click on the board finishes it.';
+    } else if (state.tool === 'select') {
+      if (selectedNote) {
+        toolText = selectedNote.leaders && selectedNote.leaders.length
+          ? 'Select – Drag the note or an arrow tip to move it, double-click a tip to remove that arrow, double-click the text to edit it, <span class="kbd">⌫</span> deletes the note.'
+          : 'Select – Drag the note to move it, drag the <strong>+</strong> handle out to point an arrow at a detail, double-click to edit the text, <span class="kbd">⌫</span> deletes it.';
+      } else if (selectedAnnotation) {
         toolText = 'Select – Drag line, endpoints, curve shape handle, or label. <span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
       } else if (selectedImage) {
         toolText = 'Select – Drag the image to move it, drag a corner handle to resize, use wheel to zoom, or hold <span class="kbd">Space</span> to pan.';
@@ -18914,7 +19605,7 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
     el.imageStatus.innerHTML = modeTag + boardHtml;
 
     el.countStatus.innerHTML = '<strong>Images:</strong> ' + imageCount + ' &nbsp;•&nbsp; <strong>Annotations:</strong> ' + annotationCount;
-    el.deleteBtn.disabled = !(selectedAnnotation || (selectedImage && !selectedImage.locked));
+    el.deleteBtn.disabled = !(selectedAnnotation || selectedNote || (selectedImage && !selectedImage.locked));
     const lineActionsEnabled = state.appMode !== 'auto';
     el.copyLineBtn.disabled = !(selectedAnnotation && lineActionsEnabled);
     el.reflectLineBtn.disabled = !(selectedAnnotation && lineActionsEnabled);
@@ -19002,6 +19693,9 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
     // Lock manual creation/edit tools while in Auto Mode.
     el.toolStraight.disabled = isAuto;
     el.toolCurved.disabled = isAuto;
+    // US-092: notes are Manual-only to CREATE. They still RENDER in Auto (they
+    // are board content, like applied lines) — this only closes the tool.
+    el.toolText.disabled = isAuto;
     if (isAuto) {
       el.toolEraser.disabled = true;
       // US-052: Delete in Auto Mode removes a selected PHOTO only (annotations/
@@ -19323,6 +20017,9 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
     for (const ann of state.annotations) max = Math.max(max, Number(ann.id) || 0);
     for (const image of state.images) max = Math.max(max, Number(image.id) || 0);
     for (const draft of state.autoMode.draftAnnotations) max = Math.max(max, Number(draft.id) || 0);
+    // US-092: notes draw from the same id counter, so a file with no idCounter
+    // would otherwise re-issue their ids and break getNoteById lookups.
+    for (const note of state.notes || []) max = Math.max(max, Number(note.id) || 0);
     // BOM rows/callouts/groupIds draw from the same counter (and since
     // US-074 every project has seeded rows) — skipping them here would let a
     // project file with a missing idCounter re-issue their ids to new
@@ -19449,6 +20146,236 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
     return state.images.find(image => image.id === id) || null;
   }
 
+  // ---- src/manual/note-model.js ----
+// Board text notes (US-092): the note record and the pure geometry that acts
+// on it. Rendering lives in src/render/render-notes.js; pointer handling in
+// src/manual/pointer-events.js.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// A note is NOT an annotation, and that separation is the point of the whole
+// feature. state.annotations is the MEASUREMENT collection — the spec panel,
+// the tolerance check, the grading model, the Excel table and
+// state.deletedPomKeys all bucket it by getLabelText(), which falls back to
+// whatever text the annotation carries. So the pre-US-092 way of writing free
+// text on the board (draw a line, type into its label) turned every remark into
+// a POM row and leaked it into the exported workbook. Notes live here instead,
+// and nothing in the measurement path ever reads them.
+//
+// Coordinates are WORLD pixels, like annotations — not normalized to an owning
+// image the way anchors and Construction callouts are. A note may sit in blank
+// space beside the sketch, where there is no owner to normalize against. The
+// cost is that the two transforms that carry board content with its photo
+// (US-089 drag, US-091 resize) have to carry notes explicitly.
+
+  // The note record. `leaders` starts empty: a new note is a plain caption, and
+  // the TD adds arrows only where they mean something. Each leader is a world
+  // point; the renderer draws box-edge -> point with an arrowhead and NO number
+  // (unlike the Construction/BOM callouts, whose pin carries its row's seq).
+  function createNote(text, pos, options) {
+    const opts = options || {};
+    return {
+      id: state.idCounter++,
+      text: String(text == null ? '' : text),
+      pos: { x: Number(pos && pos.x) || 0, y: Number(pos && pos.y) || 0 },
+      color: normalizeColorKey(opts.color || state.drawColor),
+      fontSize: normalizeNoteFontSize(opts.fontSize),
+      boxWidth: normalizeNoteBoxWidth(opts.boxWidth),
+      leaders: normalizeNoteLeaders(opts.leaders),
+    };
+  }
+
+  // Drop anything that is not a finite point rather than trusting the caller —
+  // a leader with a NaN coordinate would draw an invisible arrow and silently
+  // poison getContentBounds(), cropping the whole export.
+  function normalizeNoteLeaders(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(p => ({ x: Number(p && p.x), y: Number(p && p.y) }))
+      .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+  }
+
+  function normalizeNoteFontSize(value) {
+    const size = Number(value);
+    if (!Number.isFinite(size) || size <= 0) return NOTE_DEFAULT_FONT_SIZE;
+    return clamp(size, NOTE_MIN_FONT_SIZE, NOTE_MAX_FONT_SIZE);
+  }
+
+  function normalizeNoteBoxWidth(value) {
+    const width = Number(value);
+    if (!Number.isFinite(width) || width <= 0) return NOTE_DEFAULT_BOX_WIDTH;
+    return clamp(width, NOTE_MIN_BOX_WIDTH, NOTE_MAX_BOX_WIDTH);
+  }
+
+  // Coerce one record from a project file / history snapshot into the current
+  // shape. Returns null for anything that cannot be placed on the board, so a
+  // hand-edited or truncated file drops the bad note instead of throwing during
+  // load — the same forgiveness loadProject already applies to image records
+  // whose pixel data the autosave quota fallback stripped.
+  function normalizeNote(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const x = Number(raw.pos && raw.pos.x);
+    const y = Number(raw.pos && raw.pos.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    const id = Number(raw.id);
+    return {
+      id: Number.isFinite(id) ? id : state.idCounter++,
+      text: String(raw.text == null ? '' : raw.text),
+      pos: { x, y },
+      color: normalizeColorKey(raw.color),
+      fontSize: normalizeNoteFontSize(raw.fontSize),
+      boxWidth: normalizeNoteBoxWidth(raw.boxWidth),
+      leaders: normalizeNoteLeaders(raw.leaders),
+    };
+  }
+
+  function getNoteById(id) {
+    return (state.notes || []).find(note => note.id === id) || null;
+  }
+
+  // ---- Geometry -----------------------------------------------------------
+  // Every size below is in WORLD units, derived from the note's own fontSize —
+  // deliberately NOT divided by featureZoom() the way POM lines and callout
+  // numbers are. Those are review chrome and must hold a constant SCREEN size;
+  // a note is part of the drawing, so it scales with the sketch, and every
+  // export path then reproduces it correctly with no special casing.
+
+  function noteFontSpec(note) {
+    return '500 ' + noteFontSizeOf(note) + 'px system-ui, -apple-system, sans-serif';
+  }
+
+  function noteFontSizeOf(note) {
+    return normalizeNoteFontSize(note && note.fontSize);
+  }
+
+  function noteLineHeight(note) {
+    return noteFontSizeOf(note) * NOTE_LINE_HEIGHT_RATIO;
+  }
+
+  function notePadding(note) {
+    return noteFontSizeOf(note) * NOTE_PADDING_RATIO;
+  }
+
+  // Greedy word wrap at the note's boxWidth. Explicit newlines are kept — a TD
+  // typing a two-line instruction gets two lines. A blank line stays blank
+  // rather than collapsing, so paragraph spacing survives the round trip.
+  function wrapNoteLines(note) {
+    const text = String(note && note.text != null ? note.text : '');
+    const maxWidth = normalizeNoteBoxWidth(note && note.boxWidth) - notePadding(note) * 2;
+    const lines = [];
+    ctx.save();
+    ctx.font = noteFontSpec(note);
+    for (const paragraph of text.split('\n')) {
+      const words = paragraph.split(/\s+/).filter(Boolean);
+      if (!words.length) { lines.push(''); continue; }
+      let line = '';
+      for (const word of words) {
+        const next = line ? line + ' ' + word : word;
+        if (line && ctx.measureText(next).width > maxWidth) { lines.push(line); line = word; }
+        else line = next;
+      }
+      lines.push(line);
+    }
+    ctx.restore();
+    return lines.length ? lines : [''];
+  }
+
+  // The note's text box in world coordinates, shrink-wrapped to the longest
+  // wrapped line but never wider than boxWidth. pos is its TOP-LEFT corner.
+  function noteBounds(note) {
+    if (!note || !note.pos) return null;
+    const lines = wrapNoteLines(note);
+    const pad = notePadding(note);
+    const fontSize = noteFontSizeOf(note);
+    let widest = 0;
+    ctx.save();
+    ctx.font = noteFontSpec(note);
+    for (const line of lines) widest = Math.max(widest, ctx.measureText(line).width);
+    ctx.restore();
+    // An empty note still needs a body: it has to stay visible and grabbable.
+    const inner = Math.max(widest, fontSize * 1.6);
+    return {
+      x: note.pos.x,
+      y: note.pos.y,
+      width: inner + pad * 2,
+      height: lines.length * noteLineHeight(note) + pad * 2,
+      lines,
+    };
+  }
+
+  // Box plus every leader tip — what the export frame has to contain, and what
+  // a "does this note fit on the page" question is really asking.
+  function noteOuterBounds(note) {
+    const box = noteBounds(note);
+    if (!box) return null;
+    let minX = box.x, minY = box.y;
+    let maxX = box.x + box.width, maxY = box.y + box.height;
+    for (const leader of (note.leaders || [])) {
+      minX = Math.min(minX, leader.x);
+      minY = Math.min(minY, leader.y);
+      maxX = Math.max(maxX, leader.x);
+      maxY = Math.max(maxY, leader.y);
+    }
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+
+  // Where a leader leaves the box: the point on the box's edge facing the
+  // target, so the line starts at the border instead of under the text. Same
+  // idea as the Construction engine's ccEdgeToward, kept separate on purpose
+  // (ADR 0041 — those callout engines stay parallel forks, not shared code).
+  function noteEdgeToward(box, target) {
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const dx = target.x - cx;
+    const dy = target.y - cy;
+    if (!dx && !dy) return { x: cx, y: cy };
+    const tx = dx ? (box.width / 2) / Math.abs(dx) : Infinity;
+    const ty = dy ? (box.height / 2) / Math.abs(dy) : Infinity;
+    const t = Math.min(tx, ty, 1);
+    return { x: cx + dx * t, y: cy + dy * t };
+  }
+
+  // US-092 step 6: where the "pull a new arrow out of here" handle sits — just
+  // outside the box's bottom-right corner, at a constant SCREEN offset so it is
+  // reachable at any zoom and never covers the text. Deliberately OUTSIDE the
+  // box, not on its corner: a corner handle on a rectangle reads as "resize",
+  // and a note has no resize gesture.
+  function noteLeaderAddHandle(note) {
+    const box = noteBounds(note);
+    if (!box) return null;
+    const off = 9 / state.zoom;
+    return { x: box.x + box.width + off, y: box.y + box.height + off };
+  }
+
+  // Move the note and everything attached to it. Leaders are absolute world
+  // points, so they travel with the box rather than staying pinned to the
+  // sketch — a note dragged aside keeps pointing at the same relative spot,
+  // which is what "move the whole callout" means to a TD.
+  function moveNote(note, dx, dy) {
+    if (!note || !dx && !dy) return;
+    note.pos.x += dx;
+    note.pos.y += dy;
+    for (const leader of note.leaders || []) {
+      leader.x += dx;
+      leader.y += dy;
+    }
+  }
+
+  // Scale a note about `origin` by `factor` — the photo-resize path (US-091).
+  // Position, leader targets, type size and wrap width all scale together, so
+  // the note keeps its size and place relative to the garment it annotates.
+  function scaleNoteAbout(note, origin, factor) {
+    if (!note || !origin) return;
+    if (!Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 1e-9) return;
+    note.pos.x = origin.x + (note.pos.x - origin.x) * factor;
+    note.pos.y = origin.y + (note.pos.y - origin.y) * factor;
+    for (const leader of note.leaders || []) {
+      leader.x = origin.x + (leader.x - origin.x) * factor;
+      leader.y = origin.y + (leader.y - origin.y) * factor;
+    }
+    note.fontSize = normalizeNoteFontSize(note.fontSize * factor);
+    note.boxWidth = normalizeNoteBoxWidth(note.boxWidth * factor);
+  }
+
   // ---- src/auto/mode.js ----
 // Auto Mode entry/exit: mode switching, Auto Mode status chip, source
 // image selection. Source part for app.js. Run `npm run build`
@@ -19484,10 +20411,16 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
       state.tool = 'select';
       document.body.classList.remove('tool-eraser');
       // Clear any project selection so the user does not accidentally edit
-      // locked annotations.
-      if (state.selection.kind === 'annotation' || state.selection.kind === 'image') {
+      // locked annotations. US-092 adds 'note': notes are Manual-only to edit,
+      // and a selection carried into Auto would keep painting its outline over
+      // a board where nothing can act on it. Any open note editor closes with
+      // its text committed — losing what the TD typed because they clicked the
+      // mode toggle would be the worse of the two answers.
+      if (state.selection.kind === 'annotation' || state.selection.kind === 'image'
+          || state.selection.kind === 'note') {
         state.selection = { kind: null, id: null };
       }
+      commitNoteEditor();
       ensureAutoModeStatus();
     } else {
       // Leaving Auto Mode: clear draft selection + drop detection /
@@ -30360,6 +31293,7 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
   function isWorkingBoardEmpty() {
     return state.images.length === 0
       && state.annotations.length === 0
+      && (state.notes || []).length === 0
       && state.eraseStrokes.length === 0
       && state.autoMode.draftAnnotations.length === 0
       && !state.autoMode.detection;
@@ -30381,12 +31315,16 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
     state.deletedAutoAnnotations = [];
     state.images = [];
     state.eraseStrokes = [];
+    // US-092: notes are board content, so a whole-board reset takes them too.
+    // clearAllLinesKeepImage deliberately does NOT — a note is not a line.
+    state.notes = [];
     state.nextSequence = 1;
     state.selection = { kind: null, id: null };
     state.drawSession = null;
     state.eraseSession = null;
     state.interaction = null;
     state.editingLabelId = null;
+    discardNoteEditorSession();
     state.calibration = { unitsPerPx: null, unit: 'in' };
     state.autoMode = makeInitialAutoModeState();
     state.hiddenAnnIds = [];
@@ -30430,6 +31368,7 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
     state.drawSession = null;
     state.editingLabelId = null;
     el.labelEditor.style.display = 'none';
+    discardNoteEditorSession();
 
     // Lines are gone but the photo + detection remain — reveal the anchor
     // pins (they are hidden after an apply) so the board shows a clear next
@@ -33082,6 +34021,48 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
         };
       },
       getAnnotations: () => clone(state.annotations),
+      // US-092 Board text notes. getNotes is the read side; addNote is the
+      // test seam that stands in for the Text tool before the pointer layer
+      // exists, and behaves like it will — one history entry per note, so a
+      // suite can assert undo/redo and the save round-trip.
+      getNotes: () => clone(state.notes || []),
+      addNote: (text, pos, options) => {
+        const note = createNote(text, pos, options);
+        state.notes.push(note);
+        pushHistoryIfChanged();
+        if (typeof requestRender === 'function') requestRender();
+        return clone(note);
+      },
+      // US-092 step 6: where a note's grabbable geometry actually is — its
+      // shrink-wrapped box, its leader tips, and the handle that pulls a new
+      // arrow out. A test must AIM at these, and noteBounds depends on measured
+      // text so it cannot be recomputed outside the app; guessing the box from
+      // pos + boxWidth would mean the suite silently tests empty canvas the day
+      // the padding changes. Read-only, same spirit as getView.
+      getNoteHandles: (id) => {
+        const note = getNoteById(id);
+        if (!note) return null;
+        const box = noteBounds(note);
+        return {
+          box: box ? { x: box.x, y: box.y, width: box.width, height: box.height } : null,
+          add: clone(noteLeaderAddHandle(note)),
+          leaders: clone(note.leaders || []),
+        };
+      },
+      // US-092 step 5: the note editor's live session, so a suite can assert
+      // that a Text-tool click OPENED an editor and what it holds, rather than
+      // inferring it from a note that may not exist yet. `mode` distinguishes
+      // placing a new note from re-opening one — the two commit paths differ.
+      getNoteEditor: () => {
+        const session = state.noteEditor;
+        if (!session) return null;
+        return {
+          mode: session.id != null ? 'edit' : 'create',
+          noteId: session.id != null ? session.id : null,
+          value: String(el.noteEditor.value || ''),
+          visible: el.noteEditor.style.display === 'block',
+        };
+      },
       // Test-only: set the review-time hidden POM lines by annotation id — the
       // same session-only state the panel's × toggle writes (state.hiddenAnnIds).
       // Lets the export suite assert hidden lines are omitted from the spec
@@ -33220,6 +34201,13 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
       getState: () => ({
         appMode: state.appMode,
         activePage: state.activePage,
+        // US-092: the pointer layer's own outputs. `state` itself is inside the
+        // bundle's IIFE and unreachable from a test page, so "which tool is
+        // active" and "what is selected" have to come through here — a click
+        // that selected the wrong KIND of thing is otherwise invisible.
+        tool: state.tool,
+        selection: { kind: state.selection.kind, id: state.selection.id != null ? state.selection.id : null },
+        noteCount: (state.notes || []).length,
         autoStatus: state.autoMode.status,
         lastError: state.autoMode.lastError,
         validation: clone(state.autoMode.validation),
@@ -33468,9 +34456,12 @@ function scaleAnnotationsForImageResize(previousBounds, origin, factor) {
 // Source part for app.js. Run `npm run build` after editing.
 //
 // exportPdf orchestrates: createExportCanvas redirects the global ctx onto
-// a high-DPI temp canvas, drawAnnotationForExport draws each annotation at
-// full alpha, then dataURLToUint8Array + makeSinglePagePdfBlob assemble a
-// PDF 1.4 byte stream that downloadBlob hands off to the browser.
+// a high-DPI temp canvas, drawBoardContentForExport paints the board at full
+// alpha, then dataURLToUint8Array + makeSinglePagePdfBlob assemble a PDF 1.4
+// byte stream that downloadBlob hands off to the browser.
+//
+// drawBoardContentForExport is also Copy Image's painter (copy-image.js), so
+// the export z-order is defined once and cannot drift between the two.
 
 async function exportPdf() {
   const bounds = getContentBounds();
@@ -33502,10 +34493,42 @@ function visibleExportAnnotations() {
   return state.annotations.filter(ann => !isAnnHidden(ann.id));
 }
 
+// US-092: every note exports. Notes carry no hide toggle — the review × on the
+// spec panel hides a POM row, and a note is not a POM. Kept as a named function
+// beside visibleExportAnnotations so a future per-note toggle has one place to
+// land instead of three export call sites.
+function exportNotes() {
+  return state.notes || [];
+}
+
+// The one definition of what an export paints and in what order, shared by
+// Export PDF and Copy Image (and through Copy Image, by the Excel embedded
+// sketch and the Preview board sheet). Two passes over the annotations, not one:
+// POM numbers go on top of everything, exactly as the live board draws them
+// (see the label pass in render()). Before US-092 the export drew each line and
+// its own number together, so a later line could paint over an earlier number —
+// the same clutter the screen renderer had already been fixed for.
+function drawBoardContentForExport() {
+  for (const image of state.images) drawImageItem(image);
+  for (const stroke of state.eraseStrokes) drawEraseStroke(stroke);
+  const annotations = visibleExportAnnotations();
+  for (const ann of annotations) drawLineCore(ann, 1);
+  for (const note of exportNotes()) drawNote(note);
+  if (!labelsVisible()) return;
+  for (const ann of annotations) {
+    drawLabel(ann.label, getLabelText(ann), false, 1, getAnnotationColor(ann));
+  }
+}
+
 function getContentBounds() {
   const boxes = [];
   for (const image of state.images) boxes.push(getImageBounds(image));
   for (const ann of visibleExportAnnotations()) boxes.push(getAnnotationBounds(ann));
+  // A note at the edge of the board must widen the frame, or the export crops
+  // the very remark it was written to deliver. Leader tips count too — they
+  // reach away from the box, and an arrow with its head sliced off is worse
+  // than no arrow.
+  for (const note of exportNotes()) boxes.push(noteOuterBounds(note));
   const validBoxes = boxes.filter(box => box && isFinite(box.x) && isFinite(box.y) && isFinite(box.width) && isFinite(box.height));
   if (!validBoxes.length) return null;
   let minX = validBoxes[0].x;
@@ -33585,9 +34608,7 @@ function createExportCanvas(bounds) {
   ctx.save();
   ctx.translate(state.panX, state.panY);
   ctx.scale(state.zoom, state.zoom);
-  for (const image of state.images) drawImageItem(image);
-  for (const stroke of state.eraseStrokes) drawEraseStroke(stroke);
-  for (const ann of visibleExportAnnotations()) drawAnnotationForExport(ann);
+  drawBoardContentForExport();
   ctx.restore();
   ctx = oldCtx;
   state.zoom = oldZoom;
@@ -33596,12 +34617,6 @@ function createExportCanvas(bounds) {
   state.panY = oldPanY;
   requestRender();
   return { canvas: exportCanvas, pageWidthPt: pageWidthMm * 72 / 25.4, pageHeightPt: pageHeightMm * 72 / 25.4 };
-}
-
-function drawAnnotationForExport(ann) {
-  drawLineCore(ann, 1);
-  if (!labelsVisible()) return;
-  drawLabel(ann.label, getLabelText(ann), false, 1, getAnnotationColor(ann));
 }
 
 function dataURLToUint8Array(dataURL) {
@@ -33770,9 +34785,7 @@ function makeExportFileName() {
       ctx.save();
       ctx.translate(state.panX, state.panY);
       ctx.scale(state.zoom, state.zoom);
-      for (const image of state.images) drawImageItem(image);
-      for (const stroke of state.eraseStrokes) drawEraseStroke(stroke);
-      for (const ann of visibleExportAnnotations()) drawAnnotationForExport(ann);
+      drawBoardContentForExport();
       ctx.restore();
     } finally {
       ctx = oldCtx;
@@ -35092,6 +36105,57 @@ function makeExportFileName() {
     return false;
   }
 
+  // US-092 step 6: the SELECTED note's own small handles — the tip of each
+  // leader arrow, and the handle that pulls a new one out. Selected-only, which
+  // mirrors hitTestSelectedHandles for lines and, more importantly, mirrors
+  // what is DRAWN: these handles appear only on the selected note, and making
+  // an invisible target grabbable is worse than asking for a click first.
+  //
+  // Tips are tested before the add handle so a leader dropped near the box's
+  // bottom-right corner stays grabbable rather than being shadowed by it.
+  // Nearest tip wins, not first — two arrows pointing at nearby details is a
+  // normal thing for a TD to draw.
+  function hitTestSelectedNoteHandles(world, note) {
+    if (!note) return null;
+    const radius = 11 / state.zoom;
+    const leaders = note.leaders || [];
+    let best = null;
+    let bestDist = Infinity;
+    for (let i = 0; i < leaders.length; i += 1) {
+      const dist = distance(world, leaders[i]);
+      // `<=` so a later (drawn-on-top) tip wins an exact tie.
+      if (dist <= radius && dist <= bestDist) {
+        bestDist = dist;
+        best = { part: 'leader', index: i };
+      }
+    }
+    if (best) return best;
+    const add = noteLeaderAddHandle(note);
+    if (add && distance(world, add) <= radius) return { part: 'leader-add', index: -1 };
+    return null;
+  }
+
+  // US-092: which text note is under this point. Topmost-first, like the line
+  // and photo tests — the last note in the array draws last, so it is the one
+  // the TD sees on top and the one a click should take.
+  //
+  // No forgiving catch ribbon here, unlike a line: a note is a filled box, so
+  // its visible edge IS its target, and padding it would only steal presses
+  // from the sketch around it.
+  function hitTestNotes(world) {
+    const notes = state.notes || [];
+    for (let i = notes.length - 1; i >= 0; i -= 1) {
+      const note = notes[i];
+      const box = noteBounds(note);
+      if (!box) continue;
+      if (world.x >= box.x && world.x <= box.x + box.width
+        && world.y >= box.y && world.y <= box.y + box.height) {
+        return { id: note.id, part: 'box' };
+      }
+    }
+    return null;
+  }
+
   function hitTestImages(world) {
     for (let i = state.images.length - 1; i >= 0; i -= 1) {
       const image = state.images[i];
@@ -35207,8 +36271,10 @@ function makeExportFileName() {
     image.width = width;
     image.height = height;
 
-    // The photo scales about the opposite corner, so its lines do too.
+    // The photo scales about the opposite corner, so its lines and its notes do
+    // too — both are absolute world geometry that nothing else would move.
     scaleAnnotationsForImageResize(previousBounds, anchor, factor);
+    scaleNotesForImageResize(previousBounds, anchor, factor);
   }
 
   function pointInLabelBounds(point, labelPos, seq, padding) {
@@ -35704,6 +36770,180 @@ function makeExportFileName() {
     ctx.lineWidth = 2 / state.zoom;
     ctx.strokeStyle = color;
     ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- src/render/render-notes.js ----
+// Board text note drawing (US-092). The record and its geometry live in
+// src/manual/note-model.js; this file only paints.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Everything here is drawn in WORLD coordinates and sized off the note's own
+// fontSize, so it scales with the sketch the way ink does. That is what makes
+// the export paths free: copy-image and export-pdf redirect the global ctx and
+// re-run this same code, with no featureZoom() compensation of the kind the POM
+// lines and callout numbers need (they hold a constant SCREEN size, notes do
+// not — see noteFontSpec).
+//
+// A leader is a line plus an arrowhead and NOTHING else. The Construction and
+// BOM callouts put a filled disc carrying the row's sequence number at the
+// target; a Board note belongs to no table and has no number, and the TD asked
+// for the arrow without it.
+
+  function drawNote(note) {
+    const box = noteBounds(note);
+    if (!box) return;
+    const color = LINE_COLORS[normalizeColorKey(note.color)] || LINE_COLOR;
+    const fontSize = noteFontSizeOf(note);
+
+    ctx.save();
+    for (const leader of (note.leaders || [])) drawNoteLeader(box, leader, color, fontSize);
+    drawNoteBox(box, color, fontSize, noteGroundFill(color));
+    drawNoteText(note, box, color, fontSize);
+    ctx.restore();
+  }
+
+  // White is a first-class board colour — the toolbar swatch says "White line
+  // (for dark sketch areas)" — and a white note on the default white ground is
+  // an EMPTY BOX: measured, 0 non-white pixels where the text should be. So a
+  // white note inverts: dark chip, white text. drawLabel in render-annotations.js
+  // solves the same problem for POM numbers with a dark halo; a note has a real
+  // ground to work with, so flipping the ground is cleaner than outlining every
+  // glyph, and it keeps the border (drawn in the note's own colour) visible too.
+  function noteGroundFill(color) {
+    return String(color).toLowerCase() === '#ffffff'
+      ? 'rgba(17,24,39,0.92)'
+      : 'rgba(255,255,255,0.92)';
+  }
+
+  function drawNoteLeader(box, target, color, fontSize) {
+    const from = noteEdgeToward(box, target);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1, fontSize * 0.09);
+    ctx.lineCap = 'round';
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(target.x, target.y);
+    ctx.stroke();
+    const angle = Math.atan2(target.y - from.y, target.x - from.x);
+    drawArrowhead(target, angle, fontSize * 0.5, color);
+    ctx.restore();
+  }
+
+  // White ground so the text stays legible over sketch ink, plus a faint border
+  // in the note's own colour. Without the border a note over the white page has
+  // no edge at all, and the TD cannot see what a click will grab or where a
+  // leader starts.
+  function drawNoteBox(box, color, fontSize, groundFill) {
+    ctx.save();
+    ctx.fillStyle = groundFill;
+    ctx.fillRect(box.x, box.y, box.width, box.height);
+    ctx.globalAlpha = 0.38;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(0.5, fontSize * 0.055);
+    ctx.setLineDash([]);
+    ctx.strokeRect(box.x, box.y, box.width, box.height);
+    ctx.restore();
+  }
+
+  // Selection chrome (US-092, step 5). Deliberately the same dashed
+  // SELECT_COLOR outline the photo selection uses, at a constant SCREEN width
+  // and dash length so it reads identically at any zoom — the note's own ink
+  // scales with the board, but this is review chrome and must not. It sits a
+  // few pixels OUTSIDE the box so it never covers the first line of text.
+  //
+  // Never called from the export paths: drawBoardContentForExport draws bodies,
+  // not selection helpers, so a selected note exports clean.
+  function drawNoteSelection(note) {
+    const box = noteBounds(note);
+    if (!box) return;
+    const pad = 3 / state.zoom;
+    ctx.save();
+    ctx.lineWidth = 2 / state.zoom;
+    ctx.strokeStyle = SELECT_COLOR;
+    ctx.setLineDash([8 / state.zoom, 5 / state.zoom]);
+    ctx.strokeRect(box.x - pad, box.y - pad, box.width + pad * 2, box.height + pad * 2);
+    ctx.restore();
+    // Step 6: a grab handle on each arrow's tip, and the one that pulls a new
+    // arrow out. Drawn only here, so they exist exactly where they are
+    // grabbable — hitTestSelectedNoteHandles is selected-only for the same
+    // reason.
+    for (const leader of (note.leaders || [])) drawNoteLeaderHandle(leader);
+    const add = noteLeaderAddHandle(note);
+    if (add) drawNoteLeaderAddHandle(add);
+  }
+
+  // Hollow, like the photo's resize handles: it marks a point you can pick up.
+  function drawNoteLeaderHandle(point) {
+    const r = 5.5 / state.zoom;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = 2 / state.zoom;
+    ctx.strokeStyle = SELECT_COLOR;
+    ctx.setLineDash([]);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Filled with a white plus: this one MAKES something rather than moving
+  // something, and it sits where a rectangle's corner handle would, so it has
+  // to say "add" clearly enough not to be read as "resize" (a note has no
+  // resize gesture).
+  function drawNoteLeaderAddHandle(point) {
+    const r = 7 / state.zoom;
+    const arm = 3.4 / state.zoom;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = SELECT_COLOR;
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.8 / state.zoom;
+    ctx.lineCap = 'round';
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(point.x - arm, point.y);
+    ctx.lineTo(point.x + arm, point.y);
+    ctx.moveTo(point.x, point.y - arm);
+    ctx.lineTo(point.x, point.y + arm);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // The arrows of a note that is open in the editor. The box and text are
+  // skipped there (the textarea is showing them live), but the arrows are not
+  // chrome — they say what the note is pointing at, which is exactly the thing
+  // the TD is looking at while deciding what to type.
+  function drawNoteLeadersOnly(note) {
+    const box = noteBounds(note);
+    if (!box) return;
+    const color = LINE_COLORS[normalizeColorKey(note.color)] || LINE_COLOR;
+    const fontSize = noteFontSizeOf(note);
+    ctx.save();
+    for (const leader of (note.leaders || [])) drawNoteLeader(box, leader, color, fontSize);
+    ctx.restore();
+  }
+
+  function drawNoteText(note, box, color, fontSize) {
+    const pad = notePadding(note);
+    const lineHeight = noteLineHeight(note);
+    ctx.save();
+    ctx.font = noteFontSpec(note);
+    ctx.fillStyle = color;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    // Centre each line's glyphs inside its line box: textBaseline 'top' anchors
+    // to the em box, so the leftover leading has to be split by hand or the
+    // text sits high in the note.
+    const offset = (lineHeight - fontSize) / 2;
+    box.lines.forEach((line, index) => {
+      ctx.fillText(line, box.x + pad, box.y + pad + index * lineHeight + offset);
+    });
     ctx.restore();
   }
 
@@ -36650,6 +37890,39 @@ function onDoubleClick(e) {
   if (state.tool !== 'select') return;
   const mouse = getMousePos(e);
   const world = screenToWorld(mouse.x, mouse.y);
+  // Audit-found bug: notes are Manual-only to edit, and onMouseDown's Auto-Mode
+  // branch (top of the function, above) never reaches a note hit-test at all —
+  // but this function had no equivalent gate, so a genuine double-click bypassed
+  // the lock completely. It could open the live #noteEditor over a read-only
+  // Auto Mode board, and an empty commit from there deletes the note even
+  // though deleteSelected() explicitly refuses to while state.appMode is
+  // 'auto'. Both note gestures below (remove-a-tip, edit-the-text) go behind
+  // the same gate.
+  if (state.appMode !== 'auto') {
+    // US-092 step 6: double-click an arrow's TIP to remove just that arrow.
+    // Ahead of the note-box test below because a tip is a far smaller and more
+    // specific target, and because a note whose box a leader happens to cross
+    // must still give up the tip. Selected-note only, matching where the grab
+    // handles are drawn and hit-tested.
+    const selectedNoteForTips = getSelectedNote();
+    const tipHit = selectedNoteForTips
+      ? hitTestSelectedNoteHandles(world, selectedNoteForTips) : null;
+    if (tipHit && tipHit.part === 'leader') {
+      removeNoteLeader(selectedNoteForTips, tipHit.index);
+      return;
+    }
+
+    // US-092: double-click a note to edit its text — the same gesture that
+    // opens a line's label editor. Tested before the line body for the reason
+    // the press chain uses: the note's box is opaque, so a line under it is
+    // not what the TD is aiming at.
+    const noteHit = hitTestNotes(world);
+    if (noteHit) {
+      setSelection('note', noteHit.id);
+      openNoteEditor(noteHit.id);
+      return;
+    }
+  }
   const annHit = hitTestAnnotations(world);
   if (annHit) {
     setSelection('annotation', annHit.id);
@@ -36764,6 +38037,24 @@ function requestRender() {
       }
     }
 
+    // US-092: text notes sit above every line body — a note is the TD's remark
+    // ON the drawing — but BELOW the anchor layer, so a note can never hide an
+    // anchor pin in Auto Mode (notes are not editable there; anchors are the
+    // whole job). The POM number pass below still paints last, so a note never
+    // covers a callout number either.
+    // The note currently OPEN in the editor keeps its ARROWS but loses its box
+    // and text: the textarea is sitting over that exact spot showing the live
+    // text, and painting the committed text underneath it would show a stale
+    // copy peeking out whenever the box grew — but the arrows are not chrome,
+    // they say what the note points at, which is what the TD is looking at while
+    // deciding what to write. Exports are unaffected either way; they draw from
+    // exportNotes(), not from here.
+    const editingNoteId = state.noteEditor && state.noteEditor.id != null ? state.noteEditor.id : null;
+    for (const note of (state.notes || [])) {
+      if (note.id === editingNoteId) drawNoteLeadersOnly(note);
+      else drawNote(note);
+    }
+
     // Anchors render above drafts so they always stay grabbable.
     if (state.appMode === 'auto') {
       drawAnchors();
@@ -36823,6 +38114,27 @@ function requestRender() {
       }
     }
 
+    // US-092: the selected note's outline. Manual only — notes are not editable
+    // in Auto Mode, so selection chrome there would advertise a gesture that
+    // does nothing.
+    //
+    // Audit-found bug: also skipped for the note currently open in the editor —
+    // same `editingNoteId` as the box+text suppression above, and for the same
+    // reason, one layer late. drawNoteSelection derives the dashed rectangle and
+    // both handle kinds from noteBounds(note), which reads note.text; typing in
+    // the textarea never touches note.text (only commitNoteEditor does) and
+    // never calls requestRender(), so this chrome would sit frozen at the
+    // PRE-EDIT box while the textarea grows or shrinks under it — a stale
+    // outline, and handles that end up floating detached (note shrank) or
+    // buried under the textarea (note grew). It cannot be clicked either way:
+    // any mousedown while the editor is open commits and returns before any
+    // hit-test runs. Hiding it is simpler and more honest than trying to make
+    // dashed-canvas-chrome track a live DOM textarea's measured size.
+    if (state.appMode !== 'auto') {
+      const selectedNote = getSelectedNote();
+      if (selectedNote && selectedNote.id !== editingNoteId) drawNoteSelection(selectedNote);
+    }
+
     if (state.appMode === 'auto') {
       const selectedDraft = getSelectedDraft();
       if (selectedDraft
@@ -36846,6 +38158,7 @@ function requestRender() {
 
     ctx.restore();
     positionLabelEditor();
+    positionNoteEditor();
   }
 
   function drawLengthReadoutDuringHandleDrag() {

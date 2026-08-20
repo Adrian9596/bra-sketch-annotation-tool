@@ -805,6 +805,115 @@ async function main() {
     `resizing the sketch moved a measured value by ${resize.worstValueDriftPct}% — a layout act must not restate a measurement`);
   console.log(`board-interaction-check: resize x${resize.imgScale} scales all ${resize.n} lines and changes no measured value`);
 
+  // ---- 7c. Text notes ride with the sketch, dragged AND resized (US-092) ----
+  // The same defect class as US-089 (drafts left behind by a drag) and US-091
+  // (lines left behind by a resize), now for notes. Two fixtures, because a note
+  // attaches to a sketch in two different ways: one written ON the photo, and
+  // one parked in the white space BESIDE it with an arrow pointing in. The
+  // second is the commonest shape a TD writes and the one a box-centre-only rule
+  // would silently strand — its arrow would end up pointing at empty board.
+  const noteRide = await s.eval(`(async () => {
+    const B = window.__BI;
+    await B.restore();
+    B.clearSelection();
+    await B.settle();
+    const im0 = B.d.getImages()[0];
+    const onPhoto = { x: im0.x + im0.width * 0.30, y: im0.y + im0.height * 0.12 };
+    const beside  = { x: im0.x + im0.width + 60, y: im0.y + im0.height * 0.25 };
+    const tip     = { x: im0.x + im0.width * 0.70, y: im0.y + im0.height * 0.55 };
+    const inside = B.d.addNote('ON THE PHOTO', onPhoto, { color: 'blue', fontSize: 12, boxWidth: 120 });
+    const outside = B.d.addNote('BESIDE IT', beside, { color: 'blue', fontSize: 12, boxWidth: 120, leaders: [tip] });
+    await B.settle();
+    const shot = () => {
+      const out = {};
+      for (const n of B.d.getNotes()) {
+        out[n.id] = { x: n.pos.x, y: n.pos.y, f: n.fontSize, w: n.boxWidth,
+          lead: (n.leaders[0] ? [n.leaders[0].x, n.leaders[0].y] : null) };
+      }
+      return out;
+    };
+
+    // --- drag ---
+    const beforeDrag = shot();
+    const imBefore = B.d.getImages()[0];
+    // Press point on the photo furthest from every line, so the drag is claimed
+    // by the photo and not by a line or a marquee (US-086 select-then-drag).
+    let spot = null, bestClear = -1;
+    for (let gx = 1; gx <= 14; gx += 1) for (let gy = 1; gy <= 14; gy += 1) {
+      const p = { x: imBefore.x + imBefore.width * gx / 15, y: imBefore.y + imBefore.height * gy / 15 };
+      let clear = Infinity;
+      for (const a of B.d.getAnnotations()) {
+        const vx = a.end.x - a.start.x, vy = a.end.y - a.start.y;
+        const len2 = vx * vx + vy * vy || 1;
+        const t = Math.max(0, Math.min(1, ((p.x - a.start.x) * vx + (p.y - a.start.y) * vy) / len2));
+        clear = Math.min(clear, Math.hypot(p.x - (a.start.x + vx * t), p.y - (a.start.y + vy * t)));
+      }
+      if (clear > bestClear) { bestClear = clear; spot = p; }
+    }
+    const sp = B.w2s(spot);
+    B.ev('mousedown', sp.x, sp.y); B.ev('mouseup', sp.x, sp.y);   // select
+    await B.settle();
+    B.ev('mousedown', sp.x, sp.y);
+    const draggedOpened = (B.d.getInteraction() || {}).type;
+    for (let i = 1; i <= 5; i += 1) B.ev('mousemove', sp.x + 90 * i / 5, sp.y + 40 * i / 5);
+    B.ev('mouseup', sp.x + 90, sp.y + 40);
+    await B.settle();
+    const afterDrag = shot();
+    const imgDx = B.d.getImages()[0].x - imBefore.x;
+
+    // --- resize, from the state the drag left behind ---
+    const imMid = B.d.getImages()[0];
+    const beforeResize = shot();
+    const se = B.w2s({ x: imMid.x + imMid.width, y: imMid.y + imMid.height });
+    B.ev('mousedown', se.x, se.y);
+    const resizeOpened = (B.d.getInteraction() || {}).type;
+    for (let i = 1; i <= 6; i += 1) B.ev('mousemove', se.x + 120 * i / 6, se.y + 90 * i / 6);
+    B.ev('mouseup', se.x + 120, se.y + 90);
+    await B.settle();
+    const afterResize = shot();
+    const imgScale = B.d.getImages()[0].width / imMid.width;
+    const anchor = { x: imMid.x, y: imMid.y }; // SE drag scales about the NW corner
+
+    await B.restore();
+    return {
+      ids: { inside: inside.id, outside: outside.id },
+      draggedOpened, resizeOpened, imgDx, imgScale: +imgScale.toFixed(4),
+      beforeDrag, afterDrag, beforeResize, afterResize, anchor,
+    };
+  })()`);
+  check(noteRide.draggedOpened === 'drag-image',
+    `the photo press opened ${noteRide.draggedOpened} instead of a photo drag — nothing was tested`);
+  check(Math.abs(noteRide.imgDx) > 1, `the photo did not move (${noteRide.imgDx}) — nothing was tested`);
+  for (const key of ['inside', 'outside']) {
+    const id = noteRide.ids[key];
+    const b = noteRide.beforeDrag[id];
+    const a = noteRide.afterDrag[id];
+    check(!!a, `the ${key} note vanished during the drag`);
+    check(Math.abs((a.x - b.x) - noteRide.imgDx) < 0.5,
+      `the ${key} note did not travel with the photo: photo moved ${noteRide.imgDx.toFixed(2)}, note moved ${(a.x - b.x).toFixed(2)}`);
+    if (b.lead) {
+      check(Math.abs((a.lead[0] - b.lead[0]) - noteRide.imgDx) < 0.5,
+        `the ${key} note's leader stayed behind: it moved ${(a.lead[0] - b.lead[0]).toFixed(2)} against the photo's ${noteRide.imgDx.toFixed(2)} — the arrow would point at empty board`);
+    }
+  }
+  check(noteRide.resizeOpened === 'drag-image-resize',
+    `the corner press opened ${noteRide.resizeOpened} instead of a resize — nothing was tested`);
+  check(noteRide.imgScale > 1.05, `the photo barely resized (x${noteRide.imgScale}) — nothing was tested`);
+  for (const key of ['inside', 'outside']) {
+    const id = noteRide.ids[key];
+    const b = noteRide.beforeResize[id];
+    const a = noteRide.afterResize[id];
+    const wantX = noteRide.anchor.x + (b.x - noteRide.anchor.x) * noteRide.imgScale;
+    const wantY = noteRide.anchor.y + (b.y - noteRide.anchor.y) * noteRide.imgScale;
+    check(Math.hypot(a.x - wantX, a.y - wantY) < 1.5,
+      `the ${key} note did not scale about the photo's anchor: expected (${wantX.toFixed(1)}, ${wantY.toFixed(1)}), got (${a.x.toFixed(1)}, ${a.y.toFixed(1)})`);
+    check(Math.abs(a.f / b.f - noteRide.imgScale) < 0.01,
+      `the ${key} note's type did not scale with the photo: font x${(a.f / b.f).toFixed(3)} against the photo's x${noteRide.imgScale}`);
+    check(Math.abs(a.w / b.w - noteRide.imgScale) < 0.01,
+      `the ${key} note's wrap width did not scale with the photo: x${(a.w / b.w).toFixed(3)} against x${noteRide.imgScale}`);
+  }
+  console.log(`board-interaction-check: notes ride the sketch — drag +${noteRide.imgDx.toFixed(1)}, resize x${noteRide.imgScale}, both the on-photo note and the beside-it note with its leader`);
+
   // ---- 8. The buffer follows the pixel DENSITY, not just the box ----
   // Dragging the window from a Retina panel to an external 1080p monitor changes
   // devicePixelRatio while the CSS box stays identical. A ResizeObserver is

@@ -13,6 +13,7 @@
     toolStraight: document.getElementById('toolStraight'),
     toolCurved: document.getElementById('toolCurved'),
     toolEraser: document.getElementById('toolEraser'),
+    toolText: document.getElementById('toolText'),
     lineStyleControl: document.getElementById('lineStyleControl'),
     stitchesBtn: document.getElementById('stitchesBtn'),
     stitchesBtnLabel: document.getElementById('stitchesBtnLabel'),
@@ -20,6 +21,8 @@
     styleOptionBtns: Array.from(document.querySelectorAll('.style-option')),
     lineWidthChip: document.getElementById('lineWidthChip'),
     lineWidthInput: document.getElementById('lineWidthInput'),
+    fontSizeChip: document.getElementById('fontSizeChip'),
+    fontSizeInput: document.getElementById('fontSizeInput'),
     brushSizeChip: document.getElementById('brushSizeChip'),
     brushSizeInput: document.getElementById('brushSizeInput'),
     arrowDoubleBtn: document.getElementById('arrowDoubleBtn'),
@@ -57,6 +60,9 @@
     libraryBtn: document.getElementById('libraryBtn'),
     projectFileInput: document.getElementById('projectFileInput'),
     labelEditor: document.getElementById('labelEditor'),
+    // US-092: a TEXTAREA, not an input — a note is multi-line by design, which
+    // is the whole reason it cannot reuse #labelEditor.
+    noteEditor: document.getElementById('noteEditor'),
     specBody: document.getElementById('specBody'),
     specEmpty: document.getElementById('specEmpty'),
     specCal: document.getElementById('specCal'),
