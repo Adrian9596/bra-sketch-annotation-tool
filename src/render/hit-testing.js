@@ -21,6 +21,43 @@
     return null;
   }
 
+  // US-086: endpoint grab that does NOT require the line to be selected first.
+  // hitTestSelectedHandles only ever looks at the ONE selected annotation, so
+  // before this existed the first press near an endpoint fell through to the
+  // line-body test and dragged the whole line — and only that accidental drag
+  // left the line selected, so the SECOND endpoint the TD tried worked. From
+  // the TD's seat that reads as "one end works, the other moves everything".
+  //
+  // Nearest endpoint wins, not topmost: POMs deliberately share endpoints
+  // (POM 1's end IS POM 2's start, POM 3's end IS POM 4's start), and the
+  // topmost-first rule used by hitTestAnnotations made the lower line's end
+  // permanently unreachable. Ties still fall to the topmost line, which is the
+  // only sensible answer when two endpoints are exactly coincident — the TD
+  // disambiguates by dragging the wrong one back, or from the spec panel.
+  //
+  // The radius is deliberately SMALLER than hitTestSelectedHandles' 14px so the
+  // line being edited keeps priority over a neighbour's endpoint.
+  function hitTestAnyEndpoint(world) {
+    const radius = 10 / state.zoom;
+    let best = null;
+    let bestDist = Infinity;
+    for (let i = 0; i < state.annotations.length; i += 1) {
+      const ann = state.annotations[i];
+      if (isAnnHidden(ann.id)) continue;
+      for (const part of ['start', 'end']) {
+        const p = ann[part];
+        if (!p) continue;
+        const dist = distance(world, p);
+        // `<=` so a later (topmost) line wins an exact tie.
+        if (dist <= radius && dist <= bestDist) {
+          bestDist = dist;
+          best = { id: ann.id, part };
+        }
+      }
+    }
+    return best;
+  }
+
   function hitTestAnnotations(world) {
     for (let i = state.annotations.length - 1; i >= 0; i -= 1) {
       const ann = state.annotations[i];

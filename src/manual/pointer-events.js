@@ -14,6 +14,9 @@
     // Commit any pending keyboard nudge burst first, so the drag that starts
     // now takes its before-fingerprint AFTER the nudge is in history.
     flushLineNudgeSession();
+    // US-086: pin the canvas rect for this whole gesture before anything below
+    // can call updateUI() and reflow the toolbar under the cursor.
+    state.gestureCanvasRect = el.canvas.getBoundingClientRect();
     const isPanButton = state.spacePan || e.button === 1 || e.button === 2;
     if (isPanButton) {
       startPanInteraction(e);
@@ -144,6 +147,22 @@
       }
     }
 
+    // US-086: any visible line's endpoint is grabbable on the FIRST press, not
+    // just the selected line's (hitTestSelectedHandles above). Runs BEFORE the
+    // line-body test so pressing an end means "move this end", never "move the
+    // whole line". Excluded when a line multi-selection is live — that group is
+    // for moving/copying, and endpoint editing stays a single-line action, the
+    // same rule hitTestSelectedHandles is gated on. Shift and Cmd/Ctrl are
+    // excluded too: they are reserved for building line and photo selections.
+    if (!e.shiftKey && !e.metaKey && !e.ctrlKey && getSelectedAnnotationIds().length <= 1) {
+      const endpointHit = hitTestAnyEndpoint(world);
+      if (endpointHit) {
+        setSelection('annotation', endpointHit.id);
+        startHandleDrag(endpointHit.id, endpointHit.part, world);
+        return;
+      }
+    }
+
     const annotationHit = hitTestAnnotations(world);
     if (annotationHit) {
       // Shift+click toggles the line in the multi-selection (no drag).
@@ -179,15 +198,28 @@
 
     const imageHit = hitTestImages(world);
     if (imageHit) {
-      // Keep an existing multi-selection when clicking one of its members so the
-      // drag moves the whole group; otherwise select just this photo.
-      if (!(getSelectedImageIds().length > 1 && isImageInSelection(imageHit.id))) {
-        setSelection('image', imageHit.id);
-      }
       const hitImage = getImageById(imageHit.id);
-      if (hitImage && !hitImage.locked) {
+      // US-086: during correction the sketch is the BACKDROP, so a bare press on
+      // it must not move it. The photo is a full-bounding-box drag target
+      // sitting behind every POM line, and the only thing protecting it was the
+      // ~8 screen px catch ribbon around each 2.5px line — measured, 14 of 18
+      // presses just 12px off a line slid the whole sketch (and every line
+      // riding on it). Moving a photo now takes an explicit second press: the
+      // first selects it and reveals its resize handles, the next one drags.
+      // An already-selected photo drags on the first press, so the group drag
+      // from Cmd/Ctrl+click and Cmd+A is unchanged.
+      if (hitImage && !hitImage.locked && isImageInSelection(imageHit.id)) {
         startImageDrag(imageHit.id, world);
+        return;
       }
+      // First press: adopt the photo, then fall through to a marquee so a DRAG
+      // rubber-bands the lines sitting on it — nearly always what the TD meant —
+      // while a plain click just selects the photo. keepSelection stops the
+      // marquee's empty-result path from dropping that selection again. A locked
+      // photo takes this path too: it must stay selectable or the toolbar Lock
+      // button could never unlock it.
+      setSelection('image', imageHit.id);
+      startMarquee(world, false, true);
       return;
     }
 
@@ -224,6 +256,7 @@
     }
 
     if (interaction.type === 'drag-annotation') {
+      if (!dragArmed(interaction, world)) return;
       const ids = interaction.groupIds || [interaction.id];
       const dx = world.x - interaction.prevWorld.x;
       const dy = world.y - interaction.prevWorld.y;
@@ -254,6 +287,7 @@
     if (interaction.type === 'drag-label') {
       const ann = getAnnotationById(interaction.id);
       if (!ann || !ann.label) return;
+      if (!dragArmed(interaction, world)) return;
       const dx = world.x - interaction.prevWorld.x;
       const dy = world.y - interaction.prevWorld.y;
       if (dx || dy) {
@@ -271,16 +305,23 @@
     if (interaction.type === 'drag-handle') {
       const ann = getAnnotationById(interaction.id);
       if (!ann) return;
-      dragHandle(ann, interaction.part, world, interaction.prevWorld);
+      // Target in handle space: the cursor plus the offset captured at grab
+      // time, so the handle keeps its distance from the pointer (see
+      // startHandleDrag). prevWorld lives in the same space.
+      const off = interaction.grabOffset || { x: 0, y: 0 };
+      const target = { x: world.x + off.x, y: world.y + off.y };
+      if (!dragArmed(interaction, world, target)) return;
+      dragHandle(ann, interaction.part, target, interaction.prevWorld);
       if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
       interaction.changed = true;
-      interaction.prevWorld = world;
+      interaction.prevWorld = target;
       refreshMeasuredValueForAnnotation(ann.id); // US-028: live Value cell
       requestRender();
       return;
     }
 
     if (interaction.type === 'drag-image') {
+      if (!dragArmed(interaction, world)) return;
       const imageIds = interaction.imageIds || [interaction.id];
       const dx = world.x - interaction.prevWorld.x;
       const dy = world.y - interaction.prevWorld.y;
@@ -338,6 +379,9 @@
   }
 
   function onMouseUp(e) {
+    // Release the gesture-pinned rect (US-086) on EVERY path out of here,
+    // including the early return below when no interaction was open.
+    state.gestureCanvasRect = null;
     if (state.eraseSession) {
       commitEraseStroke();
     }
@@ -352,9 +396,9 @@
         selectAnnotationsInRect(
           interaction.startWorld.x, interaction.startWorld.y,
           interaction.currentWorld.x, interaction.currentWorld.y,
-          interaction.additive
+          interaction.additive, interaction.keepSelection
         );
-      } else if (!interaction.additive && state.selection.kind != null) {
+      } else if (!interaction.additive && !interaction.keepSelection && state.selection.kind != null) {
         // Plain click on empty canvas = clear selection.
         clearSelection();
       }
@@ -432,6 +476,26 @@
     document.body.classList.add('grabbing');
   }
 
+// US-086: a press that barely moves is a CLICK, not a drag. Before this, any
+// selecting press nudged its target by a pixel or two of hand jitter — enough to
+// push a history entry and change a measured value on a tool whose whole job is
+// measurement. The marquee already worked this way (its own `moved` flag); this
+// extends the same 3px grace to the gestures that mutate geometry. prevWorld is
+// re-based at the moment of arming, so the drag starts from where the pointer
+// actually is with no jump.
+// rebaseTo lets a caller whose prevWorld lives in a shifted space re-base into
+// that space instead — drag-handle keeps its grab offset there (see below).
+function dragArmed(interaction, world, rebaseTo) {
+  if (interaction.armed) return true;
+  if (!interaction.startWorld) return true;
+  const dx = (world.x - interaction.startWorld.x) * state.zoom;
+  const dy = (world.y - interaction.startWorld.y) * state.zoom;
+  if (Math.hypot(dx, dy) <= 3) return false;
+  interaction.armed = true;
+  interaction.prevWorld = rebaseTo || world;
+  return true;
+}
+
 function beginTrackedInteraction(type, payload) {
   state.interaction = {
     type,
@@ -446,20 +510,33 @@ function startAnnotationDrag(id, world) {
   // this one when it isn't part of a multi-selection.
   const selected = getSelectedAnnotationIds();
   const groupIds = (selected.length > 1 && selected.includes(id)) ? selected.slice() : [id];
-  beginTrackedInteraction('drag-annotation', { id, prevWorld: world, groupIds });
+  beginTrackedInteraction('drag-annotation', {
+    id, prevWorld: world, groupIds,
+    startWorld: { x: world.x, y: world.y }, armed: false,
+  });
 }
 
-function startMarquee(world, additive) {
+// keepSelection (US-086): the marquee was started ON something already adopted
+// as the selection — today only a photo taken by its first press. Without it the
+// "no lines rubber-banded" path would clear the very selection that press made,
+// so clicking a photo would select and immediately deselect it.
+function startMarquee(world, additive, keepSelection) {
   beginTrackedInteraction('marquee', {
     startWorld: { x: world.x, y: world.y },
     currentWorld: { x: world.x, y: world.y },
     additive: !!additive,
+    keepSelection: !!keepSelection,
     moved: false,
   });
 }
 
 function startLabelDrag(id, world) {
-  beginTrackedInteraction('drag-label', { id, prevWorld: world });
+  // Armed like the other geometry drags: a stray pixel here also sets
+  // labelManual, which permanently opts the callout out of auto layout.
+  beginTrackedInteraction('drag-label', {
+    id, prevWorld: world,
+    startWorld: { x: world.x, y: world.y }, armed: false,
+  });
 }
 
 function startHandleDrag(id, part, world) {
@@ -468,7 +545,22 @@ function startHandleDrag(id, part, world) {
   if (part !== 'label' && state.selection.kind === 'annotation' && state.selection.id === id) {
     state.selection.part = part;
   }
-  beginTrackedInteraction('drag-handle', { id, part, prevWorld: world });
+  // US-086: remember how far the press landed from the handle itself. dragHandle
+  // SNAPS the handle to the point it is given (pen-tool behaviour, deliberate),
+  // so without this an endpoint caught from up to 10px away would teleport to
+  // the cursor on the first mousemove — silently changing a measurement. Both
+  // the target and prevWorld carry the same constant offset, so the control-
+  // handle deltas computed inside dragHandle are unaffected.
+  const ann = getAnnotationById(id);
+  const anchorPt = ann ? ann[part] : null;
+  const grabOffset = (anchorPt && Number.isFinite(anchorPt.x) && Number.isFinite(anchorPt.y))
+    ? { x: anchorPt.x - world.x, y: anchorPt.y - world.y }
+    : { x: 0, y: 0 };
+  beginTrackedInteraction('drag-handle', {
+    id, part, grabOffset,
+    prevWorld: { x: world.x + grabOffset.x, y: world.y + grabOffset.y },
+    startWorld: { x: world.x, y: world.y }, armed: false,
+  });
 }
 
 function startImageDrag(id, world) {
@@ -489,6 +581,8 @@ function startImageDrag(id, world) {
   beginTrackedInteraction('drag-image', {
     id,
     prevWorld: world,
+    startWorld: { x: world.x, y: world.y },
+    armed: false,
     imageIds: movingIds,
     groupedAnnotationIds: Array.from(annIdSet),
   });

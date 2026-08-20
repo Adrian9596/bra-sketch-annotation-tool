@@ -76,9 +76,9 @@ npm run preview-check      # preview & export tab
 ```
 
 The suites that score detection accuracy against real sketches — `golden`,
-`accuracy`, `contract`, `invariants`, `smoke`, `board-toolbar-check`, and the
-per-POM limitation guards — need the sketch fixtures, which aren't published
-here. They run in the private repo.
+`accuracy`, `contract`, `invariants`, `smoke`, `board-toolbar-check`,
+`board-interaction-check`, and the per-POM limitation guards — need the sketch
+fixtures, which aren't published here. They run in the private repo.
 
 ## Code layout
 

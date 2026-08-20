@@ -148,6 +148,22 @@
       // which is the only way to exercise selection, drag and resize the way a TD
       // does. Without it a UI test has to guess pixel positions.
       getView: () => ({ zoom: state.zoom, panX: state.panX, panY: state.panY }),
+      // US-086: what the pointer is currently doing. board-interaction-check
+      // needs to assert WHICH gesture a press opened — "the whole line moved"
+      // alone cannot tell a line drag from a photo drag that carried its lines
+      // along. Shape only, never the geometry payload.
+      getInteraction: () => {
+        const it = state.interaction;
+        if (!it) return null;
+        return {
+          type: it.type,
+          part: it.part || null,
+          id: it.id != null ? it.id : null,
+          armed: !!it.armed,
+          hasStartWorld: !!it.startWorld,
+          changed: !!it.changed,
+        };
+      },
       getAcceptanceStats: () => clone(getAutoAcceptanceStats()),
       clearAcceptanceStats: () => clearAutoAcceptanceStats(),
       getTelemetryLog: () => clone(getAutoTelemetryLog()),

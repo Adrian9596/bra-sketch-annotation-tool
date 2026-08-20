@@ -170,7 +170,10 @@ function setSelection(kind, id) {
 
   // Replace/extend the line selection with everything a marquee rectangle
   // touched. `additive` (Shift held) merges with the existing selection.
-  function selectAnnotationsInRect(x1, y1, x2, y2, additive) {
+  // `keepSelection` (US-086) means the caller already adopted a selection when
+  // the marquee started — a photo taken by its first press — so an empty result
+  // must leave that alone instead of clearing it.
+  function selectAnnotationsInRect(x1, y1, x2, y2, additive, keepSelection) {
     const loX = Math.min(x1, x2), hiX = Math.max(x1, x2);
     const loY = Math.min(y1, y2), hiY = Math.max(y1, y2);
     const hits = [];
@@ -181,7 +184,10 @@ function setSelection(kind, id) {
     let ids = hits;
     if (additive) ids = Array.from(new Set(getSelectedAnnotationIds().concat(hits)));
     if (!ids.length) {
-      if (!additive) { state.selection = { kind: null, id: null }; state.selectedAnnotationIds = []; }
+      if (!additive && !keepSelection) {
+        state.selection = { kind: null, id: null };
+        state.selectedAnnotationIds = [];
+      }
     } else {
       state.selectedAnnotationIds = ids;
       setPrimaryAnnotation(ids[ids.length - 1]);

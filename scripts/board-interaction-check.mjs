@@ -1,0 +1,486 @@
+#!/usr/bin/env node
+// US-086: browser-level contract for editing POM lines on the board after the
+// Apply Lines handoff to Manual Mode.
+//
+// This is the first suite that drives real mousedown/mousemove/mouseup on
+// #boardCanvas. Everything else (bom-check, construction-check) drives its own
+// forked canvas, so before this file the whole manual pointer state machine —
+// selection, endpoint drag, image drag, marquee — had zero automated proof.
+// That gap is exactly how the defects this story fixes shipped: they produce
+// silently wrong measurements, not crashes.
+//
+// Assertions are behavioural, not state-peeking: "press here, then this and
+// only this moved". That survives refactors of the selection model, which is
+// the part most likely to change next (hover + cycling, US-087).
+import { spawn } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { getFreePort, startStaticServer } from './static-server.mjs';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const appDir = path.resolve(scriptDir, '..');
+const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+let server, chrome, userDataDir;
+const cleanupTasks = [];
+let passed = 0;
+
+// Injected once: world->screen using the debug view transform, synthetic drags
+// on the real canvas, and a geometry snapshot/diff so every assertion can ask
+// "what actually moved?" instead of trusting internal state.
+const HARNESS = String.raw`
+window.__BI = (() => {
+  const d = window.__braAutoModeDebug;
+  const canvas = document.getElementById('boardCanvas');
+  const w2s = (p) => {
+    const v = d.getView(); const r = canvas.getBoundingClientRect();
+    return { x: p.x * v.zoom + v.panX + r.left, y: p.y * v.zoom + v.panY + r.top };
+  };
+  const ev = (type, x, y, opts) => canvas.dispatchEvent(new MouseEvent(type, Object.assign({
+    bubbles: true, cancelable: true, clientX: x, clientY: y,
+    button: 0, buttons: type === 'mouseup' ? 0 : 1,
+  }, opts || {})));
+  const dragScreen = (sx, sy, dx, dy, opts) => {
+    ev('mousedown', sx, sy, opts);
+    for (let i = 1; i <= 4; i += 1) ev('mousemove', sx + dx * i / 4, sy + dy * i / 4, opts);
+    ev('mouseup', sx + dx, sy + dy, opts);
+  };
+  const drag = (worldPt, dx, dy, opts) => { const s = w2s(worldPt); dragScreen(s.x, s.y, dx, dy, opts); };
+  const click = (worldPt, opts) => { const s = w2s(worldPt); ev('mousedown', s.x, s.y, opts); ev('mouseup', s.x, s.y, opts); };
+  const snapshot = () => {
+    const anns = {};
+    for (const a of d.getAnnotations()) anns[a.id] = { s: [a.start.x, a.start.y], e: [a.end.x, a.end.y], l: [a.label.x, a.label.y] };
+    return { anns, img: d.getImages().map(i => [i.x, i.y, i.width]) };
+  };
+  const diff = (b, a) => {
+    const out = { start: [], end: [], both: [], label: [], imageMoved: false };
+    for (const id in b.anns) {
+      const B = b.anns[id], A = a.anns[id];
+      if (!A) continue;
+      const ds = Math.hypot(A.s[0] - B.s[0], A.s[1] - B.s[1]);
+      const de = Math.hypot(A.e[0] - B.e[0], A.e[1] - B.e[1]);
+      const dl = Math.hypot(A.l[0] - B.l[0], A.l[1] - B.l[1]);
+      if (ds > 0.5 && de > 0.5) out.both.push(Number(id));
+      else if (ds > 0.5) out.start.push(Number(id));
+      else if (de > 0.5) out.end.push(Number(id));
+      else if (dl > 0.5) out.label.push(Number(id));
+    }
+    for (let i = 0; i < b.img.length; i += 1) {
+      const B = b.img[i], A = a.img[i];
+      if (Math.hypot(A[0] - B[0], A[1] - B[1]) > 0.5 || Math.abs(A[2] - B[2]) > 0.5) out.imageMoved = true;
+    }
+    return out;
+  };
+  // Curve-aware point + tangent, so "on the line" means the DRAWN geometry and
+  // not the chord — a curved POM bulges well away from its chord.
+  const onGeom = (a, t) => {
+    if (a.type !== 'curved' || !a.control1 || !a.control2) {
+      return { x: a.start.x + (a.end.x - a.start.x) * t, y: a.start.y + (a.end.y - a.start.y) * t };
+    }
+    const u = 1 - t;
+    return {
+      x: u*u*u*a.start.x + 3*u*u*t*a.control1.x + 3*u*t*t*a.control2.x + t*t*t*a.end.x,
+      y: u*u*u*a.start.y + 3*u*u*t*a.control1.y + 3*u*t*t*a.control2.y + t*t*t*a.end.y,
+    };
+  };
+  const tangent = (a, t) => {
+    if (a.type !== 'curved' || !a.control1 || !a.control2) return { x: a.end.x - a.start.x, y: a.end.y - a.start.y };
+    const u = 1 - t;
+    return {
+      x: 3*u*u*(a.control1.x-a.start.x) + 6*u*t*(a.control2.x-a.control1.x) + 3*t*t*(a.end.x-a.control2.x),
+      y: 3*u*u*(a.control1.y-a.start.y) + 6*u*t*(a.control2.y-a.control1.y) + 3*t*t*(a.end.y-a.control2.y),
+    };
+  };
+  const offGeom = (a, t, offsetPx) => {
+    const p = onGeom(a, t), g = tangent(a, t);
+    const len = Math.hypot(g.x, g.y) || 1;
+    const z = d.getView().zoom;
+    return { x: p.x + (-g.y / len) * (offsetPx / z), y: p.y + (g.x / len) * (offsetPx / z) };
+  };
+  // Press well clear of every photo so nothing but the empty-board branch runs.
+  const clearSelection = () => {
+    const im = d.getImages()[0];
+    const s = w2s({ x: im.x - 80, y: im.y - 80 });
+    ev('mousedown', s.x, s.y); ev('mouseup', s.x, s.y);
+  };
+  // Wait for the board to go quiescent, not just for loadProject to resolve:
+  // the label-collision pass runs off a render frame, so a snapshot taken too
+  // early is followed by labels drifting on their own and every "did my gesture
+  // move anything?" assertion reads that drift as a failure.
+  const settle = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
+  const restore = async () => { await d.loadProject(JSON.parse(JSON.stringify(window.__BI_BASE))); await settle(); };
+  return { d, w2s, ev, drag, dragScreen, click, snapshot, diff, onGeom, offGeom, clearSelection, restore, settle };
+})();
+'ready'`;
+
+async function main() {
+  const started = await startStaticServer(appDir);
+  server = started.server;
+  cleanupTasks.push(() => new Promise(resolve => server.close(resolve)));
+
+  const cdpPort = await getFreePort();
+  userDataDir = await mkdtemp(path.join(tmpdir(), 'board-interaction-check-'));
+  cleanupTasks.push(() => rm(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {}));
+  chrome = spawn(CHROME, [
+    '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+    `--remote-debugging-port=${cdpPort}`,
+    `--user-data-dir=${userDataDir}`,
+    '--window-size=1440,900',
+    // A recognized test query param: without one, a view-role prompt can block
+    // the run and the harness hangs instead of failing.
+    `${started.baseUrl}/index.html?contract=boardinteraction${Date.now()}`,
+  ]);
+  cleanupTasks.push(() => new Promise(resolve => { chrome.once('exit', resolve); chrome.kill('SIGTERM'); }));
+  await waitForCdp(cdpPort);
+
+  const s = await openCdpSession(cdpPort);
+  await s.waitFor(`!!window.__braAutoModeDebug`, 20000);
+  // The real CV engine must be up: on the free-CV fallback the detection is
+  // different geometry, so the ambiguity this suite reasons about changes.
+  await s.waitFor(`/ready/i.test(document.querySelector('#visionEngineChip')?.textContent || '')`, 60000);
+  console.log('board-interaction-check: app ready');
+
+  // ---- Set the board up exactly as a TD sees it after Apply Lines ----
+  await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug;
+    const blob = await (await fetch('demo/demo1.jpg')).blob();
+    const dataUrl = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+    window.__BI_RUN = 'detecting';
+    await d.runAutoOnDataUrl(dataUrl);
+    d.approveDrawableDrafts();
+    d.applyApprovedDrafts();
+    window.__BI_RUN = 'done';
+    return 'kicked';
+  })()`);
+  await s.waitFor(`window.__BI_RUN === 'done'`, 180000);
+
+  const setup = await s.eval(`({
+    appMode: window.__braAutoModeDebug.getState().appMode,
+    annCount: window.__braAutoModeDebug.getAnnotations().length,
+    imageCount: window.__braAutoModeDebug.getImages().length,
+  })`);
+  check(setup.appMode === 'manual', `Apply Lines must hand off to Manual Mode, got ${setup.appMode}`);
+  check(setup.annCount >= 15, `expected the applied POM lines, got ${setup.annCount}`);
+  check(setup.imageCount === 1, `expected one sketch photo, got ${setup.imageCount}`);
+  console.log(`board-interaction-check: ${setup.annCount} lines applied, Manual Mode`);
+
+  await s.eval(HARNESS);
+  await s.eval(`window.__BI_BASE = window.__braAutoModeDebug.exportProject(); 'saved'`);
+
+  // ---- 1. An endpoint is grabbable on the FIRST press ----
+  // Before US-086 this was 0 correct out of 36: hitTestSelectedHandles only ever
+  // looked at the selected line, so the first press dragged the whole line.
+  const endpoints = await s.eval(`(async () => {
+    const B = window.__BI, rows = [];
+    for (const a0 of B.d.getAnnotations()) {
+      for (const which of ['start', 'end']) {
+        await B.restore();
+        B.clearSelection();
+        const a = B.d.getAnnotations().find(x => x.id === a0.id);
+        const before = B.snapshot();
+        B.drag(a[which], 24, 24);
+        const m = B.diff(before, B.snapshot());
+        const onlyThisEnd = m[which].length === 1 && m[which][0] === a.id
+          && !m.both.length && !m.imageMoved && !m[which === 'start' ? 'end' : 'start'].length;
+        rows.push({
+          seq: a.seq, grabbed: which, ok: onlyThisEnd,
+          wholeLine: m.both.length > 0, image: m.imageMoved,
+          otherLine: (m.start.concat(m.end)).some(id => id !== a.id),
+        });
+      }
+    }
+    await B.restore();
+    return rows;
+  })()`);
+  const epOk = endpoints.filter(r => r.ok).length;
+  const epWhole = endpoints.filter(r => r.wholeLine).length;
+  const epImage = endpoints.filter(r => r.image).length;
+  const epOther = endpoints.filter(r => !r.ok && r.otherLine).map(r => `POM${r.seq}.${r.grabbed}`);
+  check(epWhole === 0, `pressing an endpoint must never drag the whole line; ${epWhole} did`);
+  check(epImage === 0, `pressing an endpoint must never drag the photo; ${epImage} did`);
+  // Coincident endpoints are a real property of the POM template — POM 1's end
+  // IS POM 2's start — so a handful of grabs legitimately land on the sibling
+  // line's endpoint. Nearest-wins cannot separate two identical points; cycling
+  // (US-087) is what will. Keep the bound tight enough to catch a regression.
+  check(epOk >= endpoints.length - 6,
+    `too many endpoint grabs missed their own line: ${epOk}/${endpoints.length} ok, stolen at ${epOther.join(', ')}`);
+  console.log(`board-interaction-check: endpoint first-press ${epOk}/${endpoints.length} exact` +
+    (epOther.length ? ` (coincident with a sibling POM: ${epOther.join(', ')})` : ''));
+
+  // ---- 2. A near-miss of a line never moves the sketch ----
+  // Before US-086, 14 of 18 presses 12px off a line dragged the whole photo.
+  const misses = await s.eval(`(async () => {
+    const B = window.__BI, rows = [];
+    for (const a0 of B.d.getAnnotations()) {
+      for (const off of [0, 6, 12, 20]) {
+        await B.restore();
+        B.clearSelection();
+        const a = B.d.getAnnotations().find(x => x.id === a0.id);
+        const before = B.snapshot();
+        B.drag(B.offGeom(a, 0.30, off), 24, 24);
+        const m = B.diff(before, B.snapshot());
+        rows.push({ seq: a.seq, off, image: m.imageMoved, movedSomething: m.both.length + m.start.length + m.end.length > 0 });
+      }
+    }
+    await B.restore();
+    return rows;
+  })()`);
+  const imageStolen = misses.filter(r => r.image);
+  check(imageStolen.length === 0,
+    `a press near a line must never move the sketch; it moved for ${imageStolen.map(r => `POM${r.seq}@${r.off}px`).join(', ')}`);
+  const onLineHits = misses.filter(r => r.off === 0 && r.movedSomething).length;
+  const onLineTotal = misses.filter(r => r.off === 0).length;
+  check(onLineHits === onLineTotal, `a press exactly on a line must grab it: ${onLineHits}/${onLineTotal}`);
+  console.log(`board-interaction-check: ${misses.length} near-miss presses, photo never moved`);
+
+  // ---- 3. The photo still moves — it just takes an explicit press first ----
+  // The TD moves and copies photos after drafting, so this must not become a
+  // locked backdrop; it becomes a two-press target.
+  const photo = await s.eval(`(async () => {
+    const B = window.__BI;
+    await B.restore();
+    B.clearSelection();
+    // A point on the photo that is clear of every line and label.
+    const im = B.d.getImages()[0];
+    const anns = B.d.getAnnotations();
+    let spot = null, bestClear = -1;
+    for (let fx = 0.04; fx <= 0.96; fx += 0.04) {
+      for (let fy = 0.04; fy <= 0.96; fy += 0.04) {
+        const p = { x: im.x + im.width * fx, y: im.y + im.height * fy };
+        let near = Infinity;
+        for (const a of anns) {
+          for (let t = 0; t <= 1.0001; t += 0.05) {
+            const q = B.onGeom(a, t);
+            near = Math.min(near, Math.hypot(q.x - p.x, q.y - p.y));
+          }
+          near = Math.min(near, Math.hypot(a.label.x - p.x, a.label.y - p.y));
+        }
+        if (near > bestClear) { bestClear = near; spot = p; }
+      }
+    }
+    const clearPx = bestClear * B.d.getView().zoom;
+    const before1 = B.snapshot();
+    B.drag(spot, 30, 30);                       // first press: select only
+    const after1 = B.diff(before1, B.snapshot());
+    const before2 = B.snapshot();
+    B.drag(spot, 30, 30);                       // second press: really move it
+    const after2 = B.diff(before2, B.snapshot());
+    await B.restore();
+    return { clearPx, firstPressMovedImage: after1.imageMoved, secondPressMovedImage: after2.imageMoved };
+  })()`);
+  check(photo.clearPx > 24, `test spot is only ${Math.round(photo.clearPx)}px from a line — too close to be conclusive`);
+  check(photo.firstPressMovedImage === false, 'the first press on an unselected photo must not move it');
+  check(photo.secondPressMovedImage === true, 'a press on an already-selected photo must move it');
+  console.log('board-interaction-check: photo needs select-then-drag, still movable');
+
+  // ---- 4. A press that barely moves is a click, not an edit ----
+  // A control diff with no gesture runs first: if the board is not quiescent
+  // the assertion below would blame the code for a settling artefact.
+  const jiggle = await s.eval(`(async () => {
+    const B = window.__BI;
+    const summarise = (m) => ({
+      moved: m.both.length + m.start.length + m.end.length + m.label.length > 0 || m.imageMoved,
+      detail: { whole: m.both, start: m.start, end: m.end, label: m.label, image: m.imageMoved },
+    });
+    await B.restore();
+    B.clearSelection();
+    const quiet0 = B.snapshot();
+    await B.settle();
+    const control = summarise(B.diff(quiet0, B.snapshot()));
+    const a = B.d.getAnnotations()[0];
+    const sweep = [];
+    for (const [dx, dy] of [[1,0],[2,1],[4,2],[8,4],[12,6]]) {
+      await B.restore();
+      B.clearSelection();
+      const aa = B.d.getAnnotations()[0];
+      const b0 = B.snapshot();
+      const at = B.w2s(B.onGeom(aa, 0.30));
+      const rectBefore = document.getElementById('boardCanvas').getBoundingClientRect();
+      const viewBefore = B.d.getView();
+      B.ev('mousedown', at.x, at.y);
+      const rectAfter = document.getElementById('boardCanvas').getBoundingClientRect();
+      const viewAfter = B.d.getView();
+      const shift = { top: +(rectAfter.top - rectBefore.top).toFixed(2), left: +(rectAfter.left - rectBefore.left).toFixed(2),
+        panY: +(viewAfter.panY - viewBefore.panY).toFixed(2), panX: +(viewAfter.panX - viewBefore.panX).toFixed(2) };
+      const opened = B.d.getInteraction();
+      for (let i = 1; i <= 4; i += 1) B.ev('mousemove', at.x + dx*i/4, at.y + dy*i/4);
+      const during = B.d.getInteraction();
+      B.ev('mouseup', at.x + dx, at.y + dy);
+      const s1 = B.snapshot();
+      const z = B.d.getView().zoom;
+      sweep.push({
+        pressPx: +Math.hypot(dx, dy).toFixed(2),
+        movedPx: +(Math.hypot(s1.anns[aa.id].s[0] - b0.anns[aa.id].s[0], s1.anns[aa.id].s[1] - b0.anns[aa.id].s[1]) * z).toFixed(2),
+        zoom: +z.toFixed(3), shift, armedDuring: during ? during.armed : null,
+      });
+    }
+    await B.restore();
+    B.clearSelection();
+    const before = B.snapshot();
+    B.drag(B.onGeom(a, 0.30), 2, 1);
+    const jig = summarise(B.diff(before, B.snapshot()));
+    await B.restore();
+    return { control, jig, sweep };
+  })()`);
+  check(jiggle.control.moved === false,
+    `the board is not quiescent, so the jiggle assertion cannot be trusted: ${JSON.stringify(jiggle.control.detail)}`);
+  console.log('board-interaction-check: press/move sweep ' + JSON.stringify(jiggle.sweep));
+  check(jiggle.jig.moved === false,
+    `a 2px press must not change any geometry, but moved ${JSON.stringify(jiggle.jig.detail)}`);
+  // The sweep is the real guard, and it also pins down the canvas-reflow bug
+  // that made the threshold unenforceable: selecting a line reveals the
+  // contextual toolbar row and shifts the canvas (logged as `shift.top`), so a
+  // rect read live mid-gesture put the first mousemove ~35px away from the
+  // press. Gesture-pinned rect + threshold together must give: nothing below
+  // 3px, real tracking above it.
+  for (const row of jiggle.sweep) {
+    if (row.pressPx <= 3) {
+      check(row.movedPx === 0, `a ${row.pressPx}px press must move nothing, moved ${row.movedPx}px (canvas shift ${JSON.stringify(row.shift)})`);
+    } else {
+      check(row.movedPx > 0, `a ${row.pressPx}px press must drag the line, moved ${row.movedPx}px`);
+      check(row.movedPx <= row.pressPx + 1,
+        `a ${row.pressPx}px press moved the line ${row.movedPx}px — more than the pointer travelled, so the gesture is being measured against a shifting canvas rect`);
+    }
+  }
+  console.log('board-interaction-check: sub-3px press changes nothing, larger presses track 1:1');
+
+  // ---- 5. The gestures US-053 / US-057 rely on still work ----
+  const groups = await s.eval(`(async () => {
+    const B = window.__BI;
+    await B.restore();
+    B.clearSelection();
+    const anns = B.d.getAnnotations();
+    // Shift+click two lines on their bodies, then drag one body: both move.
+    const a = anns[0], b = anns[1];
+    B.click(B.onGeom(a, 0.30), { shiftKey: true });
+    B.click(B.onGeom(b, 0.30), { shiftKey: true });
+    const before = B.snapshot();
+    B.drag(B.onGeom(a, 0.30), 20, 20);
+    const m = B.diff(before, B.snapshot());
+    const groupMoved = m.both.includes(a.id) && m.both.includes(b.id);
+    await B.restore();
+    // A marquee dragged from clear board space still rubber-bands lines.
+    // Asserted by behaviour, not by the panel: updateSpecHighlightOnly marks
+    // only the PRIMARY row, so a 10-line marquee highlights exactly one row.
+    B.clearSelection();
+    const im = B.d.getImages()[0];
+    const p0 = B.w2s({ x: im.x - 30, y: im.y - 30 });
+    const p1 = B.w2s({ x: im.x + im.width + 30, y: im.y + im.height + 30 });
+    B.dragScreen(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
+    const anns2 = B.d.getAnnotations();
+    const beforeM = B.snapshot();
+    B.drag(B.onGeom(anns2[0], 0.30), 20, 20);
+    const mm = B.diff(beforeM, B.snapshot());
+    const marqueeGroupMoved = mm.both.length;
+    await B.restore();
+    // A marquee started ON the photo also rubber-bands, instead of dragging it.
+    B.clearSelection();
+    const q0 = B.w2s({ x: im.x + im.width * 0.02, y: im.y + im.height * 0.02 });
+    const q1 = B.w2s({ x: im.x + im.width * 0.98, y: im.y + im.height * 0.98 });
+    const beforeP = B.snapshot();
+    B.dragScreen(q0.x, q0.y, q1.x - q0.x, q1.y - q0.y);
+    const photoMarquee = B.diff(beforeP, B.snapshot());
+    const anns3 = B.d.getAnnotations();
+    const beforeP2 = B.snapshot();
+    B.drag(B.onGeom(anns3[0], 0.30), 20, 20);
+    const pm = B.diff(beforeP2, B.snapshot());
+    await B.restore();
+    return {
+      groupMoved, marqueeGroupMoved,
+      photoMarqueeMovedImage: photoMarquee.imageMoved,
+      photoMarqueeGroupMoved: pm.both.length,
+    };
+  })()`);
+  check(groups.groupMoved === true, 'Shift+click multi-selection must still move as a group');
+  check(groups.marqueeGroupMoved > 1,
+    `a board-wide marquee must still select many lines; a follow-up drag moved ${groups.marqueeGroupMoved}`);
+  check(groups.photoMarqueeMovedImage === false,
+    'a drag started on the photo must rubber-band lines, not move the photo');
+  check(groups.photoMarqueeGroupMoved > 1,
+    `a drag across the photo must rubber-band the lines under it, got ${groups.photoMarqueeGroupMoved}`);
+  console.log('board-interaction-check: multi-select and marquee intact, photo drag rubber-bands');
+
+  const errors = await s.eval(`window.__toolbarConsoleErrors || []`);
+  check(errors.length === 0, `page errors during the run: ${JSON.stringify(errors)}`);
+
+  s.close();
+  console.log(`board-interaction-check: PASS (${passed} checks)`);
+}
+
+function check(condition, message) {
+  if (!condition) {
+    process.exitCode = 1;
+    throw new Error(message);
+  }
+  passed += 1;
+}
+
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+async function openCdpSession(port) {
+  const targets = await fetchJson(`http://127.0.0.1:${port}/json`);
+  const target = targets.find(item => item.type === 'page' && item.webSocketDebuggerUrl);
+  if (!target) throw new Error('no page target available');
+  const ws = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => {
+    ws.addEventListener('open', resolve, { once: true });
+    ws.addEventListener('error', reject, { once: true });
+  });
+  let id = 0;
+  const pending = new Map();
+  ws.addEventListener('message', event => {
+    const message = JSON.parse(String(event.data));
+    if (message.id && pending.has(message.id)) {
+      pending.get(message.id)(message);
+      pending.delete(message.id);
+    }
+  });
+  const cdp = (method, params = {}) => new Promise((resolve, reject) => {
+    const requestId = ++id;
+    pending.set(requestId, message => message.error ? reject(new Error(message.error.message)) : resolve(message.result));
+    ws.send(JSON.stringify({ id: requestId, method, params }));
+  });
+  await cdp('Runtime.enable');
+  await cdp('Runtime.evaluate', { expression: `window.__toolbarConsoleErrors=[]; addEventListener('error',e=>window.__toolbarConsoleErrors.push(String(e.message||e.error)))` });
+  const evalJs = async expression => {
+    const result = await cdp('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+    if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'eval failed');
+    return result.result.value;
+  };
+  const waitFor = async (expression, timeoutMs) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try { if (await evalJs(expression)) return; } catch (_) {}
+      await sleep(80);
+    }
+    throw new Error('waitFor timeout: ' + expression);
+  };
+  return { eval: evalJs, waitFor, cdp, close: () => ws.close() };
+}
+
+async function waitForCdp(port) {
+  for (let i = 0; i < 80; i += 1) {
+    try { await fetchJson(`http://127.0.0.1:${port}/json/version`); return; } catch (_) {}
+    await sleep(80);
+  }
+  throw new Error('CDP did not come up');
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`fetch ${url} ${response.status}`);
+  return response.json();
+}
+
+try {
+  await main();
+} catch (error) {
+  if (process.exitCode == null) process.exitCode = 1;
+  console.error('FAIL', error && error.message ? error.message : error);
+} finally {
+  for (const task of cleanupTasks.reverse()) {
+    try { await task(); } catch (_) {}
+  }
+}

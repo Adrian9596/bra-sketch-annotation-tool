@@ -76,6 +76,9 @@
     rafPending: false,
     toastTimer: null,
     lastCanvasRect: null,
+    // US-086: the canvas rect pinned for the duration of one pointer gesture.
+    // Null except between mousedown and mouseup. See getMousePos.
+    gestureCanvasRect: null,
     idCounter: 1,
 
     calibration: { unitsPerPx: null, unit: 'in' },

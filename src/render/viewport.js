@@ -12,7 +12,15 @@
     // Read the live rect for pointer input. Mode/toolbars can change the
     // canvas position without a window resize, and a stale cached rect makes
     // clicks land offset from the cursor.
-    const rect = el.canvas.getBoundingClientRect();
+    //
+    // US-086 — EXCEPT for the duration of one gesture. Selecting a line on
+    // mousedown reveals the contextual toolbar row, which pushes the canvas
+    // down (measured: 35.5px) BEFORE the first mousemove arrives. Read live,
+    // the same physical cursor position then resolves to a world point ~35px
+    // away, so the line lurched the instant the TD grabbed it and no
+    // click-vs-drag threshold could hold. A gesture has to be measured in one
+    // frame: mousedown pins the rect, mouseup releases it.
+    const rect = state.gestureCanvasRect || el.canvas.getBoundingClientRect();
     state.lastCanvasRect = rect;
     return {
       x: e.clientX - rect.left,
