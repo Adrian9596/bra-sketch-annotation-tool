@@ -251,6 +251,93 @@ async function main() {
   await s.eval(HARNESS);
   await s.eval(`window.__BI_BASE = window.__braAutoModeDebug.exportProject(); 'saved'`);
 
+  // ---- 0. The board holds still when the chrome around it reflows ----
+  // US-088. `canvas { width:100%; height:100% }` means a backing buffer that
+  // does not follow its CSS box is not clipped, it is STRETCHED — the board is
+  // painted at the wrong scale while the pointer code still assumes 1:1. That
+  // is invisible to every other assertion here, because they all compute screen
+  // positions the same (wrong) way the app does, so both sides of the
+  // comparison move together and agree with each other while disagreeing with
+  // the pixels the TD is aiming at. It has to be measured against the PAINTED
+  // geometry — buffer size vs CSS box — or it does not get caught at all.
+  const reflow = await s.eval(`(async () => {
+    const B = window.__BI;
+    const canvas = document.getElementById('boardCanvas');
+    const dpr = () => Math.max(1, window.devicePixelRatio || 1);
+    // Where a fixed world point is PAINTED on screen, which is the app's own
+    // answer adjusted by however far the buffer is being stretched.
+    const painted = (p) => {
+      const r = canvas.getBoundingClientRect();
+      const s = B.w2s(p);
+      const sx = r.width / (canvas.width / dpr());
+      const sy = r.height / (canvas.height / dpr());
+      return { x: r.left + (s.x - r.left) * sx, y: r.top + (s.y - r.top) * sy };
+    };
+    const bufferOff = () => {
+      const r = canvas.getBoundingClientRect();
+      return {
+        w: canvas.width - Math.round(r.width * dpr()),
+        h: canvas.height - Math.round(r.height * dpr()),
+      };
+    };
+    const im = B.d.getImages()[0];
+    // Probe the far corners: a scale error is zero at the canvas origin and
+    // grows with distance, so a centre-only probe understates it.
+    const probes = [
+      { x: im.x, y: im.y },
+      { x: im.x + im.width, y: im.y + im.height * 0.5 },
+      { x: im.x + im.width * 0.5, y: im.y + im.height },
+    ];
+
+    const run = async (label, act) => {
+      await B.restore();
+      B.clearSelection();
+      await B.settle();
+      const before = probes.map(painted);
+      const r0 = canvas.getBoundingClientRect();
+      await act();
+      await B.settle();
+      const after = probes.map(painted);
+      const r1 = canvas.getBoundingClientRect();
+      return {
+        label,
+        canvasTopDelta: +(r1.top - r0.top).toFixed(2),
+        canvasHeightDelta: +(r1.height - r0.height).toFixed(2),
+        canvasWidthDelta: +(r1.width - r0.width).toFixed(2),
+        buffer: bufferOff(),
+        drift: +Math.max(...before.map((b, i) => Math.hypot(after[i].x - b.x, after[i].y - b.y))).toFixed(2),
+      };
+    };
+
+    const selecting = await run('selecting a line', async () => {
+      const a = B.d.getAnnotations()[0];
+      B.click(a.start);
+    });
+    const panel = await run('hiding the Measurements panel', async () => {
+      document.getElementById('togglePanelBtn').click();
+    });
+    document.getElementById('togglePanelBtn').click();
+    await B.settle();
+    return { selecting, panel };
+  })()`);
+  console.log('board-interaction-check: chrome reflow ' + JSON.stringify(reflow));
+  for (const row of [reflow.selecting, reflow.panel]) {
+    // A vacuous pass is the failure mode to fear here: if the chrome stops
+    // moving the canvas, this stops testing anything and would sit green
+    // forever. Say so rather than quietly measuring nothing.
+    check(row.canvasTopDelta !== 0 || row.canvasHeightDelta !== 0 || row.canvasWidthDelta !== 0,
+      `${row.label} no longer changes the canvas box, so this assertion proves nothing. `
+      + `Re-point it at whatever does move the canvas now, or drop it.`);
+    check(row.buffer.w === 0 && row.buffer.h === 0,
+      `${row.label} left the backing buffer ${JSON.stringify(row.buffer)} device px off its CSS box — `
+      + `the board is being painted stretched, and every hit-test is wrong by a margin that grows down the canvas`);
+    // 1px covers the rounding of the buffer to whole device pixels. The bug
+    // this replaces drifted 27px at the bottom of a 1512px-wide window.
+    check(row.drift <= 1,
+      `${row.label} moved the board ${row.drift}px on screen — the drawing must not move when the chrome does`);
+  }
+  console.log('board-interaction-check: the board holds still and stays 1:1 through a chrome reflow');
+
   // ---- 1. An endpoint is grabbable on the FIRST press ----
   // Before US-086 this was 0 correct out of 36: hitTestSelectedHandles only ever
   // looked at the selected line, so the first press dragged the whole line.
@@ -450,6 +537,13 @@ async function main() {
   // rect read live mid-gesture put the first mousemove ~35px away from the
   // press. Gesture-pinned rect + threshold together must give: nothing below
   // 3px, real tracking above it.
+  //
+  // `shift` is read synchronously inside the mousedown task, so it reports
+  // top=35.5 with panY=0 even though US-088's resizeCanvas compensates that
+  // shift — the ResizeObserver has not run yet at that instant. That pairing is
+  // correct, not a broken compensation: within the task the pinned rect and the
+  // pan are still each other's match, and by the time anything is painted both
+  // have moved together. Check 0 above is what covers the settled state.
   for (const row of jiggle.sweep) {
     // The gesture must be the one under test, and it must open UNARMED —
     // otherwise "nothing moved" below could just mean the press never reached

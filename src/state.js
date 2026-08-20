@@ -79,6 +79,11 @@
     // US-086: the canvas rect pinned for the duration of one pointer gesture.
     // Null except between mousedown and mouseup. See getMousePos.
     gestureCanvasRect: null,
+    // US-088: the canvas rect as of the last resizeCanvas(). Deliberately NOT
+    // lastCanvasRect, which getMousePos overwrites with the live rect on every
+    // pointer event — diffing against that would read zero change and skip the
+    // compensation exactly when a reflow happened mid-gesture. See resizeCanvas.
+    sizedCanvasRect: null,
     idCounter: 1,
 
     calibration: { unitsPerPx: null, unit: 'in' },

@@ -71,11 +71,31 @@ function makeStub() {
   });
 }
 
+// This sandbox has no canvas and no frames, so a queued frame must never run:
+// the callback is render(), which would drive the whole draw path through the
+// Proxy stub. Accepting the request and dropping it is the honest model.
+//
+// It has to exist, though. Until US-088 this sandbox modelled setTimeout,
+// matchMedia and performance but not requestAnimationFrame, and got away with
+// it purely by accident: init() called resizeCanvas() -> requestRender(), which
+// set state.rafPending = true and *then* threw ReferenceError, and that throw
+// was swallowed by the try/catch around runInContext below. The flag stayed
+// stuck true for the life of the process, so every later requestRender()
+// returned early and never reached the missing global. US-088 made
+// resizeCanvas() bail out on a 0x0 canvas — correct in itself — which removed
+// the accidental throw, and the gap surfaced as a ReferenceError on the first
+// setHiddenAnnIds. Model the API rather than depend on the accident.
+let framesRequested = 0;
+const requestAnimationFrameStub = () => { framesRequested += 1; return framesRequested; };
+const cancelAnimationFrameStub = () => {};
+
 const documentStub = makeStub();
 const windowStub = {
   document: documentStub, addEventListener() {}, removeEventListener() {},
   matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
   setTimeout, clearTimeout, setInterval, clearInterval,
+  requestAnimationFrame: requestAnimationFrameStub,
+  cancelAnimationFrame: cancelAnimationFrameStub,
   performance: { now: () => Date.now() }, location: { search: '', href: '', pathname: '' },
   prompt: () => null, confirm: () => true, alert() {},
   innerWidth: 1024, innerHeight: 768, devicePixelRatio: 1,
@@ -84,6 +104,8 @@ const windowStub = {
 const sandbox = {
   window: windowStub, document: documentStub, console,
   setTimeout, clearTimeout, setInterval, clearInterval, performance: windowStub.performance,
+  requestAnimationFrame: requestAnimationFrameStub,
+  cancelAnimationFrame: cancelAnimationFrameStub,
   URL, URLSearchParams, navigator: { userAgent: 'node-test' },
   TextEncoder, TextDecoder, btoa, atob,
   Uint8Array, Uint8ClampedArray, Uint32Array, Int32Array, Float32Array, Float64Array,

@@ -16,6 +16,9 @@
     // status chip, and locks manual editing paths).
     setAppMode('auto');
     resizeCanvas();
+    // US-088: after the first sizing, so the observer's initial callback is a
+    // no-op rather than a diff against an unsized canvas.
+    initCanvasResizeObserver();
     seedHistory();
     updateUI();
     render();

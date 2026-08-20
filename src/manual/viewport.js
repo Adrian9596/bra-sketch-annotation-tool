@@ -1,31 +1,77 @@
-// Manual mode: viewport / fit / panel-toggle helpers. resizeCanvas keeps
-// the canvas backing buffer in sync with its CSS box (and preserves the
-// world-space center across resizes); the fit-to-* helpers compute pan/zoom
-// to frame either the selected image or every image on the board.
+// Manual mode: viewport / fit / panel-toggle helpers. resizeCanvas keeps the
+// canvas backing buffer in sync with its CSS box and holds the board still on
+// screen while it does; the fit-to-* helpers compute pan/zoom to frame either
+// the selected image or every image on the board.
 // Source part for app.js. Run `npm run build` after editing.
 
+// US-088 (ADR 0051). Two things have to happen every time the canvas box
+// changes, and before this story neither did unless the WINDOW itself resized:
+//
+//   1. The backing buffer must be resized. `canvas { width:100%; height:100% }`
+//      means a stale buffer is not clipped, it is STRETCHED into the new box —
+//      so the whole board is painted at the wrong scale while every hit-test
+//      still assumes 1:1. Measured on a 1512px window: selecting a line shrank
+//      the canvas 35.5px and left the buffer at its old height, painting the
+//      board 5.25% short. The gap between where a POM line is drawn and where
+//      the pointer code thinks it is reached 27px near the bottom of the board
+//      — nearly three times the 10px endpoint catch radius, so the TD could
+//      aim dead-on at a line and never hit it.
+//
+//   2. The board must not move under the cursor. Preserving the world-space
+//      CENTER (what this did before) is wrong for a chrome reflow: the canvas
+//      top edge moves down by the same amount the height shrinks, so
+//      re-centering still slid the board ~18px down the screen. Preserving the
+//      board's SCREEN position — hold `pan + rect.origin` constant — is what
+//      "the view did not change" actually means. A window resize keeps its
+//      origin, so it now reveals board instead of sliding it, which is also the
+//      better answer there.
+//
+// A ResizeObserver (see initCanvasResizeObserver) drives this for every layout
+// change, so no future toolbar/panel edit has to remember to call it.
 function resizeCanvas() {
-  const previousRect = state.lastCanvasRect;
-  const worldCenter = previousRect
-    ? {
-        x: (previousRect.width / 2 - state.panX) / state.zoom,
-        y: (previousRect.height / 2 - state.panY) / state.zoom,
-      }
-    : null;
-
+  const previousRect = state.sizedCanvasRect;
   const rect = el.canvas.getBoundingClientRect();
-  state.lastCanvasRect = rect;
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  el.canvas.width = Math.round(rect.width * dpr);
-  el.canvas.height = Math.round(rect.height * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (rect.width <= 0 || rect.height <= 0) return;
 
-  if (worldCenter) {
-    state.panX = rect.width / 2 - worldCenter.x * state.zoom;
-    state.panY = rect.height / 2 - worldCenter.y * state.zoom;
+  const movedX = previousRect ? previousRect.left - rect.left : 0;
+  const movedY = previousRect ? previousRect.top - rect.top : 0;
+  const resized = !previousRect
+    || Math.abs(previousRect.width - rect.width) > 0.01
+    || Math.abs(previousRect.height - rect.height) > 0.01;
+  if (!resized && movedX === 0 && movedY === 0) return;
+
+  state.sizedCanvasRect = rect;
+  state.lastCanvasRect = rect;
+  state.panX += movedX;
+  state.panY += movedY;
+
+  // The gesture pin and the pan have to move together or they double-count:
+  // `pan + rect.top` is what maps a clientY to a world point, and this shifted
+  // both halves. Re-pinning to the new rect leaves that mapping identical, so a
+  // reflow in the middle of a drag is invisible to the drag. Leaving the old
+  // pin behind while pan moved would put the line back exactly where US-086
+  // found it — lurching the moment the TD grabs it.
+  if (state.gestureCanvasRect) state.gestureCanvasRect = rect;
+
+  if (resized) {
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    el.canvas.width = Math.round(rect.width * dpr);
+    el.canvas.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   requestRender();
+}
+
+// The canvas box changes without a window resize far more often than the ad-hoc
+// resizeCanvas() calls covered: the contextual toolbar row appears when a line
+// is selected, the Measurements panel toggles, a page tab switches, a mode
+// changes. Observing the element itself means correctness no longer depends on
+// every one of those call sites remembering.
+function initCanvasResizeObserver() {
+  if (typeof ResizeObserver !== 'function' || !el.canvas) return;
+  const observer = new ResizeObserver(() => resizeCanvas());
+  observer.observe(el.canvas);
 }
 
 function toggleSpecPanel() {

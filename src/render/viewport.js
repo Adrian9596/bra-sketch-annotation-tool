@@ -22,11 +22,20 @@
     // frame: mousedown pins the rect, mouseup releases it.
     //
     // Two limits keep the pin from leaking. state.lastCanvasRect always gets
-    // the LIVE rect — resizeCanvas, Fit and the render loop read it, and a
-    // pinned value there would shift the whole board after a drag. And the pin
-    // only applies while a gesture is genuinely in flight, so a press that
-    // opened no interaction (or a cleanup that never ran) cannot leave stale
-    // coordinates behind for hover work that runs with no interaction at all.
+    // the LIVE rect — Fit and the render loop read it, and a pinned value there
+    // would shift the whole board after a drag. And the pin only applies while
+    // a gesture is genuinely in flight, so a press that opened no interaction
+    // (or a cleanup that never ran) cannot leave stale coordinates behind for
+    // hover work that runs with no interaction at all.
+    //
+    // US-088 — the pin is no longer the whole story, and must not be read as
+    // it. It froze the coordinates but not the canvas, which went on being
+    // painted from a stale backing buffer; resizeCanvas now handles the reflow
+    // itself and re-pins this rect in lockstep with the pan it compensates, so
+    // the clientY -> world mapping is identical either side of a reflow. The
+    // pin survives as the guarantee that a gesture reads ONE frame even if the
+    // ResizeObserver has not run yet. resizeCanvas deliberately diffs
+    // state.sizedCanvasRect, not the live value written just below.
     const live = el.canvas.getBoundingClientRect();
     state.lastCanvasRect = live;
     const inGesture = !!(state.interaction || state.drawSession || state.eraseSession);
