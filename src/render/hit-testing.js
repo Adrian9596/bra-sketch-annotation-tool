@@ -16,6 +16,16 @@
       // model). Endpoints are checked first (above) so they win a shared spot.
       if (ann.control1 && distance(world, ann.control1) <= controlRadius) return { part: 'control1' };
       if (ann.control2 && distance(world, ann.control2) <= controlRadius) return { part: 'control2' };
+      // US-093: any interior anchor the TD added — no visibility gating (ADR
+      // 0053), so every anchor's point + both handles are grabbable at once,
+      // same "no crowding gate" stance the two base handles already take.
+      const points = ann.points || [];
+      for (let i = 0; i < points.length; i += 1) {
+        const pt = points[i];
+        if (pt.point && distance(world, pt.point) <= endpointRadius) return { part: 'point' + i + '.point' };
+        if (pt.handleIn && distance(world, pt.handleIn) <= controlRadius) return { part: 'point' + i + '.handleIn' };
+        if (pt.handleOut && distance(world, pt.handleOut) <= controlRadius) return { part: 'point' + i + '.handleOut' };
+      }
     }
     if (pointInLabelBounds(world, ann.label, getLabelText(ann), 9 / state.zoom)) return { part: 'label' };
     return null;

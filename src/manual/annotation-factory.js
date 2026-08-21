@@ -43,16 +43,24 @@
         y: mid.y + Math.sin(angle - Math.PI / 2) * offset
       };
     }
-    // Anchor the label to the middle of the curve. For a two-segment curve
-    // that's the middle anchor (tangent = direction between its two handles);
-    // otherwise fall back to the single cubic's t=0.5 point.
+    // Anchor the label to the middle of the curve. For the legacy two-segment
+    // shape that's the middle anchor (tangent = direction between its two
+    // handles); for a curve with US-093 interior anchors, the same idea
+    // generalizes to the MIDDLE anchor in ann.points; otherwise (the common
+    // case) fall back to the single cubic's exact t=0.5 point — unchanged
+    // from before interior anchors existed.
     let point, tangent;
+    const points = Array.isArray(annLike.points) ? annLike.points : null;
     if (annLike.midPoint && annLike.midHandleIn && annLike.midHandleOut) {
       point = annLike.midPoint;
       tangent = {
         x: annLike.midHandleOut.x - annLike.midHandleIn.x,
         y: annLike.midHandleOut.y - annLike.midHandleIn.y,
       };
+    } else if (points && points.length) {
+      const mid = points[Math.floor((points.length - 1) / 2)];
+      point = mid.point;
+      tangent = { x: mid.handleOut.x - mid.handleIn.x, y: mid.handleOut.y - mid.handleIn.y };
     } else {
       point = bezierPoint(annLike.start, annLike.control1, annLike.control2, annLike.end, 0.5);
       tangent = bezierTangent(annLike.start, annLike.control1, annLike.control2, annLike.end, 0.5);

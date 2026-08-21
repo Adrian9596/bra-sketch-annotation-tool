@@ -56,6 +56,7 @@
       a.id, a.seq, a.text, a.type,
       r(a.start), r(a.end), r(a.midPoint),
       r(a.control1), r(a.control2), r(a.midHandleIn), r(a.midHandleOut),
+      Array.isArray(a.points) ? a.points.map(pt => [r(pt.point), r(pt.handleIn), r(pt.handleOut)]) : 0,
     ]);
     const draftBits = state.autoMode.draftAnnotations.map(d => [
       d.id, d.seq, d.text, !!d.tdApproved, !!d.tdEdited, !!d.tdTouched,

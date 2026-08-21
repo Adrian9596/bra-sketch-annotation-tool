@@ -28,6 +28,11 @@
       if (ann.midHandleIn) parts.push('midHandleIn');
       if (ann.midHandleOut) parts.push('midHandleOut');
       if (ann.control2) parts.push('control2');
+      // US-093: interior anchors the TD added, appended after the fixed
+      // fields so a curve with none cycles exactly as it always has.
+      (ann.points || []).forEach((_, i) => {
+        parts.push('point' + i + '.handleIn', 'point' + i + '.point', 'point' + i + '.handleOut');
+      });
     } else {
       parts.push('end');
     }
@@ -42,6 +47,12 @@
     if (part === 'control2') return 'end bend handle';
     if (part === 'midHandleIn') return 'mid bend handle (start side)';
     if (part === 'midHandleOut') return 'mid bend handle (end side)';
+    const anchor = parseCurveAnchorPart(part);
+    if (anchor) {
+      const n = anchor.index + 1;
+      if (anchor.field === 'point') return 'point ' + n;
+      return 'point ' + n + ' bend handle (' + (anchor.field === 'handleIn' ? 'in' : 'out') + ' side)';
+    }
     return 'whole line';
   }
 
@@ -83,14 +94,14 @@
       lineNudgeSession = { annId: ann.id, timer: null };
     }
     const part = state.selection.part;
-    const point = part === 'start' ? ann.start
-      : part === 'end' ? ann.end
-        : part ? ann[part] : null;
+    const point = part ? getAnnPartPoint(ann, part) : null;
     if (part && point) {
       // Route through dragHandle so curve semantics (endpoint carrying its
-      // control, mid point carrying both mid handles) match a mouse drag.
+      // control, mid point carrying both mid handles, an interior anchor's
+      // handles mirroring per US-093) match a mouse drag. Keyboard nudging
+      // has no Alt-modifier gesture defined, so a handle always mirrors.
       const prev = clonePoint(point);
-      dragHandle(ann, part, { x: prev.x + dx, y: prev.y + dy }, prev);
+      dragHandle(ann, part, { x: prev.x + dx, y: prev.y + dy }, prev, false);
     } else {
       moveAnnotation(ann, dx, dy);
     }

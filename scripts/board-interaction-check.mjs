@@ -380,19 +380,31 @@ async function main() {
       };
     };
 
-    const selecting = await run('selecting a line', async () => {
-      const a = B.d.getAnnotations()[0];
-      B.click(a.start);
-    });
+    // US-093 / ADR 0053: consolidating Straight/Curved/Eraser/Text into one
+    // toolbar drop-down (to free a slot for the new "Add point" tool) freed
+    // enough width that NO selection in this fixture forces a second toolbar
+    // row any more at the 1440px width this suite runs at — checked directly
+    // against this exact fixture: selecting a straight line, a curved line
+    // (which also reveals "Add point"), an image, and switching to the
+    // Eraser tool all measured the identical single-row height. That was the
+    // "selecting a line" scenario's only trigger, so it is retired rather
+    // than kept alive with a scenario chosen to force a reflow that no real
+    // TD action produces any more — the vacuous-pass guard below is exactly
+    // what would have caught it staying green for the wrong reason. The
+    // "panel" scenario below still exercises a real, width-changing reflow
+    // (hiding the whole Measurements side panel), so the invariant this
+    // section exists to prove is still under live proof. If a future change
+    // reintroduces a height-changing reflow, add a scenario for it here —
+    // don't manufacture one just to keep a second row in this table.
     const panel = await run('hiding the Measurements panel', async () => {
       document.getElementById('togglePanelBtn').click();
     });
     document.getElementById('togglePanelBtn').click();
     await B.settle();
-    return { selecting, panel };
+    return { panel };
   })()`);
   console.log('board-interaction-check: chrome reflow ' + JSON.stringify(reflow));
-  for (const row of [reflow.selecting, reflow.panel]) {
+  for (const row of [reflow.panel]) {
     // A vacuous pass is the failure mode to fear here: if the chrome stops
     // moving the canvas, this stops testing anything and would sit green
     // forever. Say so rather than quietly measuring nothing.
@@ -671,6 +683,260 @@ async function main() {
     check(Math.abs(curve.controlMovedPx - curve.startMovedPx) <= 1,
       `POM ${curve.seq}'s curve handle moved ${curve.controlMovedPx}px while its endpoint moved ${curve.startMovedPx}px — the handle must ride the endpoint rigidly or the curve reshapes on every edit`);
     console.log(`board-interaction-check: curved endpoint carries its handle rigidly (POM ${curve.seq})`);
+  }
+
+  // ---- 4c. US-093 / ADR 0053: a curve can grow interior anchor points ----
+  // Walks the whole grilling-session design through real gestures: the Add
+  // point button appears the instant a curve is selected; clicking the curve
+  // inserts an anchor exactly on the existing path (no jump); a plain drag of
+  // one of the new anchor's handles mirrors the opposite one (angle only, not
+  // length); holding Alt breaks that pairing for one drag; a later plain drag
+  // re-mirrors it (no state persists from the break); selecting the anchor
+  // then Backspace removes just it; Backspace again with no anchor active
+  // still deletes the whole line, unchanged from before this story.
+  const addPoint = await s.eval(`(async () => {
+    const B = window.__BI;
+    await B.restore();
+    B.clearSelection();
+    const before = B.d.getAnnotations().find(x => x.type === 'curved' && x.control1 && x.control2);
+    if (!before) return { skipped: true };
+
+    B.click(before.start);
+    const addPointVisibleOnSelect = !document.getElementById('toolAddPoint').hidden;
+    document.getElementById('toolAddPoint').click();
+    const toolAfterClick = window.__braAutoModeDebug.getState().tool;
+
+    const bez = (a, t) => {
+      const u = 1 - t;
+      return {
+        x: u*u*u*a.start.x + 3*u*u*t*a.control1.x + 3*u*t*t*a.control2.x + t*t*t*a.end.x,
+        y: u*u*u*a.start.y + 3*u*u*t*a.control1.y + 3*u*t*t*a.control2.y + t*t*t*a.end.y,
+      };
+    };
+    const clickPoint = bez(before, 0.5);
+    B.click(clickPoint);
+    const z = B.d.getView().zoom;
+
+    const withPoint = B.d.getAnnotations().find(x => x.id === before.id);
+    const anchor = withPoint.points[0];
+    const insertJumpPx = anchor ? +(Math.hypot(anchor.point.x - clickPoint.x, anchor.point.y - clickPoint.y) * z).toFixed(3) : -1;
+
+    // Back to Select before touching handles — "Add point" stays armed
+    // (US-093: a persistent mode like every other tool) and would otherwise
+    // read the next click as another insertion, not a handle grab.
+    document.getElementById('toolSelect').click();
+
+    const inLenBefore = Math.hypot(anchor.handleIn.x - anchor.point.x, anchor.handleIn.y - anchor.point.y);
+    B.drag(anchor.handleOut, 40, -10);
+    const afterPlainDrag = B.d.getAnnotations().find(x => x.id === before.id).points[0];
+    const vOut = { x: afterPlainDrag.handleOut.x - afterPlainDrag.point.x, y: afterPlainDrag.handleOut.y - afterPlainDrag.point.y };
+    const vIn = { x: afterPlainDrag.handleIn.x - afterPlainDrag.point.x, y: afterPlainDrag.handleIn.y - afterPlainDrag.point.y };
+    const outLen = Math.hypot(vOut.x, vOut.y), inLen = Math.hypot(vIn.x, vIn.y);
+    // Collinear + opposite direction: cross product ~0 (parallel) and a
+    // negative dot product (pointing away from each other through the point).
+    const cross = vOut.x * vIn.y - vOut.y * vIn.x;
+    const dot = vOut.x * vIn.x + vOut.y * vIn.y;
+    const mirroredAngle = Math.abs(cross) / (outLen * inLen) < 0.01 && dot < 0;
+    const lengthPreserved = Math.abs(inLen - inLenBefore) < 0.5;
+
+    // Alt+drag breaks the pairing for this one drag: the OTHER handle must
+    // not move at all.
+    const beforeAlt = { x: afterPlainDrag.handleIn.x, y: afterPlainDrag.handleIn.y };
+    B.drag(afterPlainDrag.handleOut, -20, 30, { altKey: true });
+    const afterAlt = B.d.getAnnotations().find(x => x.id === before.id).points[0];
+    const altBrokeIt = Math.hypot(afterAlt.handleIn.x - beforeAlt.x, afterAlt.handleIn.y - beforeAlt.y) < 0.01;
+
+    // A later PLAIN drag re-mirrors — proves no "broken" flag was stored.
+    B.drag(afterAlt.handleOut, 3, 3);
+    const afterReMirror = B.d.getAnnotations().find(x => x.id === before.id).points[0];
+    const reMirrored = Math.hypot(afterReMirror.handleIn.x - afterAlt.handleIn.x, afterReMirror.handleIn.y - afterAlt.handleIn.y) > 0.01;
+
+    // Select the anchor itself, then Backspace removes just it.
+    B.click(afterReMirror.point);
+    const linesBeforeDelete = B.d.getAnnotations().length;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+    const afterAnchorDelete = B.d.getAnnotations().find(x => x.id === before.id);
+    const anchorDeletedAlone = !!afterAnchorDelete && afterAnchorDelete.points.length === 0
+      && B.d.getAnnotations().length === linesBeforeDelete;
+
+    // Backspace again with no anchor active must delete the WHOLE line,
+    // exactly as before this story.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+    const wholeLineDeleted = !B.d.getAnnotations().some(x => x.id === before.id);
+
+    await B.restore();
+    return {
+      skipped: false, seq: before.seq,
+      addPointVisibleOnSelect, toolAfterClick, insertJumpPx,
+      mirroredAngle, lengthPreserved, altBrokeIt, reMirrored,
+      anchorDeletedAlone, wholeLineDeleted,
+    };
+  })()`);
+  if (addPoint.skipped) {
+    console.log('board-interaction-check: no curved line on this board, Add point check skipped');
+  } else {
+    check(addPoint.addPointVisibleOnSelect,
+      `POM ${addPoint.seq}: the Add point button must show the instant a curved line is selected`);
+    check(addPoint.toolAfterClick === 'add-point',
+      `clicking Add point must enter the add-point tool, got ${addPoint.toolAfterClick}`);
+    check(addPoint.insertJumpPx >= 0 && addPoint.insertJumpPx < 0.5,
+      `POM ${addPoint.seq}: inserting a point moved the curve ${addPoint.insertJumpPx}px at the click — insertion must land exactly on the existing path, not jump to it`);
+    check(addPoint.mirroredAngle,
+      `POM ${addPoint.seq}: a plain drag of one handle must keep the opposite handle collinear through the anchor (no kink)`);
+    check(addPoint.lengthPreserved,
+      `POM ${addPoint.seq}: mirroring must preserve the OTHER handle's own length — only its angle is forced`);
+    check(addPoint.altBrokeIt,
+      `POM ${addPoint.seq}: holding Alt while dragging a handle must leave the opposite handle untouched`);
+    check(addPoint.reMirrored,
+      `POM ${addPoint.seq}: a later plain drag must re-mirror the anchor — no state may persist from the Alt-break`);
+    check(addPoint.anchorDeletedAlone,
+      `POM ${addPoint.seq}: selecting the anchor then Backspace must remove just that anchor, leaving the line intact`);
+    check(addPoint.wholeLineDeleted,
+      `POM ${addPoint.seq}: Backspace with no anchor active must still delete the whole line, unchanged from before US-093`);
+    console.log(`board-interaction-check: curve anchor add/mirror/Alt-break/delete all correct (POM ${addPoint.seq})`);
+  }
+
+  // ---- 4d. Regression: interior anchors must follow a whole-line move ----
+  // Code-review finding, 2026-08-21: moveAnnotation (pointer-events.js) walks
+  // a fixed field list (start/end/midPoint*/control1/control2) that predates
+  // ann.points (US-093) and never mentions it. Before the fix, dragging a
+  // curve's body — or the photo it sits on, which drags every line on it via
+  // the same function — moved every fixed field but left an interior anchor
+  // frozen at its old absolute position, tearing the curve at the anchor.
+  const anchorMove = await s.eval(`(async () => {
+    const B = window.__BI;
+    await B.restore();
+    B.clearSelection();
+    const before = B.d.getAnnotations().find(x => x.type === 'curved' && x.control1 && x.control2);
+    if (!before) return { skipped: true };
+
+    B.click(before.start);
+    document.getElementById('toolAddPoint').click();
+    const bez = (a, t) => {
+      const u = 1 - t;
+      return {
+        x: u*u*u*a.start.x + 3*u*u*t*a.control1.x + 3*u*t*t*a.control2.x + t*t*t*a.end.x,
+        y: u*u*u*a.start.y + 3*u*u*t*a.control1.y + 3*u*t*t*a.control2.y + t*t*t*a.end.y,
+      };
+    };
+    B.click(bez(before, 0.5));
+    document.getElementById('toolSelect').click();
+    const withAnchor = B.d.getAnnotations().find(x => x.id === before.id);
+    if (!withAnchor.points.length) return { skipped: true };
+
+    // Deselect, then drag the body from t=0.15 — clear of the t=0.5 anchor's
+    // grab radius. Insertion is shape-preserving (De Casteljau), so this
+    // point (from the PRE-insertion control1/control2) is still exactly on
+    // the rendered curve, the same technique section 4c uses to prove the
+    // insertion itself didn't jump.
+    B.clearSelection();
+    const s0 = { x: withAnchor.start.x, y: withAnchor.start.y };
+    const a0 = { x: withAnchor.points[0].point.x, y: withAnchor.points[0].point.y };
+    B.drag(bez(before, 0.15), 30, 20);
+    const after = B.d.getAnnotations().find(x => x.id === before.id);
+    const startDelta = { x: after.start.x - s0.x, y: after.start.y - s0.y };
+    const anchorDelta = { x: after.points[0].point.x - a0.x, y: after.points[0].point.y - a0.y };
+
+    await B.restore();
+    return {
+      skipped: false, seq: before.seq,
+      lineMoved: Math.hypot(startDelta.x, startDelta.y) > 1,
+      trackedTogether: Math.hypot(anchorDelta.x - startDelta.x, anchorDelta.y - startDelta.y) < 0.5,
+    };
+  })()`);
+  if (anchorMove.skipped) {
+    console.log('board-interaction-check: no curved line on this board, anchor-follows-move check skipped');
+  } else {
+    check(anchorMove.lineMoved,
+      `POM ${anchorMove.seq}: the body drag never moved the line — nothing was tested`);
+    check(anchorMove.trackedTogether,
+      `POM ${anchorMove.seq}: dragging the line's body must move an interior anchor by the same delta as its endpoints — the curve must not tear at the anchor`);
+    console.log(`board-interaction-check: an interior anchor follows a whole-line body drag (POM ${anchorMove.seq})`);
+  }
+
+  // ---- 4e. Regression: interior anchors must follow a photo resize ----
+  // Same root cause as 4d, on the scale path: scaleAnnotationAbout
+  // (viewport.js) scales start/end/control1/control2 about the resize
+  // origin but, before the fix, left an interior anchor unscaled — silently
+  // changing that POM's measured length, breaking the ADR-0051/US-091
+  // "resizing the sketch changes no measured value" invariant for exactly
+  // the lines this story lets a TD reshape.
+  const anchorResize = await s.eval(`(async () => {
+    const B = window.__BI;
+    await B.restore();
+    B.clearSelection();
+    await B.settle();
+    const before = B.d.getAnnotations().find(x => x.type === 'curved' && x.control1 && x.control2);
+    if (!before) return { skipped: true };
+
+    B.click(before.start);
+    document.getElementById('toolAddPoint').click();
+    const bez = (a, t) => {
+      const u = 1 - t;
+      return {
+        x: u*u*u*a.start.x + 3*u*u*t*a.control1.x + 3*u*t*t*a.control2.x + t*t*t*a.end.x,
+        y: u*u*u*a.start.y + 3*u*u*t*a.control1.y + 3*u*t*t*a.control2.y + t*t*t*a.end.y,
+      };
+    };
+    B.click(bez(before, 0.5));
+    document.getElementById('toolSelect').click();
+    const withAnchor = B.d.getAnnotations().find(x => x.id === before.id);
+    if (!withAnchor.points.length) return { skipped: true };
+    B.clearSelection();
+    await B.settle();
+
+    const s0 = { x: withAnchor.start.x, y: withAnchor.start.y };
+    const a0 = { x: withAnchor.points[0].point.x, y: withAnchor.points[0].point.y };
+    const beforeW = B.d.getImages()[0].width;
+
+    // Same "widest clear spot" + corner-drag technique as the resize check
+    // above, so the corner press reliably opens a resize, not a marquee or
+    // a line drag.
+    const im = B.d.getImages()[0];
+    let spot = null, bestClear = -1;
+    for (let gx = 1; gx <= 14; gx += 1) for (let gy = 1; gy <= 14; gy += 1) {
+      const p = { x: im.x + im.width * gx / 15, y: im.y + im.height * gy / 15 };
+      let clear = Infinity;
+      for (const a of B.d.getAnnotations()) {
+        const vx = a.end.x - a.start.x, vy = a.end.y - a.start.y;
+        const len2 = vx * vx + vy * vy || 1;
+        const t = Math.max(0, Math.min(1, ((p.x - a.start.x) * vx + (p.y - a.start.y) * vy) / len2));
+        clear = Math.min(clear, Math.hypot(p.x - (a.start.x + vx * t), p.y - (a.start.y + vy * t)));
+      }
+      if (clear > bestClear) { bestClear = clear; spot = p; }
+    }
+    const mid = B.w2s(spot);
+    B.ev('mousedown', mid.x, mid.y); B.ev('mouseup', mid.x, mid.y);
+    await B.settle();
+    const se = B.w2s({ x: im.x + im.width, y: im.y + im.height });
+    B.ev('mousedown', se.x, se.y);
+    for (let i = 1; i <= 6; i += 1) B.ev('mousemove', se.x + 120 * i / 6, se.y + 90 * i / 6);
+    B.ev('mouseup', se.x + 120, se.y + 90);
+    await B.settle();
+
+    const imgScale = B.d.getImages()[0].width / beforeW;
+    const after = B.d.getAnnotations().find(x => x.id === before.id);
+    const relBefore = { x: a0.x - s0.x, y: a0.y - s0.y };
+    const relAfter = { x: after.points[0].point.x - after.start.x, y: after.points[0].point.y - after.start.y };
+    const expected = { x: relBefore.x * imgScale, y: relBefore.y * imgScale };
+    const err = Math.hypot(relAfter.x - expected.x, relAfter.y - expected.y);
+    const relBeforeMag = Math.hypot(relBefore.x, relBefore.y);
+
+    await B.restore();
+    return {
+      skipped: false, seq: before.seq, imgScale: +imgScale.toFixed(4),
+      resized: imgScale > 1.05,
+      anchorScaledWithLine: err < Math.max(0.5, relBeforeMag * 0.01),
+    };
+  })()`);
+  if (anchorResize.skipped) {
+    console.log('board-interaction-check: no curved line on this board, anchor-follows-resize check skipped');
+  } else {
+    check(anchorResize.resized,
+      `POM ${anchorResize.seq}: the photo barely resized (x${anchorResize.imgScale}) — nothing was tested`);
+    check(anchorResize.anchorScaledWithLine,
+      `POM ${anchorResize.seq}: resizing the photo must scale an interior anchor by the same factor as its endpoints (x${anchorResize.imgScale}) — the curve must not distort`);
+    console.log(`board-interaction-check: an interior anchor follows photo resize x${anchorResize.imgScale} (POM ${anchorResize.seq})`);
   }
 
   // ---- 5. The gestures US-053 / US-057 rely on still work ----

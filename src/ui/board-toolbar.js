@@ -8,7 +8,12 @@
     ['moreMenuWrap', 'moreMenuBtn', 'moreMenuList'],
     ['arrowMenuWrap', 'arrowMenuBtn', 'arrowMenuList'],
     ['colorMenuWrap', 'colorMenuBtn', 'colorMenuList'],
+    // US-093 / ADR 0053: Straight/Curved/Eraser/Text consolidated here to
+    // free a toolbar slot for the new "Add point" tool.
+    ['toolsMenuWrap', 'toolsMenuBtn', 'toolsMenuList'],
   ];
+
+  const TOOL_MENU_LABELS = { straight: 'Straight', curved: 'Curved', eraser: 'Eraser', text: 'Text' };
 
   function boardToolbarMenuRecords() {
     return BOARD_TOOLBAR_MENUS.map(([wrapId, buttonId, listId]) => ({
@@ -157,6 +162,17 @@
     const colorLabel = document.getElementById('colorMenuLabel');
     if (colorButton) colorButton.dataset.color = activeColor;
     if (colorLabel) colorLabel.textContent = activeColor.charAt(0).toUpperCase() + activeColor.slice(1);
+
+    // US-093 / ADR 0053: the trigger shows which of the four grouped tools is
+    // active; with Select or Add point active there is no "current" one of
+    // the four, so it reads as a plain label instead of implying a choice.
+    // Each option button's own .active class is already kept in sync by
+    // updateUI() (ui-status.js) — unchanged by moving them into this menu.
+    const toolMenuBtn = document.getElementById('toolsMenuBtn');
+    if (toolMenuBtn) {
+      const label = TOOL_MENU_LABELS[state.tool];
+      toolMenuBtn.textContent = label ? ('Tools: ' + label) : 'Tools ▾';
+    }
 
     // A mode/page transition never leaves a detached popup floating over the
     // newly active controls.

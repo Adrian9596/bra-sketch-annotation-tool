@@ -2824,24 +2824,43 @@
         <button id="toolSelect" data-key="S" class="tool-btn active has-ico" type="button" aria-label="Select and move" title="Select & move — click a line, label, or image to edit it (S)">
           <svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.4 3.1l13 6.1c.74.35.6 1.43-.2 1.59l-5 1-2 5c-.3.78-1.4.7-1.6-.1L4.2 4.4c-.2-.83.6-1.55 1.2-1.3z"/></svg>
         </button>
-        <button id="toolStraight" data-key="0" class="tool-btn has-ico" type="button" aria-label="Straight line" title="Straight line — click the start point, then the end point (0)">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.7" fill="currentColor" stroke="none"/></svg>
-        </button>
-        <button id="toolCurved" data-key="C" class="tool-btn has-ico" type="button" aria-label="Curved line" title="Curved line — click the start point, then the end point (C)">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 17C8 7 16 7 20 11"/><circle cx="4" cy="17" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="11" r="1.7" fill="currentColor" stroke="none"/></svg>
-        </button>
-        <button id="toolEraser" data-key="X" class="tool-btn has-ico" type="button" aria-label="Eraser" title="Eraser – paint white over unwanted lines in the photo (X)">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 18.5l-3-3a2 2 0 0 1 0-2.8l7-7a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8l-6.8 6.8z"/><line x1="8.5" y1="18.5" x2="20" y2="18.5"/></svg>
-        </button>
-        <!-- US-092: all five tool buttons are icon-only. Measured: the four
-             labelled ones were 110/121/116/111 px and the fifth would not fit —
-             the toolbar grew from 96 px to 131 px, i.e. an extra row. Dropping
-             the labels takes each to 64 px (the data-key badge is a ::after
-             pseudo-element and is unaffected), which is why every one of them
-             carries an explicit aria-label: with no text node, `title` alone is
-             a weak accessible name. -->
-        <button id="toolText" data-key="T" class="tool-btn has-ico manual-only" type="button" aria-label="Text note" title="Text note — click the board to write a remark (T)">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6.5V5h14v1.5"/><path d="M12 5v14"/><path d="M9 19h6"/></svg>
+        <!-- US-093 / ADR 0053: Straight/Curved/Eraser/Text consolidated into
+             one drop-down (the same toolbar-menu pattern as Arrow/Color below)
+             to free a slot for Add point — a naive 6th always-visible button
+             would reopen the exact toolbar-space problem ADR 0052 measured
+             and fixed by going icon-only. Each button keeps its id, its
+             data-key shortcut (still wired directly to setTool() in
+             keyboard-shortcuts.js, unaffected by moving into a menu), and its
+             own setTool() click binding in bindings.js. -->
+        <div id="toolsMenuWrap" class="toolbar-menu">
+          <button id="toolsMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="toolsMenuList" title="Choose a drawing tool">Tools ▾</button>
+          <div id="toolsMenuList" class="toolbar-menu-list menu-left" role="menu" hidden>
+            <button id="toolStraight" data-key="0" type="button" role="menuitem" title="Straight line — click the start point, then the end point (0)">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.7" fill="currentColor" stroke="none"/></svg>
+              Straight line
+            </button>
+            <button id="toolCurved" data-key="C" type="button" role="menuitem" title="Curved line — click the start point, then the end point (C)">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 17C8 7 16 7 20 11"/><circle cx="4" cy="17" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="11" r="1.7" fill="currentColor" stroke="none"/></svg>
+              Curved line
+            </button>
+            <button id="toolEraser" data-key="X" type="button" role="menuitem" title="Eraser – paint white over unwanted lines in the photo (X)">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 18.5l-3-3a2 2 0 0 1 0-2.8l7-7a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8l-6.8 6.8z"/><line x1="8.5" y1="18.5" x2="20" y2="18.5"/></svg>
+              Eraser
+            </button>
+            <button id="toolText" data-key="T" class="manual-only" type="button" role="menuitem" title="Text note — click the board to write a remark (T)">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6.5V5h14v1.5"/><path d="M12 5v14"/><path d="M9 19h6"/></svg>
+              Text note
+            </button>
+          </div>
+        </div>
+        <!-- US-093 / ADR 0053: only reachable while a curved annotation is
+             selected (gated in updateUI, ui-status.js) — a curve needs no
+             extra points until the TD asks for one, so this stays hidden the
+             rest of the time rather than sitting disabled. No dedicated
+             keyboard shortcut: contextual enough, and free single letters are
+             scarce (settle this at build time if TDs want one later). -->
+        <button id="toolAddPoint" class="tool-btn has-ico" type="button" aria-label="Add point" title="Add point — click the selected curve to add a bend point there" hidden>
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17C8 7 16 7 20 11"/><circle cx="12" cy="10.4" r="2.1" fill="currentColor" stroke="none"/></svg>
         </button>
       </div>
       <div id="lineStyleControl" class="style-menu">
@@ -3248,6 +3267,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=ac50c477a731"></script>
+<script src="app.js?v=72018dc97009"></script>
 </body>
 </html>

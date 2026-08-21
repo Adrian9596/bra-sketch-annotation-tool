@@ -13,6 +13,10 @@
     el.toolCurved.addEventListener('click', () => setTool('curved'));
     el.toolEraser.addEventListener('click', () => setTool('eraser'));
     el.toolText.addEventListener('click', () => setTool('text'));
+    // US-093 / ADR 0053: only visible while a curved annotation is selected
+    // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
+    // no extra guard needed here.
+    if (el.toolAddPoint) el.toolAddPoint.addEventListener('click', () => setTool('add-point'));
 
     el.stitchesBtn.addEventListener('click', toggleLineStyleMenu);
     el.styleOptionBtns.forEach((button) => {

@@ -261,6 +261,13 @@ function scaleAnnotationAbout(ann, origin, factor) {
   for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
     if (ann[key]) scalePointAbout(ann[key], origin, factor);
   }
+  if (Array.isArray(ann.points)) {
+    for (const anchor of ann.points) {
+      for (const field of ['point', 'handleIn', 'handleOut']) {
+        if (anchor[field]) scalePointAbout(anchor[field], origin, factor);
+      }
+    }
+  }
   scalePointAbout(ann.label, origin, factor);
   ann.measureScale = (ann.measureScale || 1) * factor;
 }

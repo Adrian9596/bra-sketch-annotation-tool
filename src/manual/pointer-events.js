@@ -130,6 +130,15 @@
       return;
     }
 
+    // US-093: a persistent mode like every other tool. Only ever acts on the
+    // curve that was already selected when the mode was entered — a click
+    // elsewhere (or one that misses that curve) does nothing, per the TD's
+    // own scoping in the ADR 0053 grilling session.
+    if (state.tool === 'add-point') {
+      handleAddPointClick(world);
+      return;
+    }
+
     // US-092: the Text tool places a note where it is clicked. Like the drawing
     // tools it STAYS active afterwards, so a run of remarks needs no trip back
     // to the toolbar; S or Escape returns to Select.
@@ -422,7 +431,7 @@
       const off = interaction.grabOffset || { x: 0, y: 0 };
       const target = { x: world.x + off.x, y: world.y + off.y };
       if (!dragArmed(interaction, world)) return;
-      dragHandle(ann, interaction.part, target, interaction.prevWorld);
+      dragHandle(ann, interaction.part, target, interaction.prevWorld, e.altKey);
       if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
       interaction.changed = true;
       interaction.prevWorld = target;
@@ -679,7 +688,7 @@ function startHandleDrag(id, part, world) {
   // the target and prevWorld carry the same constant offset, so the control-
   // handle deltas computed inside dragHandle are unaffected.
   const ann = getAnnotationById(id);
-  const anchorPt = ann ? ann[part] : null;
+  const anchorPt = ann ? getAnnPartPoint(ann, part) : null;
   const grabOffset = (anchorPt && Number.isFinite(anchorPt.x) && Number.isFinite(anchorPt.y))
     ? { x: anchorPt.x - world.x, y: anchorPt.y - world.y }
     : { x: 0, y: 0 };
@@ -873,13 +882,30 @@ function resizeImagesFromCorner(interaction, world) {
   }
 }
 
-  function dragHandle(ann, part, world, prevWorld) {
+  function dragHandle(ann, part, world, prevWorld, altHeld) {
     const dx = world.x - prevWorld.x;
     const dy = world.y - prevWorld.y;
 
     const moveBy = (p) => { if (p) { p.x += dx; p.y += dy; } };
 
-    if (part === 'start') {
+    const anchor = ann.type === 'curved' ? parseCurveAnchorPart(part) : null;
+    const anchorPt = anchor && ann.points ? ann.points[anchor.index] : null;
+
+    if (anchorPt) {
+      // US-093 / ADR 0053: dragging the anchor itself carries both its
+      // handles rigidly (pen-tool style, same as start/end carrying
+      // control1/control2 below). Dragging one of its handles keeps the
+      // OPPOSITE handle mirrored unless Alt is held, so the curve can't kink
+      // there by accident — recomputed fresh every drag, never stored.
+      if (anchor.field === 'point') {
+        anchorPt.point = clonePoint(world);
+        moveBy(anchorPt.handleIn);
+        moveBy(anchorPt.handleOut);
+      } else {
+        anchorPt[anchor.field] = clonePoint(world);
+        if (!altHeld) mirrorOppositeCurveHandle(anchorPt, anchor.field);
+      }
+    } else if (part === 'start') {
       ann.start = clonePoint(world);
       // An anchor carries its own handle(s) rigidly, like a pen tool, so the
       // curve near it keeps its shape while the anchor moves.
@@ -913,6 +939,13 @@ function resizeImagesFromCorner(interaction, world) {
     ann.end.x += dx; ann.end.y += dy;
     for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
       if (ann[key]) { ann[key].x += dx; ann[key].y += dy; }
+    }
+    if (Array.isArray(ann.points)) {
+      for (const anchor of ann.points) {
+        for (const field of ['point', 'handleIn', 'handleOut']) {
+          if (anchor[field]) { anchor[field].x += dx; anchor[field].y += dy; }
+        }
+      }
     }
     ann.label.x += dx; ann.label.y += dy;
   }

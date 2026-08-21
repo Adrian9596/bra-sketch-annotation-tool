@@ -9,11 +9,17 @@
   //   two segments joined there; otherwise a single cubic via control1/control2.
   // ===========================================================================
 
-  // A curved line is one or two cubic Bézier segments. With a middle anchor
-  // (midPoint) plus its two handles it's two segments joined there; without
-  // them (older lines, in-progress drafts) it's a single segment. Everything
-  // that samples, draws, or measures a curve goes through here so both shapes
-  // just work.
+  // A curved line is one or more cubic Bézier segments. The floor is the
+  // pen-tool single cubic (start/control1/control2/end); a TD may grow it with
+  // any number of interior anchor points (US-093 / ADR 0053), each an
+  // independent {point, handleIn, handleOut}, added on demand via the "Add
+  // point" tool — never a structural default. Everything that samples, draws,
+  // or measures a curve goes through here, so an empty/absent `points` array
+  // renders byte-identical to the original two-handle model.
+  //
+  // The legacy midPoint/midHandleIn/midHandleOut two-segment shape (rejected
+  // 2026-07-18, "rối tay cầm, khó bẻ") is unrelated to `points` and is still
+  // collapsed away by ensureCurveControls before this ever sees it.
   function getCurveBeziers(ann) {
     if (!ann || ann.type !== 'curved') return [];
     if (ann.midPoint && ann.midHandleIn && ann.midHandleOut) {
@@ -22,7 +28,128 @@
         { p0: ann.midPoint, p1: ann.midHandleOut, p2: ann.control2, p3: ann.end },
       ];
     }
-    return [{ p0: ann.start, p1: ann.control1, p2: ann.control2, p3: ann.end }];
+    const points = Array.isArray(ann.points) ? ann.points : null;
+    if (!points || !points.length) {
+      return [{ p0: ann.start, p1: ann.control1, p2: ann.control2, p3: ann.end }];
+    }
+    const segs = [];
+    let p0 = ann.start, p1 = ann.control1;
+    for (const pt of points) {
+      segs.push({ p0, p1, p2: pt.handleIn, p3: pt.point });
+      p0 = pt.point;
+      p1 = pt.handleOut;
+    }
+    segs.push({ p0, p1, p2: ann.control2, p3: ann.end });
+    return segs;
+  }
+
+  // ---- US-093 / ADR 0053: interior anchor points -----------------------
+  // A "part" name is either one of the fixed fields (start/end/control1/
+  // control2/midPoint/midHandleIn/midHandleOut) or "point<i>.point" /
+  // "point<i>.handleIn" / "point<i>.handleOut" addressing ann.points[i]. This
+  // is the one place that parses that name, so drag/nudge/readout/delete code
+  // never has to know the string format.
+  const CURVE_ANCHOR_PART_RE = /^point(\d+)\.(point|handleIn|handleOut)$/;
+
+  function parseCurveAnchorPart(part) {
+    const m = typeof part === 'string' && part.match(CURVE_ANCHOR_PART_RE);
+    return m ? { index: Number(m[1]), field: m[2] } : null;
+  }
+
+  // Read the world position addressed by any annotation "part" name, fixed
+  // field or interior anchor alike — the one generic getter drag/nudge/readout
+  // code should use instead of `ann[part]` (which cannot address an anchor).
+  function getAnnPartPoint(ann, part) {
+    if (!ann || !part) return null;
+    const anchor = parseCurveAnchorPart(part);
+    if (anchor) {
+      const pt = ann.points && ann.points[anchor.index];
+      return pt ? pt[anchor.field] || null : null;
+    }
+    return ann[part] || null;
+  }
+
+  // Keep an interior anchor's two handles collinear through its point (a
+  // "smooth" anchor, the TD's default per ADR 0053) by re-angling the handle
+  // that was NOT just dragged to point the opposite way, preserving that
+  // handle's own current distance from the point — only the angle is forced,
+  // not the length. Called on every plain drag, never stored, so an anchor
+  // whose pairing was broken with Alt re-smooths itself the moment either
+  // handle is dragged normally again.
+  function mirrorOppositeCurveHandle(pt, draggedField) {
+    const otherField = draggedField === 'handleIn' ? 'handleOut' : 'handleIn';
+    const other = pt[otherField];
+    const dragged = pt[draggedField];
+    if (!other || !dragged || !pt.point) return;
+    const dx = dragged.x - pt.point.x;
+    const dy = dragged.y - pt.point.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) return;
+    const otherLen = Math.hypot(other.x - pt.point.x, other.y - pt.point.y);
+    pt[otherField] = {
+      x: pt.point.x - (dx / len) * otherLen,
+      y: pt.point.y - (dy / len) * otherLen,
+    };
+  }
+
+  // De Casteljau subdivision of a cubic Bézier at parameter t — splits one
+  // curve into two that together trace the EXACT same path, which is what
+  // lets "Add point" insert an anchor without changing the curve's shape.
+  function subdivideCubicBezier(p0, p1, p2, p3, t) {
+    const lerp = (a, b) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    const p01 = lerp(p0, p1), p12 = lerp(p1, p2), p23 = lerp(p2, p3);
+    const p012 = lerp(p01, p12), p123 = lerp(p12, p23);
+    const p0123 = lerp(p012, p123);
+    return { left: [p0, p01, p012, p0123], right: [p0123, p123, p23, p3] };
+  }
+
+  // Find the closest point ON a selected curve to a click, for the "Add
+  // point" tool — insertion always lands on the curve's actual path, at the
+  // nearest position, never at the raw click pixel. 24 samples per segment is
+  // plenty for a click-precision UI gesture (not a measurement).
+  function nearestPointOnCurve(ann, world) {
+    const segs = getCurveBeziers(ann);
+    let best = null;
+    const SAMPLES = 24;
+    for (let s = 0; s < segs.length; s += 1) {
+      const seg = segs[s];
+      for (let i = 0; i <= SAMPLES; i += 1) {
+        const t = i / SAMPLES;
+        const p = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t);
+        const d = distance(world, p);
+        if (!best || d < best.distance) best = { segIndex: s, t, point: p, distance: d };
+      }
+    }
+    return best;
+  }
+
+  // Insert a new interior anchor by splitting segment `segIndex` (0-based,
+  // matching getCurveBeziers' order) at parameter `t`. Exact — the curve's
+  // drawn path is unchanged at the instant of insertion (US-093 / ADR 0053).
+  // Returns the new anchor's index in ann.points.
+  function insertCurveAnchorAt(ann, segIndex, t) {
+    const points = Array.isArray(ann.points) ? ann.points : (ann.points = []);
+    const p0 = segIndex === 0 ? ann.start : points[segIndex - 1].point;
+    const before = segIndex === 0 ? ann.control1 : points[segIndex - 1].handleOut;
+    const after = segIndex === points.length ? ann.control2 : points[segIndex].handleIn;
+    const p3 = segIndex === points.length ? ann.end : points[segIndex].point;
+    const { left, right } = subdivideCubicBezier(p0, before, after, p3, t);
+    const newAnchor = { point: left[3], handleIn: left[2], handleOut: right[1] };
+    if (segIndex === 0) ann.control1 = left[1]; else points[segIndex - 1].handleOut = left[1];
+    if (segIndex === points.length) ann.control2 = right[2]; else points[segIndex].handleIn = right[2];
+    points.splice(segIndex, 0, newAnchor);
+    return segIndex;
+  }
+
+  // Remove one interior anchor (US-093 / ADR 0053). Unlike insertion this has
+  // no exact inverse — merging two segments back into one cannot preserve
+  // both exactly — so the two now-adjacent segments simply keep whatever
+  // outer handles already flank the removed anchor. The TD re-drags by hand
+  // if the join doesn't look right; this asymmetry (insertion is lossless,
+  // deletion is not) is deliberate, not an oversight.
+  function deleteCurveAnchorAt(ann, index) {
+    if (!ann || !Array.isArray(ann.points)) return;
+    ann.points.splice(index, 1);
   }
 
   // Build a smooth two-segment curve that PASSES THROUGH start, mid, end (the
@@ -91,6 +218,7 @@
       midHandleOut: null,
       control1: c.control1,
       control2: c.control2,
+      points: [], // US-093: interior anchors the TD adds later, on demand.
       label,
       labelManual: false,
       text: null,
@@ -162,4 +290,8 @@
       ann.control1 = c.control1;
       ann.control2 = c.control2;
     }
+    // US-093: a project saved before interior anchors existed has no `points`
+    // at all — default it to empty rather than treating it as missing data,
+    // so getCurveBeziers/getAnnPartPoint never have to null-check twice.
+    if (!Array.isArray(ann.points)) ann.points = [];
   }

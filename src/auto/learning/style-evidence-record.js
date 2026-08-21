@@ -115,6 +115,14 @@
     const mho = normalizeEvidencePoint(line.midHandleOut);
     if (mhi) out.midHandleIn = mhi;
     if (mho) out.midHandleOut = mho;
+    const points = Array.isArray(line.points) ? line.points.map(pt => {
+      if (!pt || typeof pt !== 'object') return null;
+      const point = normalizeEvidencePoint(pt.point);
+      const handleIn = normalizeEvidencePoint(pt.handleIn);
+      const handleOut = normalizeEvidencePoint(pt.handleOut);
+      return (point && handleIn && handleOut) ? { point, handleIn, handleOut } : null;
+    }).filter(Boolean) : [];
+    if (points.length) out.points = points;
     return out;
   }
 

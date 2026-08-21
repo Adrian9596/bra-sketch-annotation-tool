@@ -169,6 +169,28 @@
       ctx.setLineDash([]);
       if (ann.control1) drawHandle(ann.control1, false, activePart === 'control1');
       if (ann.control2) drawHandle(ann.control2, false, activePart === 'control2');
+
+      // US-093: every interior anchor the TD added, drawn the same way — a
+      // dashed guide from the anchor to each of its two handles, all of it
+      // always visible while the curve is selected (no crowding gate, ADR
+      // 0053). The anchor point itself renders like start/end (emphasized);
+      // its handles render like control1/control2 (small).
+      const points = ann.points || [];
+      for (let i = 0; i < points.length; i += 1) {
+        const pt = points[i];
+        if (!pt.point) continue;
+        ctx.setLineDash([6 / state.zoom, 5 / state.zoom]);
+        ctx.strokeStyle = 'rgba(53,109,255,.45)';
+        ctx.lineWidth = 1.2 / state.zoom;
+        ctx.beginPath();
+        if (pt.handleIn) { ctx.moveTo(pt.point.x, pt.point.y); ctx.lineTo(pt.handleIn.x, pt.handleIn.y); }
+        if (pt.handleOut) { ctx.moveTo(pt.point.x, pt.point.y); ctx.lineTo(pt.handleOut.x, pt.handleOut.y); }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (pt.handleIn) drawHandle(pt.handleIn, false, activePart === 'point' + i + '.handleIn');
+        if (pt.handleOut) drawHandle(pt.handleOut, false, activePart === 'point' + i + '.handleOut');
+        drawHandle(pt.point, true, activePart === 'point' + i + '.point');
+      }
     }
 
     drawHandle(ann.start, true, activePart === 'start');
@@ -222,9 +244,7 @@
     const deltaText = specDeltaText(ev);
 
     const part = dragging ? interaction.part : state.selection.part;
-    const point = (part === 'start' && ann.start)
-      || (part === 'end' && ann.end)
-      || (part && ann[part])
+    const point = (part && getAnnPartPoint(ann, part))
       || { x: (ann.start.x + ann.end.x) / 2, y: (ann.start.y + ann.end.y) / 2 };
 
     const z = state.zoom;

@@ -6,6 +6,27 @@
 // click-twice-to-draw flow, including the extension-line detection that
 // splits a near-collinear follow-up click into its own POM annotation.
 
+  // ---- Add point (US-093 / ADR 0053) ----
+  // A click while this tool is active inserts a new interior anchor into the
+  // currently selected curve, at the nearest point ON its path — never at the
+  // raw click pixel, so the curve's shape does not change at the instant of
+  // insertion. A click that misses the selected curve (or nothing curved is
+  // selected) does nothing; this tool never acts on any other line.
+  function handleAddPointClick(world) {
+    const ann = getSelectedAnnotation();
+    if (!ann || ann.type !== 'curved') return;
+    const nearest = nearestPointOnCurve(ann, world);
+    const tolerance = Math.max(8, getLineWidth(ann) / 2 + 6) / state.zoom;
+    if (!nearest || nearest.distance > tolerance) return;
+    const index = insertCurveAnchorAt(ann, nearest.segIndex, nearest.t);
+    state.selection.part = 'point' + index + '.point';
+    if (!ann.labelManual) ann.label = computeDefaultLabelPosition(ann);
+    if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
+    pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+  }
+
   // ---- Eraser ----
   // Strokes live in image-local pixel coordinates so they automatically follow
   // their parent image when it is moved or resized. Rendering clips to the

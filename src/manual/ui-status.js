@@ -35,6 +35,17 @@
     // selected OR the Text tool being ready to place one — never both chips
     // hidden at once for a note, never both shown at once for a line.
     el.fontSizeChip.hidden = !(selectedNote || state.tool === 'text');
+    // US-093 / ADR 0053: only reachable while a curved annotation is
+    // selected — same conditional-visibility convention as fontSizeChip /
+    // brushSizeChip above, no disabled/greyed state anywhere else in this
+    // toolbar. A curve deselected while the mode was active would otherwise
+    // leave an invisible mode stuck on, so fall back to Select right here.
+    const addPointAvailable = !!(selectedAnnotation && selectedAnnotation.type === 'curved');
+    if (el.toolAddPoint) {
+      el.toolAddPoint.hidden = !addPointAvailable;
+      el.toolAddPoint.classList.toggle('active', state.tool === 'add-point');
+    }
+    if (state.tool === 'add-point' && !addPointAvailable) state.tool = 'select';
     const activeStyle = selectedAnnotation ? getLineStyle(selectedAnnotation) : state.drawStyle;
     // A selected note owns the swatch too — read from the note itself rather
     // than from state.drawColor, so an Undo that restores its old colour shows
@@ -89,6 +100,8 @@
         : (state.drawSession.mid == null
             ? 'Curved Line – Click the middle point the curve passes through.'
             : 'Curved Line – Click the end point to finish.');
+    } else if (state.tool === 'add-point') {
+      toolText = 'Add Point – Click the selected curve to add a bend point there. <span class="kbd">Alt</span> while dragging a handle moves it alone.';
     } else {
       toolText = imageCount === 0
         ? 'Eraser – Paste or import an image first, then drag to paint white over unwanted lines.'

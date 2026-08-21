@@ -54,6 +54,11 @@
       const midHandleOut = isCurved ? shift(src.midHandleOut) : null;
       const control1 = isCurved ? shift(src.control1) : null;
       const control2 = isCurved ? shift(src.control2) : null;
+      // US-093: shift every interior anchor's point + both handles by the
+      // same paste offset as everything else.
+      const points = isCurved && Array.isArray(src.points)
+        ? src.points.map(pt => ({ point: shift(pt.point), handleIn: shift(pt.handleIn), handleOut: shift(pt.handleOut) }))
+        : [];
       const ann = {
         id: state.idCounter++,
         seq: state.nextSequence,
@@ -69,7 +74,8 @@
         midHandleOut,
         control1,
         control2,
-        label: computeDefaultLabelPosition({ type: src.type, start, end, control1, control2, midPoint, midHandleIn, midHandleOut }),
+        points,
+        label: computeDefaultLabelPosition({ type: src.type, start, end, control1, control2, midPoint, midHandleIn, midHandleOut, points }),
         labelManual: false,
         text: src.text || null,
         value: null,
@@ -114,6 +120,12 @@
         midPoint: mirror(src.midPoint),
         midHandleIn: mirror(src.midHandleIn),
         midHandleOut: mirror(src.midHandleOut),
+        // US-093: mirror every interior anchor the same exact way as every
+        // other curve field — the spread above would otherwise carry the
+        // UNMIRRORED clone through untouched.
+        points: (Array.isArray(src.points) ? src.points : []).map(pt => ({
+          point: mirror(pt.point), handleIn: mirror(pt.handleIn), handleOut: mirror(pt.handleOut),
+        })),
         label: mirror(src.label),
         value: null,
       };

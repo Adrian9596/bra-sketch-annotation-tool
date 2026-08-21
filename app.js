@@ -493,6 +493,9 @@
     toolCurved: document.getElementById('toolCurved'),
     toolEraser: document.getElementById('toolEraser'),
     toolText: document.getElementById('toolText'),
+    // US-093 / ADR 0053: Straight/Curved/Eraser/Text moved into one drop-down
+    // to free this slot — see toolsMenuBtn below.
+    toolAddPoint: document.getElementById('toolAddPoint'),
     lineStyleControl: document.getElementById('lineStyleControl'),
     stitchesBtn: document.getElementById('stitchesBtn'),
     stitchesBtnLabel: document.getElementById('stitchesBtnLabel'),
@@ -921,11 +924,17 @@
   //   two segments joined there; otherwise a single cubic via control1/control2.
   // ===========================================================================
 
-  // A curved line is one or two cubic Bézier segments. With a middle anchor
-  // (midPoint) plus its two handles it's two segments joined there; without
-  // them (older lines, in-progress drafts) it's a single segment. Everything
-  // that samples, draws, or measures a curve goes through here so both shapes
-  // just work.
+  // A curved line is one or more cubic Bézier segments. The floor is the
+  // pen-tool single cubic (start/control1/control2/end); a TD may grow it with
+  // any number of interior anchor points (US-093 / ADR 0053), each an
+  // independent {point, handleIn, handleOut}, added on demand via the "Add
+  // point" tool — never a structural default. Everything that samples, draws,
+  // or measures a curve goes through here, so an empty/absent `points` array
+  // renders byte-identical to the original two-handle model.
+  //
+  // The legacy midPoint/midHandleIn/midHandleOut two-segment shape (rejected
+  // 2026-07-18, "rối tay cầm, khó bẻ") is unrelated to `points` and is still
+  // collapsed away by ensureCurveControls before this ever sees it.
   function getCurveBeziers(ann) {
     if (!ann || ann.type !== 'curved') return [];
     if (ann.midPoint && ann.midHandleIn && ann.midHandleOut) {
@@ -934,7 +943,128 @@
         { p0: ann.midPoint, p1: ann.midHandleOut, p2: ann.control2, p3: ann.end },
       ];
     }
-    return [{ p0: ann.start, p1: ann.control1, p2: ann.control2, p3: ann.end }];
+    const points = Array.isArray(ann.points) ? ann.points : null;
+    if (!points || !points.length) {
+      return [{ p0: ann.start, p1: ann.control1, p2: ann.control2, p3: ann.end }];
+    }
+    const segs = [];
+    let p0 = ann.start, p1 = ann.control1;
+    for (const pt of points) {
+      segs.push({ p0, p1, p2: pt.handleIn, p3: pt.point });
+      p0 = pt.point;
+      p1 = pt.handleOut;
+    }
+    segs.push({ p0, p1, p2: ann.control2, p3: ann.end });
+    return segs;
+  }
+
+  // ---- US-093 / ADR 0053: interior anchor points -----------------------
+  // A "part" name is either one of the fixed fields (start/end/control1/
+  // control2/midPoint/midHandleIn/midHandleOut) or "point<i>.point" /
+  // "point<i>.handleIn" / "point<i>.handleOut" addressing ann.points[i]. This
+  // is the one place that parses that name, so drag/nudge/readout/delete code
+  // never has to know the string format.
+  const CURVE_ANCHOR_PART_RE = /^point(\d+)\.(point|handleIn|handleOut)$/;
+
+  function parseCurveAnchorPart(part) {
+    const m = typeof part === 'string' && part.match(CURVE_ANCHOR_PART_RE);
+    return m ? { index: Number(m[1]), field: m[2] } : null;
+  }
+
+  // Read the world position addressed by any annotation "part" name, fixed
+  // field or interior anchor alike — the one generic getter drag/nudge/readout
+  // code should use instead of `ann[part]` (which cannot address an anchor).
+  function getAnnPartPoint(ann, part) {
+    if (!ann || !part) return null;
+    const anchor = parseCurveAnchorPart(part);
+    if (anchor) {
+      const pt = ann.points && ann.points[anchor.index];
+      return pt ? pt[anchor.field] || null : null;
+    }
+    return ann[part] || null;
+  }
+
+  // Keep an interior anchor's two handles collinear through its point (a
+  // "smooth" anchor, the TD's default per ADR 0053) by re-angling the handle
+  // that was NOT just dragged to point the opposite way, preserving that
+  // handle's own current distance from the point — only the angle is forced,
+  // not the length. Called on every plain drag, never stored, so an anchor
+  // whose pairing was broken with Alt re-smooths itself the moment either
+  // handle is dragged normally again.
+  function mirrorOppositeCurveHandle(pt, draggedField) {
+    const otherField = draggedField === 'handleIn' ? 'handleOut' : 'handleIn';
+    const other = pt[otherField];
+    const dragged = pt[draggedField];
+    if (!other || !dragged || !pt.point) return;
+    const dx = dragged.x - pt.point.x;
+    const dy = dragged.y - pt.point.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) return;
+    const otherLen = Math.hypot(other.x - pt.point.x, other.y - pt.point.y);
+    pt[otherField] = {
+      x: pt.point.x - (dx / len) * otherLen,
+      y: pt.point.y - (dy / len) * otherLen,
+    };
+  }
+
+  // De Casteljau subdivision of a cubic Bézier at parameter t — splits one
+  // curve into two that together trace the EXACT same path, which is what
+  // lets "Add point" insert an anchor without changing the curve's shape.
+  function subdivideCubicBezier(p0, p1, p2, p3, t) {
+    const lerp = (a, b) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    const p01 = lerp(p0, p1), p12 = lerp(p1, p2), p23 = lerp(p2, p3);
+    const p012 = lerp(p01, p12), p123 = lerp(p12, p23);
+    const p0123 = lerp(p012, p123);
+    return { left: [p0, p01, p012, p0123], right: [p0123, p123, p23, p3] };
+  }
+
+  // Find the closest point ON a selected curve to a click, for the "Add
+  // point" tool — insertion always lands on the curve's actual path, at the
+  // nearest position, never at the raw click pixel. 24 samples per segment is
+  // plenty for a click-precision UI gesture (not a measurement).
+  function nearestPointOnCurve(ann, world) {
+    const segs = getCurveBeziers(ann);
+    let best = null;
+    const SAMPLES = 24;
+    for (let s = 0; s < segs.length; s += 1) {
+      const seg = segs[s];
+      for (let i = 0; i <= SAMPLES; i += 1) {
+        const t = i / SAMPLES;
+        const p = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t);
+        const d = distance(world, p);
+        if (!best || d < best.distance) best = { segIndex: s, t, point: p, distance: d };
+      }
+    }
+    return best;
+  }
+
+  // Insert a new interior anchor by splitting segment `segIndex` (0-based,
+  // matching getCurveBeziers' order) at parameter `t`. Exact — the curve's
+  // drawn path is unchanged at the instant of insertion (US-093 / ADR 0053).
+  // Returns the new anchor's index in ann.points.
+  function insertCurveAnchorAt(ann, segIndex, t) {
+    const points = Array.isArray(ann.points) ? ann.points : (ann.points = []);
+    const p0 = segIndex === 0 ? ann.start : points[segIndex - 1].point;
+    const before = segIndex === 0 ? ann.control1 : points[segIndex - 1].handleOut;
+    const after = segIndex === points.length ? ann.control2 : points[segIndex].handleIn;
+    const p3 = segIndex === points.length ? ann.end : points[segIndex].point;
+    const { left, right } = subdivideCubicBezier(p0, before, after, p3, t);
+    const newAnchor = { point: left[3], handleIn: left[2], handleOut: right[1] };
+    if (segIndex === 0) ann.control1 = left[1]; else points[segIndex - 1].handleOut = left[1];
+    if (segIndex === points.length) ann.control2 = right[2]; else points[segIndex].handleIn = right[2];
+    points.splice(segIndex, 0, newAnchor);
+    return segIndex;
+  }
+
+  // Remove one interior anchor (US-093 / ADR 0053). Unlike insertion this has
+  // no exact inverse — merging two segments back into one cannot preserve
+  // both exactly — so the two now-adjacent segments simply keep whatever
+  // outer handles already flank the removed anchor. The TD re-drags by hand
+  // if the join doesn't look right; this asymmetry (insertion is lossless,
+  // deletion is not) is deliberate, not an oversight.
+  function deleteCurveAnchorAt(ann, index) {
+    if (!ann || !Array.isArray(ann.points)) return;
+    ann.points.splice(index, 1);
   }
 
   // Build a smooth two-segment curve that PASSES THROUGH start, mid, end (the
@@ -1003,6 +1133,7 @@
       midHandleOut: null,
       control1: c.control1,
       control2: c.control2,
+      points: [], // US-093: interior anchors the TD adds later, on demand.
       label,
       labelManual: false,
       text: null,
@@ -1074,6 +1205,10 @@
       ann.control1 = c.control1;
       ann.control2 = c.control2;
     }
+    // US-093: a project saved before interior anchors existed has no `points`
+    // at all — default it to empty rather than treating it as missing data,
+    // so getCurveBeziers/getAnnPartPoint never have to null-check twice.
+    if (!Array.isArray(ann.points)) ann.points = [];
   }
 
   // ---- src/geometry/math.js ----
@@ -5470,6 +5605,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       a.id, a.seq, a.text, a.type,
       r(a.start), r(a.end), r(a.midPoint),
       r(a.control1), r(a.control2), r(a.midHandleIn), r(a.midHandleOut),
+      Array.isArray(a.points) ? a.points.map(pt => [r(pt.point), r(pt.handleIn), r(pt.handleOut)]) : 0,
     ]);
     const draftBits = state.autoMode.draftAnnotations.map(d => [
       d.id, d.seq, d.text, !!d.tdApproved, !!d.tdEdited, !!d.tdTouched,
@@ -14263,7 +14399,12 @@ const BOM_MATERIAL_LIBRARY = [
     ['moreMenuWrap', 'moreMenuBtn', 'moreMenuList'],
     ['arrowMenuWrap', 'arrowMenuBtn', 'arrowMenuList'],
     ['colorMenuWrap', 'colorMenuBtn', 'colorMenuList'],
+    // US-093 / ADR 0053: Straight/Curved/Eraser/Text consolidated here to
+    // free a toolbar slot for the new "Add point" tool.
+    ['toolsMenuWrap', 'toolsMenuBtn', 'toolsMenuList'],
   ];
+
+  const TOOL_MENU_LABELS = { straight: 'Straight', curved: 'Curved', eraser: 'Eraser', text: 'Text' };
 
   function boardToolbarMenuRecords() {
     return BOARD_TOOLBAR_MENUS.map(([wrapId, buttonId, listId]) => ({
@@ -14412,6 +14553,17 @@ const BOM_MATERIAL_LIBRARY = [
     const colorLabel = document.getElementById('colorMenuLabel');
     if (colorButton) colorButton.dataset.color = activeColor;
     if (colorLabel) colorLabel.textContent = activeColor.charAt(0).toUpperCase() + activeColor.slice(1);
+
+    // US-093 / ADR 0053: the trigger shows which of the four grouped tools is
+    // active; with Select or Add point active there is no "current" one of
+    // the four, so it reads as a plain label instead of implying a choice.
+    // Each option button's own .active class is already kept in sync by
+    // updateUI() (ui-status.js) — unchanged by moving them into this menu.
+    const toolMenuBtn = document.getElementById('toolsMenuBtn');
+    if (toolMenuBtn) {
+      const label = TOOL_MENU_LABELS[state.tool];
+      toolMenuBtn.textContent = label ? ('Tools: ' + label) : 'Tools ▾';
+    }
 
     // A mode/page transition never leaves a detached popup floating over the
     // newly active controls.
@@ -14742,6 +14894,10 @@ const BOM_MATERIAL_LIBRARY = [
     el.toolCurved.addEventListener('click', () => setTool('curved'));
     el.toolEraser.addEventListener('click', () => setTool('eraser'));
     el.toolText.addEventListener('click', () => setTool('text'));
+    // US-093 / ADR 0053: only visible while a curved annotation is selected
+    // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
+    // no extra guard needed here.
+    if (el.toolAddPoint) el.toolAddPoint.addEventListener('click', () => setTool('add-point'));
 
     el.stitchesBtn.addEventListener('click', toggleLineStyleMenu);
     el.styleOptionBtns.forEach((button) => {
@@ -16593,16 +16749,24 @@ const BOM_MATERIAL_LIBRARY = [
         y: mid.y + Math.sin(angle - Math.PI / 2) * offset
       };
     }
-    // Anchor the label to the middle of the curve. For a two-segment curve
-    // that's the middle anchor (tangent = direction between its two handles);
-    // otherwise fall back to the single cubic's t=0.5 point.
+    // Anchor the label to the middle of the curve. For the legacy two-segment
+    // shape that's the middle anchor (tangent = direction between its two
+    // handles); for a curve with US-093 interior anchors, the same idea
+    // generalizes to the MIDDLE anchor in ann.points; otherwise (the common
+    // case) fall back to the single cubic's exact t=0.5 point — unchanged
+    // from before interior anchors existed.
     let point, tangent;
+    const points = Array.isArray(annLike.points) ? annLike.points : null;
     if (annLike.midPoint && annLike.midHandleIn && annLike.midHandleOut) {
       point = annLike.midPoint;
       tangent = {
         x: annLike.midHandleOut.x - annLike.midHandleIn.x,
         y: annLike.midHandleOut.y - annLike.midHandleIn.y,
       };
+    } else if (points && points.length) {
+      const mid = points[Math.floor((points.length - 1) / 2)];
+      point = mid.point;
+      tangent = { x: mid.handleOut.x - mid.handleIn.x, y: mid.handleOut.y - mid.handleIn.y };
     } else {
       point = bezierPoint(annLike.start, annLike.control1, annLike.control2, annLike.end, 0.5);
       tangent = bezierTangent(annLike.start, annLike.control1, annLike.control2, annLike.end, 0.5);
@@ -16731,6 +16895,25 @@ const BOM_MATERIAL_LIBRARY = [
     if (state.selection.kind == null) return;
 
     if (state.selection.kind === 'annotation') {
+      // US-093 / ADR 0053: Delete/Backspace with an interior anchor active
+      // (the TD just clicked/Tab-cycled to it) removes just that anchor, not
+      // the whole line — Delete with no interior anchor active falls through
+      // to the whole-line delete below, unchanged. Single-selection only,
+      // matching every other handle-level gesture in this file.
+      const anchor = getSelectedAnnotationIds().length <= 1
+        ? parseCurveAnchorPart(state.selection.part) : null;
+      const anchorAnn = anchor ? getAnnotationById(state.selection.id) : null;
+      if (anchor && anchorAnn && anchorAnn.type === 'curved'
+          && Array.isArray(anchorAnn.points) && anchorAnn.points[anchor.index]) {
+        deleteCurveAnchorAt(anchorAnn, anchor.index);
+        state.selection.part = null;
+        if (!anchorAnn.labelManual) anchorAnn.label = computeDefaultLabelPosition(anchorAnn);
+        if (isAutoDraft(anchorAnn)) markDraftTouchedByTD(anchorAnn);
+        pushHistoryIfChanged();
+        updateUI();
+        requestRender();
+        return;
+      }
       // Delete every selected line (Shift+click / marquee group).
       const ids = getSelectedAnnotationIds();
       if (!ids.length) return;
@@ -16871,6 +17054,11 @@ const BOM_MATERIAL_LIBRARY = [
       const midHandleOut = isCurved ? shift(src.midHandleOut) : null;
       const control1 = isCurved ? shift(src.control1) : null;
       const control2 = isCurved ? shift(src.control2) : null;
+      // US-093: shift every interior anchor's point + both handles by the
+      // same paste offset as everything else.
+      const points = isCurved && Array.isArray(src.points)
+        ? src.points.map(pt => ({ point: shift(pt.point), handleIn: shift(pt.handleIn), handleOut: shift(pt.handleOut) }))
+        : [];
       const ann = {
         id: state.idCounter++,
         seq: state.nextSequence,
@@ -16886,7 +17074,8 @@ const BOM_MATERIAL_LIBRARY = [
         midHandleOut,
         control1,
         control2,
-        label: computeDefaultLabelPosition({ type: src.type, start, end, control1, control2, midPoint, midHandleIn, midHandleOut }),
+        points,
+        label: computeDefaultLabelPosition({ type: src.type, start, end, control1, control2, midPoint, midHandleIn, midHandleOut, points }),
         labelManual: false,
         text: src.text || null,
         value: null,
@@ -16931,6 +17120,12 @@ const BOM_MATERIAL_LIBRARY = [
         midPoint: mirror(src.midPoint),
         midHandleIn: mirror(src.midHandleIn),
         midHandleOut: mirror(src.midHandleOut),
+        // US-093: mirror every interior anchor the same exact way as every
+        // other curve field — the spread above would otherwise carry the
+        // UNMIRRORED clone through untouched.
+        points: (Array.isArray(src.points) ? src.points : []).map(pt => ({
+          point: mirror(pt.point), handleIn: mirror(pt.handleIn), handleOut: mirror(pt.handleOut),
+        })),
         label: mirror(src.label),
         value: null,
       };
@@ -17417,6 +17612,15 @@ function setSelection(kind, id) {
       return;
     }
 
+    // US-093: a persistent mode like every other tool. Only ever acts on the
+    // curve that was already selected when the mode was entered — a click
+    // elsewhere (or one that misses that curve) does nothing, per the TD's
+    // own scoping in the ADR 0053 grilling session.
+    if (state.tool === 'add-point') {
+      handleAddPointClick(world);
+      return;
+    }
+
     // US-092: the Text tool places a note where it is clicked. Like the drawing
     // tools it STAYS active afterwards, so a run of remarks needs no trip back
     // to the toolbar; S or Escape returns to Select.
@@ -17709,7 +17913,7 @@ function setSelection(kind, id) {
       const off = interaction.grabOffset || { x: 0, y: 0 };
       const target = { x: world.x + off.x, y: world.y + off.y };
       if (!dragArmed(interaction, world)) return;
-      dragHandle(ann, interaction.part, target, interaction.prevWorld);
+      dragHandle(ann, interaction.part, target, interaction.prevWorld, e.altKey);
       if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
       interaction.changed = true;
       interaction.prevWorld = target;
@@ -17966,7 +18170,7 @@ function startHandleDrag(id, part, world) {
   // the target and prevWorld carry the same constant offset, so the control-
   // handle deltas computed inside dragHandle are unaffected.
   const ann = getAnnotationById(id);
-  const anchorPt = ann ? ann[part] : null;
+  const anchorPt = ann ? getAnnPartPoint(ann, part) : null;
   const grabOffset = (anchorPt && Number.isFinite(anchorPt.x) && Number.isFinite(anchorPt.y))
     ? { x: anchorPt.x - world.x, y: anchorPt.y - world.y }
     : { x: 0, y: 0 };
@@ -18160,13 +18364,30 @@ function resizeImagesFromCorner(interaction, world) {
   }
 }
 
-  function dragHandle(ann, part, world, prevWorld) {
+  function dragHandle(ann, part, world, prevWorld, altHeld) {
     const dx = world.x - prevWorld.x;
     const dy = world.y - prevWorld.y;
 
     const moveBy = (p) => { if (p) { p.x += dx; p.y += dy; } };
 
-    if (part === 'start') {
+    const anchor = ann.type === 'curved' ? parseCurveAnchorPart(part) : null;
+    const anchorPt = anchor && ann.points ? ann.points[anchor.index] : null;
+
+    if (anchorPt) {
+      // US-093 / ADR 0053: dragging the anchor itself carries both its
+      // handles rigidly (pen-tool style, same as start/end carrying
+      // control1/control2 below). Dragging one of its handles keeps the
+      // OPPOSITE handle mirrored unless Alt is held, so the curve can't kink
+      // there by accident — recomputed fresh every drag, never stored.
+      if (anchor.field === 'point') {
+        anchorPt.point = clonePoint(world);
+        moveBy(anchorPt.handleIn);
+        moveBy(anchorPt.handleOut);
+      } else {
+        anchorPt[anchor.field] = clonePoint(world);
+        if (!altHeld) mirrorOppositeCurveHandle(anchorPt, anchor.field);
+      }
+    } else if (part === 'start') {
       ann.start = clonePoint(world);
       // An anchor carries its own handle(s) rigidly, like a pen tool, so the
       // curve near it keeps its shape while the anchor moves.
@@ -18200,6 +18421,13 @@ function resizeImagesFromCorner(interaction, world) {
     ann.end.x += dx; ann.end.y += dy;
     for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
       if (ann[key]) { ann[key].x += dx; ann[key].y += dy; }
+    }
+    if (Array.isArray(ann.points)) {
+      for (const anchor of ann.points) {
+        for (const field of ['point', 'handleIn', 'handleOut']) {
+          if (anchor[field]) { anchor[field].x += dx; anchor[field].y += dy; }
+        }
+      }
     }
     ann.label.x += dx; ann.label.y += dy;
   }
@@ -18348,6 +18576,27 @@ function onWheel(e) {
 // state.*Session field. handleDrawToolClick implements the
 // click-twice-to-draw flow, including the extension-line detection that
 // splits a near-collinear follow-up click into its own POM annotation.
+
+  // ---- Add point (US-093 / ADR 0053) ----
+  // A click while this tool is active inserts a new interior anchor into the
+  // currently selected curve, at the nearest point ON its path — never at the
+  // raw click pixel, so the curve's shape does not change at the instant of
+  // insertion. A click that misses the selected curve (or nothing curved is
+  // selected) does nothing; this tool never acts on any other line.
+  function handleAddPointClick(world) {
+    const ann = getSelectedAnnotation();
+    if (!ann || ann.type !== 'curved') return;
+    const nearest = nearestPointOnCurve(ann, world);
+    const tolerance = Math.max(8, getLineWidth(ann) / 2 + 6) / state.zoom;
+    if (!nearest || nearest.distance > tolerance) return;
+    const index = insertCurveAnchorAt(ann, nearest.segIndex, nearest.t);
+    state.selection.part = 'point' + index + '.point';
+    if (!ann.labelManual) ann.label = computeDefaultLabelPosition(ann);
+    if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
+    pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+  }
 
   // ---- Eraser ----
   // Strokes live in image-local pixel coordinates so they automatically follow
@@ -18577,6 +18826,11 @@ function onWheel(e) {
       if (ann.midHandleIn) parts.push('midHandleIn');
       if (ann.midHandleOut) parts.push('midHandleOut');
       if (ann.control2) parts.push('control2');
+      // US-093: interior anchors the TD added, appended after the fixed
+      // fields so a curve with none cycles exactly as it always has.
+      (ann.points || []).forEach((_, i) => {
+        parts.push('point' + i + '.handleIn', 'point' + i + '.point', 'point' + i + '.handleOut');
+      });
     } else {
       parts.push('end');
     }
@@ -18591,6 +18845,12 @@ function onWheel(e) {
     if (part === 'control2') return 'end bend handle';
     if (part === 'midHandleIn') return 'mid bend handle (start side)';
     if (part === 'midHandleOut') return 'mid bend handle (end side)';
+    const anchor = parseCurveAnchorPart(part);
+    if (anchor) {
+      const n = anchor.index + 1;
+      if (anchor.field === 'point') return 'point ' + n;
+      return 'point ' + n + ' bend handle (' + (anchor.field === 'handleIn' ? 'in' : 'out') + ' side)';
+    }
     return 'whole line';
   }
 
@@ -18632,14 +18892,14 @@ function onWheel(e) {
       lineNudgeSession = { annId: ann.id, timer: null };
     }
     const part = state.selection.part;
-    const point = part === 'start' ? ann.start
-      : part === 'end' ? ann.end
-        : part ? ann[part] : null;
+    const point = part ? getAnnPartPoint(ann, part) : null;
     if (part && point) {
       // Route through dragHandle so curve semantics (endpoint carrying its
-      // control, mid point carrying both mid handles) match a mouse drag.
+      // control, mid point carrying both mid handles, an interior anchor's
+      // handles mirroring per US-093) match a mouse drag. Keyboard nudging
+      // has no Alt-modifier gesture defined, so a handle always mirrors.
       const prev = clonePoint(point);
-      dragHandle(ann, part, { x: prev.x + dx, y: prev.y + dy }, prev);
+      dragHandle(ann, part, { x: prev.x + dx, y: prev.y + dy }, prev, false);
     } else {
       moveAnnotation(ann, dx, dy);
     }
@@ -18977,7 +19237,7 @@ function onWheel(e) {
         showToast('Erase canceled.');
         updateUI();
         requestRender();
-      } else if (state.tool === 'straight' || state.tool === 'curved'
+      } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'add-point'
                  || state.tool === 'eraser' || state.tool === 'text') {
         setTool('select');
       } else if (state.selection.kind === 'annotation' && state.selection.part) {
@@ -19368,6 +19628,13 @@ function scaleAnnotationAbout(ann, origin, factor) {
   for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
     if (ann[key]) scalePointAbout(ann[key], origin, factor);
   }
+  if (Array.isArray(ann.points)) {
+    for (const anchor of ann.points) {
+      for (const field of ['point', 'handleIn', 'handleOut']) {
+        if (anchor[field]) scalePointAbout(anchor[field], origin, factor);
+      }
+    }
+  }
   scalePointAbout(ann.label, origin, factor);
   ann.measureScale = (ann.measureScale || 1) * factor;
 }
@@ -19524,6 +19791,17 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // selected OR the Text tool being ready to place one — never both chips
     // hidden at once for a note, never both shown at once for a line.
     el.fontSizeChip.hidden = !(selectedNote || state.tool === 'text');
+    // US-093 / ADR 0053: only reachable while a curved annotation is
+    // selected — same conditional-visibility convention as fontSizeChip /
+    // brushSizeChip above, no disabled/greyed state anywhere else in this
+    // toolbar. A curve deselected while the mode was active would otherwise
+    // leave an invisible mode stuck on, so fall back to Select right here.
+    const addPointAvailable = !!(selectedAnnotation && selectedAnnotation.type === 'curved');
+    if (el.toolAddPoint) {
+      el.toolAddPoint.hidden = !addPointAvailable;
+      el.toolAddPoint.classList.toggle('active', state.tool === 'add-point');
+    }
+    if (state.tool === 'add-point' && !addPointAvailable) state.tool = 'select';
     const activeStyle = selectedAnnotation ? getLineStyle(selectedAnnotation) : state.drawStyle;
     // A selected note owns the swatch too — read from the note itself rather
     // than from state.drawColor, so an Undo that restores its old colour shows
@@ -19578,6 +19856,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         : (state.drawSession.mid == null
             ? 'Curved Line – Click the middle point the curve passes through.'
             : 'Curved Line – Click the end point to finish.');
+    } else if (state.tool === 'add-point') {
+      toolText = 'Add Point – Click the selected curve to add a bend point there. <span class="kbd">Alt</span> while dragging a handle moves it alone.';
     } else {
       toolText = imageCount === 0
         ? 'Eraser – Paste or import an image first, then drag to paint white over unwanted lines.'
@@ -32826,6 +33106,14 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     const mho = normalizeEvidencePoint(line.midHandleOut);
     if (mhi) out.midHandleIn = mhi;
     if (mho) out.midHandleOut = mho;
+    const points = Array.isArray(line.points) ? line.points.map(pt => {
+      if (!pt || typeof pt !== 'object') return null;
+      const point = normalizeEvidencePoint(pt.point);
+      const handleIn = normalizeEvidencePoint(pt.handleIn);
+      const handleOut = normalizeEvidencePoint(pt.handleOut);
+      return (point && handleIn && handleOut) ? { point, handleIn, handleOut } : null;
+    }).filter(Boolean) : [];
+    if (points.length) out.points = points;
     return out;
   }
 
@@ -33111,6 +33399,14 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       if (c2) out.control2 = c2;
       const mp = worldPointToImageNormalized(ann.midPoint, image);
       if (mp) out.midPoint = mp;
+      if (Array.isArray(ann.points) && ann.points.length) {
+        const points = ann.points.map(pt => ({
+          point: worldPointToImageNormalized(pt.point, image),
+          handleIn: worldPointToImageNormalized(pt.handleIn, image),
+          handleOut: worldPointToImageNormalized(pt.handleOut, image),
+        })).filter(pt => pt.point && pt.handleIn && pt.handleOut);
+        if (points.length) out.points = points;
+      }
     }
     return out;
   }
@@ -36029,6 +36325,16 @@ function makeExportFileName() {
       // model). Endpoints are checked first (above) so they win a shared spot.
       if (ann.control1 && distance(world, ann.control1) <= controlRadius) return { part: 'control1' };
       if (ann.control2 && distance(world, ann.control2) <= controlRadius) return { part: 'control2' };
+      // US-093: any interior anchor the TD added — no visibility gating (ADR
+      // 0053), so every anchor's point + both handles are grabbable at once,
+      // same "no crowding gate" stance the two base handles already take.
+      const points = ann.points || [];
+      for (let i = 0; i < points.length; i += 1) {
+        const pt = points[i];
+        if (pt.point && distance(world, pt.point) <= endpointRadius) return { part: 'point' + i + '.point' };
+        if (pt.handleIn && distance(world, pt.handleIn) <= controlRadius) return { part: 'point' + i + '.handleIn' };
+        if (pt.handleOut && distance(world, pt.handleOut) <= controlRadius) return { part: 'point' + i + '.handleOut' };
+      }
     }
     if (pointInLabelBounds(world, ann.label, getLabelText(ann), 9 / state.zoom)) return { part: 'label' };
     return null;
@@ -36641,6 +36947,28 @@ function makeExportFileName() {
       ctx.setLineDash([]);
       if (ann.control1) drawHandle(ann.control1, false, activePart === 'control1');
       if (ann.control2) drawHandle(ann.control2, false, activePart === 'control2');
+
+      // US-093: every interior anchor the TD added, drawn the same way — a
+      // dashed guide from the anchor to each of its two handles, all of it
+      // always visible while the curve is selected (no crowding gate, ADR
+      // 0053). The anchor point itself renders like start/end (emphasized);
+      // its handles render like control1/control2 (small).
+      const points = ann.points || [];
+      for (let i = 0; i < points.length; i += 1) {
+        const pt = points[i];
+        if (!pt.point) continue;
+        ctx.setLineDash([6 / state.zoom, 5 / state.zoom]);
+        ctx.strokeStyle = 'rgba(53,109,255,.45)';
+        ctx.lineWidth = 1.2 / state.zoom;
+        ctx.beginPath();
+        if (pt.handleIn) { ctx.moveTo(pt.point.x, pt.point.y); ctx.lineTo(pt.handleIn.x, pt.handleIn.y); }
+        if (pt.handleOut) { ctx.moveTo(pt.point.x, pt.point.y); ctx.lineTo(pt.handleOut.x, pt.handleOut.y); }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (pt.handleIn) drawHandle(pt.handleIn, false, activePart === 'point' + i + '.handleIn');
+        if (pt.handleOut) drawHandle(pt.handleOut, false, activePart === 'point' + i + '.handleOut');
+        drawHandle(pt.point, true, activePart === 'point' + i + '.point');
+      }
     }
 
     drawHandle(ann.start, true, activePart === 'start');
@@ -36694,9 +37022,7 @@ function makeExportFileName() {
     const deltaText = specDeltaText(ev);
 
     const part = dragging ? interaction.part : state.selection.part;
-    const point = (part === 'start' && ann.start)
-      || (part === 'end' && ann.end)
-      || (part && ann[part])
+    const point = (part && getAnnPartPoint(ann, part))
       || { x: (ann.start.x + ann.end.x) / 2, y: (ann.start.y + ann.end.y) / 2 };
 
     const z = state.zoom;

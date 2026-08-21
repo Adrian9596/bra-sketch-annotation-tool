@@ -299,7 +299,7 @@
         showToast('Erase canceled.');
         updateUI();
         requestRender();
-      } else if (state.tool === 'straight' || state.tool === 'curved'
+      } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'add-point'
                  || state.tool === 'eraser' || state.tool === 'text') {
         setTool('select');
       } else if (state.selection.kind === 'annotation' && state.selection.part) {

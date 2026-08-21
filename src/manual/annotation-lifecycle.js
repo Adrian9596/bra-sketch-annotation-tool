@@ -35,6 +35,25 @@
     if (state.selection.kind == null) return;
 
     if (state.selection.kind === 'annotation') {
+      // US-093 / ADR 0053: Delete/Backspace with an interior anchor active
+      // (the TD just clicked/Tab-cycled to it) removes just that anchor, not
+      // the whole line — Delete with no interior anchor active falls through
+      // to the whole-line delete below, unchanged. Single-selection only,
+      // matching every other handle-level gesture in this file.
+      const anchor = getSelectedAnnotationIds().length <= 1
+        ? parseCurveAnchorPart(state.selection.part) : null;
+      const anchorAnn = anchor ? getAnnotationById(state.selection.id) : null;
+      if (anchor && anchorAnn && anchorAnn.type === 'curved'
+          && Array.isArray(anchorAnn.points) && anchorAnn.points[anchor.index]) {
+        deleteCurveAnchorAt(anchorAnn, anchor.index);
+        state.selection.part = null;
+        if (!anchorAnn.labelManual) anchorAnn.label = computeDefaultLabelPosition(anchorAnn);
+        if (isAutoDraft(anchorAnn)) markDraftTouchedByTD(anchorAnn);
+        pushHistoryIfChanged();
+        updateUI();
+        requestRender();
+        return;
+      }
       // Delete every selected line (Shift+click / marquee group).
       const ids = getSelectedAnnotationIds();
       if (!ids.length) return;

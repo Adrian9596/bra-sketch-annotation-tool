@@ -103,6 +103,14 @@
       if (c2) out.control2 = c2;
       const mp = worldPointToImageNormalized(ann.midPoint, image);
       if (mp) out.midPoint = mp;
+      if (Array.isArray(ann.points) && ann.points.length) {
+        const points = ann.points.map(pt => ({
+          point: worldPointToImageNormalized(pt.point, image),
+          handleIn: worldPointToImageNormalized(pt.handleIn, image),
+          handleOut: worldPointToImageNormalized(pt.handleOut, image),
+        })).filter(pt => pt.point && pt.handleIn && pt.handleOut);
+        if (points.length) out.points = points;
+      }
     }
     return out;
   }

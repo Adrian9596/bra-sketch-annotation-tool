@@ -76,13 +76,16 @@ async function main() {
   // The exact SET, not a count. US-092 added a fifth drawing tool and this
   // assertion failed as "9 direct buttons, got 10" — true, but it does not say
   // WHICH control appeared, which is the only thing a reviewer needs to decide
-  // whether the change belongs. The Text tool does: a note needs no photo, so
-  // it is an authoring entry point exactly like Straight and Curved, and the
-  // three claims this section really makes (no line settings, no selection
-  // actions, no Export on an empty board) are asserted separately below.
+  // whether the change belongs. US-093 then consolidated Straight/Curved/
+  // Eraser/Text into one "toolsMenuBtn" drop-down (freeing room for the new,
+  // selection-gated "Add point" tool) — so those four ids no longer appear as
+  // DIRECT toolbar children (they're menu items, hidden until opened), and
+  // the three claims this section really makes (no line settings, no
+  // selection actions, no Export on an empty board) are asserted separately
+  // below.
   check(JSON.stringify(emptyManual.buttons) === JSON.stringify([
     'modeManualBtn', 'modeAutoBtn', 'addImageBtn',
-    'toolSelect', 'toolStraight', 'toolCurved', 'toolText',
+    'toolSelect', 'toolsMenuBtn',
     'stitchesBtn', 'fileMenuBtn', 'moreMenuBtn',
   ]), `empty Manual controls wrong: ${JSON.stringify(emptyManual.buttons)}`);
   check(emptyManual.contextHidden, 'selection actions should be hidden with no selection/history');

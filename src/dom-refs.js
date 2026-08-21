@@ -14,6 +14,9 @@
     toolCurved: document.getElementById('toolCurved'),
     toolEraser: document.getElementById('toolEraser'),
     toolText: document.getElementById('toolText'),
+    // US-093 / ADR 0053: Straight/Curved/Eraser/Text moved into one drop-down
+    // to free this slot — see toolsMenuBtn below.
+    toolAddPoint: document.getElementById('toolAddPoint'),
     lineStyleControl: document.getElementById('lineStyleControl'),
     stitchesBtn: document.getElementById('stitchesBtn'),
     stitchesBtnLabel: document.getElementById('stitchesBtnLabel'),
