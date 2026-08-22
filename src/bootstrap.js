@@ -12,6 +12,7 @@
     initBom();
     initPreviewPage();
     initPageNav();
+    applyAppCommandShortcutHints();
     // Auto-only build: boot straight into Auto Mode (sets body class,
     // status chip, and locks manual editing paths).
     setAppMode('auto');

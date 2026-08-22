@@ -102,6 +102,9 @@
         ccSetTool('select');
         renderConstruction();
       });
+      button.addEventListener('keydown', event => {
+        moveTablistFocus(event, document.querySelectorAll('[data-cc-sheet]'));
+      });
     });
     document.querySelectorAll('[data-cc-active-view]').forEach(button => {
       button.addEventListener('click', () => {
@@ -257,6 +260,7 @@
     document.addEventListener('keydown', event => {
       if (state.activePage !== 'construction') return;
       if (event.key === 'Escape') {
+        if (document.querySelector('.picker-overlay')) return;
         if (ccTool !== 'select') { ccSetTool('select'); return; }
         if (ccSelectedCalloutId != null || ccSelectedImageId != null || ccSelectedRowId != null) {
           ccSelectedCalloutId = null; ccSelectedImageId = null; ccSelectedRowId = null; renderConstruction(); return;

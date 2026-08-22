@@ -45,6 +45,9 @@
         bmSyncVariantTabs();
         renderBom();
       });
+      btn.addEventListener('keydown', event => {
+        moveTablistFocus(event, document.querySelectorAll('[data-bom-variant]'));
+      });
     });
 
     const selectToolBtn = document.getElementById('bomSelectToolBtn');
@@ -289,6 +292,7 @@
     document.addEventListener('keydown', e => {
       if (state.activePage !== 'bom') return;
       if (e.key === 'Escape') {
+        if (document.querySelector('.picker-overlay')) return;
         if (bmDdOpenFor) { bmCloseDd(); return; }
         if (bmPhotoOpenRow != null) { bmClosePhotoMenu(); return; }
         if (bmTool !== 'select') { bmSetTool('select'); showToast('Select tool active'); return; }

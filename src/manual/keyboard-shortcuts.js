@@ -18,6 +18,12 @@
     const isMeta = e.metaKey || e.ctrlKey;
     const key = e.key.toLowerCase();
 
+    // US-094: stable direct shortcuts are declared in command-registry.js.
+    // That same metadata feeds the Command Palette, Help, and button hints.
+    // Complex gestures (nudge, point cycling, pan, brush stepping, Escape)
+    // remain below because they are continuous interactions, not commands.
+    if (dispatchAppCommandShortcut(e, inField)) return;
+
     // Undo / redo work everywhere, INCLUDING while a spec-panel field
     // (Size L / TOL / 中文 / description) is focused. Blur first so any
     // pending edit commits to history, then it is undone as a single step.
@@ -54,6 +60,11 @@
 
     // Everything below is a canvas-level shortcut — ignore while typing.
     if (inField) return;
+
+    // Board letters never act on hidden Board state while a tech-pack sheet
+    // owns the screen. Global and page-navigation chords already ran through
+    // the registry above; each non-Board page owns its own local key handling.
+    if (state.activePage !== 'board') return;
 
     // U1: arrow keys nudge the selected Auto-Mode anchor by one source-image
     // pixel (Shift = 10) — the precise landing tool after a rough drag.

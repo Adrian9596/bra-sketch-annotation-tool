@@ -53,26 +53,13 @@
       </div>
       <div class="help-section">
         <h3>Keyboard shortcuts</h3>
-        <div class="help-row"><span>Select tool</span><span class="help-keys"><span class="kbd">S</span></span></div>
-        <div class="help-row"><span>Straight line</span><span class="help-keys"><span class="kbd">0</span></span></div>
-        <div class="help-row"><span>Curved line</span><span class="help-keys"><span class="kbd">C</span></span></div>
-        <div class="help-row"><span>Eraser</span><span class="help-keys"><span class="kbd">X</span></span></div>
-        <div class="help-row"><span>Lock / unlock all images</span><span class="help-keys"><span class="kbd">L</span></span></div>
-        <div class="help-row"><span>Fit to view</span><span class="help-keys"><span class="kbd">F</span></span></div>
-        <div class="help-row"><span>Hide / show numbers</span><span class="help-keys"><span class="kbd">N</span></span></div>
-        <div class="help-row"><span>Hide / show the Measurements panel</span><span class="help-keys"><span class="kbd">H</span></span></div>
-        <div class="help-row"><span>Add an image</span><span class="help-keys"><span class="kbd">A</span></span></div>
-        <div class="help-row"><span>Open the Grading dialog</span><span class="help-keys"><span class="kbd">G</span></span></div>
-        <div class="help-row"><span>Export Excel spec</span><span class="help-keys"><span class="kbd">E</span></span></div>
-        <div class="help-row"><span>Reset board (photo + all lines)</span><span class="help-keys"><span class="kbd">R</span></span></div>
-        <div class="help-row"><span>Delete all lines (keep photo)</span><span class="help-keys"><span class="kbd">D</span></span></div>
+        <div class="help-row"><span>Open Command Palette</span><span class="help-keys"><span class="kbd">${escapeHtml(formatAppCommandShortcuts(getAppCommand('palette.open')))}</span></span></div>
+        ${appCommandHelpRowsHtml()}
         <div class="help-row"><span>Nudge selected anchor pin 1 px (10 px with <span class="kbd">⇧</span>)</span><span class="help-keys"><span class="kbd">←</span><span class="kbd">↑</span><span class="kbd">↓</span><span class="kbd">→</span></span></div>
         <div class="help-row"><span>Drop anchor without snapping to ink</span><span class="help-keys">Hold <span class="kbd">⌥</span> on release</span></div>
         <div class="help-row"><span>Nudge selected line / active point 1 px (10 px with <span class="kbd">⇧</span>)</span><span class="help-keys"><span class="kbd">←</span><span class="kbd">↑</span><span class="kbd">↓</span><span class="kbd">→</span></span></div>
         <div class="help-row"><span>Pick the point the arrows move (line → start → mid → end → bend handles)</span><span class="help-keys"><span class="kbd">Tab</span></span></div>
         <div class="help-row"><span>Step a focused Size L / L2 / TOL field by ⅛ (whole unit with <span class="kbd">⇧</span>)</span><span class="help-keys"><span class="kbd">↑</span><span class="kbd">↓</span></span></div>
-        <div class="help-row"><span>Undo / Redo</span><span class="help-keys"><span class="kbd">⌘</span><span class="kbd">Z</span> / <span class="kbd">⇧</span><span class="kbd">⌘</span><span class="kbd">Z</span></span></div>
-        <div class="help-row"><span>Delete selected</span><span class="help-keys"><span class="kbd">Delete</span></span></div>
         <div class="help-row"><span>Pan the board</span><span class="help-keys">Hold <span class="kbd">Space</span> + drag</span></div>
         <div class="help-row"><span>Zoom</span><span class="help-keys">Mouse wheel / trackpad</span></div>
         <div class="help-row"><span>Eraser brush size</span><span class="help-keys"><span class="kbd">[</span> <span class="kbd">]</span></span></div>

@@ -269,8 +269,15 @@
       if (mpColorWrap && !e.target.closest('.color-add-wrap')) mpColorWrap.classList.remove('open');
       if (mpFldOpen && !e.target.closest('#mp-menu,[data-mp-dd]')) mpCloseFldMenu();
     });
+    overlay.addEventListener('keydown', e => {
+      const sketch = e.target.closest('[data-mp-sk]');
+      if (!sketch || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      sketch.click();
+    });
     document.addEventListener('keydown', e => {
       if (e.key !== 'Escape' || state.activePage !== 'mainpage') return;
+      if (document.querySelector('.picker-overlay')) return;
       if (mpSketchOpen) { mpCloseSketchMenu(); return; }
       if (mpFldOpen) { mpCloseFldMenu(true); return; }
       if (mpColorWrap && mpColorWrap.classList.contains('open')) {

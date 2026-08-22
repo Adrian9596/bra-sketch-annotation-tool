@@ -96,7 +96,7 @@
         ? '<img class="mp-sk-img" src="' + escapeHtml(dataURL) + '" alt="' + slot.label + ' sketch">'
         : '<span class="mp-sk-empty">' + (editable ? '＋ ' : '') + slot.label + '</span>';
       return '<div class="mp-sketch' + (dataURL ? ' mp-sk-filled' : '') + '"'
-        + (editable ? ' data-mp-sk="' + ref + '" title="Upload or paste the '
+        + (editable ? ' data-mp-sk="' + ref + '" role="button" tabindex="0" title="Upload or paste the '
           + slot.label.toLowerCase() + ' technical flat"' : '')
         + '>' + body
         + '<span class="mp-sk-tag">' + slot.label + '</span>'

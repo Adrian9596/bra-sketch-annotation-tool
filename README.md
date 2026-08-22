@@ -41,6 +41,10 @@ From there: a measurements panel with a graded size run, three tech-pack pages
 (main page, construction callouts, BOM), and export to `.xlsx` / PDF / clipboard
 PNG — all still offline.
 
+Press **Cmd/Ctrl+K** anywhere to search every stable command. Use
+**Cmd/Ctrl+1…5** to switch Board, Main Page, Construction, BOM, and Preview &
+Export; existing Board drawing shortcuts stay scoped to the Board.
+
 ## Run it locally
 
 ```sh
@@ -70,6 +74,7 @@ npm run export-hidden      # hidden-POM export behaviour
 npm run suggestions-tests  # library-value suggestion layer
 npm run autosave-check     # crash-safe autosave and restore
 npm run curve-polyline-tests # multi-anchor curve sampling accuracy
+npm run keyboard-shortcuts-check # command palette and five-page keyboard access
 npm run mainpage-check     # tech-pack MAIN PAGE sheet
 npm run construction-check # construction annotation page
 npm run bom-check          # BOM page

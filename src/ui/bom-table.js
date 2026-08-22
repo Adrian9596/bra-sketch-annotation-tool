@@ -216,7 +216,7 @@
         + escapeHtml(row.cells[f] || '') + '</span>'
         + (suggestable
           ? '<button type="button" class="bm-dd" data-bom-dd="' + row.id + '|' + f
-            + '" tabindex="-1" title="Suggestions from the material library — pick by hand, never auto-filled"></button>'
+            + '" title="Suggestions from the material library — pick by hand, never auto-filled"></button>'
           : '')
         + '</td>';
     }).join('');

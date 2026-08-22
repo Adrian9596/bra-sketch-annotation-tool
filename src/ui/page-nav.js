@@ -35,13 +35,41 @@
     }).filter(Boolean);
   }
 
+  function moveTablistFocus(event, tabs) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return false;
+    const items = Array.from(tabs || []);
+    const current = items.indexOf(document.activeElement);
+    if (current < 0 || !items.length) return false;
+    event.preventDefault();
+    let next = current;
+    if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = items.length - 1;
+    else if (event.key === 'ArrowLeft') next = (current - 1 + items.length) % items.length;
+    else next = (current + 1) % items.length;
+    const target = items[next];
+    const identityAttr = target.hasAttribute('data-page') ? 'data-page'
+      : (target.hasAttribute('data-cc-sheet') ? 'data-cc-sheet'
+        : (target.hasAttribute('data-bom-variant') ? 'data-bom-variant' : null));
+    const identityValue = identityAttr ? target.getAttribute(identityAttr) : null;
+    target.focus();
+    target.click();
+    // Page tabs are rebuilt by setActivePage(). Restore focus to the new DOM
+    // node representing the same tab; Construction/BOM tabs stay connected.
+    if (!target.isConnected && identityAttr) {
+      const replacement = document.querySelector('[' + identityAttr + '="' + identityValue + '"]');
+      if (replacement) replacement.focus();
+    }
+    return true;
+  }
+
   function renderPageTabs() {
     const bar = document.getElementById('pageTabBar');
     if (!bar) return;
     bar.innerHTML = TECH_PACK_PAGES.map(function (p) {
       const active = state.activePage === p.id;
       return '<button type="button" class="' + (active ? 'active' : '') + '" data-page="' + p.id + '"'
-        + ' role="tab" aria-selected="' + active + '">' + escapeHtml(p.label) + '</button>';
+        + ' role="tab" aria-selected="' + active + '" tabindex="' + (active ? '0' : '-1') + '">'
+        + escapeHtml(p.label) + '</button>';
     }).join('');
   }
 
@@ -82,6 +110,9 @@
       bar.addEventListener('click', function (e) {
         const btn = e.target.closest('[data-page]');
         if (btn) setActivePage(btn.dataset.page);
+      });
+      bar.addEventListener('keydown', function (e) {
+        moveTablistFocus(e, bar.querySelectorAll('[data-page]'));
       });
     }
     setActivePage('board');

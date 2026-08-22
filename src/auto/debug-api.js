@@ -303,6 +303,20 @@
         draftCount: state.autoMode.draftAnnotations.length,
         anchorCount: state.autoMode.anchors.length,
       }),
+      // US-094: read-only command inventory for the focused keyboard suite.
+      // Functions stay private; tests get only stable metadata plus the same
+      // live availability result the palette renders.
+      commands: {
+        list: () => getAppCommands().map(command => ({
+          id: command.id,
+          label: command.label,
+          category: command.category,
+          page: command.page,
+          shortcut: formatAppCommandShortcuts(command),
+          availability: getAppCommandAvailability(command),
+        })),
+        run: id => runAppCommand(String(id || '')),
+      },
       // CV debug surface. Toggles intermediate detector state capture and
       // hands tests a compact JSON snapshot they can diff. Pure orthogonal
       // to learning / meaning — only intermediate detector signals.
