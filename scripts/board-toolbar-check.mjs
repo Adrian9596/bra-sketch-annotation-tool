@@ -83,6 +83,13 @@ async function main() {
   // the three claims this section really makes (no line settings, no
   // selection actions, no Export on an empty board) are asserted separately
   // below.
+  //
+  // US-093 / ADR 0053 code review, 2026-08-21: a FOURTH claim went missing with
+  // them — that the four drawing tools still exist and are reachable at all.
+  // VISIBLE_BUTTONS filters on rect.width > 0, and a button inside the `hidden`
+  // #toolsMenuList measures 0x0, so deleting toolCurved from index.html would
+  // have left this whole suite green. The Tools-menu block further down opens
+  // the drop-down and reads its contents, which is where that claim now lives.
   check(JSON.stringify(emptyManual.buttons) === JSON.stringify([
     'modeManualBtn', 'modeAutoBtn', 'addImageBtn',
     'toolSelect', 'toolsMenuBtn',
@@ -112,6 +119,38 @@ async function main() {
   check(fileClosed.hidden && fileClosed.expanded === 'false', 'Escape did not close File menu');
   check(fileClosed.focus === 'fileMenuBtn', `Escape should return focus to File trigger, got ${fileClosed.focus}`);
   console.log('board-toolbar-check: menu keyboard ok');
+
+  // The Tools drop-down carries the same contract as File/Export/More above,
+  // and it is the only place the four drawing tools can still be seen — see
+  // the empty-Manual comment. Assert the ids it holds, which of them are
+  // actually reachable right now, and the same focus/ARIA/Escape behaviour.
+  await s.eval(`document.getElementById('toolsMenuBtn').click()`);
+  const toolsOpen = await s.eval(`({
+    open: !document.getElementById('toolsMenuList').hidden,
+    expanded: document.getElementById('toolsMenuBtn').getAttribute('aria-expanded'),
+    items: Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]')).map(button => button.id),
+    reachable: Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]'))
+      .filter(button => !button.hidden && !button.disabled && button.offsetParent !== null).map(button => button.id),
+    focus: document.activeElement.id,
+  })`);
+  check(toolsOpen.open && toolsOpen.expanded === 'true', 'Tools menu did not open with aria-expanded=true');
+  check(JSON.stringify(toolsOpen.items) === JSON.stringify([
+    'toolStraight', 'toolCurved', 'toolEraser', 'toolText',
+  ]), `Tools menu must still hold all four drawing tools, got ${JSON.stringify(toolsOpen.items)}`);
+  // Eraser paints white over a photo, so it stays out of reach until one
+  // exists; the populated-Manual check below is where it has to come back.
+  check(JSON.stringify(toolsOpen.reachable) === JSON.stringify([
+    'toolStraight', 'toolCurved', 'toolText',
+  ]), `empty Manual should offer Straight/Curved/Text and withhold Eraser, got ${JSON.stringify(toolsOpen.reachable)}`);
+  check(toolsOpen.focus === 'toolStraight', `Tools menu should focus first enabled item, got ${toolsOpen.focus}`);
+  await s.eval(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key:'End', bubbles:true }))`);
+  check(await s.eval(`document.activeElement.id === 'toolText'`), 'End should skip the hidden Eraser and focus Text note');
+  await s.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }))`);
+  const toolsClosed = await s.eval(`({ hidden:document.getElementById('toolsMenuList').hidden,
+    expanded:document.getElementById('toolsMenuBtn').getAttribute('aria-expanded'), focus:document.activeElement.id })`);
+  check(toolsClosed.hidden && toolsClosed.expanded === 'false', 'Escape did not close Tools menu');
+  check(toolsClosed.focus === 'toolsMenuBtn', `Escape should return focus to Tools trigger, got ${toolsClosed.focus}`);
+  console.log('board-toolbar-check: Tools drop-down holds all four drawing tools, keyboard ok');
 
   // Add a real fixture without invoking detection: this isolates the Auto
   // ready-state toolbar. Detection and Apply remain owned by smoke/golden.
@@ -149,36 +188,133 @@ async function main() {
       && !populatedManual.contextButtons.includes('copyLineBtn'),
     `selected image should expose image actions only, got ${populatedManual.contextButtons}`);
   check(populatedManual.directUnits <= 7, `populated Manual should have at most 7 direct units, got ${populatedManual.directUnits}`);
+  // Once a photo exists all four tools must be reachable, Eraser included, and
+  // choosing one from the menu has to drive the same setTool() path the direct
+  // button used to — the drop-down is the only route a TD now has to them.
+  await s.eval(`document.getElementById('toolsMenuBtn').click()`);
+  const toolsPopulated = await s.eval(`Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]'))
+    .filter(button => !button.hidden && !button.disabled && button.offsetParent !== null).map(button => button.id)`);
+  check(JSON.stringify(toolsPopulated) === JSON.stringify([
+    'toolStraight', 'toolCurved', 'toolEraser', 'toolText',
+  ]), `a populated Board must offer all four drawing tools, got ${JSON.stringify(toolsPopulated)}`);
   await s.eval(`document.getElementById('toolStraight').click()`);
-  check(await s.eval(`!document.querySelector('.board-line-settings').hidden`),
-    'choosing a drawing tool should reveal line settings');
+  const afterToolPick = await s.eval(`({
+    menuClosed: document.getElementById('toolsMenuList').hidden,
+    lineSettings: !document.querySelector('.board-line-settings').hidden,
+    triggerLabel: document.getElementById('toolsMenuBtn').textContent,
+  })`);
+  check(afterToolPick.menuClosed, 'choosing a tool should close the Tools menu');
+  check(afterToolPick.lineSettings, 'choosing a drawing tool should reveal line settings');
+  check(afterToolPick.triggerLabel === 'Tools: Straight',
+    `the Tools trigger should name the active tool, got ${JSON.stringify(afterToolPick.triggerLabel)}`);
   console.log('board-toolbar-check: populated Manual ok');
 
+  // US-093 / ADR 0053 code review, 2026-08-21: the responsive loop below used
+  // to run with an IMAGE selected and toolStraight active, which hides both
+  // #toolAddPoint and #boardContextActions — so the widest state US-093
+  // actually adds was never measured at any width. Draw a real curved line so
+  // the loop can select it: that is the widest state a TD can reach, with the
+  // context actions AND the selection-gated Add point tool both live.
+  const widestSetup = await s.eval(`(() => {
+    const d = window.__braAutoModeDebug;
+    const canvas = document.getElementById('boardCanvas');
+    const w2s = (p) => { const v = d.getView(); const r = canvas.getBoundingClientRect();
+      return { x: p.x * v.zoom + v.panX + r.left, y: p.y * v.zoom + v.panY + r.top }; };
+    const ev = (t, x, y) => canvas.dispatchEvent(new MouseEvent(t, {
+      bubbles:true, cancelable:true, clientX:x, clientY:y, button:0, buttons: t === 'mouseup' ? 0 : 1 }));
+    const clickAt = (p) => { const q = w2s(p); ev('mousedown', q.x, q.y); ev('mouseup', q.x, q.y); };
+    const im = d.getImages()[0];
+    // A curved line takes THREE clicks (canvas-tools.js): start, a point it must
+    // pass through, end.
+    document.getElementById('toolCurved').click();
+    clickAt({ x: im.x + im.width * 0.20, y: im.y + im.height * 0.30 });
+    clickAt({ x: im.x + im.width * 0.45, y: im.y + im.height * 0.18 });
+    clickAt({ x: im.x + im.width * 0.70, y: im.y + im.height * 0.35 });
+    document.getElementById('toolSelect').click();
+    const curved = d.getAnnotations().find(a => a.type === 'curved');
+    return { drawn: !!curved, total: d.getAnnotations().length };
+  })()`);
+  check(widestSetup.drawn,
+    `the responsive loop needs a real curved line to select; the three-click draw produced ${widestSetup.total} annotations`);
+
   // Responsive proof: no document-level horizontal overflow and no toolbar
-  // element overlap at the target widths. At 768 the Board strip may scroll
-  // horizontally, but it must remain contained and usable.
+  // element overlap at the target widths, in BOTH the widest selected state and
+  // the authoring state. At 768 the Board strip may scroll horizontally, but it
+  // must remain contained and usable.
+  const PROBE = `(() => {
+    const toolbar=document.querySelector('.toolbar').getBoundingClientRect();
+    const groups=document.getElementById('boardToolbarGroups');
+    const groupRect=groups.getBoundingClientRect();
+    return { toolbarHeight:Math.round(toolbar.height), toolbarWidth:Math.round(toolbar.width),
+      groupWidth:Math.round(groupRect.width), groupLeft:Math.round(groupRect.left), groupRight:Math.round(groupRect.right),
+      documentWidth:document.documentElement.scrollWidth,
+      pageOverflow:document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      groupsOverflow:groups.scrollWidth > groups.clientWidth,
+      menuTrayRight:Math.round(document.querySelector('.board-menu-tray').getBoundingClientRect().right),
+      viewport:document.documentElement.clientWidth,
+      addPoint:!document.getElementById('toolAddPoint').hidden,
+      contextActions:!document.getElementById('boardContextActions').hidden };
+  })()`;
   for (const width of [1440, 1024, 768]) {
     await s.cdp('Emulation.setDeviceMetricsOverride', { width, height:900, deviceScaleFactor:1, mobile:false });
-    const layout = await s.eval(`(() => {
-      const toolbar=document.querySelector('.toolbar').getBoundingClientRect();
-      const groups=document.getElementById('boardToolbarGroups');
-      const groupRect=groups.getBoundingClientRect();
-      return { toolbarHeight:Math.round(toolbar.height), toolbarWidth:Math.round(toolbar.width),
-        groupWidth:Math.round(groupRect.width), groupLeft:Math.round(groupRect.left), groupRight:Math.round(groupRect.right),
-        documentWidth:document.documentElement.scrollWidth,
-        pageOverflow:document.documentElement.scrollWidth > document.documentElement.clientWidth,
-        groupsOverflow:groups.scrollWidth > groups.clientWidth,
-        menuTrayRight:Math.round(document.querySelector('.board-menu-tray').getBoundingClientRect().right),
-        viewport:document.documentElement.clientWidth };
+    await s.eval(`new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))))`);
+    const states = await s.eval(`(() => {
+      const d = window.__braAutoModeDebug;
+      const canvas = document.getElementById('boardCanvas');
+      const w2s = (p) => { const v = d.getView(); const r = canvas.getBoundingClientRect();
+        return { x: p.x * v.zoom + v.panX + r.left, y: p.y * v.zoom + v.panY + r.top }; };
+      const ev = (t, x, y) => canvas.dispatchEvent(new MouseEvent(t, {
+        bubbles:true, cancelable:true, clientX:x, clientY:y, button:0, buttons: t === 'mouseup' ? 0 : 1 }));
+      const clickAt = (p) => { const q = w2s(p); ev('mousedown', q.x, q.y); ev('mouseup', q.x, q.y); };
+      const bez = (a, t) => { const u = 1 - t; return {
+        x: u*u*u*a.start.x + 3*u*u*t*a.control1.x + 3*u*t*t*a.control2.x + t*t*t*a.end.x,
+        y: u*u*u*a.start.y + 3*u*u*t*a.control1.y + 3*u*t*t*a.control2.y + t*t*t*a.end.y }; };
+      const probe = () => ${PROBE};
+      const im = d.getImages()[0];
+      const curved = d.getAnnotations().find(a => a.type === 'curved');
+      clickAt(bez(curved, 0.5));                       // widest: curve selected
+      const widest = probe();
+      clickAt({ x: im.x - 140, y: im.y - 140 });       // authoring: nothing selected
+      const authoring = probe();
+      clickAt(bez(curved, 0.5));                       // leave it selected for the next width
+      return { widest, authoring };
     })()`);
-    check(!layout.pageOverflow, `${width}px created document-level horizontal overflow: ${JSON.stringify(layout)}`);
-    if (width >= 1024) {
-      check(layout.menuTrayRight <= layout.viewport + 1, `${width}px menu tray escaped the viewport: ${JSON.stringify(layout)}`);
-    } else {
-      check(layout.groupsOverflow, '768px should keep the full Board toolbar available through contained horizontal scrolling');
-      check(layout.menuTrayRight <= layout.viewport + 1, `768px should pin File/Export/More at the right edge: ${JSON.stringify(layout)}`);
+    // Without this the loop could silently drift back to measuring a narrow
+    // state — which is exactly how it stopped covering US-093's own chrome.
+    check(states.widest.addPoint && states.widest.contextActions,
+      `${width}px did not reach the widest state — Add point ${states.widest.addPoint}, context actions `
+      + `${states.widest.contextActions}. The click meant to select the curve missed it, so this width proves nothing.`);
+    for (const [label, layout] of [['widest (curved line selected)', states.widest], ['authoring', states.authoring]]) {
+      check(!layout.pageOverflow, `${width}px ${label} created document-level horizontal overflow: ${JSON.stringify(layout)}`);
+      check(layout.menuTrayRight <= layout.viewport + 1,
+        `${width}px ${label} did not keep File/Export/More inside the viewport: ${JSON.stringify(layout)}`);
+      if (width < 1024) {
+        check(layout.groupsOverflow,
+          `${width}px ${label} should keep the full Board toolbar available through contained horizontal scrolling: ${JSON.stringify(layout)}`);
+      }
     }
-    if (width === 1440) check(layout.toolbarHeight < 115, `1440px toolbar exceeded two rows: ${layout.toolbarHeight}px`);
+    // The two-row budget is a claim about the AUTHORING row — TESTING.md's own
+    // story for it is US-092's fifth tool taking that row from 96 px to 131 px
+    // while the four tools still carried text labels. Measured 2026-08-21 on
+    // this fixture: authoring is 95.5 px at 1440 (two rows) and 131 px at 1024,
+    // so the guard belongs on the authoring probe, where re-adding those labels
+    // still turns it red.
+    if (width === 1440) {
+      check(states.authoring.toolbarHeight < 115,
+        `1440px toolbar exceeded two rows: ${states.authoring.toolbarHeight}px`);
+    }
+    // Selecting a line has always cost a wrapped row (that 35.5 px is the
+    // ADR-0051 canvas shift board-interaction-check section 0 compensates for);
+    // what must not regress is the SIZE of that cost. Measured 2026-08-21 with
+    // a curved line selected: 1440 px 95.5 -> 131.0 (+35.5, one row), 1024 px
+    // 131.0 -> 137.3 (+6.3), 768 px 97.5 -> 97.5 (+0, the strip scrolls instead
+    // of wrapping). A second wrapped row would exceed 40 px and fail here.
+    check(states.widest.toolbarHeight - states.authoring.toolbarHeight <= 40,
+      `${width}px selecting a curved line grew the toolbar by `
+      + `${states.widest.toolbarHeight - states.authoring.toolbarHeight}px (${states.authoring.toolbarHeight} -> `
+      + `${states.widest.toolbarHeight}) — more than the one wrapped row this contextual toolbar is allowed`);
+    console.log(`board-toolbar-check: ${width}px authoring ${states.authoring.toolbarHeight}px, `
+      + `widest ${states.widest.toolbarHeight}px`);
   }
   await s.cdp('Emulation.clearDeviceMetricsOverride', {});
   console.log('board-toolbar-check: responsive ok');

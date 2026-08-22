@@ -7,18 +7,100 @@
 // splits a near-collinear follow-up click into its own POM annotation.
 
   // ---- Add point (US-093 / ADR 0053) ----
+  // Is the "Add point" tool legitimately available right now? Returns the
+  // annotation it would act on, or null. US-093 / ADR 0053 code review,
+  // 2026-08-21: this is the ONE predicate both the toolbar (ui-status.js) and
+  // the click handler below go through, so the button can never be offered for
+  // a line the gesture then refuses — or worse, accepted for one where the
+  // undo is destructive.
+  function canAddCurveAnchor() {
+    if (state.selection.kind !== 'annotation') return null;
+    const ann = getSelectedAnnotation();
+    if (!ann || ann.type !== 'curved') return null;
+    // A line hidden by the spec panel's review × Hide toggle is not DRAWN, and
+    // getSelectedAnnotation() — unlike getSelectedAnnotationIds() — does not
+    // filter it out. Inserting into it would push a history entry with no
+    // visible change on the board, and it would contradict hitTestAnnotations
+    // / hitTestAnyEndpoint / isPointNearAnnotation, which all skip hidden lines
+    // precisely so a click in an empty region can never mean a line that is
+    // not there.
+    if (isAnnHidden(ann.id)) return null;
+    // Single selection only, matching every other handle-level gesture. With a
+    // multi-line selection the Backspace that undoes an insertion is NOT the
+    // anchor-delete branch — deleteSelected (annotation-lifecycle.js) gates
+    // that on getSelectedAnnotationIds().length <= 1, so control would fall
+    // through to the GROUP delete: one stray anchor insert would remove EVERY
+    // selected line and push their labels into state.deletedPomKeys, dropping
+    // those rows from the exported workbook too.
+    if (getSelectedAnnotationIds().length > 1) return null;
+    return ann;
+  }
+
   // A click while this tool is active inserts a new interior anchor into the
   // currently selected curve, at the nearest point ON its path — never at the
   // raw click pixel, so the curve's shape does not change at the instant of
-  // insertion. A click that misses the selected curve (or nothing curved is
-  // selected) does nothing; this tool never acts on any other line.
+  // insertion. A click that misses that curve, or that would land too close to
+  // an endpoint or another anchor to leave the split's handles grabbable, is
+  // refused with a toast; this tool never acts on any other line.
   function handleAddPointClick(world) {
-    const ann = getSelectedAnnotation();
-    if (!ann || ann.type !== 'curved') return;
+    const ann = canAddCurveAnchor();
+    if (!ann) return;
     const nearest = nearestPointOnCurve(ann, world);
     const tolerance = Math.max(8, getLineWidth(ann) / 2 + 6) / state.zoom;
-    if (!nearest || nearest.distance > tolerance) return;
+    if (!nearest || nearest.distance > tolerance) {
+      // US-093 / ADR 0053 code review, 2026-08-21: every other refused gesture
+      // in this app toasts, and a silent no-op reads as a broken button.
+      showToast('Click on the curve to add a point.');
+      return;
+    }
+    // Refuse an insertion that would leave a bend handle too short to grab, or
+    // stack a second anchor on an occupied spot. Handle clearance is MEASURED,
+    // not inferred from the anchor's: previewCurveAnchorInsertion dry-runs the
+    // subdivision and reports the shortest of the four handle-to-point distances
+    // it would write — the outer handle left on each side plus the new anchor's
+    // own two. Handles are the half worth protecting because they are what a
+    // press must hit, and a collapsed one is unrecoverable: deleteCurveAnchorAt
+    // leaves the outer handles as it found them, and dragging the endpoint
+    // carries the collapsed one rigidly along. The anchor-spacing half stays
+    // because the handle check measures only against the split segment's OWN
+    // ends, so a path that loops back past a non-adjacent anchor could still
+    // stack one on it.
+    //
+    // US-093 / ADR 0053 code review, 2026-08-21: the gate is half the accept
+    // tolerance — 4 screen px at every line width up to 4 (the default is 2.5),
+    // tracking the tolerance above that — and near an end it is the HANDLE span
+    // that binds, not the anchor's clearance. The split puts the flanking handle
+    // at p0 + t.(p1-p0) while the anchor lands near p0 + 3t.(p1-p0), so read as
+    // anchor clearance the refused zone is roughly three times the gate: on
+    // POM 9 / demo1 the nearest legal landing sits 15.53 screen px from the end
+    // (t = 0.0625, handle span 5.11 px), measured live by
+    // board-interaction-check 4h. Re-tune minSeparation expecting that 3:1.
+    // Kept tight rather than loosened: an inert button is recoverable by zooming
+    // in and the toast says so, a sub-pixel handle is not. A segment whose
+    // flanking handle is ALREADY under 4 px is refused along its whole length —
+    // subdivision can only shorten it further.
+    const minSeparation = tolerance / 2;
+    const preview = previewCurveAnchorInsertion(ann, nearest.segIndex, nearest.t);
+    const taken = [ann.start, ann.end].concat((ann.points || []).map(pt => pt && pt.point));
+    if (preview && (preview.minHandleSpan < minSeparation
+        || taken.some(p => p && distance(preview.point, p) <= minSeparation))) {
+      showToast('Too close to an existing point. Zoom in to place one here.');
+      return;
+    }
     const index = insertCurveAnchorAt(ann, nearest.segIndex, nearest.t);
+    // US-093 / ADR 0053 code review, 2026-08-21: -1 means insertCurveAnchorAt
+    // rejected the segment index and mutated no geometry. Bail before naming a
+    // selection part, because 'point-1.point' does not match
+    // CURVE_ANCHOR_PART_RE, so parseCurveAnchorPart returns null and every
+    // handle drag, arrow-key nudge and readout falls back to reading
+    // ann['point-1.point'] — undefined — leaving the toolbar showing a selected
+    // part that nothing can address. nearestPointOnCurve cannot produce an
+    // out-of-range index on any live path today; this branch is what stops that
+    // from being an assumption the next caller inherits silently.
+    if (index < 0) {
+      showToast('Could not add a point there.');
+      return;
+    }
     state.selection.part = 'point' + index + '.point';
     if (!ann.labelManual) ann.label = computeDefaultLabelPosition(ann);
     if (isAutoDraft(ann)) markDraftTouchedByTD(ann);

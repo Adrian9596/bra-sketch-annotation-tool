@@ -11,6 +11,22 @@
   // they can eyeball whether Auto Mode picked the right anchors. Kept as
   // arrays on state (serialization-friendly); the helpers below normalize
   // to a set-like lookup. Session-only, not persisted.
+  //
+  // US-093 / ADR 0053 code review, 2026-08-21: a hidden line is not merely
+  // undrawn — canAddCurveAnchor() (canvas-tools.js) refuses it, so a
+  // panel-only refresh leaves "Add point" visible and .active on a line every
+  // click now silently refuses. Hence updateUI(), not renderSpecPanel(), and
+  // one exit for it: the mutators here plus the setHiddenAnnIds debug hook
+  // (src/auto/debug-api.js), which drifted once by taking its own route. The
+  // only other writers clear the set inside a bigger reset (board-reset.js,
+  // project-load.js) and already end in updateUI(). Drafts are out of scope:
+  // nothing updateUI() syncs reads isDraftHidden, so toggleDraftHidden
+  // refreshes the panel alone.
+  function syncAfterHiddenPomChange() {
+    updateUI();
+    requestRender();
+  }
+
   function isAnnHidden(id) {
     if (id == null) return false;
     const ids = state.hiddenAnnIds;
@@ -31,8 +47,7 @@
     const idx = state.hiddenAnnIds.indexOf(id);
     if (idx === -1) state.hiddenAnnIds.push(id);
     else state.hiddenAnnIds.splice(idx, 1);
-    renderSpecPanel();
-    requestRender();
+    syncAfterHiddenPomChange();
   }
 
   function toggleDraftHidden(id) {
@@ -74,8 +89,7 @@
       changed = true;
     }
     if (!changed) return;
-    renderSpecPanel();
-    requestRender();
+    syncAfterHiddenPomChange();
   }
 
   // Inverse of showAllPoms: hide every visible POM line at once so the TD can
@@ -100,8 +114,7 @@
       }
     }
     if (!changed) return;
-    renderSpecPanel();
-    requestRender();
+    syncAfterHiddenPomChange();
   }
 
   // Small × / + toggle used in each POM row. Text intentionally kept to a

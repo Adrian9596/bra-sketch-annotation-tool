@@ -103,41 +103,174 @@
     return { left: [p0, p01, p012, p0123], right: [p0123, p123, p23, p3] };
   }
 
+  // How far (world px) a sampled chord is allowed to depart from the curve it
+  // stands in for. US-093 / ADR 0053 code review, 2026-08-21: this is the
+  // accuracy budget of the "Add point" hit test, and it is expressed in WORLD
+  // px on purpose — it has no zoom term, so it stays far below
+  // handleAddPointClick's 8/state.zoom tolerance however far the TD zooms in.
+  const CURVE_CHORD_TOLERANCE = 0.05;
+  const CURVE_CHORD_MIN_SAMPLES = 24;
+  const CURVE_CHORD_MAX_SAMPLES = 512;
+
+  // Chord count for approximating one cubic, chosen so the chord never departs
+  // from the curve by more than CURVE_CHORD_TOLERANCE. Standard flatness
+  // bound: over a parameter width Δ, |curve − chord| ≤ (Δ²/8)·max|B''|, and
+  // for a cubic max|B''| = 6·max(|p0−2p1+p2|, |p1−2p2+p3|). Setting Δ = 1/n
+  // and solving gives the count below, so accuracy is driven by the curve's
+  // actual bend rather than by a fixed number that a long curve outgrows.
+  function curveChordSampleCount(seg) {
+    const ax = seg.p0.x - 2 * seg.p1.x + seg.p2.x;
+    const ay = seg.p0.y - 2 * seg.p1.y + seg.p2.y;
+    const bx = seg.p1.x - 2 * seg.p2.x + seg.p3.x;
+    const by = seg.p1.y - 2 * seg.p2.y + seg.p3.y;
+    const maxSecond = 6 * Math.max(Math.hypot(ax, ay), Math.hypot(bx, by));
+    const n = Math.ceil(Math.sqrt(maxSecond / (8 * CURVE_CHORD_TOLERANCE)));
+    // Floor 24 matches the old fixed sample count, so nothing about WHERE an
+    // anchor lands got coarser for a short curve. Cap 512 bounds the work for
+    // an absurd or corrupt curve — a once-per-click handler can spend 512
+    // Bézier evaluations without anyone noticing.
+    return clamp(
+      Number.isFinite(n) ? n : CURVE_CHORD_MIN_SAMPLES,
+      CURVE_CHORD_MIN_SAMPLES,
+      CURVE_CHORD_MAX_SAMPLES,
+    );
+  }
+
   // Find the closest point ON a selected curve to a click, for the "Add
   // point" tool — insertion always lands on the curve's actual path, at the
-  // nearest position, never at the raw click pixel. 24 samples per segment is
-  // plenty for a click-precision UI gesture (not a measurement).
+  // nearest position, never at the raw click pixel.
+  //
+  // US-093 / ADR 0053 code review, 2026-08-21: this used to compare the click
+  // against 25 sampled VERTICES per segment, which silently rejected a dead-on
+  // click on any long or zoomed-in curve. Worst-case distance from an
+  // exactly-on-path click to the nearest VERTEX is half the sample spacing —
+  // arcLength/48 — so a 400-world-px armhole curve reported 8.3px against
+  // handleAddPointClick's 8px tolerance and the click did nothing at all.
+  // Zooming in to place a bend precisely made it worse, not better: the
+  // tolerance shrinks as 8/state.zoom while vertex spacing does not.
+  //
+  // The fix is the one isPointNearAnnotation (src/render/hit-testing.js)
+  // already relies on — measure against the polyline SEGMENTS, so accuracy is
+  // bounded by chord flatness instead of by sample spacing. `t` is then
+  // recovered inside the winning chord from the projection parameter, so the
+  // anchor still lands ON the path. Insertion is lossless at ANY t (de
+  // Casteljau subdivision preserves the path exactly), so sub-sample t
+  // precision decides only WHERE the anchor sits, never the curve's shape.
   function nearestPointOnCurve(ann, world) {
     const segs = getCurveBeziers(ann);
     let best = null;
-    const SAMPLES = 24;
     for (let s = 0; s < segs.length; s += 1) {
       const seg = segs[s];
-      for (let i = 0; i <= SAMPLES; i += 1) {
-        const t = i / SAMPLES;
-        const p = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t);
-        const d = distance(world, p);
-        if (!best || d < best.distance) best = { segIndex: s, t, point: p, distance: d };
+      const samples = curveChordSampleCount(seg);
+      let prev = seg.p0;
+      for (let i = 1; i <= samples; i += 1) {
+        const next = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, i / samples);
+        const d = pointToSegmentDistance(world, prev, next);
+        if (!best || d < best.distance) {
+          best = { seg, segIndex: s, samples, index: i, a: prev, b: next, distance: d };
+        }
+        prev = next;
       }
     }
-    return best;
+    if (!best) return null;
+    // Recover t inside the winning chord with the same clamped projection
+    // parameter pointToSegmentDistance computes internally, then report the
+    // point that parameter names on the CURVE (not on the chord) so the
+    // caller's insertion — and the endpoint-proximity gate in front of it —
+    // both work against the drawn path.
+    const dx = best.b.x - best.a.x;
+    const dy = best.b.y - best.a.y;
+    const l2 = dx * dx + dy * dy;
+    const u = l2 === 0 ? 0
+      : clamp(((world.x - best.a.x) * dx + (world.y - best.a.y) * dy) / l2, 0, 1);
+    const t = (best.index - 1 + u) / best.samples;
+    const seg = best.seg;
+    return {
+      segIndex: best.segIndex,
+      t,
+      point: bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t),
+      distance: best.distance,
+    };
+  }
+
+  // Dry-run an insertion at (segIndex, t) — subdivideCubicBezier is pure, so
+  // the exact geometry insertCurveAnchorAt would write can be inspected before
+  // anything is mutated. Returns null when the arguments name no split this
+  // curve can take. US-093 / ADR 0053 code review, 2026-08-21.
+  //
+  // `minHandleSpan` is the shortest distance any of the four handles the split
+  // rewrites would end up from the point it bends: the outer handle left behind
+  // on the near side (left[1], off p0), the new anchor's own handleIn/handleOut
+  // (left[2] / right[1], off the new point), and the outer handle on the far
+  // side (right[2], off p3). handleAddPointClick's gate bounds exactly that, so
+  // no caller has to relate handle clearance to anchor clearance — the ratio
+  // between them is a property of this curve's control points, not a constant.
+  function previewCurveAnchorInsertion(ann, segIndex, t) {
+    if (!ann || ann.type !== 'curved') return null;
+    const points = Array.isArray(ann.points) ? ann.points : [];
+    // `segIndex` addresses getCurveBeziers' segment list, which is
+    // points.length + 1 long, so anything outside [0, points.length] reads
+    // points[-1] or points[points.length] and throws on `.point` / `.handleOut`.
+    // That is reachable in principle, not just in theory: getCurveBeziers
+    // returns TWO segments for a legacy midPoint curve while `points` is still
+    // empty, so nearestPointOnCurve can hand back segIndex 1 against
+    // points.length 0. No live path does today — ensureCurveControls collapses
+    // midPoint on load, history restore, paste and apply, and
+    // createCurvedAnnotation is born with midPoint: null — but the guard costs
+    // one comparison and removes the dependency. The integer test is part of
+    // the bound rather than decoration: NaN passes both range comparisons and
+    // would reach points[NaN - 1].
+    if (!Number.isInteger(segIndex) || segIndex < 0 || segIndex > points.length) return null;
+    // t must not be exactly 0 or 1: subdivideCubicBezier then returns
+    // left = [p0, p0, p0, p0] (mirrored at 1), so the split would drop
+    // ann.control1 onto ann.start and put the new anchor there too, with a
+    // zero-length handleIn that mirrorOppositeCurveHandle can never re-smooth
+    // (it rebuilds the opposite handle at its OWN current length, and that
+    // length is 0), while drawArrowheadsForCurve takes atan2(0, 0) and snaps
+    // the start arrowhead to +x. Coincident points also lose every hit test to
+    // the endpoint (hit-testing.js's `<=` tie rule), so that bend would be
+    // gone for good. All of it is strictly a t === 0 / t === 1 hazard — for any
+    // t > 0 the split control lies ON the p0->p1 segment, keeping the arrowhead
+    // angle exact and both new handles proportional to t — so 1e-3 suffices
+    // here. How SHORT a handle may get is `minHandleSpan` and the caller's
+    // gate, not this clamp.
+    const tSafe = clamp(Number.isFinite(t) ? t : 0.5, 1e-3, 1 - 1e-3);
+    const p0 = segIndex === 0 ? ann.start : points[segIndex - 1].point;
+    const before = segIndex === 0 ? ann.control1 : points[segIndex - 1].handleOut;
+    const after = segIndex === points.length ? ann.control2 : points[segIndex].handleIn;
+    const p3 = segIndex === points.length ? ann.end : points[segIndex].point;
+    const { left, right } = subdivideCubicBezier(p0, before, after, p3, tSafe);
+    const point = left[3];
+    return {
+      tSafe,
+      left,
+      right,
+      point,
+      minHandleSpan: Math.min(
+        distance(left[1], p0),
+        distance(left[2], point),
+        distance(right[1], point),
+        distance(right[2], p3),
+      ),
+    };
   }
 
   // Insert a new interior anchor by splitting segment `segIndex` (0-based,
   // matching getCurveBeziers' order) at parameter `t`. Exact — the curve's
   // drawn path is unchanged at the instant of insertion (US-093 / ADR 0053).
-  // Returns the new anchor's index in ann.points.
+  // Returns the new anchor's index in ann.points, or -1 if the preview above
+  // refused the arguments — in which case nothing at all was changed, ann.points
+  // included. -1 can never collide with a real result, which is always the
+  // accepted segIndex and therefore >= 0.
   function insertCurveAnchorAt(ann, segIndex, t) {
+    const split = previewCurveAnchorInsertion(ann, segIndex, t);
+    if (!split) return -1;
     const points = Array.isArray(ann.points) ? ann.points : (ann.points = []);
-    const p0 = segIndex === 0 ? ann.start : points[segIndex - 1].point;
-    const before = segIndex === 0 ? ann.control1 : points[segIndex - 1].handleOut;
-    const after = segIndex === points.length ? ann.control2 : points[segIndex].handleIn;
-    const p3 = segIndex === points.length ? ann.end : points[segIndex].point;
-    const { left, right } = subdivideCubicBezier(p0, before, after, p3, t);
-    const newAnchor = { point: left[3], handleIn: left[2], handleOut: right[1] };
+    const { left, right } = split;
+    // Both assignments read the PRE-splice points.length, hence the splice last.
     if (segIndex === 0) ann.control1 = left[1]; else points[segIndex - 1].handleOut = left[1];
     if (segIndex === points.length) ann.control2 = right[2]; else points[segIndex].handleIn = right[2];
-    points.splice(segIndex, 0, newAnchor);
+    points.splice(segIndex, 0, { point: split.point, handleIn: left[2], handleOut: right[1] });
     return segIndex;
   }
 
@@ -293,5 +426,25 @@
     // US-093: a project saved before interior anchors existed has no `points`
     // at all — default it to empty rather than treating it as missing data,
     // so getCurveBeziers/getAnnPartPoint never have to null-check twice.
-    if (!Array.isArray(ann.points)) ann.points = [];
+    //
+    // US-093 / ADR 0053 code review, 2026-08-21: validate the ENTRIES too, not
+    // just the array. loadProject runs arbitrary user-supplied JSON through
+    // here, and ONE truncated anchor — { point: {x, y} } with no handles, from
+    // a hand edit, a half-written file, or a different build — makes
+    // getCurveBeziers emit a segment whose p2 is undefined, so
+    // drawAnnotationPath throws on s.p2.x inside the render pass and NOTHING
+    // paints; computeDefaultLabelPosition and nearestPointOnCurve dereference
+    // the same fields just as unguarded. Dropping the unusable entries beats
+    // throwing for the reason normalizeNote already drops an unplaceable note
+    // (US-092, project-load.js): the curve still opens, measures, and exports,
+    // losing only a bend the TD can re-add with "Add point", whereas a throw
+    // costs the TD the entire board. Only reassign when something was actually
+    // dropped, so a clean load leaves the array identity untouched.
+    if (!Array.isArray(ann.points)) {
+      ann.points = [];
+    } else if (ann.points.length) {
+      const usable = ann.points.filter(pt => pt && isFinitePoint(pt.point)
+        && isFinitePoint(pt.handleIn) && isFinitePoint(pt.handleOut));
+      if (usable.length !== ann.points.length) ann.points = usable;
+    }
   }

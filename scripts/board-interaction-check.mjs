@@ -38,6 +38,17 @@ window.__BI = (() => {
     const v = d.getView(); const r = canvas.getBoundingClientRect();
     return { x: p.x * v.zoom + v.panX + r.left, y: p.y * v.zoom + v.panY + r.top };
   };
+  // The inverse, for the one place that has to know EXACTLY which world point
+  // the app will see. MouseEventInit types clientX/clientY as a C-style long, so a
+  // synthetic click at a fractional screen position is silently rounded to
+  // whole pixels — up to 0.71px away from the point the caller asked for, which
+  // is 0.33 world px at this fixture's zoom. Every other check here tolerates
+  // that; the curve-insertion check in section 4c measures at that scale, so it
+  // clicks an integer pixel and asks this what the app received.
+  const s2w = (sx, sy) => {
+    const v = d.getView(); const r = canvas.getBoundingClientRect();
+    return { x: (sx - r.left - v.panX) / v.zoom, y: (sy - r.top - v.panY) / v.zoom };
+  };
   const ev = (type, x, y, opts) => canvas.dispatchEvent(new MouseEvent(type, Object.assign({
     bubbles: true, cancelable: true, clientX: x, clientY: y,
     button: 0, buttons: type === 'mouseup' ? 0 : 1,
@@ -99,6 +110,201 @@ window.__BI = (() => {
     const z = d.getView().zoom;
     return { x: p.x + (-g.y / len) * (offsetPx / z), y: p.y + (g.x / len) * (offsetPx / z) };
   };
+  // The DRAWN path of a curved annotation, as a dense polyline. Mirrors
+  // getCurveBeziers (src/curves.js): start -> control1, then one cubic per
+  // interior anchor (US-093 / ADR 0053), then control2 -> end. The whole bundle
+  // is one IIFE so that function is unreachable from here, and the debug API
+  // exposes no path sampler — reproduced in the harness rather than adding a
+  // production hook that exists only for a test. The legacy
+  // midPoint/midHandleIn/midHandleOut model is deliberately NOT modelled;
+  // ensureCurveControls collapses it long before an applied POM reaches the
+  // board, and the caller asserts midPoint is absent so this can never
+  // silently sample the wrong curve.
+  const curveSegs = (a) => {
+    const pts = Array.isArray(a.points) ? a.points : [];
+    const segs = [];
+    let p0 = a.start, p1 = a.control1;
+    for (const pt of pts) { segs.push([p0, p1, pt.handleIn, pt.point]); p0 = pt.point; p1 = pt.handleOut; }
+    segs.push([p0, p1, a.control2, a.end]);
+    return segs;
+  };
+  const pathPoints = (a, perSeg) => {
+    const out = [];
+    for (const s of curveSegs(a)) {
+      for (let i = 0; i <= perSeg; i += 1) {
+        const t = i / perSeg, u = 1 - t;
+        out.push({
+          x: u*u*u*s[0].x + 3*u*u*t*s[1].x + 3*u*t*t*s[2].x + t*t*t*s[3].x,
+          y: u*u*u*s[0].y + 3*u*u*t*s[1].y + 3*u*t*t*s[2].y + t*t*t*s[3].y,
+        });
+      }
+    }
+    return out;
+  };
+  const segDist = (p, a, b) => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+    return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
+  };
+  // How far the DRAWN shape moved: the symmetric Hausdorff distance between two
+  // sampled paths, in world units. Parameterization-free on purpose — inserting
+  // an anchor re-parameterizes the curve (one cubic becomes two, each spanning
+  // half the old parameter range), so an equal-t comparison would report a
+  // shape change that is not there, and a same-t agreement would say nothing
+  // about the stretches in between.
+  const pathDist = (p, poly) => {
+    let best = Infinity;
+    for (let i = 1; i < poly.length; i += 1) best = Math.min(best, segDist(p, poly[i - 1], poly[i]));
+    return best;
+  };
+  const pathShift = (P, Q) => {
+    let worst = 0;
+    const oneWay = (from, to) => {
+      for (const p of from) {
+        const best = pathDist(p, to);
+        if (best > worst) worst = best;
+      }
+    };
+    oneWay(P, Q); oneWay(Q, P);
+    return worst;
+  };
+  // ---- US-093 / ADR 0053 code review, 2026-08-21: handle ARBITRATION ----
+  // hitTestSelectedHandles' candidate set, its per-candidate catch radius, and
+  // the three rules that could pick a winner from it — mirrored here so a press
+  // can be scored against the RIVAL rules as well as the shipped one.
+  //
+  // Nothing above needed this because every existing curve check presses an
+  // EXACT handle position, where the distance is 0 and all three rules answer
+  // identically. That is exactly why a first-match hit test shipped: the suite
+  // could not tell the rules apart. Sections 4f press BETWEEN two handles whose
+  // catch zones overlap, which is the only place they disagree.
+  //
+  // The part-name grammar and the two radii come from the app, not from a
+  // constant here: __BI_GATE is read out of the served bundle by the caller.
+  const partPoint = (a, part) => {
+    const m = /^point([0-9]+)[.](point|handleIn|handleOut)$/.exec(part);
+    if (m) { const pt = (a.points || [])[Number(m[1])]; return pt ? pt[m[2]] : null; }
+    return a[part] || null;
+  };
+  // considerHandle's own sequence: DRAW order, bottom of the stack first, with
+  // start/end last because render-annotations.js paints them over everything.
+  const handleTargets = (a) => {
+    const g = window.__BI_GATE;
+    const out = [];
+    const push = (part, p, r) => { if (p) out.push({ part: part, p: p, r: r }); };
+    push('control1', a.control1, g.controlRadiusPx);
+    push('control2', a.control2, g.controlRadiusPx);
+    const pts = Array.isArray(a.points) ? a.points : [];
+    for (let i = 0; i < pts.length; i += 1) {
+      push('point' + i + '.handleIn', pts[i].handleIn, g.controlRadiusPx);
+      push('point' + i + '.handleOut', pts[i].handleOut, g.controlRadiusPx);
+      push('point' + i + '.point', pts[i].point, g.endpointRadiusPx);
+    }
+    push('start', a.start, g.endpointRadiusPx);
+    push('end', a.end, g.endpointRadiusPx);
+    return out;
+  };
+  // Distances in SCREEN px, which is the space both radii are written in.
+  const scoreHandles = (a, world) => {
+    const z = d.getView().zoom;
+    return handleTargets(a).map(t => ({
+      part: t.part, r: t.r,
+      px: +(Math.hypot(world.x - t.p.x, world.y - t.p.y) * z).toFixed(3),
+    }));
+  };
+  //   'nearest'      — what ships: least distance among the candidates that are
+  //                    in range, with <= so a later (drawn-on-top) one takes a tie.
+  //   'legacy-first' — the pre-fix rule: first match in declaration order, with
+  //                    start/end tested FIRST and at the wider endpoint radius,
+  //                    then the two base controls, then each anchor's handleIn /
+  //                    handleOut / point in turn.
+  //   'point-tier'   — the plausible alternative fix: every endpoint-sized
+  //                    target (the anchors' points, start, end) before any
+  //                    bend handle, on the theory that the bigger painted
+  //                    handle should always win.
+  const arbitrate = (a, world, rule) => {
+    const g = window.__BI_GATE;
+    const scored = scoreHandles(a, world);
+    const admitted = scored.filter(t => t.px <= t.r);
+    if (!admitted.length) return null;
+    if (rule === 'nearest') {
+      let best = null;
+      for (const t of admitted) if (!best || t.px <= best.px) best = t;
+      return best.part;
+    }
+    const order = rule === 'legacy-first'
+      ? ['start', 'end', 'control1', 'control2']
+        .concat(scored.filter(t => t.part.indexOf('point') === 0).map(t => t.part))
+      : scored.filter(t => t.r === g.endpointRadiusPx).map(t => t.part)
+        .concat(scored.filter(t => t.r === g.controlRadiusPx).map(t => t.part));
+    for (const part of order) {
+      const hit = admitted.find(t => t.part === part);
+      if (hit) return hit.part;
+    }
+    return null;
+  };
+  // One press, no travel, and the gesture it opened. Asserting on
+  // getInteraction().part rather than on "something moved" is deliberate: this
+  // file's own history records that "nothing moved" is an ambiguous signal, and
+  // a wrongly-arbitrated press moves SOMETHING either way.
+  const pressPart = (screen) => {
+    ev('mousedown', screen.x, screen.y);
+    const it = d.getInteraction();
+    ev('mouseup', screen.x, screen.y);
+    return it ? { type: it.type, part: it.part, id: it.id } : null;
+  };
+  // Walk the segment between two competing handles for the INTEGER-pixel press
+  // that the shipped rule hands to 'want' and 'rival' does not. Searched, not
+  // assumed: the window where two catch zones overlap is a few pixels wide and
+  // the fixture's own geometry decides where it is. Predictions are recomputed
+  // from s2w of the rounded pixel, so MouseEventInit's integer clientX is part
+  // of the arithmetic instead of a tolerance. Returns null rather than a weaker
+  // press, so the caller fails loudly instead of testing nothing.
+  //
+  // The objective is the press closest to MIDWAY, not the one with the widest
+  // margin. Widest margin lands the press half a pixel from the winner, where
+  // the two handles are no longer really competing and the case degenerates
+  // back into section 4c's "press the handle exactly". MIN_ARBITRATION_MARGIN
+  // is what keeps midway from becoming a coin flip: at 1.5 screen px the winner
+  // is unambiguous even though both candidates are well inside their radii.
+  const MIN_ARBITRATION_MARGIN = 1.5;
+  const findRivalPress = (a, fromPart, toPart, want, rival) => {
+    const A = partPoint(a, fromPart), Z = partPoint(a, toPart);
+    if (!A || !Z) return null;
+    let best = null;
+    for (let i = 1; i < 100; i += 1) {
+      const f = i / 100;
+      const s = w2s({ x: A.x + (Z.x - A.x) * f, y: A.y + (Z.y - A.y) * f });
+      const screen = { x: Math.round(s.x), y: Math.round(s.y) };
+      const exact = s2w(screen.x, screen.y);
+      if (arbitrate(a, exact, 'nearest') !== want) continue;
+      const rivalSays = arbitrate(a, exact, rival);
+      if (rivalSays === want) continue;
+      const near = scoreHandles(a, exact).filter(t => t.px <= t.r).sort((x, y) => x.px - y.px);
+      const margin = near.length > 1 ? +(near[1].px - near[0].px).toFixed(3) : Infinity;
+      if (margin < MIN_ARBITRATION_MARGIN) continue;
+      if (!best || Math.abs(f - 0.5) < Math.abs(best.f - 0.5)) {
+        best = { f: f, screen: screen, rivalSays: rivalSays, margin: margin, near: near.slice(0, 4) };
+      }
+    }
+    return best;
+  };
+  // Drag a handle from where it is to a chosen world point, reporting which
+  // handle the press actually grabbed so a scenario cannot silently build itself
+  // out of the wrong geometry. Integer pixels throughout, matching pressPart.
+  const dragHandleTo = (worldFrom, worldTo) => {
+    const a0 = w2s(worldFrom), a1 = w2s(worldTo);
+    const p0 = { x: Math.round(a0.x), y: Math.round(a0.y) };
+    const p1 = { x: Math.round(a1.x), y: Math.round(a1.y) };
+    ev('mousedown', p0.x, p0.y);
+    const opened = d.getInteraction();
+    for (let i = 1; i <= 6; i += 1) {
+      ev('mousemove', p0.x + (p1.x - p0.x) * i / 6, p0.y + (p1.y - p0.y) * i / 6);
+    }
+    ev('mouseup', p1.x, p1.y);
+    return opened ? { type: opened.type, part: opened.part } : null;
+  };
   // Press well clear of every photo so nothing but the empty-board branch runs.
   const clearSelection = () => {
     const im = d.getImages()[0];
@@ -111,7 +317,8 @@ window.__BI = (() => {
   // move anything?" assertion reads that drift as a failure.
   const settle = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
   const restore = async () => { await d.loadProject(JSON.parse(JSON.stringify(window.__BI_BASE))); await settle(); };
-  return { d, w2s, ev, drag, dragScreen, click, snapshot, diff, onGeom, offGeom, clearSelection, restore, settle };
+  return { d, w2s, s2w, ev, drag, dragScreen, click, snapshot, diff, onGeom, offGeom, curveSegs, pathPoints, pathDist, pathShift, clearSelection, restore, settle,
+    partPoint, handleTargets, scoreHandles, arbitrate, pressPart, findRivalPress, dragHandleTo };
 })();
 'ready'`;
 
@@ -153,12 +360,68 @@ async function main() {
       dragArmed: txt.includes('function dragArmed'),
       gestureCanvasRect: txt.includes('gestureCanvasRect'),
       getInteraction: typeof window.__braAutoModeDebug.getInteraction === 'function',
+      // US-093 / ADR 0053 code review, 2026-08-21: the four numbers sections 4f
+      // and 4h have to aim at — hitTestSelectedHandles' two catch radii and
+      // handleAddPointClick's accept tolerance / minimum-separation gate — read
+      // out of the bundle rather than copied into this file. All four were
+      // re-tuned during this review (the separation gate twice), and a suite
+      // that hard-codes them stops testing the code the day the next tune
+      // lands: it would keep pressing a spot that is no longer on either side
+      // of the boundary and stay green. Extracted with new RegExp so the
+      // patterns need no backslashes — a plain template literal eats them.
+      radii: (() => {
+        const num = '([0-9.]+)';
+        const one = (pattern) => {
+          const m = txt.match(new RegExp(pattern));
+          return m ? m.slice(1).map(Number) : null;
+        };
+        const ep = one('const endpointRadius = ' + num + ' / state[.]zoom;');
+        const ct = one('const controlRadius = ' + num + ' / state[.]zoom;');
+        const tol = one('const tolerance = Math[.]max[(]' + num
+          + ', getLineWidth[(]ann[)] / 2 [+] ' + num + '[)] / state[.]zoom;');
+        const sep = one('const minSeparation = tolerance / ' + num + ';');
+        // US-093 / ADR 0053 code review, 2026-08-21: section 4j needs three more
+        // numbers, and they belong to the UNSELECTED press path rather than to
+        // hitTestSelectedHandles — hitTestAnyEndpoint's catch radius, and the
+        // body and label tolerances the press falls through to when the endpoint
+        // defers. 'const radius = N / state.zoom' is NOT unique in the bundle
+        // (hitTestSelectedNoteHandles and hitTestImages carry their own), so each
+        // is read out of its own function's text, sliced by name, instead of out
+        // of the whole file.
+        const inFn = (name, span, pattern) => {
+          const at = txt.indexOf('function ' + name);
+          if (at < 0) return null;
+          const m = txt.slice(at, at + span).match(new RegExp(pattern));
+          return m ? m.slice(1).map(Number) : null;
+        };
+        const anyEp = inFn('hitTestAnyEndpoint', 400, 'const radius = ' + num + ' / state[.]zoom;');
+        const bodyTol = inFn('hitTestAnnotations', 900,
+          'isPointNearAnnotation[(]world, ann, ' + num + ' / state[.]zoom[)]');
+        const labelTol = inFn('hitTestAnnotations', 900,
+          'pointInLabelBounds[(]world, ann[.]label, getLabelText[(]ann[)], ' + num + ' / state[.]zoom[)]');
+        if (!ep || !ct || !tol || !sep || !anyEp || !bodyTol || !labelTol) return null;
+        return {
+          endpointRadiusPx: ep[0], controlRadiusPx: ct[0],
+          addPointFloorPx: tol[0], addPointWidthPadPx: tol[1],
+          addPointSeparationDivisor: sep[0],
+          anyEndpointRadiusPx: anyEp[0], bodyTolerancePx: bodyTol[0], labelTolerancePx: labelTol[0],
+        };
+      })(),
     };
   })()`);
   for (const key of ['hitTestAnyEndpoint', 'dragArmed', 'gestureCanvasRect', 'getInteraction']) {
     check(served[key] === true,
       `the served bundle (${served.src}) predates US-086 — no ${key}. Run npm run build.`);
   }
+  check(served.radii !== null,
+    `could not read the handle catch radii, the Add-point gate and the unselected-press tolerances out of the served `
+    + `bundle (${served.src}). Sections 4f, 4h and 4j aim AT those boundaries, so a shape change in `
+    + `hitTestSelectedHandles / handleAddPointClick / hitTestAnyEndpoint / hitTestAnnotations has to re-point them here `
+    + `rather than leave them pressing a stale coordinate.`);
+  // Published to the page before the harness is installed, so its helpers can
+  // score a press the way the app does without a second round-trip.
+  await s.eval(`window.__BI_GATE = ${JSON.stringify(served.radii)}; 'ready'`);
+  console.log('board-interaction-check: gate ' + JSON.stringify(served.radii));
 
   // Learning OFF for the whole run. Every gesture below is a real TD edit as
   // far as the app is concerned: an applied POM dragged in Manual Mode feeds
@@ -331,7 +594,7 @@ async function main() {
   // comparison move together and agree with each other while disagreeing with
   // the pixels the TD is aiming at. It has to be measured against the PAINTED
   // geometry — buffer size vs CSS box — or it does not get caught at all.
-  const reflow = await s.eval(`(async () => {
+  await s.eval(`window.__BI_REFLOW = (() => {
     const B = window.__BI;
     const canvas = document.getElementById('boardCanvas');
     const dpr = () => Math.max(1, window.devicePixelRatio || 1);
@@ -380,31 +643,112 @@ async function main() {
       };
     };
 
-    // US-093 / ADR 0053: consolidating Straight/Curved/Eraser/Text into one
-    // toolbar drop-down (to free a slot for the new "Add point" tool) freed
-    // enough width that NO selection in this fixture forces a second toolbar
-    // row any more at the 1440px width this suite runs at — checked directly
-    // against this exact fixture: selecting a straight line, a curved line
-    // (which also reveals "Add point"), an image, and switching to the
-    // Eraser tool all measured the identical single-row height. That was the
-    // "selecting a line" scenario's only trigger, so it is retired rather
-    // than kept alive with a scenario chosen to force a reflow that no real
-    // TD action produces any more — the vacuous-pass guard below is exactly
-    // what would have caught it staying green for the wrong reason. The
-    // "panel" scenario below still exercises a real, width-changing reflow
-    // (hiding the whole Measurements side panel), so the invariant this
-    // section exists to prove is still under live proof. If a future change
-    // reintroduces a height-changing reflow, add a scenario for it here —
-    // don't manufacture one just to keep a second row in this table.
-    const panel = await run('hiding the Measurements panel', async () => {
+    // Kept on window rather than run inline: the height-axis scenario below has
+    // to be driven between two node-side CDP device-metrics calls, so the two
+    // scenarios can no longer share one page eval.
+    return { run };
+  })(); 'ready'`);
+
+  // Scenario 1 of 2: the canvas WIDTH axis. Hiding the whole Measurements side
+  // panel is the widest reflow a TD can trigger.
+  const panelRow = await s.eval(`(async () => {
+    const row = await window.__BI_REFLOW.run('hiding the Measurements panel', async () => {
       document.getElementById('togglePanelBtn').click();
     });
     document.getElementById('togglePanelBtn').click();
-    await B.settle();
-    return { panel };
+    await window.__BI.settle();
+    return row;
   })()`);
+
+  // Scenario 2 of 2: the canvas HEIGHT/TOP axis — the axis ADR 0051 was
+  // actually about, where a wrapped contextual-toolbar row pushes the canvas
+  // 35.5px down mid-gesture.
+  //
+  // US-093 / ADR 0053 code review, 2026-08-21: this axis had been left with no
+  // live proof at all. Consolidating Straight/Curved/Eraser/Text into one
+  // drop-down did free toolbar width, and the old "selecting a line" scenario
+  // was retired on the strength of an unrecorded claim that no selection
+  // reflows the height any more. Measured for real, on this fixture, in the
+  // state run() actually presents (post-restore, so Undo/Redo/Paste are hidden
+  // and the strip is at its narrowest), toolbar height before -> after:
+  //
+  //     width   straight selected     CURVED selected
+  //     1440    95.5 -> 95.5          95.5 -> 95.5
+  //     1366    95.5 -> 95.5          95.5 -> 131.0   <-- curve only
+  //     1280    95.5 -> 131.0         95.5 -> 131.0
+  //     1100    95.5 -> 131.0         95.5 -> 137.3
+  //
+  // So the claim was right at 1440 and wrong everywhere below it. 1366 is the
+  // width to test at, and not an arbitrary one: it is the commonest laptop
+  // width there is, and it is the only tested width where the reflow is
+  // attributable to US-093's own chrome — a straight line still fits, and it is
+  // the 38px "Add point" button revealed by a CURVED selection that tips the
+  // strip into a second row, moving the canvas top 164.5 -> 200.0 and its
+  // height 722.5 -> 687.0. That is the same 35.5px as the original bug, from an
+  // ordinary TD action, and the assertions below are live rather than a comment
+  // asserting it from memory. (In the un-restored post-Apply state, where Undo
+  // is showing, the same reflow happens at 1440 too — measured 95.5 -> 131.0.)
+  const REFLOW_HEIGHT_WIDTH = 1366;
+  await s.cdp('Emulation.setDeviceMetricsOverride', {
+    width: REFLOW_HEIGHT_WIDTH, height: 900, deviceScaleFactor: 1, mobile: false,
+  });
+  const curvedResult = await s.eval(`(async () => {
+    const B = window.__BI;
+    await B.settle();
+    let pick = { found: false, viewport: document.documentElement.clientWidth };
+    const row = await window.__BI_REFLOW.run(
+      'selecting a curved line at ' + document.documentElement.clientWidth + 'px', async () => {
+        const a = B.d.getAnnotations().find(x => x.type === 'curved' && x.control1 && x.control2);
+        if (!a) return;
+        // The same press section 4c uses to select a curve, so this cannot
+        // select something 4c could not. A coincident sibling endpoint may win
+        // it (see EXPECTED_COINCIDENT below), which is harmless here as long as
+        // what ends up selected is still a curve — that is what reveals Add
+        // point, and Add point is the chrome that wraps the row.
+        B.click(a.start);
+        const sel = B.d.getState().selection;
+        const got = B.d.getAnnotations().find(x => x.id === sel.id);
+        pick = {
+          found: true, askedSeq: a.seq,
+          selectedSeq: got ? got.seq : null,
+          selectedCurved: !!got && got.type === 'curved',
+          addPointShown: !document.getElementById('toolAddPoint').hidden,
+          viewport: document.documentElement.clientWidth,
+        };
+      });
+    B.clearSelection();
+    await B.settle();
+    return { row, pick };
+  })()`);
+  // Back to the suite's own viewport before anything else runs: every section
+  // below recomputes its coordinates, but leaving a narrower board behind would
+  // silently change what they are pressing on.
+  await s.cdp('Emulation.clearDeviceMetricsOverride', {});
+  await s.eval(`window.__BI.settle()`);
+
+  const reflow = { panel: panelRow, curved: curvedResult.row, curvedPick: curvedResult.pick };
   console.log('board-interaction-check: chrome reflow ' + JSON.stringify(reflow));
-  for (const row of [reflow.panel]) {
+  check(reflow.curvedPick.viewport === REFLOW_HEIGHT_WIDTH,
+    `the height-axis scenario needed a ${REFLOW_HEIGHT_WIDTH}px viewport but ran at ${reflow.curvedPick.viewport}px — `
+    + `the device-metrics override did not take, so the measurement above does not apply`);
+  check(reflow.curvedPick.found,
+    'no curved line on this board, so the HEIGHT-axis reflow scenario could not run — it must not skip silently');
+  check(reflow.curvedPick.selectedCurved,
+    `the press meant to select curved POM ${reflow.curvedPick.askedSeq} left POM ${reflow.curvedPick.selectedSeq} selected `
+    + `instead, and it is not curved — re-aim it, or the height scenario tests nothing`);
+  check(reflow.curvedPick.addPointShown,
+    `selecting curved POM ${reflow.curvedPick.selectedSeq} did not reveal the Add point button — that button is the extra `
+    + `chrome that wraps the toolbar row, so without it this scenario cannot move the canvas top`);
+  // The height/top axis, said out loud. The vacuous guard in the loop below is
+  // satisfied by a width change alone, so on its own it would let this section
+  // drift back to measuring one axis while claiming two. If the toolbar ever
+  // stops wrapping here, this goes red and whoever reads it can either re-point
+  // it at whatever does move the canvas vertically, or — if nothing can any
+  // more — replace it with that fact, measured.
+  check(reflow.curved.canvasHeightDelta !== 0 || reflow.curved.canvasTopDelta !== 0,
+    `selecting a curved line no longer changes the canvas HEIGHT or TOP (${JSON.stringify(reflow.curved)}) — the axis `
+    + `ADR 0051 was about is unproven again. Measured 2026-08-21 at ${REFLOW_HEIGHT_WIDTH}px: top +35.5, height -35.5.`);
+  for (const row of [reflow.panel, reflow.curved]) {
     // A vacuous pass is the failure mode to fear here: if the chrome stops
     // moving the canvas, this stops testing anything and would sit green
     // forever. Say so rather than quietly measuring nothing.
@@ -688,7 +1032,9 @@ async function main() {
   // ---- 4c. US-093 / ADR 0053: a curve can grow interior anchor points ----
   // Walks the whole grilling-session design through real gestures: the Add
   // point button appears the instant a curve is selected; clicking the curve
-  // inserts an anchor exactly on the existing path (no jump); a plain drag of
+  // inserts an anchor exactly on the existing path (no jump) AND leaves the
+  // whole drawn path where it was (shape-preserving, the claim de Casteljau
+  // subdivision actually makes); a plain drag of
   // one of the new anchor's handles mirrors the opposite one (angle only, not
   // length); holding Alt breaks that pairing for one drag; a later plain drag
   // re-mirrors it (no state persists from the break); selecting the anchor
@@ -713,13 +1059,50 @@ async function main() {
         y: u*u*u*a.start.y + 3*u*u*t*a.control1.y + 3*u*t*t*a.control2.y + t*t*t*a.end.y,
       };
     };
-    const clickPoint = bez(before, 0.5);
-    B.click(clickPoint);
+    // US-093 / ADR 0053 code review, 2026-08-21. Three changes here, all so the
+    // insertion is measured rather than assumed:
+    //
+    // 1. t = 0.4271, not 0.5. The click t is aimed at the REPLACED search: it
+    //    took the nearest of 25 sampled VERTICES per segment at a fixed n = 24,
+    //    so t = 0.5 was vertex 12/24 and it returned that click verbatim — the
+    //    "no jump" assertion passed by coincidence of the fixture. 0.4271 sits a
+    //    quarter of the way into a chord of that same n = 24 grid, ~1.1 world px
+    //    (2.3 screen px) from its nearest vertex, which is what makes the
+    //    negative control below bite. The shipped search measures distance to
+    //    the CHORDS and recovers t by projection inside the winning one, at
+    //    curveChordSampleCount(seg) chords (src/curves.js; 24 is only its
+    //    floor), so its accuracy no longer depends on where in the sample grid
+    //    the click falls — this check's power does not move with that count.
+    // 2. Click an INTEGER screen pixel and ask the harness which world point the
+    //    app therefore receives. MouseEventInit types clientX as a C-style long, so a
+    //    fractional click is rounded — up to 0.33 world px, which is larger than
+    //    everything this section is trying to measure.
+    // 3. Sample the DRAWN path either side of the insertion, 96 chords per
+    //    Bézier segment. The click-to-anchor distance only ever said "the anchor
+    //    sits where the TD clicked"; an insertCurveAnchorAt that wrote
+    //    { point, handleIn, handleOut } all equal to the click and left
+    //    control1/control2 alone would measure ~0px there and pass while
+    //    reshaping the curve along its entire length.
+    const wantedScreen = B.w2s(bez(before, 0.4271));
+    const clickScreen = { x: Math.round(wantedScreen.x), y: Math.round(wantedScreen.y) };
+    const clickPoint = B.s2w(clickScreen.x, clickScreen.y);
+    const preInsert = B.d.getAnnotations().find(x => x.id === before.id);
+    const legacyMid = !!preInsert.midPoint;
+    const pathBefore = B.pathPoints(preInsert, 96);
+    B.ev('mousedown', clickScreen.x, clickScreen.y);
+    B.ev('mouseup', clickScreen.x, clickScreen.y);
     const z = B.d.getView().zoom;
 
     const withPoint = B.d.getAnnotations().find(x => x.id === before.id);
     const anchor = withPoint.points[0];
     const insertJumpPx = anchor ? +(Math.hypot(anchor.point.x - clickPoint.x, anchor.point.y - clickPoint.y) * z).toFixed(3) : -1;
+    // How far the click itself was from the drawn path: the anchor cannot be
+    // closer to the click than this, so it is the floor insertJumpPx is measured
+    // against instead of a bare 0.5px.
+    const clickToPathPx = +(B.pathDist(clickPoint, pathBefore) * z).toFixed(3);
+    const anchorOffPathPx = anchor ? +(B.pathDist(anchor.point, pathBefore) * z).toFixed(3) : -1;
+    const shapeDriftPx = anchor ? +(B.pathShift(pathBefore, B.pathPoints(withPoint, 96)) * z).toFixed(3) : -1;
+    const segsAfter = anchor ? withPoint.points.length + 1 : 0;
 
     // Back to Select before touching handles — "Add point" stays armed
     // (US-093: a persistent mode like every other tool) and would otherwise
@@ -768,6 +1151,7 @@ async function main() {
     return {
       skipped: false, seq: before.seq,
       addPointVisibleOnSelect, toolAfterClick, insertJumpPx,
+      clickToPathPx, anchorOffPathPx, legacyMid, shapeDriftPx, segsAfter,
       mirroredAngle, lengthPreserved, altBrokeIt, reMirrored,
       anchorDeletedAlone, wholeLineDeleted,
     };
@@ -779,8 +1163,36 @@ async function main() {
       `POM ${addPoint.seq}: the Add point button must show the instant a curved line is selected`);
     check(addPoint.toolAfterClick === 'add-point',
       `clicking Add point must enter the add-point tool, got ${addPoint.toolAfterClick}`);
-    check(addPoint.insertJumpPx >= 0 && addPoint.insertJumpPx < 0.5,
-      `POM ${addPoint.seq}: inserting a point moved the curve ${addPoint.insertJumpPx}px at the click — insertion must land exactly on the existing path, not jump to it`);
+    // Three separate claims, and they are not interchangeable. The first two are
+    // about WHERE THE ANCHOR SITS — on the path, and at the point of the path
+    // nearest the click rather than at the nearest sampled vertex, which is the
+    // failure mode nearestPointOnCurve's segment-based rewrite fixed. Neither
+    // says anything at all about the curve's shape.
+    check(addPoint.anchorOffPathPx >= 0 && addPoint.anchorOffPathPx < 0.5,
+      `POM ${addPoint.seq}: the new anchor sits ${addPoint.anchorOffPathPx}px off the curve's own drawn path — insertion must land ON the path, never at the raw click pixel`);
+    check(addPoint.insertJumpPx >= 0 && addPoint.insertJumpPx <= addPoint.clickToPathPx + 0.5,
+      `POM ${addPoint.seq}: the click was ${addPoint.clickToPathPx}px from the path but the anchor landed ${addPoint.insertJumpPx}px from the click — it must land at the NEAREST point of the path, not snap to a sampled vertex`);
+    // And the third is about THE SHAPE, sampled independently of parameter — the
+    // claim de Casteljau subdivision makes and the only one that would catch an
+    // insertion that moved the drawn line while leaving the anchor on the click.
+    //
+    // Negative controls, computed on POM 9's real control points at this
+    // fixture's zoom (2.139), 2026-08-21:
+    //   correct de Casteljau insertion        shape 0.0012px  jump 0.385px
+    //   anchor point+both handles = the click,
+    //     control1/control2 left alone        shape 0.9370px  jump 0.000px
+    //   the replaced vertex-snapping search
+    //     (its own fixed n = 24)              shape 0.0012px  jump 2.285px
+    // The broken insertion passes both position checks and fails only the shape
+    // check; the vertex-snapping search fails only the jump check — and it
+    // failed NOTHING while the click sat at t = 0.5, vertex 12/24 of its grid.
+    // Each of the three checks is load-bearing on its own.
+    check(addPoint.legacyMid === false,
+      `POM ${addPoint.seq} carries the legacy midPoint model, which the harness path sampler does not reproduce — the shape measurement below would be reading the wrong curve`);
+    check(addPoint.segsAfter === 2,
+      `POM ${addPoint.seq}: one insertion should leave two Bézier segments, got ${addPoint.segsAfter} — the shape measurement is not comparing what it thinks it is`);
+    check(addPoint.shapeDriftPx >= 0 && addPoint.shapeDriftPx < 0.5,
+      `POM ${addPoint.seq}: inserting a point moved the DRAWN path by up to ${addPoint.shapeDriftPx}px somewhere along its length — insertion must be shape-preserving everywhere, not just at the click`);
     check(addPoint.mirroredAngle,
       `POM ${addPoint.seq}: a plain drag of one handle must keep the opposite handle collinear through the anchor (no kink)`);
     check(addPoint.lengthPreserved,
@@ -793,7 +1205,9 @@ async function main() {
       `POM ${addPoint.seq}: selecting the anchor then Backspace must remove just that anchor, leaving the line intact`);
     check(addPoint.wholeLineDeleted,
       `POM ${addPoint.seq}: Backspace with no anchor active must still delete the whole line, unchanged from before US-093`);
-    console.log(`board-interaction-check: curve anchor add/mirror/Alt-break/delete all correct (POM ${addPoint.seq})`);
+    console.log(`board-interaction-check: curve anchor add/mirror/Alt-break/delete all correct (POM ${addPoint.seq}, `
+      + `click ${addPoint.clickToPathPx}px off the path, anchor ${addPoint.insertJumpPx}px from the click and `
+      + `${addPoint.anchorOffPathPx}px off the path, drawn path moved ${addPoint.shapeDriftPx}px)`);
   }
 
   // ---- 4d. Regression: interior anchors must follow a whole-line move ----
@@ -937,6 +1351,1439 @@ async function main() {
     check(anchorResize.anchorScaledWithLine,
       `POM ${anchorResize.seq}: resizing the photo must scale an interior anchor by the same factor as its endpoints (x${anchorResize.imgScale}) — the curve must not distort`);
     console.log(`board-interaction-check: an interior anchor follows photo resize x${anchorResize.imgScale} (POM ${anchorResize.seq})`);
+  }
+
+  // ---- 4f. US-093 / ADR 0053: which of two overlapping handles a press takes ----
+  // Round-1 code-review finding, 2026-08-21: handle ARBITRATION had no coverage
+  // at all. Section 4c only ever presses EXACT handle positions, where the
+  // distance is 0 and first-match, nearest-wins and "biggest target first" are
+  // indistinguishable — which is precisely how a first-match hit test shipped
+  // and sat green. Each case below presses BETWEEN two handles whose catch zones
+  // overlap, and asserts which one the press opened.
+  //
+  // Every case names the RIVAL rule it separates from and asserts that rival's
+  // answer too, so the case cannot quietly stop discriminating: if the fixture's
+  // geometry drifts until both rules agree, the rival assertion goes red and
+  // says so instead of passing on a press that proves nothing.
+  //
+  // Measured on POM 9 / demo1, 2026-08-21 (zoom 2.139, endpoint radius 14px,
+  // control radius 11px). Each press sits ~3px from the winner and ~6px from
+  // the loser, so both are well inside their radii:
+  //
+  //   press between                    shipped answer    rival answer
+  //   point0.handleOut / point1.point   point1.point      point0.handleOut  (first-match)
+  //   point1.point / point0.handleOut   point0.handleOut  point1.point      (biggest-first)
+  //   control1 / point0.point           point0.point      control1          (first-match)
+  //   start / point0.point              point0.point      start             (first-match)
+  const arbitration = await s.eval(`(async () => {
+    const B = window.__BI;
+    const rows = [];
+    const curve = () => B.d.getAnnotations().find(x => x.type === 'curved' && x.control1 && x.control2);
+    const zoom = () => B.d.getView().zoom;
+
+    // Grow the fixture curve the anchors a case needs. The insertion points are
+    // computed on the PRE-insertion single cubic: insertion is shape-preserving
+    // (proved in 4c), so those world points are still exactly on the drawn path
+    // after each one, the same technique 4d/4e use.
+    const grow = (ts) => {
+      const base = curve();
+      B.click(base.start);
+      document.getElementById('toolAddPoint').click();
+      for (const t of ts) B.click(B.onGeom(base, t));
+      document.getElementById('toolSelect').click();
+      return { base: base, ann: curve() };
+    };
+    // A world point 'gap' SCREEN px from 'anchorPt', pushed perpendicular to the
+    // direction 'along' — so the handle being moved lands clear of whatever else
+    // lies on that tangent (an anchor carries its own two handles along it), and
+    // the only candidates in range are the pair under test.
+    const besidePoint = (anchorPt, along, gapPx) => {
+      const len = Math.hypot(along.x, along.y) || 1;
+      const g = gapPx / zoom();
+      return { x: anchorPt.x - (along.y / len) * g, y: anchorPt.y + (along.x / len) * g };
+    };
+    const probe = (label, ann, fromPart, toPart, want, rival) => {
+      const pick = B.findRivalPress(ann, fromPart, toPart, want, rival);
+      if (!pick) {
+        rows.push({ label: label, found: false, seq: ann.seq, want: want, rival: rival,
+          targets: B.scoreHandles(ann, B.partPoint(ann, toPart)) });
+        return;
+      }
+      const got = B.pressPart(pick.screen);
+      rows.push({ label: label, found: true, seq: ann.seq, want: want, rival: rival,
+        rivalSays: pick.rivalSays, got: got ? got.part : null, gotType: got ? got.type : null,
+        gotId: got ? got.id : null, annId: ann.id, f: pick.f, margin: pick.margin, near: pick.near });
+    };
+
+    // (a) An anchor's bend handle against the NEXT anchor's point. On this
+    // fixture the two sit far apart, so the crowding a TD meets on a tight curve
+    // is built by dragging the handle into range — a supported gesture, and the
+    // one 4c already exercises.
+    await B.restore();
+    B.clearSelection();
+    let ann = grow([0.35, 0.65]).ann;
+    const a0 = ann.points[0], a1 = ann.points[1];
+    let along = { x: a1.handleOut.x - a1.handleIn.x, y: a1.handleOut.y - a1.handleIn.y };
+    const builtA = {
+      anchors: ann.points.length,
+      grabbed: B.dragHandleTo(a0.handleOut, besidePoint(a1.point, along, 9)),
+    };
+    ann = curve();
+    builtA.gapPx = +(Math.hypot(ann.points[0].handleOut.x - ann.points[1].point.x,
+      ann.points[0].handleOut.y - ann.points[1].point.y) * zoom()).toFixed(2);
+    // The direction that matters: the anchor POINT is offered LAST of the two,
+    // so a first-match rule hands it to the bend handle that came first.
+    probe('an anchor point beats the previous anchor bend handle', ann,
+      'point0.handleOut', 'point1.point', 'point1.point', 'legacy-first');
+    // And the other direction: a press nearer the bend handle must stay with it,
+    // which is what rules out "the bigger painted target always wins".
+    probe('a bend handle keeps a press that is nearer to it', ann,
+      'point1.point', 'point0.handleOut', 'point0.handleOut', 'point-tier');
+
+    // (b) An anchor inside control1's catch radius. control1 is offered before
+    // any anchor, so first-match gave it the press however close the anchor was.
+    await B.restore();
+    B.clearSelection();
+    ann = grow([0.5]).ann;
+    let p0 = ann.points[0];
+    along = { x: p0.handleOut.x - p0.handleIn.x, y: p0.handleOut.y - p0.handleIn.y };
+    const builtB = { anchors: ann.points.length,
+      grabbed: B.dragHandleTo(ann.control1, besidePoint(p0.point, along, 9)) };
+    ann = curve();
+    builtB.gapPx = +(Math.hypot(ann.control1.x - ann.points[0].point.x,
+      ann.control1.y - ann.points[0].point.y) * zoom()).toFixed(2);
+    probe('an anchor point beats control1', ann,
+      'control1', 'point0.point', 'point0.point', 'legacy-first');
+
+    // (c) An anchor DRAGGED next to the line start — the defect round 2 fixed.
+    // The endpoints used to be tested first AND at the wider radius, so a press
+    // 1px from the anchor and 13px from start moved the POM endpoint off its
+    // landmark pin and changed the measured length. It has to be a drag, not an
+    // insertion: handleAddPointClick refuses a landing spot this close to an end
+    // (asserted in 4h), which is why the two gates are not interchangeable.
+    await B.restore();
+    B.clearSelection();
+    ann = grow([0.5]).ann;
+    p0 = ann.points[0];
+    along = { x: ann.control1.x - ann.start.x, y: ann.control1.y - ann.start.y };
+    const builtC = { anchors: ann.points.length,
+      grabbed: B.dragHandleTo(p0.point, besidePoint(ann.start, along, 10)) };
+    ann = curve();
+    builtC.gapPx = +(Math.hypot(ann.points[0].point.x - ann.start.x,
+      ann.points[0].point.y - ann.start.y) * zoom()).toFixed(2);
+    probe('an anchor point beats the line start it sits next to', ann,
+      'start', 'point0.point', 'point0.point', 'legacy-first');
+
+    await B.restore();
+    return { rows: rows, builtA: builtA, builtB: builtB, builtC: builtC,
+      endpointRadiusPx: window.__BI_GATE.endpointRadiusPx,
+      controlRadiusPx: window.__BI_GATE.controlRadiusPx };
+  })()`);
+  console.log('board-interaction-check: arbitration built '
+    + JSON.stringify({ a: arbitration.builtA, b: arbitration.builtB, c: arbitration.builtC }));
+  console.log('board-interaction-check: arbitration ' + JSON.stringify(arbitration.rows));
+  for (const built of [['a', arbitration.builtA, 2], ['b', arbitration.builtB, 1], ['c', arbitration.builtC, 1]]) {
+    check(built[1].anchors === built[2],
+      `arbitration case ${built[0]}: the fixture grew ${built[1].anchors} interior anchors, not ${built[2]} — `
+      + `the insertions the case is built on did not all land`);
+    // The scenario has to be BUILT from the handle it meant to move. A press
+    // that grabbed something else would leave two handles still far apart and
+    // the probe below would then find no overlap at all — reported here, where
+    // the cause is visible, rather than as a mystery "no discriminating press".
+    check(built[1].grabbed && built[1].grabbed.type === 'drag-handle',
+      `arbitration case ${built[0]}: the setup drag opened ${JSON.stringify(built[1].grabbed)} instead of a handle drag`);
+    check(built[1].gapPx > 0 && built[1].gapPx <= arbitration.endpointRadiusPx,
+      `arbitration case ${built[0]}: the two competing handles ended ${built[1].gapPx} screen px apart, which is outside `
+      + `the ${arbitration.endpointRadiusPx}px endpoint radius — the catch zones do not overlap, so nothing is being arbitrated`);
+  }
+  for (const row of arbitration.rows) {
+    check(row.found,
+      `arbitration (${row.label}): no press between those two handles separates nearest-wins from ${row.rival} on POM ${row.seq}. `
+      + `The case tests nothing as written — re-aim it. Candidate distances at the target: ${JSON.stringify(row.targets)}`);
+    check(row.gotType === 'drag-handle' && row.gotId === row.annId,
+      `arbitration (${row.label}): the press opened ${row.gotType} on ${row.gotId} instead of a handle drag on POM ${row.seq}`);
+    check(row.got === row.want,
+      `arbitration (${row.label}): POM ${row.seq} handed the press to '${row.got}', expected '${row.want}'. `
+      + `Nearest distances at that pixel: ${JSON.stringify(row.near)}`);
+    // The negative control, said out loud: this exact pixel is one the rival
+    // rule answers DIFFERENTLY, and this is the number that proves the
+    // assertion above can fail. If a geometry change ever makes the two rules
+    // agree here, this goes red rather than leaving a vacuous pass behind.
+    check(row.rivalSays !== row.want,
+      `arbitration (${row.label}): ${row.rival} would also answer '${row.want}' at that pixel, so the assertion above `
+      + `cannot distinguish the two rules any more — find a press where they differ`);
+    // Both candidates in range, and the loser is exactly the one the rival rule
+    // would have handed the press to. Without this the case could degenerate
+    // into "the press was basically on the winner", which is section 4c again.
+    check(row.near.length >= 2 && row.near[1].part === row.rivalSays,
+      `arbitration (${row.label}): the runner-up at that pixel was ${JSON.stringify(row.near)}, so the press is not `
+      + `between the two handles under test`);
+    check(Math.abs(row.f - 0.5) <= 0.15,
+      `arbitration (${row.label}): the only separating press sits at ${row.f} of the way between the two handles, not `
+      + `near midway — the two are no longer really competing there`);
+  }
+  console.log('board-interaction-check: nearest-wins arbitration holds for '
+    + arbitration.rows.map(r => r.want + ' over ' + r.rivalSays).join(', '));
+
+  // ---- 4g. US-093 / ADR 0053: the POM callout holds still across insertions ----
+  // Round-1 code-review finding, 2026-08-21: nothing anywhere looked at
+  // ann.label after an insertion, and the defect that slipped through was a 95px
+  // teleport of the POM NUMBER — computeDefaultLabelPosition picked the middle
+  // ENTRY of ann.points instead of the middle of the path, so one anchor 20%
+  // along POM 18's armhole curve moved the number onto that anchor and left it
+  // there. handleAddPointClick writes the result into ann.label, so it shipped
+  // in Copy Image, Export PDF and the Excel embedded PNG. Every gate passed.
+  //
+  // The old rule was also non-monotonic in anchor count — floor((n - 1) / 2)
+  // resolves 1 and 2 anchors to points[0] and 3 and 4 to points[1] — so the
+  // multi-anchor rows are the ones that catch a regression to it. Both the
+  // shipped position and what the old rule WOULD have produced are computed at
+  // every step, which is the negative control: the old-rule column has to be
+  // large where the shipped column is small, or this section is not a gate.
+  //
+  // Measured on POM 9 / demo1, 2026-08-21, screen px, shipped vs old rule at
+  // 1 / 2 / 3 / 4 anchors:
+  //
+  //                            shipped                  old middle-entry rule
+  //   off its own arc mid   0.09 0.13 0.04 0.03      61.05 61.06  6.86  6.86
+  //   from the 1-anchor spot   -  0.21 0.12 0.06          -     0 54.21 54.21
+  //
+  // Which is why all three claims are asserted and not just one: the
+  // "stays put" row cannot see the old rule at 1 or 2 anchors (both resolve to
+  // points[0], so it does not move BETWEEN them), and only the third anchor
+  // exposes the 54px jump. The off-arc-mid row catches it at every count.
+  //
+  // One thing writing this section turned up and did NOT fix, because it is a
+  // different defect in the same path: the number does not hold entirely still.
+  // See the movedFromBasePx assertion below for the measurement.
+  //
+  // Only asserted for labelManual === false. A TD-positioned label is
+  // deliberately left alone by handleAddPointClick, so it has nothing to prove.
+  const callout = await s.eval(`(async () => {
+    const B = window.__BI;
+    await B.restore();
+    B.clearSelection();
+    await B.settle();
+    const base = B.d.getAnnotations().find(x => x.type === 'curved' && x.control1 && x.control2);
+    if (!base) return { skipped: true };
+    const z = B.d.getView().zoom;
+    const curve = () => B.d.getAnnotations().find(x => x.id === base.id);
+    const px = (p, q) => +(Math.hypot(p.x - q.x, p.y - q.y) * z).toFixed(3);
+    // computeDefaultLabelPosition's offset: 20 screen px along the normal, i.e.
+    // the tangent rotated by -90 degrees. cos(a - PI/2) = sin(a) and
+    // sin(a - PI/2) = -cos(a), so the offset is (ty, -tx) / |t| * 20 / zoom.
+    const offsetFrom = (point, tan) => {
+      const len = Math.hypot(tan.x, tan.y) || 1;
+      const o = 20 / z;
+      return { x: point.x + (tan.y / len) * o, y: point.y - (tan.x / len) * o };
+    };
+    // Where the number belongs: the half-arc-length point of the DRAWN path,
+    // sampled far more finely than the app does, so this reference is the
+    // geometry rather than a re-run of the code under test.
+    const arcLabel = (a) => {
+      const poly = B.pathPoints(a, 400);
+      let total = 0;
+      for (let i = 1; i < poly.length; i += 1) total += Math.hypot(poly[i].x - poly[i-1].x, poly[i].y - poly[i-1].y);
+      let walked = 0;
+      for (let i = 1; i < poly.length; i += 1) {
+        const seg = Math.hypot(poly[i].x - poly[i-1].x, poly[i].y - poly[i-1].y);
+        if (walked + seg >= total / 2) {
+          const t = seg > 0 ? (total / 2 - walked) / seg : 0;
+          return offsetFrom(
+            { x: poly[i-1].x + (poly[i].x - poly[i-1].x) * t, y: poly[i-1].y + (poly[i].y - poly[i-1].y) * t },
+            { x: poly[i].x - poly[i-1].x, y: poly[i].y - poly[i-1].y });
+        }
+        walked += seg;
+      }
+      return offsetFrom(poly[poly.length - 1], { x: 1, y: 0 });
+    };
+    // The rule this section exists to keep out: the middle ENTRY of ann.points,
+    // with the tangent read off that anchor's own two handles.
+    const oldRuleLabel = (a) => {
+      const pts = a.points || [];
+      if (!pts.length) return null;
+      const pt = pts[Math.floor((pts.length - 1) / 2)];
+      return offsetFrom(pt.point, { x: pt.handleOut.x - pt.handleIn.x, y: pt.handleOut.y - pt.handleIn.y });
+    };
+
+    const labelBase = { x: base.label.x, y: base.label.y };
+    const refBase = arcLabel(base);
+    B.click(base.start);
+    document.getElementById('toolAddPoint').click();
+    const rows = [];
+    let labelFirst = null;
+    for (const t of [0.20, 0.45, 0.65, 0.85]) {
+      B.click(B.onGeom(base, t));
+      const a = curve();
+      if (!labelFirst) labelFirst = { x: a.label.x, y: a.label.y };
+      const old = oldRuleLabel(a);
+      rows.push({
+        t: t, anchors: a.points.length, labelManual: !!a.labelManual,
+        movedFromBasePx: px(a.label, labelBase),
+        movedFromFirstPx: px(a.label, labelFirst),
+        offArcMidPx: px(a.label, arcLabel(a)),
+        oldRuleMovedPx: old ? px(old, labelBase) : -1,
+      });
+    }
+    document.getElementById('toolSelect').click();
+    await B.restore();
+    return { skipped: false, seq: base.seq, zoom: +z.toFixed(3),
+      labelManualBefore: !!base.labelManual,
+      baseOffArcMidPx: px(labelBase, refBase), rows: rows };
+  })()`);
+  if (callout.skipped) {
+    console.log('board-interaction-check: no curved line on this board, callout-position check skipped');
+  } else {
+    console.log('board-interaction-check: callout ' + JSON.stringify(callout));
+    check(callout.labelManualBefore === false,
+      `POM ${callout.seq}'s label is TD-placed (labelManual), so insertion deliberately leaves it alone and this section `
+      + `cannot test the default-position rule — point it at a line whose label is still automatic`);
+    for (const row of callout.rows) {
+      check(row.labelManual === false,
+        `POM ${callout.seq}: inserting an anchor flipped labelManual — an insertion is not a TD label placement`);
+      // The printed number must not move — except by exactly the one amount it
+      // is ALREADY known to move, which is measured here rather than waved at.
+      //
+      // MEASURED 2026-08-21, POM 9 on demo1: the callout does not sit at its own
+      // default position to begin with. nudgeAutoLabelsToAvoidCollisions
+      // (label-layout.js) runs once at Apply and pushed this number 14.573
+      // screen px off the half-arc-length point to clear a neighbouring POM's
+      // number; handleAddPointClick then recomputes ann.label from scratch and
+      // discards that nudge, so the FIRST insertion moves the number 14.53px
+      // back to the un-nudged spot and every later one holds it there (14.66,
+      // 14.61, 14.56). That is a real, separate defect in this same path — an
+      // insertion can drop the number back on top of a neighbour's — and it is
+      // NOT the defect round 1 fixed, which was 71.8px on the first anchor and a
+      // second jump to 19.7px on the third. Asserted as "the move equals the
+      // discarded nudge and nothing more" so both stay visible: the teleport
+      // regression reads 71.8 against a 14.57 nudge and goes red, while the
+      // known deviation is stated with its number instead of being hidden inside
+      // a loose tolerance. Whoever fixes the nudge-preservation drops this to
+      // `row.movedFromBasePx < 1.5`.
+      check(Math.abs(row.movedFromBasePx - callout.baseOffArcMidPx) < 1.5,
+        `POM ${callout.seq}: inserting anchor ${row.anchors} at t=${row.t} moved the callout ${row.movedFromBasePx} screen px, `
+        + `but only ${callout.baseOffArcMidPx}px of that is the Apply-time collision nudge being discarded — the rest is the `
+        + `number walking off its own curve, and it ships in Copy Image, Export PDF and the Excel embedded PNG`);
+      check(row.movedFromFirstPx < 1.5,
+        `POM ${callout.seq}: with ${row.anchors} anchors the callout sits ${row.movedFromFirstPx} screen px from where it sat `
+        + `with one — adding bends must not walk the number along the curve`);
+      check(row.offArcMidPx < 1.5,
+        `POM ${callout.seq}: with ${row.anchors} anchors the callout is ${row.offArcMidPx} screen px off the half-arc-length `
+        + `point of its own drawn path, which is where the number belongs`);
+      // Negative control: the same geometry, scored against the rule that
+      // shipped the bug. If this ever comes out small, the rows above stop
+      // being able to tell the two rules apart and say so here.
+      check(row.oldRuleMovedPx > 10,
+        `POM ${callout.seq}: with ${row.anchors} anchors the OLD middle-entry rule would have put the callout only `
+        + `${row.oldRuleMovedPx} screen px from the right place, so the assertions above no longer discriminate — `
+        + `this section needs a curve (or anchor placement) where the two rules actually differ`);
+    }
+    console.log(`board-interaction-check: across 1-4 anchors the POM ${callout.seq} callout stays within `
+      + `${Math.max(...callout.rows.map(r => r.offArcMidPx))}px of its own half-arc-length point and `
+      + `${Math.max(...callout.rows.map(r => r.movedFromFirstPx))}px of where one anchor left it; the old middle-entry `
+      + `rule would have been up to ${Math.max(...callout.rows.map(r => r.oldRuleMovedPx))}px out `
+      + `(and non-monotonic: ${callout.rows.map(r => r.oldRuleMovedPx).join(' -> ')})`);
+  }
+
+  // ---- 4h. US-093 / ADR 0053: the three ways Add point declines ----
+  // Round-1 code-review finding, 2026-08-21: the gesture now has three refusal
+  // paths and all three were invisible to this suite.
+  //
+  //   (i)   a click that misses the curve — must toast and change nothing;
+  //   (ii)  a landing spot too close to an endpoint or an existing anchor —
+  //         must toast and change nothing, while the NEAREST spot that clears
+  //         the gate must be accepted (the refusal half alone would pass on a
+  //         button that could do nothing anywhere);
+  //   (iii) the button must not be offered at all for a multi-line selection or
+  //         for a line hidden by the review x Hide toggle.
+  //
+  // (iii) carries the most damage. With a group selected, the Backspace that
+  // undoes an insertion is NOT the anchor-delete branch — deleteSelected gates
+  // that on a single selection — so it falls through to the GROUP delete and
+  // takes every selected POM line with it, pushing their labels into
+  // state.deletedPomKeys and dropping those rows from the exported workbook.
+  // That fall-through is measured here, not asserted from the source comment,
+  // because it is the whole reason the predicate exists.
+  //
+  // The gate's own numbers are DERIVED from the served bundle (__BI_GATE), not
+  // written down here: they were re-tuned twice during this review, and a
+  // hard-coded value would aim at empty space on both sides of the boundary
+  // while still passing. What a number cannot express is that the gate has TWO
+  // halves, measured on different things — anchor spacing, and the shortest
+  // handle the split would write — so each row aims at the half it names (see
+  // `landings` below). Measured on POM 9 / demo1, 2026-08-21: at its 2.5px line
+  // width the accept tolerance is 8 screen px and the separation gate 4. The
+  // refused spots sit 1.89px and 1.91px from an occupied point; the nearest spot
+  // clearing both halves is 15.5px out with 5.1px of handle (t = 0.0625) — the
+  // ~3:1 ratio between the two, and why aiming by distance-to-endpoint alone
+  // picked a spot the gate refuses. Every row lands 0.02px to 0.22px off the
+  // path, well inside the accept tolerance, so no row is secretly a MISS.
+  const refusals = await s.eval(`(async () => {
+    const B = window.__BI;
+    const gate = window.__BI_GATE;
+    const toast = document.getElementById('toast');
+    // Clear the node before every gesture: showToast QUEUES a message that
+    // arrives while an earlier one is still inside its 900ms reading window, so
+    // a leftover toast from a previous step would make the next read either
+    // stale or empty. Read synchronously after the press — onMouseDown runs to
+    // completion inside dispatchEvent, so the message is already on screen.
+    const clearToast = () => { toast.classList.remove('show'); toast.textContent = ''; };
+    const toastNow = () => (toast.classList.contains('show') ? String(toast.textContent || '') : '');
+    const byId = (id) => B.d.getAnnotations().find(x => x.id === id);
+    const anchorsOf = (id) => { const a = byId(id); return a && Array.isArray(a.points) ? a.points.length : -1; };
+    const curves = () => B.d.getAnnotations().filter(x => x.type === 'curved' && x.control1 && x.control2);
+    const zoom = () => B.d.getView().zoom;
+    const waitUntil = async (fn) => {
+      for (let i = 0; i < 40; i += 1) { if (fn()) return true; await B.settle(); }
+      return false;
+    };
+    // handleAddPointClick's own two numbers, in SCREEN px, rebuilt from the
+    // expression in the bundle: tolerance = max(floor, lineWidth / 2 + pad) and
+    // minSeparation = tolerance / divisor, both divided by zoom in the app.
+    const gatePx = (a) => {
+      const lw = Number.isFinite(a.lineWidth) ? a.lineWidth : 2.5;
+      const tolerancePx = Math.max(gate.addPointFloorPx, lw / 2 + gate.addPointWidthPadPx);
+      return { tolerancePx: +tolerancePx.toFixed(3),
+        minSeparationPx: +(tolerancePx / gate.addPointSeparationDivisor).toFixed(3) };
+    };
+    // Candidate landing spots, walked in the (segment, t) the gate would be
+    // applied at rather than as bare positions — because the gate's two halves
+    // are measured on different things. US-093 / ADR 0053 code review,
+    // 2026-08-21: takenPx is the anchor-spacing half (distance from the
+    // landing point to the nearest already-occupied point) and handleSpanPx
+    // is the half that actually binds near an end — the shortest of the four
+    // handles the split would write, mirroring previewCurveAnchorInsertion
+    // (curves.js), which is four de Casteljau lerps. Near an end the flanking
+    // handle lands at p0 + t(p1-p0) while the anchor lands near p0 + 3t(p1-p0),
+    // so the handle span runs at roughly a THIRD of the anchor's clearance:
+    // choosing a landing spot by its distance to the endpoint says nothing
+    // about whether the gate will take it, which is exactly how the "just past
+    // the gate" row below came to be aimed at a spot the gate refuses.
+    const lerp = (p, q, t) => ({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+    const landings = (a, steps) => {
+      const z = zoom();
+      const dpx = (p, q) => Math.hypot(p.x - q.x, p.y - q.y) * z;
+      const taken = [a.start, a.end].concat((a.points || []).map(pt => pt && pt.point)).filter(Boolean);
+      const out = [];
+      const segs = B.curveSegs(a);
+      for (let s = 0; s < segs.length; s += 1) {
+        const g = segs[s];
+        for (let i = 0; i <= steps; i += 1) {
+          const t = i / steps;
+          const p01 = lerp(g[0], g[1], t), p12 = lerp(g[1], g[2], t), p23 = lerp(g[2], g[3], t);
+          const p012 = lerp(p01, p12, t), p123 = lerp(p12, p23, t);
+          const mid = lerp(p012, p123, t);
+          out.push({
+            seg: s, t: t, p: mid,
+            handleSpanPx: +Math.min(dpx(p01, g[0]), dpx(p012, mid), dpx(p123, mid), dpx(p23, g[3])).toFixed(3),
+            takenPx: +Math.min.apply(null, taken.map(q => dpx(mid, q))).toFixed(3),
+          });
+        }
+      }
+      return out;
+    };
+    // A landing spot whose straight-line distance to 'ref' is as close as
+    // possible to wantPx screen px — for the rows that are aiming INSIDE the
+    // gate, where the anchor-spacing half is what refuses them.
+    const landingNear = (a, ref, wantPx) => {
+      const z = zoom();
+      let best = null;
+      for (const c of landings(a, 400)) {
+        const err = Math.abs(Math.hypot(c.p.x - ref.x, c.p.y - ref.y) * z - wantPx);
+        if (!best || err < best.err) best = { c: c, err: err };
+      }
+      return best ? best.c : null;
+    };
+    // The NEAREST spot to 'ref' that clears both halves of the gate — the
+    // accepted control, and a stronger claim than "somewhere out there is a
+    // legal spot": the first legal spot walking in from the end must be taken.
+    // The 1px margin absorbs the integer-pixel rounding of the click itself.
+    const nearestLegalLanding = (a, ref, minPx) => {
+      const z = zoom();
+      let best = null;
+      for (const c of landings(a, 400)) {
+        if (c.takenPx <= minPx + 1 || c.handleSpanPx <= minPx + 1) continue;
+        const d = Math.hypot(c.p.x - ref.x, c.p.y - ref.y) * z;
+        if (!best || d < best.d) best = { c: c, d: d };
+      }
+      return best ? best.c : null;
+    };
+    // Click an integer pixel and report the world point the app therefore
+    // received, so the distances below are the app's own and not the caller's
+    // intent rounded away (MouseEventInit types clientX as a C-style long).
+    const clickExact = (worldPt) => {
+      const s = B.w2s(worldPt);
+      const screen = { x: Math.round(s.x), y: Math.round(s.y) };
+      B.ev('mousedown', screen.x, screen.y);
+      B.ev('mouseup', screen.x, screen.y);
+      return B.s2w(screen.x, screen.y);
+    };
+    const armAddPoint = (base) => {
+      B.click(base.start);
+      const offered = !document.getElementById('toolAddPoint').hidden;
+      document.getElementById('toolAddPoint').click();
+      return { offered: offered, tool: B.d.getState().tool };
+    };
+    // The point on a line's drawn path with the most clearance from every OTHER
+    // line and every label, so a body click cannot be claimed by a neighbour
+    // (hitTestAnnotations is topmost-first) — the same technique the photo and
+    // resize sections use to find a press the photo will definitely take.
+    // pathPoints assumes a cubic, so a straight neighbour has to be described
+    // by its own two points — its control1/control2 are null and curveSegs
+    // would dereference them.
+    const polyOf = (a) => (a.type === 'curved' && a.control1 && a.control2)
+      ? B.pathPoints(a, 24) : [a.start, a.end];
+    const clearBodyPoint = (a) => {
+      const others = B.d.getAnnotations().filter(x => x.id !== a.id);
+      const polys = others.map(polyOf);
+      let best = null;
+      for (const p of B.pathPoints(a, 24)) {
+        let clear = Infinity;
+        for (let i = 0; i < others.length; i += 1) {
+          clear = Math.min(clear, B.pathDist(p, polys[i]));
+          clear = Math.min(clear, Math.hypot(p.x - others[i].label.x, p.y - others[i].label.y));
+        }
+        if (!best || clear > best.clear) best = { p: p, clear: clear };
+      }
+      return best;
+    };
+
+    // ---- (i) a click that misses the curve ----
+    await B.restore();
+    B.clearSelection();
+    await B.settle();
+    let base = curves()[0];
+    if (!base) return { skipped: true };
+    let g = gatePx(base);
+    const armMiss = armAddPoint(base);
+    // Seed ONE real insertion first, so the refused click that follows has a
+    // history entry behind it to undo. That is how a refusal is proved not to
+    // have deepened history without a debug hook for its depth: if the refusal
+    // pushed an entry, the single undo below reverses THAT (a no-op) and the
+    // seeded anchor survives. It cannot catch a refusal that pushed a
+    // byte-identical snapshot, because pushHistoryIfChanged de-dupes on the
+    // fingerprint — but that is precisely a refusal that changed nothing.
+    B.click(B.onGeom(base, 0.5));
+    const seeded = anchorsOf(base.id);
+    const annsBeforeMiss = B.d.getAnnotations().length;
+    clearToast();
+    const missWanted = B.offGeom(base, 0.30, 60);
+    const missGot = clickExact(missWanted);
+    const miss = {
+      seeded: seeded, tool: armMiss.tool,
+      tolerancePx: g.tolerancePx,
+      offPathPx: +(B.pathDist(missGot, B.pathPoints(byId(base.id), 400)) * zoom()).toFixed(2),
+      toast: toastNow(),
+      anchors: anchorsOf(base.id),
+      anns: B.d.getAnnotations().length, annsBefore: annsBeforeMiss,
+      toolAfter: B.d.getState().tool,
+    };
+    document.getElementById('undoBtn').click();
+    miss.oneUndoReachedBase = await waitUntil(() => anchorsOf(base.id) === 0);
+    miss.anchorsAfterUndo = anchorsOf(base.id);
+
+    // ---- (ii) a landing spot the gate refuses, and one just past it ----
+    const tooClose = [];
+    for (const spec of [
+      { label: 'the line start', wantMul: 0.5, seedAnchor: false, expectAccept: false },
+      { label: 'an existing anchor', wantMul: 0.5, seedAnchor: true, expectAccept: false },
+      { label: 'the nearest legal spot to the line start', nearestLegal: true, seedAnchor: false, expectAccept: true },
+    ]) {
+      await B.restore();
+      B.clearSelection();
+      await B.settle();
+      base = curves()[0];
+      g = gatePx(base);
+      const arm = armAddPoint(base);
+      let ref = base.start;
+      if (spec.seedAnchor) {
+        B.click(B.onGeom(base, 0.5));
+        const withOne = byId(base.id);
+        if (!withOne.points.length) { tooClose.push({ label: spec.label, seedFailed: true }); continue; }
+        ref = { x: withOne.points[0].point.x, y: withOne.points[0].point.y };
+      }
+      const anchorsBefore = anchorsOf(base.id);
+      const annsBefore = B.d.getAnnotations().length;
+      clearToast();
+      const aim = spec.nearestLegal
+        ? nearestLegalLanding(byId(base.id), ref, g.minSeparationPx)
+        : landingNear(byId(base.id), ref, g.minSeparationPx * spec.wantMul);
+      if (!aim) { tooClose.push({ label: spec.label, aimFailed: true, minSeparationPx: g.minSeparationPx }); continue; }
+      const got = clickExact(aim.p);
+      tooClose.push({
+        label: spec.label, offered: arm.offered, tool: arm.tool,
+        minSeparationPx: g.minSeparationPx, tolerancePx: g.tolerancePx,
+        wantedMul: spec.wantMul || null, expectAccept: spec.expectAccept,
+        // Both halves of the gate at the spot aimed at: how far it is from the
+        // nearest occupied point, and how short the shortest handle the split
+        // would write would be. Plus how far the click was from the path at all,
+        // which is the accept tolerance and a different test again.
+        aimTakenPx: aim.takenPx, aimHandleSpanPx: aim.handleSpanPx, aimT: +aim.t.toFixed(4),
+        sepPx: +(Math.hypot(got.x - ref.x, got.y - ref.y) * zoom()).toFixed(3),
+        offPathPx: +(B.pathDist(got, B.pathPoints(byId(base.id), 400)) * zoom()).toFixed(3),
+        toast: toastNow(),
+        anchorsBefore: anchorsBefore, anchors: anchorsOf(base.id),
+        anns: B.d.getAnnotations().length, annsBefore: annsBefore,
+      });
+    }
+
+    // ---- (iii-a) not offered for a multi-line selection ----
+    await B.restore();
+    B.clearSelection();
+    await B.settle();
+    base = curves()[0];
+    // A SECOND curved line, so the only thing disqualifying the selection is
+    // that there are two of them — with a straight line as the primary the type
+    // test would fire first and the case would prove nothing about the group.
+    const second = curves()[1] || null;
+    const multi = { hasSecondCurve: !!second };
+    if (second) {
+      B.click(base.start);
+      multi.offeredSingle = !document.getElementById('toolAddPoint').hidden;
+      const spot = clearBodyPoint(second);
+      multi.clearPx = +(spot.clear * zoom()).toFixed(1);
+      B.click(spot.p, { shiftKey: true });
+      multi.primaryId = B.d.getState().selection.id;
+      multi.secondId = second.id;
+      multi.offeredGroup = !document.getElementById('toolAddPoint').hidden;
+      const annsBefore = B.d.getAnnotations().length;
+      document.getElementById('toolAddPoint').click();   // press it anyway
+      multi.toolAfterClick = B.d.getState().tool;
+      multi.anchors = anchorsOf(base.id);
+      multi.anns = B.d.getAnnotations().length;
+      multi.annsBefore = annsBefore;
+      // The hazard, measured: Backspace on this selection is the GROUP delete.
+      const delBefore = ((B.d.exportProject().state || {}).deletedPomKeys || []).length;
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+      multi.linesDeleted = annsBefore - B.d.getAnnotations().length;
+      multi.deletedPomKeysAdded = ((B.d.exportProject().state || {}).deletedPomKeys || []).length - delBefore;
+    }
+
+    // ---- (iii-b) not offered for a line hidden by the review x Hide toggle ----
+    await B.restore();
+    B.clearSelection();
+    await B.settle();
+    base = curves()[0];
+    B.click(base.start);
+    const hidden = { offeredVisible: !document.getElementById('toolAddPoint').hidden };
+    // Press the panel's OWN x toggle, not d.setHiddenAnnIds. US-093 / ADR 0053
+    // code review, 2026-08-21: toggleAnnHidden (spec-visibility.js) now ends in
+    // updateUI() rather than renderSpecPanel(), so hiding the selected line
+    // withdraws the Add point button in the same turn — and the debug hook,
+    // which still only re-renders the panel, can no longer stand in for the
+    // button. Round 1 logged attrRightAfterToggle as an un-asserted gap; the
+    // gesture closes it, so it is asserted below.
+    const visBtn = () => document.querySelector('tr[data-ann-id="' + base.id + '"] .pom-vis-btn');
+    hidden.hasRowToggle = !!visBtn();
+    if (visBtn()) visBtn().click();
+    // The row is rebuilt by the toggle, so re-query: aria-pressed is the panel
+    // saying the line really is hidden now, which is what the assertions about
+    // the toolbar and the tool entry are conditioned on.
+    hidden.rowSaysHidden = visBtn() ? visBtn().getAttribute('aria-pressed') === 'true' : null;
+    hidden.attrRightAfterToggle = !!document.getElementById('toolAddPoint').hidden;
+    document.getElementById('toolAddPoint').click();
+    hidden.toolAfterClick = B.d.getState().tool;
+    hidden.attrAfterClick = !!document.getElementById('toolAddPoint').hidden;
+    hidden.anchors = anchorsOf(base.id);
+    // No reset needed: loadProject clears state.hiddenAnnIds (project-load.js),
+    // and the restore below is a loadProject.
+
+    await B.restore();
+    return { skipped: false, seq: base.seq, miss: miss, tooClose: tooClose, multi: multi, hidden: hidden };
+  })()`);
+  if (refusals.skipped) {
+    console.log('board-interaction-check: no curved line on this board, Add-point refusal checks skipped');
+  } else {
+    console.log('board-interaction-check: refusals ' + JSON.stringify(refusals));
+    const miss = refusals.miss;
+    // Positive controls first: the tool has to be armed and the seed insertion
+    // has to have landed, or every "nothing changed" below is vacuously true.
+    check(miss.tool === 'add-point', `the Add point tool did not arm (tool ${miss.tool}) — the refusal checks test nothing`);
+    check(miss.seeded === 1, `the seed insertion did not land (${miss.seeded} anchors) — the history probe below has nothing to undo`);
+    check(miss.offPathPx > miss.tolerancePx,
+      `the "miss" click landed ${miss.offPathPx} screen px from the curve, inside the ${miss.tolerancePx}px accept tolerance — `
+      + `it is not a miss, so the refusal it triggers proves nothing`);
+    check(miss.toast === 'Click on the curve to add a point.',
+      `a click ${miss.offPathPx}px off the curve must say so; the toast read ${JSON.stringify(miss.toast)}. A silent no-op `
+      + `reads as a broken button — and without the tolerance gate the anchor would have been inserted anyway, `
+      + `${miss.offPathPx}px from where the TD clicked`);
+    check(miss.anchors === miss.seeded && miss.anns === miss.annsBefore,
+      `the refused click changed the board: ${miss.anchors} anchors (was ${miss.seeded}) and ${miss.anns} lines (was ${miss.annsBefore})`);
+    check(miss.toolAfter === 'add-point',
+      `a refused click must leave the tool armed for the next try, got ${miss.toolAfter}`);
+    check(miss.oneUndoReachedBase,
+      `after the refused click ONE undo left ${miss.anchorsAfterUndo} anchors instead of 0 — the refusal pushed a history `
+      + `entry of its own, so the TD's undo now walks back through a step that did nothing`);
+    for (const row of refusals.tooClose) {
+      check(!row.seedFailed, `the "${row.label}" case could not seed its anchor — it must not skip silently`);
+      check(!row.aimFailed,
+        `the "${row.label}" case found no landing spot to aim at on this curve. For the accepted control that means the `
+        + `${row.minSeparationPx}px gate now refuses the WHOLE curve, which is the inert button it was retuned to avoid`);
+      check(row.tool === 'add-point' && row.offered,
+        `the "${row.label}" case never armed the Add point tool (offered ${row.offered}, tool ${row.tool})`);
+      check(row.offPathPx <= row.tolerancePx,
+        `the "${row.label}" click landed ${row.offPathPx} screen px off the path, outside the ${row.tolerancePx}px accept `
+        + `tolerance — it would be refused as a MISS whatever the separation gate did, so this row tests the wrong gate`);
+      if (row.expectAccept) {
+        // The half that stops (ii) from passing on a dead button. Round 1's own
+        // note records that the first version of this gate was wide enough to
+        // refuse every point of a short curve, leaving Add point visible and
+        // inert; a refusal-only test would have called that a pass.
+        //
+        // US-093 / ADR 0053 code review, 2026-08-21: this row is aimed at the
+        // nearest spot to the end that clears BOTH halves of the gate. It used
+        // to be aimed 1.6x the gate's own value from the endpoint, which reads
+        // as "just past it" but is not: the binding half is the handle span,
+        // about a third of that clearance near an end, so the spot was inside
+        // the gate and the row failed. Both halves are asserted below, so the
+        // aim cannot silently drift back onto the wrong quantity.
+        check(row.aimTakenPx > row.minSeparationPx && row.aimHandleSpanPx > row.minSeparationPx,
+          `the "${row.label}" spot is ${row.aimTakenPx} screen px from the nearest occupied point and would leave its `
+          + `shortest handle ${row.aimHandleSpanPx} px long, against a ${row.minSeparationPx}px gate — it is not past the `
+          + `gate at all, so accepting it would prove nothing`);
+        check(row.anchors === row.anchorsBefore + 1,
+          `the nearest spot that clears the ${row.minSeparationPx}px gate on both counts (${row.aimTakenPx}px from the `
+          + `nearest occupied point, ${row.aimHandleSpanPx}px of handle, t=${row.aimT}) must be accepted, but the anchor `
+          + `count went ${row.anchorsBefore} -> ${row.anchors}. A gate that refuses everywhere leaves the button visible `
+          + `and inert, and the refusal rows above would still pass`);
+        check(row.toast === '',
+          `an accepted insertion must not toast a refusal; got ${JSON.stringify(row.toast)}`);
+      } else {
+        check(row.sepPx <= row.minSeparationPx,
+          `the "${row.label}" click landed ${row.sepPx} screen px away, outside the ${row.minSeparationPx}px gate — `
+          + `it is not close enough to be refused, so this row proves nothing`);
+        check(row.toast === 'Too close to an existing point. Zoom in to place one here.',
+          `a landing spot ${row.sepPx} screen px from ${row.label} must be refused out loud; the toast read `
+          + `${JSON.stringify(row.toast)}`);
+        check(row.anchors === row.anchorsBefore && row.anns === row.annsBefore,
+          `the refused click near ${row.label} changed the board: ${row.anchors} anchors (was ${row.anchorsBefore}) and `
+          + `${row.anns} lines (was ${row.annsBefore}). Without the gate the split would land at t clamped to 1e-3, `
+          + `collapsing the flanking bend handle onto the endpoint`);
+      }
+    }
+    const multi = refusals.multi;
+    check(multi.hasSecondCurve,
+      'this board has only one curved line, so the multi-selection case cannot be built with a curved PRIMARY — without '
+      + 'that it would be testing the type check, not the group check');
+    check(multi.offeredSingle,
+      'the Add point button was not offered for the single curved selection this case starts from, so its disappearance '
+      + 'below would prove nothing');
+    check(multi.clearPx > 12,
+      `the second line's press point is only ${multi.clearPx}px from another line or label — too close to be sure which `
+      + `line the Shift+click added`);
+    check(multi.primaryId === multi.secondId,
+      `the Shift+click was meant to make the second curved line the primary selection but left ${multi.primaryId} — `
+      + `re-aim it, or this case is not testing a curved-primary group`);
+    check(multi.offeredGroup === false,
+      'the Add point button must not be offered while more than one line is selected: the Backspace that undoes an '
+      + 'insertion would fall through to the GROUP delete');
+    check(multi.toolAfterClick === 'select',
+      `pressing the withheld button anyway left the tool at ${multi.toolAfterClick} — hiding a button is presentation, `
+      + `the predicate has to refuse the tool itself`);
+    check(multi.anchors === 0 && multi.anns === multi.annsBefore,
+      `pressing the withheld button changed the board: ${multi.anchors} anchors on the curve and ${multi.anns} lines `
+      + `(was ${multi.annsBefore})`);
+    // And the damage it was withheld to prevent, measured rather than quoted.
+    check(multi.linesDeleted === 2 && multi.deletedPomKeysAdded === 2,
+      `Backspace on a 2-line selection deleted ${multi.linesDeleted} lines and filed ${multi.deletedPomKeysAdded} POM keys `
+      + `as deleted. This is the fall-through the predicate exists to keep an anchor insert away from: if it is no longer `
+      + `2 and 2, either deleteSelected changed or the Shift+click did not build a group, and the reason for the guard `
+      + `above needs restating.`);
+    const hid = refusals.hidden;
+    check(hid.offeredVisible,
+      'the Add point button was not offered for the visible curve this case starts from, so its refusal after hiding '
+      + 'would prove nothing');
+    check(hid.hasRowToggle && hid.rowSaysHidden === true,
+      `the panel row for the selected curve did not report itself hidden after its x toggle was pressed `
+      + `(toggle found: ${hid.hasRowToggle}, aria-pressed: ${hid.rowSaysHidden}) — nothing below is about a hidden line`);
+    check(hid.attrRightAfterToggle === true,
+      'the Add point button must be withdrawn the instant the selected line is hidden, in the same turn as the x toggle. '
+      + 'A button left on screen for a line every click now refuses is the gap round 1 could only log');
+    check(hid.toolAfterClick === 'select',
+      `pressing Add point for a line hidden by the review x Hide toggle left the tool at ${hid.toolAfterClick} — an `
+      + `insertion into a line the canvas draws nothing for would push a history entry with no visible change`);
+    check(hid.attrAfterClick === true,
+      'the Add point button must stay withdrawn after the withheld press');
+    check(hid.anchors === 0, `the hidden line grew ${hid.anchors} anchors`);
+    console.log(`board-interaction-check: Add point declines all three ways — a miss ${miss.offPathPx}px off the path, a `
+      + `landing spot inside the ${refusals.tooClose[0].minSeparationPx}px separation gate (and accepts one just past it), `
+      + `and is withheld from a 2-line selection (whose Backspace deletes ${multi.linesDeleted} lines) and from a hidden line`
+      + ` — withdrawn in the same turn as the x toggle`);
+  }
+
+  // ---- 4i. US-093 / ADR 0053: an interior anchor on an UNSELECTED line ----
+  // Round-3 code-review finding, 2026-08-21: hitTestAnyEndpoint — the test that
+  // makes any visible line's end grabbable on the FIRST press (section 1) — was
+  // never made anchor-aware. Nothing keeps an anchor away from an end either:
+  // the Add-point separation gate is 4 screen px, and a TD can simply DRAG an
+  // existing anchor there, which no insertion gate can cover. Section 4f case
+  // (c) builds that geometry, but there the curve is SELECTED, so
+  // hitTestSelectedHandles answers and this test never runs. Unselected, a press
+  // on that anchor returned { part: 'start' } and startHandleDrag moved the
+  // POM's landmark pin — restating its measured length — while the anchor the TD
+  // aimed at stayed put.
+  //
+  // The fix makes an endpoint defer to a STRICTLY closer anchor on ANY
+  // non-hidden line. Deferring is not "grab the anchor instead": interior
+  // anchors are painted only for the selected line, so the anchor is invisible
+  // here and the press falls through to the line BODY, which selects the line —
+  // the anchor is then grabbable on the next press. Both halves are asserted.
+  //
+  // The counterfactual is measured through the product rather than modelled: the
+  // anchor is deleted and the SAME pixel pressed again, which still opens a
+  // handle drag on that end and moves it. That is what proves the pixel is
+  // inside the endpoint's catch radius — so the pre-fix rule really did answer
+  // 'start' here — and it prices the damage in the same units the TD reads.
+  const anchorNearEnd = await s.eval(`(async () => {
+    const B = window.__BI;
+    const zoom = () => B.d.getView().zoom;
+    const byId = (id) => B.d.getAnnotations().find(x => x.id === id);
+    const curves = () => B.d.getAnnotations().filter(x => x.type === 'curved' && x.control1 && x.control2);
+    const polyOf = (a) => (a.type === 'curved' && a.control1 && a.control2)
+      ? B.pathPoints(a, 24) : [a.start, a.end];
+    const px = (p, q) => +(Math.hypot(p.x - q.x, p.y - q.y) * zoom()).toFixed(2);
+    // The measured value as the TD reads it, out of the panel row itself.
+    // pointer-events.js refreshes that cell live during a handle drag, so it is
+    // exactly the readout a moved landmark pin changes under the TD's eyes.
+    const measured = (id) => {
+      const el = document.querySelector('tr[data-ann-id="' + id + '"] .spec-measured');
+      return el ? String(el.textContent || '').trim() : '';
+    };
+    const num = (t) => { const m = /-?[0-9]+(?:[.][0-9]+)?/.exec(t || ''); return m ? Number(m[0]) : null; };
+
+    await B.restore();
+    B.clearSelection();
+    await B.settle();
+    // Pick the (curve, end) with the most room around it. The press lands a few
+    // px from that end, so another line's endpoint within 10px or body within
+    // 8px of it would take the press for itself and the case would be measuring
+    // a neighbour. Own label included — hitTestAnnotations checks label bounds
+    // before the body, and a press it read as 'label' would prove nothing.
+    let pick = null;
+    for (const a of curves()) {
+      for (const which of ['start', 'end']) {
+        const p = a[which];
+        let clear = Infinity;
+        for (const o of B.d.getAnnotations()) {
+          clear = Math.min(clear, Math.hypot(p.x - o.label.x, p.y - o.label.y));
+          if (o.id === a.id) continue;
+          clear = Math.min(clear, B.pathDist(p, polyOf(o)),
+            Math.hypot(p.x - o.start.x, p.y - o.start.y),
+            Math.hypot(p.x - o.end.x, p.y - o.end.y));
+        }
+        if (!pick || clear > pick.clear) pick = { id: a.id, seq: a.seq, which: which, clear: clear };
+      }
+    }
+    if (!pick) return { skipped: true };
+    const out = { skipped: false, id: pick.id, seq: pick.seq, which: pick.which,
+      clearPx: +(pick.clear * zoom()).toFixed(1) };
+
+    // Grow one anchor mid-curve, then DRAG it to 7 screen px off the chosen end,
+    // perpendicular to that end's own bend handle so it does not land on the
+    // handle's line. 7px is inside hitTestAnyEndpoint's radius (proved by the
+    // counterfactual at the bottom) and well outside what Add point would allow.
+    let ann = byId(pick.id);
+    B.click(ann[pick.which]);
+    out.selectedForSetup = B.d.getState().selection.id === pick.id;
+    out.offered = !document.getElementById('toolAddPoint').hidden;
+    document.getElementById('toolAddPoint').click();
+    B.click(B.onGeom(ann, 0.5));
+    document.getElementById('toolSelect').click();
+    ann = byId(pick.id);
+    out.grew = Array.isArray(ann.points) ? ann.points.length : -1;
+    if (out.grew !== 1) return out;
+    const along = pick.which === 'start'
+      ? { x: ann.control1.x - ann.start.x, y: ann.control1.y - ann.start.y }
+      : { x: ann.control2.x - ann.end.x, y: ann.control2.y - ann.end.y };
+    const alongLen = Math.hypot(along.x, along.y) || 1;
+    const g = 7 / zoom();
+    const endWas = ann[pick.which];
+    out.grabbed = B.dragHandleTo(ann.points[0].point, {
+      x: endWas.x - (along.y / alongLen) * g,
+      y: endWas.y + (along.x / alongLen) * g,
+    });
+    ann = byId(pick.id);
+    const anchorPt = { x: ann.points[0].point.x, y: ann.points[0].point.y };
+    const endPt = { x: ann[pick.which].x, y: ann[pick.which].y };
+    out.gapPx = px(anchorPt, endPt);
+
+    // ---- the press: on the anchor, line NOT selected ----
+    B.clearSelection();
+    await B.settle();
+    const s0 = B.w2s(anchorPt);
+    const screen = { x: Math.round(s0.x), y: Math.round(s0.y) };
+    const exact = B.s2w(screen.x, screen.y);
+    out.toAnchorPx = px(exact, anchorPt);
+    out.toEndPx = px(exact, endPt);
+    // Every candidate hitTestSelectedHandles would rank at this pixel, so a
+    // press that opens the wrong one reports the geometry that decided it
+    // instead of leaving the reader to guess.
+    out.scored = B.scoreHandles(ann, exact).filter(t => t.px <= t.r + 6);
+    out.inRange = B.scoreHandles(ann, exact).filter(t => t.px <= t.r).map(t => t.part).sort().join(', ');
+    out.anchorHandlesPx = { in: px(ann.points[0].handleIn, anchorPt), out: px(ann.points[0].handleOut, anchorPt) };
+    const before = B.snapshot();
+    out.valueBefore = measured(pick.id);
+    out.first = B.pressPart(screen);
+    out.selection = B.d.getState().selection;
+    const m = B.diff(before, B.snapshot());
+    out.moved = { start: m.start, end: m.end, both: m.both, label: m.label, image: m.imageMoved };
+    out.movedCount = m.start.length + m.end.length + m.both.length + m.label.length + (m.imageMoved ? 1 : 0);
+    out.valueAfter = measured(pick.id);
+    // ---- and the second press, with the line now selected ----
+    // Two presses means two GESTURES, so let the board settle in between and
+    // re-aim. Selecting the line makes the toolbar offer Add point, which
+    // reflows the chrome and moves the canvas box; the pan that keeps the board
+    // still on screen lands on the next frame (US-088, measured in section 0).
+    // Pressing again in the same synchronous turn maps the pixel through the new
+    // rect and the old pan — 35.5 screen px out on this fixture, which is
+    // exactly far enough to land on the anchor's own bend handle. Both numbers
+    // are recorded: the drift, and how far the re-aimed pixel had to move.
+    out.driftBeforeSettlePx = px(B.s2w(screen.x, screen.y), anchorPt);
+    await B.settle();
+    const s1 = B.w2s(anchorPt);
+    const screen2 = { x: Math.round(s1.x), y: Math.round(s1.y) };
+    out.repointPx = +Math.hypot(screen2.x - screen.x, screen2.y - screen.y).toFixed(2);
+    out.toAnchorPx2 = px(B.s2w(screen2.x, screen2.y), anchorPt);
+    out.second = B.pressPart(screen2);
+
+    // ---- counterfactual: the same pixel, no anchor to defer to ----
+    // The second press left selection.part on the anchor, so Backspace is the
+    // anchor-delete branch (4c asserts that pairing).
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+    const stripped = byId(pick.id);
+    out.lineSurvivedDelete = !!stripped;
+    out.anchorsAfterDelete = stripped && Array.isArray(stripped.points) ? stripped.points.length : -1;
+    if (out.anchorsAfterDelete !== 0) return out;
+    B.clearSelection();
+    await B.settle();
+    // Deselecting puts the chrome back where it was when the pixel was computed,
+    // so this really is the same pixel over the same world point — recorded, not
+    // assumed, because the whole counterfactual rests on it.
+    out.cfToAnchorPx = px(B.s2w(screen.x, screen.y), anchorPt);
+    const cfBefore = B.snapshot();
+    out.cfValueBefore = measured(pick.id);
+    B.ev('mousedown', screen.x, screen.y);
+    out.cfOpened = (() => { const it = B.d.getInteraction();
+      return it ? { type: it.type, part: it.part, id: it.id } : null; })();
+    for (let i = 1; i <= 6; i += 1) B.ev('mousemove', screen.x + 18 * i / 6, screen.y + 14 * i / 6);
+    B.ev('mouseup', screen.x + 18, screen.y + 14);
+    await B.settle();
+    const cfAnn = byId(pick.id);
+    out.cfEndMovedPx = px({ x: cfAnn[pick.which].x, y: cfAnn[pick.which].y }, endPt);
+    const cfDiff = B.diff(cfBefore, B.snapshot());
+    out.cfMoved = { start: cfDiff.start, end: cfDiff.end, both: cfDiff.both };
+    out.cfValueAfter = measured(pick.id);
+    out.cfValueDelta = (num(out.cfValueAfter) != null && num(out.cfValueBefore) != null)
+      ? +(num(out.cfValueAfter) - num(out.cfValueBefore)).toFixed(3) : null;
+    await B.restore();
+    return out;
+  })()`);
+  if (anchorNearEnd.skipped) {
+    console.log('board-interaction-check: no curved line on this board, unselected-anchor check skipped');
+  } else {
+    console.log('board-interaction-check: unselected anchor ' + JSON.stringify(anchorNearEnd));
+    const a = anchorNearEnd;
+    const label = `POM ${a.seq}.${a.which}`;
+    // Positive controls: the scenario has to exist before "the endpoint deferred"
+    // means anything. Each one is a way the case could quietly test nothing.
+    check(a.clearPx > 20,
+      `${label} is the roomiest curve end on this board and it is still only ${a.clearPx} screen px from another line, `
+      + `its endpoint or a label — a press beside it could be claimed by that neighbour instead, so this case cannot be `
+      + `built here any more`);
+    check(a.selectedForSetup && a.offered,
+      `${label}: the setup press did not select the curve (selected ${a.selectedForSetup}, Add point offered ${a.offered})`);
+    check(a.grew === 1, `${label}: the setup insertion left ${a.grew} interior anchors, not 1`);
+    check(a.grabbed && a.grabbed.type === 'drag-handle' && a.grabbed.part === 'point0.point',
+      `${label}: the setup drag opened ${JSON.stringify(a.grabbed)} instead of a drag of the anchor itself, so the anchor `
+      + `is not where this case needs it`);
+    check(a.toAnchorPx < 1 && a.gapPx > 0,
+      `${label}: the press landed ${a.toAnchorPx} screen px from the anchor (anchor ${a.gapPx}px from the end) — it has to `
+      + `be ON the anchor for the deferral to be what is under test`);
+    // The competing set, as an exact set rather than a count (section 1's rule).
+    // Exactly two things are in range at this pixel: the anchor the TD aimed at
+    // and the endpoint that used to take it. A third would mean the fixture has
+    // drifted and the press is no longer about the deferral.
+    check(a.inRange === ['point0.point', a.which].sort().join(', '),
+      `${label}: the candidates in range at that pixel are [${a.inRange}], not just the anchor and '${a.which}'. `
+      + `Distances: ${JSON.stringify(a.scored)}, and the anchor's own handles sit ${JSON.stringify(a.anchorHandlesPx)} away`);
+    // The behaviour itself.
+    check(!!a.first && a.first.type === 'drag-annotation' && a.first.id === a.id,
+      `${label}: pressing the invisible anchor of an UNSELECTED curve opened ${JSON.stringify(a.first)}. It must fall `
+      + `through to the line body: a 'drag-handle' on '${a.which}' here is the landmark pin, ${a.toEndPx}px away, moving `
+      + `instead of the anchor the TD aimed at`);
+    check(!!a.first && a.first.part === null,
+      `${label}: the press opened part ${JSON.stringify(a.first && a.first.part)} — a label drag or a handle drag, not the `
+      + `line-body fall-through the deferral exists to reach`);
+    check(!!a.selection && a.selection.kind === 'annotation' && a.selection.id === a.id,
+      `${label}: the press must leave THIS line selected so the next press can reach the anchor; selection is `
+      + `${JSON.stringify(a.selection)}`);
+    check(a.movedCount === 0,
+      `${label}: the press moved something — ${JSON.stringify(a.moved)}. A press with no travel is a click (section 4), so `
+      + `nothing on the board may shift`);
+    check(a.valueAfter === a.valueBefore,
+      `${label}: the measured value read ${JSON.stringify(a.valueBefore)} before the press and `
+      + `${JSON.stringify(a.valueAfter)} after`);
+    check(a.toAnchorPx2 < 1,
+      `${label}: the re-aimed second press lands ${a.toAnchorPx2} screen px from the anchor (the pixel moved `
+      + `${a.repointPx}px after the chrome settled) — it has to be ON the anchor to say anything about the second press`);
+    check(!!a.second && a.second.type === 'drag-handle' && a.second.part === 'point0.point',
+      `${label}: the SECOND press must grab the anchor now that the line is selected, got ${JSON.stringify(a.second)}. `
+      + `Deferring is only acceptable because the anchor is one press away`);
+    // The counterfactual, which is also the proof the assertions above can fail.
+    check(a.lineSurvivedDelete && a.anchorsAfterDelete === 0,
+      `${label}: Backspace after the second press left ${a.anchorsAfterDelete} anchors (line survived: `
+      + `${a.lineSurvivedDelete}) — the counterfactual below needs the anchor gone and the line intact`);
+    check(a.cfToAnchorPx < 1,
+      `${label}: with the anchor deleted the counterfactual pixel maps ${a.cfToAnchorPx} screen px from where the anchor `
+      + `was, so it is no longer the SAME press and it proves nothing about the one above`);
+    check(!!a.cfOpened && a.cfOpened.type === 'drag-handle' && a.cfOpened.part === a.which
+      && a.cfOpened.id === a.id,
+      `${label}: with the anchor deleted, the SAME pixel opened ${JSON.stringify(a.cfOpened)} instead of a handle drag on `
+      + `'${a.which}'. That press is the only evidence the pixel is inside hitTestAnyEndpoint's radius — without it the `
+      + `deferral assertions above could be passing on a press the endpoint never wanted`);
+    check(a.cfEndMovedPx > 5,
+      `${label}: the counterfactual drag moved the endpoint ${a.cfEndMovedPx} screen px — too little to price the defect`);
+    check(a.cfValueDelta !== null && Math.abs(a.cfValueDelta) > 0,
+      `${label}: the counterfactual endpoint drag left the measured value at ${JSON.stringify(a.cfValueAfter)} — if moving `
+      + `this landmark does not restate the measurement, the panel readout is not sensitive enough to prove what the `
+      + `deferral prevents`);
+    console.log(`board-interaction-check: ${label} — an anchor ${a.gapPx}px from the end takes the press away from it `
+      + `(falls through to the line body, nothing moved, value ${a.valueBefore} held; anchor grabbable on the next press). `
+      + `Same pixel with the anchor deleted: drag-handle '${a.cfOpened && a.cfOpened.part}', landmark moved `
+      + `${a.cfEndMovedPx}px and the value went ${a.cfValueBefore} -> ${a.cfValueAfter} `
+      + `(${a.cfValueDelta > 0 ? '+' : ''}${a.cfValueDelta})`);
+  }
+
+  // ---- 4j. US-093 / ADR 0053: the deferral crosses the LINE boundary ----
+  // Round-4 code-review finding, 2026-08-21: round 3's deferral (section 4i) was
+  // scoped PER ANNOTATION — the anchor scan sat inside the endpoint loop, so
+  // line B's turn round the loop saw only B's own (empty) points. A press 1px
+  // from line A's anchor that was also inside hitTestAnyEndpoint's radius of line
+  // B's END still returned { id: B, part } and startHandleDrag moved B's landmark
+  // pin, restating B's measured length, while the TD was aiming at A's anchor.
+  // Round 4 hoisted the scan out of the endpoint loop into one pass over every
+  // non-hidden line, so an endpoint now yields to a strictly closer anchor
+  // wherever on the board that anchor lives.
+  //
+  // Section 4i structurally cannot reach this. It picks the (curve, end) with the
+  // MAXIMUM clearance from every other line's endpoints, body and label, so no
+  // FOREIGN endpoint is ever in range there and hoisting the scan cannot change
+  // its outcome. This section goes looking for the opposite geometry on purpose.
+  // Round 4's fix was verified only by an out-of-repo fuzz harness (30,000
+  // synthetic boards); this is the first thing in the repo that presses the pixel.
+  //
+  // Two facts are what make the case about the HOIST rather than about round 3
+  // again, and both are asserted rather than assumed:
+  //   * the only interior anchor anywhere on the board belongs to line A, so
+  //     line B has no points of its own and a per-annotation scan would have
+  //     deferred nothing at all;
+  //   * line A's own two ends are OUTSIDE hitTestAnyEndpoint's radius at the
+  //     press, so the deferral cannot be the same-line one 4i already covers.
+  //
+  // The geometry is real, not contrived: this template's POMs deliberately share
+  // endpoints (section 1's EXPECTED_COINCIDENT names six grabs that land on a
+  // sibling), so foreign endpoints sit within a few px of each other all over
+  // this board. Those are straight lines and cannot grow anchors, so the case is
+  // built the way a TD would reach it — grow one anchor mid-curve, then DRAG it
+  // beside a different POM's endpoint, which is the gesture no insertion gate
+  // covers (section 4f case (c) uses the same route for the selected line).
+  //
+  // The counterfactual is 4i's, for the same reason: the anchor is the only thing
+  // the round-4 predicate adds, so the SAME pixel is pressed again with the
+  // anchor deleted. That press must open a handle drag on the FOREIGN end and
+  // move it — the pre-hoist answer, priced in the units the TD reads off the
+  // panel. If it ever stops differing, the assertions above have stopped
+  // exercising the cross-line path and this section says so instead of passing.
+  const crossLine = await s.eval(`(async () => {
+    const B = window.__BI;
+    const gate = window.__BI_GATE;
+    const zoom = () => B.d.getView().zoom;
+    const byId = (id) => B.d.getAnnotations().find(x => x.id === id);
+    const isCurve = (a) => a.type === 'curved' && !!a.control1 && !!a.control2;
+    const polyOf = (a) => isCurve(a) ? B.pathPoints(a, 24) : [a.start, a.end];
+    const px = (p, q) => +(Math.hypot(p.x - q.x, p.y - q.y) * zoom()).toFixed(2);
+    // The measured value as the TD reads it, out of the panel row itself — the
+    // readout a moved landmark pin restates under the TD's eyes (4i's helper).
+    const measured = (id) => {
+      const el = document.querySelector('tr[data-ann-id="' + id + '"] .spec-measured');
+      return el ? String(el.textContent || '').trim() : '';
+    };
+    const num = (t) => { const m = /-?[0-9]+(?:[.][0-9]+)?/.exec(t || ''); return m ? Number(m[0]) : null; };
+    const totalAnchors = () => B.d.getAnnotations()
+      .reduce((n, a) => n + (Array.isArray(a.points) ? a.points.length : 0), 0);
+    const endsOf = (a) => [{ part: 'start', p: a.start }, { part: 'end', p: a.end }].filter(e => !!e.p);
+
+    await B.restore();
+    B.clearSelection();
+    await B.settle();
+    const anns = B.d.getAnnotations();
+    if (!anns.some(isCurve)) return { skipped: true };
+    const z = zoom();
+    const dpx = (p, q) => Math.hypot(p.x - q.x, p.y - q.y) * z;
+    const polys = anns.map(polyOf);
+    const rect = document.getElementById('boardCanvas').getBoundingClientRect();
+    // The gap to leave between the anchor and the foreign endpoint. 7 screen px
+    // is 4i's figure: comfortably inside hitTestAnyEndpoint's reach with room for
+    // the integer-pixel rounding of the press (up to 0.71px) at either end, and
+    // far outside anything Add point would accept.
+    const GAP_PX = 7;
+    // pointInLabelBounds builds a box about 30 x 30 screen px (17px font, 8px
+    // padding), so 25px from its CENTRE clears it without modelling the box here.
+    const LABEL_CLEAR_PX = 25;
+
+    // The direction the line leaves the end by, so the anchor can be pushed
+    // PERPENDICULAR to it: straight off the end, the projection onto the line
+    // lands on the endpoint itself, which is what keeps the offset honest.
+    const outward = (a, which) => {
+      const p = a[which];
+      const q = which === 'start' ? (a.control1 || a.end) : (a.control2 || a.start);
+      const t = { x: q.x - p.x, y: q.y - p.y };
+      const len = Math.hypot(t.x, t.y);
+      return len > 1e-9 ? { x: t.x / len, y: t.y / len } : { x: 1, y: 0 };
+    };
+
+    // Search every (curve, foreign end, side) the board offers rather than
+    // naming a pair: which POMs end up beside each other is a property of the
+    // detection, and a hard-coded pair would silently stop being adjacent.
+    const rejects = {};
+    const rej = (k) => { rejects[k] = (rejects[k] || 0) + 1; };
+    const candidates = [];
+    for (let ia = 0; ia < anns.length; ia += 1) {
+      const A = anns[ia];
+      if (!isCurve(A)) continue;
+      // The foreign line must sit BELOW A in draw order. hitTestAnnotations
+      // scans topmost-first and returns the FIRST line whose label box or body
+      // contains the press, not the nearest, so only lines drawn after A can
+      // outrank it — and the press has to fall through to A's body for the
+      // positive outcome to be A being selected.
+      for (let ib = 0; ib < ia; ib += 1) {
+        const F = anns[ib];
+        for (const e of endsOf(F)) {
+          const dir = outward(F, e.part);
+          for (const side of [1, -1]) {
+            const P = { x: e.p.x - dir.y * side * (GAP_PX / z), y: e.p.y + dir.x * side * (GAP_PX / z) };
+            // On the visible board, so the gesture is one a TD could make.
+            const sp = B.w2s(P);
+            if (sp.x < rect.left + 40 || sp.x > rect.right - 40
+              || sp.y < rect.top + 40 || sp.y > rect.bottom - 40) { rej('offBoard'); continue; }
+            // A's own ends out of reach, or this is 4i's same-line deferral again.
+            const ownEndsPx = Math.min(dpx(P, A.start), dpx(P, A.end));
+            if (ownEndsPx <= gate.anyEndpointRadiusPx + 4) { rej('ownEndInReach'); continue; }
+            // Every endpoint in reach of the press, and every one of them has to
+            // belong to some OTHER line — that is the whole subject here.
+            const inReach = [];
+            let ownInReach = false;
+            for (const C of anns) {
+              for (const c of endsOf(C)) {
+                const d = dpx(P, c.p);
+                if (d > gate.anyEndpointRadiusPx) continue;
+                if (C.id === A.id) ownInReach = true;
+                inReach.push({ pom: 'POM' + C.seq + '.' + c.part, id: C.id, part: c.part, px: +d.toFixed(2) });
+              }
+            }
+            if (ownInReach || !inReach.length) { rej('endpointSet'); continue; }
+            // Nothing drawn ABOVE A may claim the press for its own body or its
+            // own label box.
+            let aboveBodyPx = Infinity, aboveLabelPx = Infinity;
+            for (let ic = ia + 1; ic < anns.length; ic += 1) {
+              aboveBodyPx = Math.min(aboveBodyPx, B.pathDist(P, polys[ic]) * z);
+              aboveLabelPx = Math.min(aboveLabelPx, dpx(P, anns[ic].label));
+            }
+            if (aboveBodyPx <= gate.bodyTolerancePx + 4) { rej('aboveBody'); continue; }
+            if (aboveLabelPx <= LABEL_CLEAR_PX) { rej('aboveLabel'); continue; }
+            candidates.push({
+              idA: A.id, seqA: A.seq, idF: F.id, seqF: F.seq, which: e.part, P: P,
+              inReach: inReach, ownEndsPx: +ownEndsPx.toFixed(2),
+              aboveBodyPx: +aboveBodyPx.toFixed(2), aboveLabelPx: +aboveLabelPx.toFixed(2),
+              travelPx: +dpx(B.onGeom(A, 0.5), P).toFixed(1),
+              clear: Math.min(ownEndsPx - gate.anyEndpointRadiusPx,
+                aboveBodyPx - gate.bodyTolerancePx, aboveLabelPx - LABEL_CLEAR_PX),
+            });
+          }
+        }
+      }
+    }
+    // Widest margin first, shortest anchor travel to break a tie: the roomiest
+    // press is the one whose outcome is least likely to be decided by something
+    // this section is not testing.
+    candidates.sort((x, y) => (y.clear - x.clear) || (x.travelPx - y.travelPx));
+    const out = { skipped: false, nCandidates: candidates.length, rejects: rejects,
+      top: candidates.slice(0, 4).map(c => ({ curve: 'POM' + c.seqA, foreign: 'POM' + c.seqF + '.' + c.which,
+        clearPx: +c.clear.toFixed(1), travelPx: c.travelPx, inReach: c.inReach.map(r => r.pom).join(' ') })) };
+    if (!candidates.length) return out;
+    // A note box is hit-tested BEFORE the line body, so one sitting on the press
+    // would take the fall-through and the positive outcome below would be wrong
+    // about why. This board carries none; recorded so it cannot change quietly.
+    out.notes = (B.d.getNotes() || []).length;
+
+    // Where line A can be selected by its own BODY: the point of its path with
+    // the most clearance from every other line and label. Not an endpoint, the
+    // way 4c and 4i select: several of this template's ends are shared
+    // (EXPECTED_COINCIDENT), so an endpoint press can select the SIBLING and the
+    // setup would build itself on the wrong line.
+    const bodySpot = (A) => {
+      let best = null;
+      for (const p of B.pathPoints(A, 24)) {
+        let clear = Infinity;
+        for (let i = 0; i < anns.length; i += 1) {
+          if (anns[i].id === A.id) continue;
+          clear = Math.min(clear, B.pathDist(p, polys[i]) * z, dpx(p, anns[i].label));
+        }
+        if (!best || clear > best.clear) best = { p: p, clear: clear };
+      }
+      return best;
+    };
+
+    // ---- build one candidate: an anchor mid-curve, dragged beside the end ----
+    // Reports everything that decides whether the build is usable, and never
+    // reports what the PRESS did: the press is the subject of this section, so it
+    // must not be part of choosing which candidate to press.
+    const build = async (cand) => {
+      await B.restore();
+      B.clearSelection();
+      await B.settle();
+      const r = { curve: 'POM' + cand.seqA, foreign: 'POM' + cand.seqF + '.' + cand.which, why: null };
+      let ann = byId(cand.idA);
+      const spot = bodySpot(ann);
+      r.setupClearPx = +spot.clear.toFixed(1);
+      B.click(spot.p);
+      await B.settle();
+      r.selectedForSetup = B.d.getState().selection.id === cand.idA;
+      r.offered = !document.getElementById('toolAddPoint').hidden;
+      if (!r.selectedForSetup || !r.offered) { r.why = 'setup-selection'; return r; }
+      document.getElementById('toolAddPoint').click();
+      await B.settle();
+      B.click(B.onGeom(ann, 0.5));
+      document.getElementById('toolSelect').click();
+      await B.settle();
+      ann = byId(cand.idA);
+      r.grew = Array.isArray(ann.points) ? ann.points.length : -1;
+      if (r.grew !== 1) { r.why = 'insertion'; return r; }
+      r.grabbed = B.dragHandleTo(ann.points[0].point, cand.P);
+      await B.settle();
+      ann = byId(cand.idA);
+      r.anchorPt = { x: ann.points[0].point.x, y: ann.points[0].point.y };
+      r.foreignWas = { x: byId(cand.idF)[cand.which].x, y: byId(cand.idF)[cand.which].y };
+      r.gapPx = px(r.anchorPt, r.foreignWas);
+      r.anchorsBuilt = totalAnchors();
+      B.clearSelection();
+      await B.settle();
+      const s0 = B.w2s(r.anchorPt);
+      r.screen = { x: Math.round(s0.x), y: Math.round(s0.y) };
+      const exact = B.s2w(r.screen.x, r.screen.y);
+      r.toAnchorPx = px(exact, r.anchorPt);
+      r.toForeignPx = px(exact, r.foreignWas);
+      r.ownEndsPx = Math.min(px(exact, ann.start), px(exact, ann.end));
+      r.ownLabelPx = px(exact, ann.label);
+      r.endsInReach = [];
+      for (const cc of B.d.getAnnotations()) {
+        for (const e of endsOf(cc)) {
+          const d = px(exact, e.p);
+          if (d <= gate.anyEndpointRadiusPx) {
+            r.endsInReach.push({ pom: 'POM' + cc.seq + '.' + e.part, id: cc.id, part: e.part, px: d,
+              own: cc.id === cand.idA });
+          }
+        }
+      }
+      // The ONE reason a built candidate is retried rather than asserted on.
+      // dragHandle ends in computeDefaultLabelPosition, so the callout is
+      // recomputed on the reshaped path — and once the anchor sits near that
+      // path's half-arc-length point, the callout lands about 20px from it,
+      // which is inside its own label box: hitTestAnnotations tests a line's
+      // label BEFORE its body, so the press would read as a label drag and never
+      // reach the fall-through this section is about. Where the callout goes is a
+      // property of the reshaped curve, not of the candidate, so it can only be
+      // measured after the drag. Everything else stays an assertion below.
+      if (r.ownLabelPx <= LABEL_CLEAR_PX) { r.why = 'callout-on-press'; return r; }
+      return r;
+    };
+
+    const attempts = [];
+    let use = null, pick = null;
+    for (const cand of candidates.slice(0, 8)) {
+      const r = await build(cand);
+      attempts.push({ curve: r.curve, foreign: r.foreign, why: r.why, gapPx: r.gapPx,
+        toAnchorPx: r.toAnchorPx, ownEndsPx: r.ownEndsPx, ownLabelPx: r.ownLabelPx,
+        anchors: r.anchorsBuilt, grew: r.grew });
+      use = r; pick = cand;
+      if (r.why !== 'callout-on-press') break;
+    }
+    out.attempts = attempts;
+    for (const k of ['setupClearPx', 'selectedForSetup', 'offered', 'grew', 'grabbed', 'gapPx',
+      'anchorsBuilt', 'toAnchorPx', 'toForeignPx', 'ownEndsPx', 'ownLabelPx', 'endsInReach']) out[k] = use[k];
+    out.built = use.why === null;
+    out.why = use.why;
+    out.seqA = pick.seqA; out.idA = pick.idA;
+    out.foreign = 'POM' + pick.seqF + '.' + pick.which;
+    out.idF = pick.idF; out.which = pick.which;
+    out.clearPx = +pick.clear.toFixed(1);
+    out.travelPx = pick.travelPx;
+    if (!out.built) return out;
+    const anchorPt = use.anchorPt, foreignWas = use.foreignWas, screen = use.screen;
+
+    // ---- the press: on the anchor, NOTHING selected ----
+    const watch = Array.from(new Set(out.endsInReach.map(e => e.id)));
+    const before = B.snapshot();
+    out.valuesBefore = watch.map(id => measured(id));
+    out.first = B.pressPart(screen);
+    out.selection = B.d.getState().selection;
+    const m = B.diff(before, B.snapshot());
+    out.moved = { start: m.start, end: m.end, both: m.both, label: m.label, image: m.imageMoved };
+    out.movedCount = m.start.length + m.end.length + m.both.length + m.label.length + (m.imageMoved ? 1 : 0);
+    out.valuesAfter = watch.map(id => measured(id));
+    out.foreignEndMovedPx = px({ x: byId(pick.idF)[pick.which].x, y: byId(pick.idF)[pick.which].y }, foreignWas);
+
+    // ---- the anchor is one press away, which is also how it gets deleted ----
+    // Same US-088 settle-and-re-aim as 4i: the press just selected A, which grows
+    // the toolbar and moves the canvas box, and the compensating pan lands on the
+    // NEXT frame. Both numbers are recorded — the drift, and how far the re-aimed
+    // pixel had to move once the chrome settled.
+    out.driftBeforeSettlePx = px(B.s2w(screen.x, screen.y), anchorPt);
+    await B.settle();
+    const s1 = B.w2s(anchorPt);
+    const screen2 = { x: Math.round(s1.x), y: Math.round(s1.y) };
+    out.repointPx = +Math.hypot(screen2.x - screen.x, screen2.y - screen.y).toFixed(2);
+    out.toAnchorPx2 = px(B.s2w(screen2.x, screen2.y), anchorPt);
+    out.second = B.pressPart(screen2);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+    out.lineSurvivedDelete = !!byId(pick.idA);
+    out.anchorsAfterDelete = totalAnchors();
+    if (!out.lineSurvivedDelete || out.anchorsAfterDelete !== 0) return out;
+
+    // ---- counterfactual: the same pixel, no anchor anywhere to defer to ----
+    B.clearSelection();
+    await B.settle();
+    // Deselecting puts the chrome back where it was when the pixel was computed,
+    // so this really is the same pixel over the same world point — recorded, not
+    // assumed, because the whole counterfactual rests on it.
+    out.cfToAnchorPx = px(B.s2w(screen.x, screen.y), anchorPt);
+    const posBefore = {};
+    for (const c of B.d.getAnnotations()) posBefore[c.id] = { start: c.start, end: c.end };
+    const cfBefore = B.snapshot();
+    B.ev('mousedown', screen.x, screen.y);
+    out.cfOpened = (() => { const it = B.d.getInteraction();
+      return it ? { type: it.type, part: it.part, id: it.id } : null; })();
+    out.cfValueBefore = out.cfOpened ? measured(out.cfOpened.id) : '';
+    for (let i = 1; i <= 6; i += 1) B.ev('mousemove', screen.x + 18 * i / 6, screen.y + 14 * i / 6);
+    B.ev('mouseup', screen.x + 18, screen.y + 14);
+    await B.settle();
+    // Measure whatever the press actually grabbed, not what it was expected to:
+    // several of this board's endpoints are coincident, so the nearest one at
+    // this pixel is the fixture's decision to report rather than the caller's.
+    out.cfGrabbedIsForeign = !!out.cfOpened && out.cfOpened.id !== pick.idA;
+    out.cfGrabbedMovedPx = (out.cfOpened && posBefore[out.cfOpened.id]
+      && posBefore[out.cfOpened.id][out.cfOpened.part])
+      ? px(byId(out.cfOpened.id)[out.cfOpened.part], posBefore[out.cfOpened.id][out.cfOpened.part])
+      : -1;
+    const cfDiff = B.diff(cfBefore, B.snapshot());
+    out.cfMoved = { start: cfDiff.start, end: cfDiff.end, both: cfDiff.both };
+    out.cfValueAfter = out.cfOpened ? measured(out.cfOpened.id) : '';
+    out.cfValueDelta = (num(out.cfValueAfter) != null && num(out.cfValueBefore) != null)
+      ? +(num(out.cfValueAfter) - num(out.cfValueBefore)).toFixed(3) : null;
+    await B.restore();
+    return out;
+  })()`);
+  if (crossLine.skipped) {
+    console.log('board-interaction-check: no curved line on this board, cross-line deferral check skipped');
+  } else {
+    console.log('board-interaction-check: cross-line deferral ' + JSON.stringify(crossLine));
+    const c = crossLine;
+    // Positive controls first. Every one of these is a way the case could stop
+    // being about a FOREIGN endpoint and pass anyway.
+    check(c.nCandidates > 0,
+      `no (curve, foreign endpoint) pair on this board can be brought within ${served.radii.anyEndpointRadiusPx}px of `
+      + `each other without some other line claiming the press. Rejected by gate: ${JSON.stringify(c.rejects)}. `
+      + `Without a pair the cross-line half of the deferral has no coverage at all — re-aim this section, do not drop it`);
+    // The one precondition that is retried instead of asserted, so this is where
+    // running out of candidates shows up. `ownLabelPx` is the number to read: a
+    // callout that lands on the press turns the fall-through into a label drag,
+    // and it is a property of the curve AFTER the anchor is dragged, which no
+    // candidate gate can see in advance.
+    check(c.built === true,
+      `none of the top ${(c.attempts || []).length} candidates could be built into a pressable case (last blocker: `
+      + `${c.why}). Attempts: ${JSON.stringify(c.attempts)}`);
+    check(c.notes === 0,
+      `this board carries ${c.notes} text notes and hitTestNotes runs BEFORE the line body, so the fall-through asserted `
+      + `below could be a note drag instead`);
+    check(c.setupClearPx > 12,
+      `the press used to select POM ${c.seqA} sits only ${c.setupClearPx} screen px from another line or label — too close `
+      + `to be sure which line the setup is building on`);
+    check(c.selectedForSetup === true && c.offered === true,
+      `POM ${c.seqA}: the setup press did not select the curve (selected ${c.selectedForSetup}, Add point offered `
+      + `${c.offered})`);
+    check(c.grew === 1, `POM ${c.seqA}: the setup insertion left ${c.grew} interior anchors, not 1`);
+    check(!!c.grabbed && c.grabbed.type === 'drag-handle' && c.grabbed.part === 'point0.point',
+      `POM ${c.seqA}: the setup drag opened ${JSON.stringify(c.grabbed)} instead of a drag of the anchor itself, so the `
+      + `anchor is not where this case needs it`);
+    check(c.anchorsBuilt === 1,
+      `${c.anchorsBuilt} interior anchors exist on the board, not 1. The case rests on the anchor being the ONLY thing `
+      + `the round-4 predicate adds, and on the foreign line having none of its own`);
+    check(c.toAnchorPx < 1 && c.gapPx > 0,
+      `POM ${c.seqA}: the press landed ${c.toAnchorPx} screen px from the anchor (anchor ${c.gapPx}px from `
+      + `${c.foreign}) — it has to be ON the anchor for the deferral to be what is under test`);
+    check(c.toForeignPx > 0 && c.toForeignPx <= served.radii.anyEndpointRadiusPx,
+      `the press sits ${c.toForeignPx} screen px from ${c.foreign}, outside hitTestAnyEndpoint's `
+      + `${served.radii.anyEndpointRadiusPx}px radius — that endpoint never wanted this press, so deferring it proves nothing`);
+    // The two facts that make this round 4 and not round 3 over again.
+    check(c.ownEndsPx > served.radii.anyEndpointRadiusPx,
+      `POM ${c.seqA}'s own nearest end is ${c.ownEndsPx} screen px from the press, inside the `
+      + `${served.radii.anyEndpointRadiusPx}px radius — the case has collapsed into section 4i's same-line deferral, which `
+      + `round 3 already covered`);
+    check(c.endsInReach.length > 0 && c.endsInReach.every(e => e.own === false),
+      `the endpoints in reach at that pixel are ${JSON.stringify(c.endsInReach)}. They must all belong to OTHER lines: a `
+      + `per-annotation anchor scan sees no points on any of them, so only the hoisted scan can defer them`);
+    // The behaviour, stated as the outcome the TD gets rather than as an absence.
+    check(!!c.first && c.first.type === 'drag-annotation' && c.first.id === c.idA,
+      `pressing POM ${c.seqA}'s invisible anchor opened ${JSON.stringify(c.first)}. It must fall through to POM `
+      + `${c.seqA}'s BODY: a 'drag-handle' on ${c.foreign} here is a DIFFERENT POM's landmark pin, ${c.toForeignPx}px `
+      + `away, moving instead of the anchor the TD aimed at`);
+    check(!!c.first && c.first.part === null,
+      `the press opened part ${JSON.stringify(c.first && c.first.part)} — a label or handle drag, not the line-body `
+      + `fall-through the deferral exists to reach`);
+    check(!!c.selection && c.selection.kind === 'annotation' && c.selection.id === c.idA,
+      `the press must leave POM ${c.seqA} selected, so the anchor is one press away; selection is `
+      + `${JSON.stringify(c.selection)}`);
+    check(c.movedCount === 0,
+      `the press moved something — ${JSON.stringify(c.moved)}. A press with no travel is a click (section 4), so nothing `
+      + `on the board may shift`);
+    check(c.foreignEndMovedPx === 0,
+      `${c.foreign} moved ${c.foreignEndMovedPx} screen px on a press aimed at POM ${c.seqA}'s anchor — that is a foreign `
+      + `POM's landmark pin leaving its detected position`);
+    check(JSON.stringify(c.valuesAfter) === JSON.stringify(c.valuesBefore),
+      `the measured values of the POMs whose ends are in reach read ${JSON.stringify(c.valuesBefore)} before the press and `
+      + `${JSON.stringify(c.valuesAfter)} after — the press restated another line's measurement`);
+    check(c.toAnchorPx2 < 1,
+      `the re-aimed second press lands ${c.toAnchorPx2} screen px from the anchor (the pixel moved ${c.repointPx}px once `
+      + `the chrome settled, drift ${c.driftBeforeSettlePx}px before it) — it has to be ON the anchor`);
+    check(!!c.second && c.second.type === 'drag-handle' && c.second.part === 'point0.point',
+      `the SECOND press must grab the anchor now that POM ${c.seqA} is selected, got ${JSON.stringify(c.second)}. `
+      + `Deferring is only acceptable because the anchor is one press away — and this is also what makes the Backspace `
+      + `below the anchor-delete branch rather than the line delete`);
+    // The counterfactual, which is also the proof the assertions above can fail.
+    check(c.lineSurvivedDelete === true && c.anchorsAfterDelete === 0,
+      `Backspace after the second press left ${c.anchorsAfterDelete} anchors on the board (line survived: `
+      + `${c.lineSurvivedDelete}) — the counterfactual needs every anchor gone and POM ${c.seqA} intact`);
+    check(c.cfToAnchorPx < 1,
+      `with the anchor deleted the counterfactual pixel maps ${c.cfToAnchorPx} screen px from where the anchor was, so it `
+      + `is no longer the SAME press and it proves nothing about the one above`);
+    check(!!c.cfOpened && c.cfOpened.type === 'drag-handle' && c.cfGrabbedIsForeign === true
+      && c.endsInReach.some(e => e.id === c.cfOpened.id && e.part === c.cfOpened.part),
+      `with the anchor deleted, the SAME pixel opened ${JSON.stringify(c.cfOpened)} instead of a handle drag on one of the `
+      + `foreign ends in reach (${JSON.stringify(c.endsInReach)}). That press is the only evidence the cross-line path is `
+      + `being exercised at all: without it the deferral assertions above could be passing because no other line's `
+      + `endpoint was ever in range, which is exactly what makes section 4i blind to this`);
+    check(c.cfGrabbedMovedPx > 5,
+      `the counterfactual drag moved that foreign endpoint ${c.cfGrabbedMovedPx} screen px — too little to price the defect`);
+    check(c.cfValueDelta !== null && Math.abs(c.cfValueDelta) > 0,
+      `the counterfactual drag left the foreign POM's measured value at ${JSON.stringify(c.cfValueAfter)} — if moving a `
+      + `landmark on THAT line does not restate its measurement, the panel readout is not sensitive enough to price what `
+      + `the hoisted scan prevents`);
+    console.log(`board-interaction-check: POM ${c.seqA}'s anchor, dragged ${c.travelPx}px to sit ${c.gapPx}px from `
+      + `${c.foreign} (a DIFFERENT line, ${c.clearPx}px of margin around the press), takes the press away from it — falls `
+      + `through to POM ${c.seqA}'s body, selects it, nothing moved, values ${JSON.stringify(c.valuesBefore)} held. Same `
+      + `pixel with the anchor deleted: drag-handle on ${JSON.stringify(c.cfOpened)}, that landmark moved `
+      + `${c.cfGrabbedMovedPx}px and its value went ${c.cfValueBefore} -> ${c.cfValueAfter} `
+      + `(${c.cfValueDelta > 0 ? '+' : ''}${c.cfValueDelta})`);
   }
 
   // ---- 5. The gestures US-053 / US-057 rely on still work ----

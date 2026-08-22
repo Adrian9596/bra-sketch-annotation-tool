@@ -45,10 +45,10 @@
     }
     // Anchor the label to the middle of the curve. For the legacy two-segment
     // shape that's the middle anchor (tangent = direction between its two
-    // handles); for a curve with US-093 interior anchors, the same idea
-    // generalizes to the MIDDLE anchor in ann.points; otherwise (the common
-    // case) fall back to the single cubic's exact t=0.5 point — unchanged
-    // from before interior anchors existed.
+    // handles); for a curve with US-093 interior anchors, "middle" means the
+    // half-arc-length point of the whole multi-segment path; otherwise (the
+    // common case) fall back to the single cubic's exact t=0.5 point —
+    // unchanged from before interior anchors existed.
     let point, tangent;
     const points = Array.isArray(annLike.points) ? annLike.points : null;
     if (annLike.midPoint && annLike.midHandleIn && annLike.midHandleOut) {
@@ -58,9 +58,22 @@
         y: annLike.midHandleOut.y - annLike.midHandleIn.y,
       };
     } else if (points && points.length) {
-      const mid = points[Math.floor((points.length - 1) / 2)];
-      point = mid.point;
-      tangent = { x: mid.handleOut.x - mid.handleIn.x, y: mid.handleOut.y - mid.handleIn.y };
+      // US-093 / ADR 0053 code review, 2026-08-21: walk half the arc length
+      // instead of indexing points[]. Picking the middle ENTRY of ann.points
+      // teleported the callout: add one interior anchor 20% along POM 18's
+      // armhole curve and floor((1 - 1) / 2) = 0 moved the number from the
+      // curve's middle onto that 20% anchor, permanently — handleAddPointClick
+      // writes it into ann.label, so it then shipped in Copy Image, Export PDF
+      // and the Excel embedded PNG. It was also non-monotonic in anchor count
+      // (1 and 2 anchors both resolved to points[0], 3 and 4 to points[1]), so
+      // adding a third anchor jumped the number a second time. Sampling at
+      // BEZIER_SAMPLES * 2 matches how the POM's own length is measured
+      // (annotation-lookup.js), so the label sits mid-curve by the same metric
+      // the TD reads off the spec panel.
+      const polyline = getAnnotationPolyline(annLike, BEZIER_SAMPLES * 2);
+      const sample = samplePolylineAt(polyline, polylineLength(polyline) / 2);
+      point = sample.point;
+      tangent = sample.tangent;
     } else {
       point = bezierPoint(annLike.start, annLike.control1, annLike.control2, annLike.end, 0.5);
       tangent = bezierTangent(annLike.start, annLike.control1, annLike.control2, annLike.end, 0.5);

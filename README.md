@@ -69,6 +69,7 @@ npm run export-xlsx        # Excel export, byte-level
 npm run export-hidden      # hidden-POM export behaviour
 npm run suggestions-tests  # library-value suggestion layer
 npm run autosave-check     # crash-safe autosave and restore
+npm run curve-polyline-tests # multi-anchor curve sampling accuracy
 npm run mainpage-check     # tech-pack MAIN PAGE sheet
 npm run construction-check # construction annotation page
 npm run bom-check          # BOM page

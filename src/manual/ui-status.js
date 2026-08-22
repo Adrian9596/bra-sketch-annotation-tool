@@ -9,6 +9,25 @@
 // Source part for app.js. Run `npm run build` after editing.
 
   function updateUI() {
+    // US-093 / ADR 0053 code review, 2026-08-21: the Add-point fallback has to
+    // run before the tool buttons below read state.tool. It used to sit past
+    // those reads, so pressing Backspace twice on a curve anchor — the second
+    // press deletes the whole line and clears the selection — painted
+    // toolSelect inactive while marking the now-hidden toolAddPoint active,
+    // leaving the segmented control with no visible tool until some later
+    // updateUI(). Routing through setTool() instead of assigning state.tool
+    // also restores the app's single tool-change funnel: the drawSession /
+    // eraseSession reset and the body.tool-eraser class were both being
+    // skipped here. Recursion is bounded at one extra pass — setTool('select')
+    // can never take its Auto-Mode early return (that guard rejects only
+    // tool !== 'select'), so it always lands state.tool = 'select' and calls
+    // updateUI() once; on that pass this condition is false, and that pass has
+    // already synced everything this frame would have, so returning is safe.
+    const addPointAvailable = !!canAddCurveAnchor();
+    if (state.tool === 'add-point' && !addPointAvailable) {
+      setTool('select');
+      return;
+    }
     el.toolSelect.classList.toggle('active', state.tool === 'select');
     el.toolStraight.classList.toggle('active', state.tool === 'straight');
     el.toolCurved.classList.toggle('active', state.tool === 'curved');
@@ -38,14 +57,16 @@
     // US-093 / ADR 0053: only reachable while a curved annotation is
     // selected — same conditional-visibility convention as fontSizeChip /
     // brushSizeChip above, no disabled/greyed state anywhere else in this
-    // toolbar. A curve deselected while the mode was active would otherwise
-    // leave an invisible mode stuck on, so fall back to Select right here.
-    const addPointAvailable = !!(selectedAnnotation && selectedAnnotation.type === 'curved');
+    // toolbar. addPointAvailable is computed at the top of this function
+    // because the fallback that consumes it has to precede the tool-button
+    // reads. US-093 / ADR 0053 code review, 2026-08-21: it now comes from
+    // canAddCurveAnchor(), the shared predicate, which additionally rules out
+    // a multi-line selection (where Backspace would delete the whole group
+    // rather than one anchor) and a hidden line (which is not drawn at all).
     if (el.toolAddPoint) {
       el.toolAddPoint.hidden = !addPointAvailable;
       el.toolAddPoint.classList.toggle('active', state.tool === 'add-point');
     }
-    if (state.tool === 'add-point' && !addPointAvailable) state.tool = 'select';
     const activeStyle = selectedAnnotation ? getLineStyle(selectedAnnotation) : state.drawStyle;
     // A selected note owns the swatch too — read from the note itself rather
     // than from state.drawColor, so an Undo that restores its old colour shows

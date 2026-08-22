@@ -75,12 +75,37 @@
         control1,
         control2,
         points,
-        label: computeDefaultLabelPosition({ type: src.type, start, end, control1, control2, midPoint, midHandleIn, midHandleOut, points }),
+        // Derived below, once the geometry is normalized — see the note under
+        // ensureCurveControls. Declared here so the key order of a pasted
+        // annotation stays identical to every other annotation record.
+        label: null,
         labelManual: false,
         text: src.text || null,
         value: null,
       };
       if (isCurved) ensureCurveControls(ann);
+      // US-093 / ADR 0053 code review, 2026-08-21: derive the label AFTER
+      // normalization rather than inside the literal above. For a curve with
+      // interior anchors computeDefaultLabelPosition (annotation-factory.js)
+      // now takes the half-arc-length point, which walks getCurveBeziers and
+      // therefore reads control1/control2 — the very fields
+      // ensureCurveControls exists to supply. Normalize, then derive.
+      //
+      // This does not change any reachable paste: lineClipboard is written
+      // only from getSelectedAnnotations, every route into state.annotations
+      // already runs ensureCurveControls (project-load.js, history.js,
+      // apply-drafts.js, and both paths here), and the OS-clipboard marker
+      // text copySelectedAnnotation writes is never read back — onPasteEvent
+      // takes only image/* items, so no foreign text can become a clip. On a
+      // normalized clip ensureCurveControls is a no-op and the label is
+      // byte-identical to before. Passing the whole annotation also matches
+      // handleAddPointClick (canvas-tools.js), the other caller.
+      //
+      // It is not a blanket guard, and should not be read as one: a clip
+      // missing start or end makes ensureCurveControls return early, and
+      // computeDefaultLabelPosition then throws on it exactly as it did
+      // before interior anchors existed.
+      ann.label = computeDefaultLabelPosition(ann);
       state.annotations.push(ann);
       state.nextSequence += 1;
       pastedIds.push(ann.id);

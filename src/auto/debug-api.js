@@ -151,10 +151,14 @@
       // same session-only state the panel's × toggle writes (state.hiddenAnnIds).
       // Lets the export suite assert hidden lines are omitted from the spec
       // without faking clicks. Not persisted, mirroring the UI it stands in for.
+      // US-093 / ADR 0053 code review, 2026-08-21: it exits through the panel's
+      // own syncAfterHiddenPomChange() (src/ui/spec-visibility.js). While it
+      // only re-rendered the panel it missed the toolbar sync a real × click
+      // does — "Add point" stays armed on the line just hidden — so it quietly
+      // stopped standing in for the button it exists to stand in for.
       setHiddenAnnIds: (ids) => {
         state.hiddenAnnIds = Array.isArray(ids) ? ids.slice() : [];
-        if (typeof renderSpecPanel === 'function') renderSpecPanel();
-        if (typeof requestRender === 'function') requestRender();
+        syncAfterHiddenPomChange();
         return clone(state.hiddenAnnIds);
       },
       // Tier-0 library-value suggestions (scripts/suggestions-tests.mjs).

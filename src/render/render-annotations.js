@@ -175,13 +175,23 @@
       // always visible while the curve is selected (no crowding gate, ADR
       // 0053). The anchor point itself renders like start/end (emphasized);
       // its handles render like control1/control2 (small).
+      //
+      // US-093 / ADR 0053 code review, 2026-08-21: the guide strokeStyle and
+      // lineWidth set for control1/control2 above are still in effect here, so
+      // this loop does NOT re-assign them — drawHandle wraps itself in
+      // save/restore and cannot clobber them, which made those two writes pure
+      // waste once per anchor on every repaint of a selected curve (i.e. on
+      // every mousemove of a drag). The setLineDash pair below is a different
+      // story and must stay INSIDE the loop: drawHandle never touches the dash,
+      // so it inherits whatever is armed at the call site, and the handle rings
+      // have to come out solid. Hoisting the dash out would draw every guide
+      // after the first one solid and every handle ring after the first one
+      // dashed.
       const points = ann.points || [];
       for (let i = 0; i < points.length; i += 1) {
         const pt = points[i];
         if (!pt.point) continue;
         ctx.setLineDash([6 / state.zoom, 5 / state.zoom]);
-        ctx.strokeStyle = 'rgba(53,109,255,.45)';
-        ctx.lineWidth = 1.2 / state.zoom;
         ctx.beginPath();
         if (pt.handleIn) { ctx.moveTo(pt.point.x, pt.point.y); ctx.lineTo(pt.handleIn.x, pt.handleIn.y); }
         if (pt.handleOut) { ctx.moveTo(pt.point.x, pt.point.y); ctx.lineTo(pt.handleOut.x, pt.handleOut.y); }

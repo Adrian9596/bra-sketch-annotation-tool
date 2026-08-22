@@ -1018,41 +1018,174 @@
     return { left: [p0, p01, p012, p0123], right: [p0123, p123, p23, p3] };
   }
 
+  // How far (world px) a sampled chord is allowed to depart from the curve it
+  // stands in for. US-093 / ADR 0053 code review, 2026-08-21: this is the
+  // accuracy budget of the "Add point" hit test, and it is expressed in WORLD
+  // px on purpose — it has no zoom term, so it stays far below
+  // handleAddPointClick's 8/state.zoom tolerance however far the TD zooms in.
+  const CURVE_CHORD_TOLERANCE = 0.05;
+  const CURVE_CHORD_MIN_SAMPLES = 24;
+  const CURVE_CHORD_MAX_SAMPLES = 512;
+
+  // Chord count for approximating one cubic, chosen so the chord never departs
+  // from the curve by more than CURVE_CHORD_TOLERANCE. Standard flatness
+  // bound: over a parameter width Δ, |curve − chord| ≤ (Δ²/8)·max|B''|, and
+  // for a cubic max|B''| = 6·max(|p0−2p1+p2|, |p1−2p2+p3|). Setting Δ = 1/n
+  // and solving gives the count below, so accuracy is driven by the curve's
+  // actual bend rather than by a fixed number that a long curve outgrows.
+  function curveChordSampleCount(seg) {
+    const ax = seg.p0.x - 2 * seg.p1.x + seg.p2.x;
+    const ay = seg.p0.y - 2 * seg.p1.y + seg.p2.y;
+    const bx = seg.p1.x - 2 * seg.p2.x + seg.p3.x;
+    const by = seg.p1.y - 2 * seg.p2.y + seg.p3.y;
+    const maxSecond = 6 * Math.max(Math.hypot(ax, ay), Math.hypot(bx, by));
+    const n = Math.ceil(Math.sqrt(maxSecond / (8 * CURVE_CHORD_TOLERANCE)));
+    // Floor 24 matches the old fixed sample count, so nothing about WHERE an
+    // anchor lands got coarser for a short curve. Cap 512 bounds the work for
+    // an absurd or corrupt curve — a once-per-click handler can spend 512
+    // Bézier evaluations without anyone noticing.
+    return clamp(
+      Number.isFinite(n) ? n : CURVE_CHORD_MIN_SAMPLES,
+      CURVE_CHORD_MIN_SAMPLES,
+      CURVE_CHORD_MAX_SAMPLES,
+    );
+  }
+
   // Find the closest point ON a selected curve to a click, for the "Add
   // point" tool — insertion always lands on the curve's actual path, at the
-  // nearest position, never at the raw click pixel. 24 samples per segment is
-  // plenty for a click-precision UI gesture (not a measurement).
+  // nearest position, never at the raw click pixel.
+  //
+  // US-093 / ADR 0053 code review, 2026-08-21: this used to compare the click
+  // against 25 sampled VERTICES per segment, which silently rejected a dead-on
+  // click on any long or zoomed-in curve. Worst-case distance from an
+  // exactly-on-path click to the nearest VERTEX is half the sample spacing —
+  // arcLength/48 — so a 400-world-px armhole curve reported 8.3px against
+  // handleAddPointClick's 8px tolerance and the click did nothing at all.
+  // Zooming in to place a bend precisely made it worse, not better: the
+  // tolerance shrinks as 8/state.zoom while vertex spacing does not.
+  //
+  // The fix is the one isPointNearAnnotation (src/render/hit-testing.js)
+  // already relies on — measure against the polyline SEGMENTS, so accuracy is
+  // bounded by chord flatness instead of by sample spacing. `t` is then
+  // recovered inside the winning chord from the projection parameter, so the
+  // anchor still lands ON the path. Insertion is lossless at ANY t (de
+  // Casteljau subdivision preserves the path exactly), so sub-sample t
+  // precision decides only WHERE the anchor sits, never the curve's shape.
   function nearestPointOnCurve(ann, world) {
     const segs = getCurveBeziers(ann);
     let best = null;
-    const SAMPLES = 24;
     for (let s = 0; s < segs.length; s += 1) {
       const seg = segs[s];
-      for (let i = 0; i <= SAMPLES; i += 1) {
-        const t = i / SAMPLES;
-        const p = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t);
-        const d = distance(world, p);
-        if (!best || d < best.distance) best = { segIndex: s, t, point: p, distance: d };
+      const samples = curveChordSampleCount(seg);
+      let prev = seg.p0;
+      for (let i = 1; i <= samples; i += 1) {
+        const next = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, i / samples);
+        const d = pointToSegmentDistance(world, prev, next);
+        if (!best || d < best.distance) {
+          best = { seg, segIndex: s, samples, index: i, a: prev, b: next, distance: d };
+        }
+        prev = next;
       }
     }
-    return best;
+    if (!best) return null;
+    // Recover t inside the winning chord with the same clamped projection
+    // parameter pointToSegmentDistance computes internally, then report the
+    // point that parameter names on the CURVE (not on the chord) so the
+    // caller's insertion — and the endpoint-proximity gate in front of it —
+    // both work against the drawn path.
+    const dx = best.b.x - best.a.x;
+    const dy = best.b.y - best.a.y;
+    const l2 = dx * dx + dy * dy;
+    const u = l2 === 0 ? 0
+      : clamp(((world.x - best.a.x) * dx + (world.y - best.a.y) * dy) / l2, 0, 1);
+    const t = (best.index - 1 + u) / best.samples;
+    const seg = best.seg;
+    return {
+      segIndex: best.segIndex,
+      t,
+      point: bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t),
+      distance: best.distance,
+    };
+  }
+
+  // Dry-run an insertion at (segIndex, t) — subdivideCubicBezier is pure, so
+  // the exact geometry insertCurveAnchorAt would write can be inspected before
+  // anything is mutated. Returns null when the arguments name no split this
+  // curve can take. US-093 / ADR 0053 code review, 2026-08-21.
+  //
+  // `minHandleSpan` is the shortest distance any of the four handles the split
+  // rewrites would end up from the point it bends: the outer handle left behind
+  // on the near side (left[1], off p0), the new anchor's own handleIn/handleOut
+  // (left[2] / right[1], off the new point), and the outer handle on the far
+  // side (right[2], off p3). handleAddPointClick's gate bounds exactly that, so
+  // no caller has to relate handle clearance to anchor clearance — the ratio
+  // between them is a property of this curve's control points, not a constant.
+  function previewCurveAnchorInsertion(ann, segIndex, t) {
+    if (!ann || ann.type !== 'curved') return null;
+    const points = Array.isArray(ann.points) ? ann.points : [];
+    // `segIndex` addresses getCurveBeziers' segment list, which is
+    // points.length + 1 long, so anything outside [0, points.length] reads
+    // points[-1] or points[points.length] and throws on `.point` / `.handleOut`.
+    // That is reachable in principle, not just in theory: getCurveBeziers
+    // returns TWO segments for a legacy midPoint curve while `points` is still
+    // empty, so nearestPointOnCurve can hand back segIndex 1 against
+    // points.length 0. No live path does today — ensureCurveControls collapses
+    // midPoint on load, history restore, paste and apply, and
+    // createCurvedAnnotation is born with midPoint: null — but the guard costs
+    // one comparison and removes the dependency. The integer test is part of
+    // the bound rather than decoration: NaN passes both range comparisons and
+    // would reach points[NaN - 1].
+    if (!Number.isInteger(segIndex) || segIndex < 0 || segIndex > points.length) return null;
+    // t must not be exactly 0 or 1: subdivideCubicBezier then returns
+    // left = [p0, p0, p0, p0] (mirrored at 1), so the split would drop
+    // ann.control1 onto ann.start and put the new anchor there too, with a
+    // zero-length handleIn that mirrorOppositeCurveHandle can never re-smooth
+    // (it rebuilds the opposite handle at its OWN current length, and that
+    // length is 0), while drawArrowheadsForCurve takes atan2(0, 0) and snaps
+    // the start arrowhead to +x. Coincident points also lose every hit test to
+    // the endpoint (hit-testing.js's `<=` tie rule), so that bend would be
+    // gone for good. All of it is strictly a t === 0 / t === 1 hazard — for any
+    // t > 0 the split control lies ON the p0->p1 segment, keeping the arrowhead
+    // angle exact and both new handles proportional to t — so 1e-3 suffices
+    // here. How SHORT a handle may get is `minHandleSpan` and the caller's
+    // gate, not this clamp.
+    const tSafe = clamp(Number.isFinite(t) ? t : 0.5, 1e-3, 1 - 1e-3);
+    const p0 = segIndex === 0 ? ann.start : points[segIndex - 1].point;
+    const before = segIndex === 0 ? ann.control1 : points[segIndex - 1].handleOut;
+    const after = segIndex === points.length ? ann.control2 : points[segIndex].handleIn;
+    const p3 = segIndex === points.length ? ann.end : points[segIndex].point;
+    const { left, right } = subdivideCubicBezier(p0, before, after, p3, tSafe);
+    const point = left[3];
+    return {
+      tSafe,
+      left,
+      right,
+      point,
+      minHandleSpan: Math.min(
+        distance(left[1], p0),
+        distance(left[2], point),
+        distance(right[1], point),
+        distance(right[2], p3),
+      ),
+    };
   }
 
   // Insert a new interior anchor by splitting segment `segIndex` (0-based,
   // matching getCurveBeziers' order) at parameter `t`. Exact — the curve's
   // drawn path is unchanged at the instant of insertion (US-093 / ADR 0053).
-  // Returns the new anchor's index in ann.points.
+  // Returns the new anchor's index in ann.points, or -1 if the preview above
+  // refused the arguments — in which case nothing at all was changed, ann.points
+  // included. -1 can never collide with a real result, which is always the
+  // accepted segIndex and therefore >= 0.
   function insertCurveAnchorAt(ann, segIndex, t) {
+    const split = previewCurveAnchorInsertion(ann, segIndex, t);
+    if (!split) return -1;
     const points = Array.isArray(ann.points) ? ann.points : (ann.points = []);
-    const p0 = segIndex === 0 ? ann.start : points[segIndex - 1].point;
-    const before = segIndex === 0 ? ann.control1 : points[segIndex - 1].handleOut;
-    const after = segIndex === points.length ? ann.control2 : points[segIndex].handleIn;
-    const p3 = segIndex === points.length ? ann.end : points[segIndex].point;
-    const { left, right } = subdivideCubicBezier(p0, before, after, p3, t);
-    const newAnchor = { point: left[3], handleIn: left[2], handleOut: right[1] };
+    const { left, right } = split;
+    // Both assignments read the PRE-splice points.length, hence the splice last.
     if (segIndex === 0) ann.control1 = left[1]; else points[segIndex - 1].handleOut = left[1];
     if (segIndex === points.length) ann.control2 = right[2]; else points[segIndex].handleIn = right[2];
-    points.splice(segIndex, 0, newAnchor);
+    points.splice(segIndex, 0, { point: split.point, handleIn: left[2], handleOut: right[1] });
     return segIndex;
   }
 
@@ -1208,7 +1341,27 @@
     // US-093: a project saved before interior anchors existed has no `points`
     // at all — default it to empty rather than treating it as missing data,
     // so getCurveBeziers/getAnnPartPoint never have to null-check twice.
-    if (!Array.isArray(ann.points)) ann.points = [];
+    //
+    // US-093 / ADR 0053 code review, 2026-08-21: validate the ENTRIES too, not
+    // just the array. loadProject runs arbitrary user-supplied JSON through
+    // here, and ONE truncated anchor — { point: {x, y} } with no handles, from
+    // a hand edit, a half-written file, or a different build — makes
+    // getCurveBeziers emit a segment whose p2 is undefined, so
+    // drawAnnotationPath throws on s.p2.x inside the render pass and NOTHING
+    // paints; computeDefaultLabelPosition and nearestPointOnCurve dereference
+    // the same fields just as unguarded. Dropping the unusable entries beats
+    // throwing for the reason normalizeNote already drops an unplaceable note
+    // (US-092, project-load.js): the curve still opens, measures, and exports,
+    // losing only a bend the TD can re-add with "Add point", whereas a throw
+    // costs the TD the entire board. Only reassign when something was actually
+    // dropped, so a clean load leaves the array identity untouched.
+    if (!Array.isArray(ann.points)) {
+      ann.points = [];
+    } else if (ann.points.length) {
+      const usable = ann.points.filter(pt => pt && isFinitePoint(pt.point)
+        && isFinitePoint(pt.handleIn) && isFinitePoint(pt.handleOut));
+      if (usable.length !== ann.points.length) ann.points = usable;
+    }
   }
 
   // ---- src/geometry/math.js ----
@@ -4610,6 +4763,22 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   // they can eyeball whether Auto Mode picked the right anchors. Kept as
   // arrays on state (serialization-friendly); the helpers below normalize
   // to a set-like lookup. Session-only, not persisted.
+  //
+  // US-093 / ADR 0053 code review, 2026-08-21: a hidden line is not merely
+  // undrawn — canAddCurveAnchor() (canvas-tools.js) refuses it, so a
+  // panel-only refresh leaves "Add point" visible and .active on a line every
+  // click now silently refuses. Hence updateUI(), not renderSpecPanel(), and
+  // one exit for it: the mutators here plus the setHiddenAnnIds debug hook
+  // (src/auto/debug-api.js), which drifted once by taking its own route. The
+  // only other writers clear the set inside a bigger reset (board-reset.js,
+  // project-load.js) and already end in updateUI(). Drafts are out of scope:
+  // nothing updateUI() syncs reads isDraftHidden, so toggleDraftHidden
+  // refreshes the panel alone.
+  function syncAfterHiddenPomChange() {
+    updateUI();
+    requestRender();
+  }
+
   function isAnnHidden(id) {
     if (id == null) return false;
     const ids = state.hiddenAnnIds;
@@ -4630,8 +4799,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     const idx = state.hiddenAnnIds.indexOf(id);
     if (idx === -1) state.hiddenAnnIds.push(id);
     else state.hiddenAnnIds.splice(idx, 1);
-    renderSpecPanel();
-    requestRender();
+    syncAfterHiddenPomChange();
   }
 
   function toggleDraftHidden(id) {
@@ -4673,8 +4841,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       changed = true;
     }
     if (!changed) return;
-    renderSpecPanel();
-    requestRender();
+    syncAfterHiddenPomChange();
   }
 
   // Inverse of showAllPoms: hide every visible POM line at once so the TD can
@@ -4699,8 +4866,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       }
     }
     if (!changed) return;
-    renderSpecPanel();
-    requestRender();
+    syncAfterHiddenPomChange();
   }
 
   // Small × / + toggle used in each POM row. Text intentionally kept to a
@@ -16751,10 +16917,10 @@ const BOM_MATERIAL_LIBRARY = [
     }
     // Anchor the label to the middle of the curve. For the legacy two-segment
     // shape that's the middle anchor (tangent = direction between its two
-    // handles); for a curve with US-093 interior anchors, the same idea
-    // generalizes to the MIDDLE anchor in ann.points; otherwise (the common
-    // case) fall back to the single cubic's exact t=0.5 point — unchanged
-    // from before interior anchors existed.
+    // handles); for a curve with US-093 interior anchors, "middle" means the
+    // half-arc-length point of the whole multi-segment path; otherwise (the
+    // common case) fall back to the single cubic's exact t=0.5 point —
+    // unchanged from before interior anchors existed.
     let point, tangent;
     const points = Array.isArray(annLike.points) ? annLike.points : null;
     if (annLike.midPoint && annLike.midHandleIn && annLike.midHandleOut) {
@@ -16764,9 +16930,22 @@ const BOM_MATERIAL_LIBRARY = [
         y: annLike.midHandleOut.y - annLike.midHandleIn.y,
       };
     } else if (points && points.length) {
-      const mid = points[Math.floor((points.length - 1) / 2)];
-      point = mid.point;
-      tangent = { x: mid.handleOut.x - mid.handleIn.x, y: mid.handleOut.y - mid.handleIn.y };
+      // US-093 / ADR 0053 code review, 2026-08-21: walk half the arc length
+      // instead of indexing points[]. Picking the middle ENTRY of ann.points
+      // teleported the callout: add one interior anchor 20% along POM 18's
+      // armhole curve and floor((1 - 1) / 2) = 0 moved the number from the
+      // curve's middle onto that 20% anchor, permanently — handleAddPointClick
+      // writes it into ann.label, so it then shipped in Copy Image, Export PDF
+      // and the Excel embedded PNG. It was also non-monotonic in anchor count
+      // (1 and 2 anchors both resolved to points[0], 3 and 4 to points[1]), so
+      // adding a third anchor jumped the number a second time. Sampling at
+      // BEZIER_SAMPLES * 2 matches how the POM's own length is measured
+      // (annotation-lookup.js), so the label sits mid-curve by the same metric
+      // the TD reads off the spec panel.
+      const polyline = getAnnotationPolyline(annLike, BEZIER_SAMPLES * 2);
+      const sample = samplePolylineAt(polyline, polylineLength(polyline) / 2);
+      point = sample.point;
+      tangent = sample.tangent;
     } else {
       point = bezierPoint(annLike.start, annLike.control1, annLike.control2, annLike.end, 0.5);
       tangent = bezierTangent(annLike.start, annLike.control1, annLike.control2, annLike.end, 0.5);
@@ -17075,12 +17254,37 @@ const BOM_MATERIAL_LIBRARY = [
         control1,
         control2,
         points,
-        label: computeDefaultLabelPosition({ type: src.type, start, end, control1, control2, midPoint, midHandleIn, midHandleOut, points }),
+        // Derived below, once the geometry is normalized — see the note under
+        // ensureCurveControls. Declared here so the key order of a pasted
+        // annotation stays identical to every other annotation record.
+        label: null,
         labelManual: false,
         text: src.text || null,
         value: null,
       };
       if (isCurved) ensureCurveControls(ann);
+      // US-093 / ADR 0053 code review, 2026-08-21: derive the label AFTER
+      // normalization rather than inside the literal above. For a curve with
+      // interior anchors computeDefaultLabelPosition (annotation-factory.js)
+      // now takes the half-arc-length point, which walks getCurveBeziers and
+      // therefore reads control1/control2 — the very fields
+      // ensureCurveControls exists to supply. Normalize, then derive.
+      //
+      // This does not change any reachable paste: lineClipboard is written
+      // only from getSelectedAnnotations, every route into state.annotations
+      // already runs ensureCurveControls (project-load.js, history.js,
+      // apply-drafts.js, and both paths here), and the OS-clipboard marker
+      // text copySelectedAnnotation writes is never read back — onPasteEvent
+      // takes only image/* items, so no foreign text can become a clip. On a
+      // normalized clip ensureCurveControls is a no-op and the label is
+      // byte-identical to before. Passing the whole annotation also matches
+      // handleAddPointClick (canvas-tools.js), the other caller.
+      //
+      // It is not a blanket guard, and should not be read as one: a clip
+      // missing start or end makes ensureCurveControls return early, and
+      // computeDefaultLabelPosition then throws on it exactly as it did
+      // before interior anchors existed.
+      ann.label = computeDefaultLabelPosition(ann);
       state.annotations.push(ann);
       state.nextSequence += 1;
       pastedIds.push(ann.id);
@@ -18578,18 +18782,100 @@ function onWheel(e) {
 // splits a near-collinear follow-up click into its own POM annotation.
 
   // ---- Add point (US-093 / ADR 0053) ----
+  // Is the "Add point" tool legitimately available right now? Returns the
+  // annotation it would act on, or null. US-093 / ADR 0053 code review,
+  // 2026-08-21: this is the ONE predicate both the toolbar (ui-status.js) and
+  // the click handler below go through, so the button can never be offered for
+  // a line the gesture then refuses — or worse, accepted for one where the
+  // undo is destructive.
+  function canAddCurveAnchor() {
+    if (state.selection.kind !== 'annotation') return null;
+    const ann = getSelectedAnnotation();
+    if (!ann || ann.type !== 'curved') return null;
+    // A line hidden by the spec panel's review × Hide toggle is not DRAWN, and
+    // getSelectedAnnotation() — unlike getSelectedAnnotationIds() — does not
+    // filter it out. Inserting into it would push a history entry with no
+    // visible change on the board, and it would contradict hitTestAnnotations
+    // / hitTestAnyEndpoint / isPointNearAnnotation, which all skip hidden lines
+    // precisely so a click in an empty region can never mean a line that is
+    // not there.
+    if (isAnnHidden(ann.id)) return null;
+    // Single selection only, matching every other handle-level gesture. With a
+    // multi-line selection the Backspace that undoes an insertion is NOT the
+    // anchor-delete branch — deleteSelected (annotation-lifecycle.js) gates
+    // that on getSelectedAnnotationIds().length <= 1, so control would fall
+    // through to the GROUP delete: one stray anchor insert would remove EVERY
+    // selected line and push their labels into state.deletedPomKeys, dropping
+    // those rows from the exported workbook too.
+    if (getSelectedAnnotationIds().length > 1) return null;
+    return ann;
+  }
+
   // A click while this tool is active inserts a new interior anchor into the
   // currently selected curve, at the nearest point ON its path — never at the
   // raw click pixel, so the curve's shape does not change at the instant of
-  // insertion. A click that misses the selected curve (or nothing curved is
-  // selected) does nothing; this tool never acts on any other line.
+  // insertion. A click that misses that curve, or that would land too close to
+  // an endpoint or another anchor to leave the split's handles grabbable, is
+  // refused with a toast; this tool never acts on any other line.
   function handleAddPointClick(world) {
-    const ann = getSelectedAnnotation();
-    if (!ann || ann.type !== 'curved') return;
+    const ann = canAddCurveAnchor();
+    if (!ann) return;
     const nearest = nearestPointOnCurve(ann, world);
     const tolerance = Math.max(8, getLineWidth(ann) / 2 + 6) / state.zoom;
-    if (!nearest || nearest.distance > tolerance) return;
+    if (!nearest || nearest.distance > tolerance) {
+      // US-093 / ADR 0053 code review, 2026-08-21: every other refused gesture
+      // in this app toasts, and a silent no-op reads as a broken button.
+      showToast('Click on the curve to add a point.');
+      return;
+    }
+    // Refuse an insertion that would leave a bend handle too short to grab, or
+    // stack a second anchor on an occupied spot. Handle clearance is MEASURED,
+    // not inferred from the anchor's: previewCurveAnchorInsertion dry-runs the
+    // subdivision and reports the shortest of the four handle-to-point distances
+    // it would write — the outer handle left on each side plus the new anchor's
+    // own two. Handles are the half worth protecting because they are what a
+    // press must hit, and a collapsed one is unrecoverable: deleteCurveAnchorAt
+    // leaves the outer handles as it found them, and dragging the endpoint
+    // carries the collapsed one rigidly along. The anchor-spacing half stays
+    // because the handle check measures only against the split segment's OWN
+    // ends, so a path that loops back past a non-adjacent anchor could still
+    // stack one on it.
+    //
+    // US-093 / ADR 0053 code review, 2026-08-21: the gate is half the accept
+    // tolerance — 4 screen px at every line width up to 4 (the default is 2.5),
+    // tracking the tolerance above that — and near an end it is the HANDLE span
+    // that binds, not the anchor's clearance. The split puts the flanking handle
+    // at p0 + t.(p1-p0) while the anchor lands near p0 + 3t.(p1-p0), so read as
+    // anchor clearance the refused zone is roughly three times the gate: on
+    // POM 9 / demo1 the nearest legal landing sits 15.53 screen px from the end
+    // (t = 0.0625, handle span 5.11 px), measured live by
+    // board-interaction-check 4h. Re-tune minSeparation expecting that 3:1.
+    // Kept tight rather than loosened: an inert button is recoverable by zooming
+    // in and the toast says so, a sub-pixel handle is not. A segment whose
+    // flanking handle is ALREADY under 4 px is refused along its whole length —
+    // subdivision can only shorten it further.
+    const minSeparation = tolerance / 2;
+    const preview = previewCurveAnchorInsertion(ann, nearest.segIndex, nearest.t);
+    const taken = [ann.start, ann.end].concat((ann.points || []).map(pt => pt && pt.point));
+    if (preview && (preview.minHandleSpan < minSeparation
+        || taken.some(p => p && distance(preview.point, p) <= minSeparation))) {
+      showToast('Too close to an existing point. Zoom in to place one here.');
+      return;
+    }
     const index = insertCurveAnchorAt(ann, nearest.segIndex, nearest.t);
+    // US-093 / ADR 0053 code review, 2026-08-21: -1 means insertCurveAnchorAt
+    // rejected the segment index and mutated no geometry. Bail before naming a
+    // selection part, because 'point-1.point' does not match
+    // CURVE_ANCHOR_PART_RE, so parseCurveAnchorPart returns null and every
+    // handle drag, arrow-key nudge and readout falls back to reading
+    // ann['point-1.point'] — undefined — leaving the toolbar showing a selected
+    // part that nothing can address. nearestPointOnCurve cannot produce an
+    // out-of-range index on any live path today; this branch is what stops that
+    // from being an assumption the next caller inherits silently.
+    if (index < 0) {
+      showToast('Could not add a point there.');
+      return;
+    }
     state.selection.part = 'point' + index + '.point';
     if (!ann.labelManual) ann.label = computeDefaultLabelPosition(ann);
     if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
@@ -19765,6 +20051,25 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // Source part for app.js. Run `npm run build` after editing.
 
   function updateUI() {
+    // US-093 / ADR 0053 code review, 2026-08-21: the Add-point fallback has to
+    // run before the tool buttons below read state.tool. It used to sit past
+    // those reads, so pressing Backspace twice on a curve anchor — the second
+    // press deletes the whole line and clears the selection — painted
+    // toolSelect inactive while marking the now-hidden toolAddPoint active,
+    // leaving the segmented control with no visible tool until some later
+    // updateUI(). Routing through setTool() instead of assigning state.tool
+    // also restores the app's single tool-change funnel: the drawSession /
+    // eraseSession reset and the body.tool-eraser class were both being
+    // skipped here. Recursion is bounded at one extra pass — setTool('select')
+    // can never take its Auto-Mode early return (that guard rejects only
+    // tool !== 'select'), so it always lands state.tool = 'select' and calls
+    // updateUI() once; on that pass this condition is false, and that pass has
+    // already synced everything this frame would have, so returning is safe.
+    const addPointAvailable = !!canAddCurveAnchor();
+    if (state.tool === 'add-point' && !addPointAvailable) {
+      setTool('select');
+      return;
+    }
     el.toolSelect.classList.toggle('active', state.tool === 'select');
     el.toolStraight.classList.toggle('active', state.tool === 'straight');
     el.toolCurved.classList.toggle('active', state.tool === 'curved');
@@ -19794,14 +20099,16 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // US-093 / ADR 0053: only reachable while a curved annotation is
     // selected — same conditional-visibility convention as fontSizeChip /
     // brushSizeChip above, no disabled/greyed state anywhere else in this
-    // toolbar. A curve deselected while the mode was active would otherwise
-    // leave an invisible mode stuck on, so fall back to Select right here.
-    const addPointAvailable = !!(selectedAnnotation && selectedAnnotation.type === 'curved');
+    // toolbar. addPointAvailable is computed at the top of this function
+    // because the fallback that consumes it has to precede the tool-button
+    // reads. US-093 / ADR 0053 code review, 2026-08-21: it now comes from
+    // canAddCurveAnchor(), the shared predicate, which additionally rules out
+    // a multi-line selection (where Backspace would delete the whole group
+    // rather than one anchor) and a hidden line (which is not drawn at all).
     if (el.toolAddPoint) {
       el.toolAddPoint.hidden = !addPointAvailable;
       el.toolAddPoint.classList.toggle('active', state.tool === 'add-point');
     }
-    if (state.tool === 'add-point' && !addPointAvailable) state.tool = 'select';
     const activeStyle = selectedAnnotation ? getLineStyle(selectedAnnotation) : state.drawStyle;
     // A selected note owns the swatch too — read from the note itself rather
     // than from state.drawColor, so an Undo that restores its old colour shows
@@ -34363,10 +34670,14 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // same session-only state the panel's × toggle writes (state.hiddenAnnIds).
       // Lets the export suite assert hidden lines are omitted from the spec
       // without faking clicks. Not persisted, mirroring the UI it stands in for.
+      // US-093 / ADR 0053 code review, 2026-08-21: it exits through the panel's
+      // own syncAfterHiddenPomChange() (src/ui/spec-visibility.js). While it
+      // only re-rendered the panel it missed the toolbar sync a real × click
+      // does — "Add point" stays armed on the line just hidden — so it quietly
+      // stopped standing in for the button it exists to stand in for.
       setHiddenAnnIds: (ids) => {
         state.hiddenAnnIds = Array.isArray(ids) ? ids.slice() : [];
-        if (typeof renderSpecPanel === 'function') renderSpecPanel();
-        if (typeof requestRender === 'function') requestRender();
+        syncAfterHiddenPomChange();
         return clone(state.hiddenAnnIds);
       },
       // Tier-0 library-value suggestions (scripts/suggestions-tests.mjs).
@@ -36318,23 +36629,106 @@ function makeExportFileName() {
     // forgiving INVISIBLE catch zone around it.
     const endpointRadius = 14 / state.zoom;
     const controlRadius = 11 / state.zoom;
-    if (distance(world, ann.start) <= endpointRadius) return { part: 'start' };
-    if (distance(world, ann.end) <= endpointRadius) return { part: 'end' };
     if (ann.type === 'curved') {
       // Single cubic: the two control handles are always grabbable (pen-tool
-      // model). Endpoints are checked first (above) so they win a shared spot.
-      if (ann.control1 && distance(world, ann.control1) <= controlRadius) return { part: 'control1' };
-      if (ann.control2 && distance(world, ann.control2) <= controlRadius) return { part: 'control2' };
-      // US-093: any interior anchor the TD added — no visibility gating (ADR
-      // 0053), so every anchor's point + both handles are grabbable at once,
-      // same "no crowding gate" stance the two base handles already take.
+      // model).
+      //
+      // US-093: plus any interior anchor the TD added — no visibility gating
+      // (ADR 0053), so every anchor's point + both handles are grabbable at
+      // once, same "no crowding gate" stance the two base handles already take.
+      //
+      // US-093 / ADR 0053 code review, 2026-08-21: EVERY handle on a curved
+      // line — start and end included — is ranked NEAREST-wins, and the whole
+      // candidate set is built here rather than partly ahead of this block,
+      // because a first-wins test at a WIDER radius shadows everything under
+      // it. Returning the first match in declaration order cost the TD three
+      // ways:
+      //   * start/end were tested first of all AND at the wider 14px radius,
+      //     so they shadowed every anchor and both bend handles within 14px.
+      //     handleAddPointClick only gates where a NEW anchor may be inserted;
+      //     nothing stops the TD dragging an existing one toward an end. A
+      //     press 1px from that anchor and 13px from start then moved the POM's
+      //     ENDPOINT off its landmark pin, changing the measured length, while
+      //     the TD was aiming squarely at the anchor.
+      //   * control1/control2, tested before the anchors, shadowed any anchor
+      //     within controlRadius of them.
+      //   * inside the anchor loop, all three of anchor 0's fields were tested
+      //     before anchor 1 was looked at, so a press equidistant between
+      //     anchor 0's small handleOut and anchor 1's point bent the handle —
+      //     yet render-annotations.js paints pt.point with the same
+      //     emphasized, endpoint-sized handle as start/end, so the TD aimed at
+      //     the big target and silently bent a small one instead.
+      //
+      // This also runs on Auto-Mode DRAFTS (pointer-events.js), which carry no
+      // `points`, so there the ranking is over start/end/control1/control2 —
+      // the pre-US-093 set — and control1 can now take a press that used to go
+      // to start. Deliberate, and not a corner case: the GEOMETRIC fallbacks do
+      // seed control1 about 35% of the chord from start (pom-fixture-builder.js
+      // POM 9 0.38, POM 10 0.34, POM 14 0.35, POM 17/18 0.35), but POM 17's and
+      // POM 18's TRACED branch writes matchContourForCurve's solved controls
+      // straight through, bounded only by a score floor, traceShapeOk's dip test
+      // and traceControlSane's [-0.1, 1.1] normalized box — none of which bounds
+      // |control1 - start|. On a real sketch that traces cleanly (the case
+      // US-051 exists for) control1 can sit arbitrarily close to start, at ANY
+      // zoom. Ranking is what makes that safe: grabbing a bend handle bows the
+      // curve but leaves both ends on their landmarks, grabbing an end moves a
+      // landmark pin, so distance trades the costlier mistake for the cheaper.
+      let best = null;
+      let bestDist = Infinity;
+      // Candidates are offered in DRAW order (bottom of the stack first) and
+      // `<=` lets a later one take an exact tie, so a tie resolves to whichever
+      // handle the TD actually sees on top. hitTestAnyEndpoint below is the one
+      // other test in this file that ranks by distance; hitTestNotes and
+      // hitTestAnnotations are topmost-first with an immediate return, and
+      // hitTestSelectedNoteHandles is tiered (nearest leader tip, THEN the add
+      // handle), so neither is a precedent for ranking one mixed set. Spelled
+      // out rather than left to iteration accident because determinism is
+      // asserted: `npm run golden` requires one input to yield one result, and
+      // board-interaction-check drives real mousedowns at computed coordinates.
+      const considerHandle = (point, radius, part) => {
+        if (!point) return;
+        const dist = distance(world, point);
+        if (dist <= radius && dist <= bestDist) {
+          bestDist = dist;
+          best = { part };
+        }
+      };
+      considerHandle(ann.control1, controlRadius, 'control1');
+      considerHandle(ann.control2, controlRadius, 'control2');
       const points = ann.points || [];
       for (let i = 0; i < points.length; i += 1) {
         const pt = points[i];
-        if (pt.point && distance(world, pt.point) <= endpointRadius) return { part: 'point' + i + '.point' };
-        if (pt.handleIn && distance(world, pt.handleIn) <= controlRadius) return { part: 'point' + i + '.handleIn' };
-        if (pt.handleOut && distance(world, pt.handleOut) <= controlRadius) return { part: 'point' + i + '.handleOut' };
+        // Per anchor, the order render-annotations.js paints it: the two small
+        // bend handles, then the emphasized point on top of them. Each keeps
+        // its own catch radius — the point is an endpoint-sized target, its
+        // handles are control-sized — but ranking is by raw distance, so the
+        // nearer candidate wins regardless of which radius admitted it.
+        considerHandle(pt.handleIn, controlRadius, 'point' + i + '.handleIn');
+        considerHandle(pt.handleOut, controlRadius, 'point' + i + '.handleOut');
+        considerHandle(pt.point, endpointRadius, 'point' + i + '.point');
       }
+      // start/end last because render-annotations.js paints them last, over the
+      // whole curved block above. With the `<=` tie rule that keeps the old
+      // "endpoints win a shared spot" guarantee for every OTHER handle: anything
+      // sitting ON an endpoint still loses to it, which curves.js's t=0/t=1
+      // guard leans on when it says a control1 collapsed onto start would be
+      // ungrabbable. The one press whose answer changed is one exactly
+      // equidistant from start and end: it now returns 'end' where first-wins
+      // returned 'start'. Both move a landmark pin and neither is more right, so
+      // the straight branch below leaves that same tie alone rather than churn
+      // every press in the app for it.
+      considerHandle(ann.start, endpointRadius, 'start');
+      considerHandle(ann.end, endpointRadius, 'end');
+      if (best) return best;
+    } else {
+      // US-093 / ADR 0053 code review, 2026-08-21: a straight line has exactly
+      // these two handles and no others, so first-wins and nearest-wins give
+      // the same answer for every press but one exactly equidistant from both
+      // ends. Left byte-identical instead of folded into the ranked block
+      // above — this function runs on every press in the app, and changing
+      // behaviour here would buy nothing.
+      if (distance(world, ann.start) <= endpointRadius) return { part: 'start' };
+      if (distance(world, ann.end) <= endpointRadius) return { part: 'end' };
     }
     if (pointInLabelBounds(world, ann.label, getLabelText(ann), 9 / state.zoom)) return { part: 'label' };
     return null;
@@ -36356,10 +36750,43 @@ function makeExportFileName() {
   //
   // The radius is deliberately SMALLER than hitTestSelectedHandles' 14px so the
   // line being edited keeps priority over a neighbour's endpoint.
+  //
+  // US-093 / ADR 0053 code review, 2026-08-21: an endpoint DEFERS to an interior
+  // anchor point the press is STRICTLY closer to, scanned across all non-hidden
+  // lines ONCE before any endpoint is ranked. Board-wide, not per-line, because
+  // POMs share endpoints (above): a scan scoped to one line let an anchor on
+  // line A lose to line B's coincident endpoint, one line over. Without the
+  // deferral a press on such an anchor returned { part: 'start' } and
+  // startHandleDrag moved the POM's LANDMARK PIN, changing the measured length,
+  // while the anchor the TD aimed at stayed put. No Add-point insertion gate can
+  // prevent it — the TD may simply DRAG an existing anchor up against an end.
+  //
+  // Deferring rather than returning the anchor: this runs only while the curve is
+  // NOT the single selection, and render-annotations.js paints interior anchors
+  // only inside drawSelectionHelpers, so the anchor is INVISIBLE here. Falling
+  // through reaches hitTestAnnotations, which selects the line, after which the
+  // anchor is grabbable via hitTestSelectedHandles. Two presses, no landmark
+  // moved.
   function hitTestAnyEndpoint(world) {
     const radius = 10 / state.zoom;
     let best = null;
     let bestDist = Infinity;
+    // Nearest interior anchor point on the board, Infinity when there is none —
+    // which is every straight line and every auto-generated POM curve
+    // (points: []), so on an applied board the ranking below is left exactly as
+    // it was before anchors existed.
+    let anchorDist = Infinity;
+    for (let i = 0; i < state.annotations.length; i += 1) {
+      const ann = state.annotations[i];
+      if (isAnnHidden(ann.id)) continue;
+      const points = ann.points || [];
+      for (let k = 0; k < points.length; k += 1) {
+        const pt = points[k];
+        if (!pt || !pt.point) continue;
+        const d = distance(world, pt.point);
+        if (d < anchorDist) anchorDist = d;
+      }
+    }
     for (let i = 0; i < state.annotations.length; i += 1) {
       const ann = state.annotations[i];
       if (isAnnHidden(ann.id)) continue;
@@ -36367,8 +36794,10 @@ function makeExportFileName() {
         const p = ann[part];
         if (!p) continue;
         const dist = distance(world, p);
-        // `<=` so a later (topmost) line wins an exact tie.
-        if (dist <= radius && dist <= bestDist) {
+        // `<=` so a later (topmost) line wins an exact tie; `<= anchorDist` so
+        // the endpoint yields only to a STRICTLY closer anchor — on a shared
+        // spot the endpoint, the one of the two actually drawn here, keeps it.
+        if (dist <= radius && dist <= bestDist && dist <= anchorDist) {
           bestDist = dist;
           best = { id: ann.id, part };
         }
@@ -36721,9 +37150,27 @@ function makeExportFileName() {
   function getAnnotationPolyline(ann, samples) {
     if (ann.type === 'straight') return [ann.start, ann.end];
     const segs = getCurveBeziers(ann);
-    const per = Math.max(2, Math.round(samples / segs.length));
+    const basePer = Math.max(2, Math.round(samples / segs.length));
+    // Before US-093 every annotation reaching this helper had one cubic (or
+    // the retired legacy midpoint pair), so `samples` was a whole-curve
+    // budget. Keep that path byte-identical: existing 2-handle curves must not
+    // change their measured value, hit shape, stitches, or label placement.
+    //
+    // `points[]` changes the contract: it can grow the curve to any number of
+    // cubics. Dividing the same fixed budget across that chain eventually left
+    // only two chords per segment (25/50 samples reaches that floor at about
+    // 10/20 segments). A strong S-bend then collapses to its endpoint chord,
+    // severely under-counting length and making the bulge unhittable. Give
+    // every added-anchor segment its own curvature-driven budget instead. The
+    // shared curveChordSampleCount bound is deterministic and zoom-independent,
+    // floors each segment at the old 24-chord precision, and caps corrupt or
+    // extreme geometry at 512 evaluations per segment.
+    const adaptivePerSegment = Array.isArray(ann.points) && ann.points.length > 0;
     const points = [ann.start];
     for (const s of segs) {
+      const per = adaptivePerSegment
+        ? Math.min(CURVE_CHORD_MAX_SAMPLES, Math.max(basePer, curveChordSampleCount(s)))
+        : basePer;
       for (let i = 1; i <= per; i += 1) {
         points.push(bezierPoint(s.p0, s.p1, s.p2, s.p3, i / per));
       }
@@ -36953,13 +37400,23 @@ function makeExportFileName() {
       // always visible while the curve is selected (no crowding gate, ADR
       // 0053). The anchor point itself renders like start/end (emphasized);
       // its handles render like control1/control2 (small).
+      //
+      // US-093 / ADR 0053 code review, 2026-08-21: the guide strokeStyle and
+      // lineWidth set for control1/control2 above are still in effect here, so
+      // this loop does NOT re-assign them — drawHandle wraps itself in
+      // save/restore and cannot clobber them, which made those two writes pure
+      // waste once per anchor on every repaint of a selected curve (i.e. on
+      // every mousemove of a drag). The setLineDash pair below is a different
+      // story and must stay INSIDE the loop: drawHandle never touches the dash,
+      // so it inherits whatever is armed at the call site, and the handle rings
+      // have to come out solid. Hoisting the dash out would draw every guide
+      // after the first one solid and every handle ring after the first one
+      // dashed.
       const points = ann.points || [];
       for (let i = 0; i < points.length; i += 1) {
         const pt = points[i];
         if (!pt.point) continue;
         ctx.setLineDash([6 / state.zoom, 5 / state.zoom]);
-        ctx.strokeStyle = 'rgba(53,109,255,.45)';
-        ctx.lineWidth = 1.2 / state.zoom;
         ctx.beginPath();
         if (pt.handleIn) { ctx.moveTo(pt.point.x, pt.point.y); ctx.lineTo(pt.handleIn.x, pt.handleIn.y); }
         if (pt.handleOut) { ctx.moveTo(pt.point.x, pt.point.y); ctx.lineTo(pt.handleOut.x, pt.handleOut.y); }

@@ -2826,12 +2826,27 @@
         </button>
         <!-- US-093 / ADR 0053: Straight/Curved/Eraser/Text consolidated into
              one drop-down (the same toolbar-menu pattern as Arrow/Color below)
-             to free a slot for Add point — a naive 6th always-visible button
-             would reopen the exact toolbar-space problem ADR 0052 measured
-             and fixed by going icon-only. Each button keeps its id, its
-             data-key shortcut (still wired directly to setTool() in
+             to free a slot for Add point, instead of adding a 6th
+             always-visible button on top of the toolbar-space problem ADR 0052
+             measured and fixed by going icon-only. Each button keeps its id,
+             its data-key shortcut (still wired directly to setTool() in
              keyboard-shortcuts.js, unaffected by moving into a menu), and its
-             own setTool() click binding in bindings.js. -->
+             own setTool() click binding in bindings.js.
+             US-093 / ADR 0053 code review, 2026-08-21: an earlier version of
+             this comment claimed the consolidation *avoided* that problem. It
+             only narrowed it. Add point is 38px and takes back most of the
+             width the drop-down freed, so a CURVED selection still wraps the
+             strip to a second row — measured toolbar height 95.5 -> 95.5px at
+             1440px, 95.5 -> 131.0px at 1366px and 1280px, 95.5 -> 137.3px at
+             1100px, and 95.5 -> 131.0px even at 1440px in the post-Apply
+             state, where more context actions are visible. What the
+             consolidation did buy is that a STRAIGHT selection no longer
+             wraps at 1440px, where before US-093 selecting any line did. The
+             wrap that remains is the same 35.5px canvas shift ADR 0051 exists
+             to absorb, so the board holds still and this is not a regression
+             — but whoever needs Board toolbar width next has less headroom
+             than "avoided" implied. board-interaction-check section 0 holds
+             the 1366px case under live proof. -->
         <div id="toolsMenuWrap" class="toolbar-menu">
           <button id="toolsMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="toolsMenuList" title="Choose a drawing tool">Tools ▾</button>
           <div id="toolsMenuList" class="toolbar-menu-list menu-left" role="menu" hidden>
@@ -3267,6 +3282,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=72018dc97009"></script>
+<script src="app.js?v=b5737ff7288b"></script>
 </body>
 </html>

@@ -48,6 +48,7 @@
     "mainpage-check": "node scripts/mainpage-check.mjs",
     "board-toolbar-check": "node scripts/board-toolbar-check.mjs",
     "board-interaction-check": "node scripts/board-interaction-check.mjs",
+    "curve-polyline-tests": "node scripts/curve-polyline-tests.mjs",
     "notes-check": "node scripts/notes-check.mjs",
     "construction-check": "node scripts/construction-check.mjs",
     "bom-check": "node scripts/bom-check.mjs",
