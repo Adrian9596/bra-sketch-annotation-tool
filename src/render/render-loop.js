@@ -64,6 +64,10 @@ function requestRender() {
       drawEraseStrokeSession(state.eraseSession);
     }
 
+    // US-095: construction graphics sit above sketches/erasures but below POM
+    // annotations, so they remain visual context and never obscure the work.
+    drawBoardGraphics();
+
     // Auto Mode offline detection overlay — drawn below project annotations
     // so it never hides committed lines, but above the image so the TD can
     // sanity-check bbox / axis / band before generating POMs.
@@ -137,6 +141,7 @@ function requestRender() {
     if (state.drawSession) {
       drawPreview();
     }
+    drawBoardGraphicPreview();
 
     // Highlight every selected image. A single selection keeps its resize
     // handles; a Cmd/Ctrl+click group shows outlines only (move-together).
@@ -191,6 +196,11 @@ function requestRender() {
     if (state.appMode !== 'auto') {
       const selectedNote = getSelectedNote();
       if (selectedNote && selectedNote.id !== editingNoteId) drawNoteSelection(selectedNote);
+    }
+
+    if (state.appMode !== 'auto') {
+      const selectedGraphic = getSelectedBoardGraphic();
+      if (selectedGraphic) drawBoardGraphicSelection(selectedGraphic);
     }
 
     if (state.appMode === 'auto') {

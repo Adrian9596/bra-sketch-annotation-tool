@@ -75,6 +75,8 @@ npm run suggestions-tests  # library-value suggestion layer
 npm run autosave-check     # crash-safe autosave and restore
 npm run curve-polyline-tests # multi-anchor curve sampling accuracy
 npm run keyboard-shortcuts-check # command palette and five-page keyboard access
+npm run board-shape-check    # Board Graphics, Edit Path, Cut Path, ownership
+npm run board-toolbar-check  # Board toolbar states and responsive layout
 npm run mainpage-check     # tech-pack MAIN PAGE sheet
 npm run construction-check # construction annotation page
 npm run bom-check          # BOM page
@@ -82,7 +84,7 @@ npm run preview-check      # preview & export tab
 ```
 
 The suites that score detection accuracy against real sketches — `golden`,
-`accuracy`, `contract`, `invariants`, `smoke`, `board-toolbar-check`,
+`accuracy`, `contract`, `invariants`, `smoke`,
 `board-interaction-check`, and the per-POM limitation guards — need the sketch
 fixtures, which aren't published here. They run in the private repo.
 

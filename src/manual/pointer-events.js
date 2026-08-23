@@ -147,6 +147,40 @@
       return;
     }
 
+    if (state.tool === 'rectangle' || state.tool === 'circle' || state.tool === 'hexagon') {
+      beginTrackedInteraction('draw-graphic', {
+        kind: state.tool, startWorld: bgClonePoint(world), currentWorld: bgClonePoint(world),
+        shiftKey: !!e.shiftKey, altKey: !!e.altKey,
+      });
+      return;
+    }
+
+    // US-095: path-edit handles are precise targets on the already-selected
+    // graphic and therefore win over line/photo body hits below.
+    const selectedGraphic = getSelectedBoardGraphic();
+    if (selectedGraphic && state.graphicEdit && state.graphicEdit.graphicId === selectedGraphic.id) {
+      const editHit = hitTestGraphicEdit(world, selectedGraphic);
+      if (editHit) {
+        state.graphicEdit.active = editHit;
+        if (editHit.kind === 'node' || editHit.kind === 'handleIn' || editHit.kind === 'handleOut') {
+          beginTrackedInteraction('drag-graphic-part', { id:selectedGraphic.id, hit:editHit, startWorld:bgClonePoint(world), prevWorld:bgClonePoint(world), armed:false });
+        } else { updateUI(); requestRender(); }
+        return;
+      }
+    }
+
+    if (selectedGraphic && !state.graphicEdit) {
+      const resizeHit = bgHitResizeHandle(world, selectedGraphic);
+      if (resizeHit) {
+        const bounds = bgBounds(selectedGraphic);
+        beginTrackedInteraction('drag-graphic-resize', {
+          id:selectedGraphic.id, corner:resizeHit.name, startWorld:bgClonePoint(world), armed:false,
+          startBounds:clone(bounds), origin:bgOppositeCorner(bounds, resizeHit.name), startGraphic:clone(selectedGraphic),
+        });
+        return;
+      }
+    }
+
     const selectedAnnotation = getSelectedAnnotation();
     // Endpoint/handle editing is a single-line action — a multi-selection is
     // for moving/copying the group, so skip handles when more than one is picked.
@@ -250,6 +284,15 @@
       return;
     }
 
+    if (!e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      const graphicHit = hitTestBoardGraphics(world);
+      if (graphicHit) {
+        setSelection('graphic', graphicHit.id);
+        beginTrackedInteraction('drag-graphic', { id:graphicHit.id, startWorld:bgClonePoint(world), prevWorld:bgClonePoint(world), armed:false });
+        return;
+      }
+    }
+
     // Shift is dedicated to building a line multi-selection. A Shift+click that
     // misses every line must NOT fall through to the image branch below, which
     // would call setSelection('image', …) and wipe the group the TD is
@@ -316,6 +359,33 @@
 
     const interaction = state.interaction;
     if (!interaction) return;
+
+    if (interaction.type === 'draw-graphic') {
+      interaction.currentWorld = bgClonePoint(world);
+      interaction.shiftKey = !!e.shiftKey; interaction.altKey = !!e.altKey;
+      requestRender(); return;
+    }
+
+    if (interaction.type === 'drag-graphic') {
+      if (!dragArmed(interaction, world)) return;
+      const graphic=getBoardGraphicById(interaction.id); if (!graphic) return;
+      const dx=world.x-interaction.prevWorld.x, dy=world.y-interaction.prevWorld.y;
+      if (dx||dy) { bgMove(graphic,dx,dy); interaction.prevWorld=bgClonePoint(world); interaction.changed=true; requestRender(); }
+      return;
+    }
+
+    if (interaction.type === 'drag-graphic-part') {
+      if (!dragArmed(interaction, world)) return;
+      const graphic=getBoardGraphicById(interaction.id); if (!graphic) return;
+      if (bgMoveEditPart(graphic,interaction.hit,world)) { interaction.changed=true; interaction.prevWorld=bgClonePoint(world); requestRender(); }
+      return;
+    }
+
+    if (interaction.type === 'drag-graphic-resize') {
+      if (!dragArmed(interaction, world)) return;
+      const graphic=getBoardGraphicById(interaction.id); if (!graphic) return;
+      bgResizeFromCorner(graphic,interaction,world,!!e.shiftKey,!!e.altKey); interaction.changed=true; requestRender(); return;
+    }
 
     if (interaction.type === 'pan') {
       const dx = screen.x - interaction.startScreen.x;
@@ -462,6 +532,9 @@
             if (note) moveNote(note, dx, dy);
           }
         }
+        if (interaction.groupedGraphicIds) for (const graphicId of interaction.groupedGraphicIds) {
+          const graphic = getBoardGraphicById(graphicId); if (graphic) bgMove(graphic, dx, dy);
+        }
         interaction.changed = true;
         interaction.prevWorld = world;
         requestRender();
@@ -519,6 +592,15 @@
     if (!interaction) return;
 
     document.body.classList.remove('grabbing');
+
+    if (interaction.type === 'draw-graphic') {
+      const graphic = createBoardGraphicFromDrag(interaction.kind, interaction.startWorld, interaction.currentWorld, interaction.shiftKey, interaction.altKey);
+      state.interaction = null;
+      if (graphic) {
+        state.graphics.push(graphic); setSelection('graphic', graphic.id); pushHistoryIfChanged();
+      }
+      updateUI(); requestRender(); return;
+    }
 
     if (interaction.type === 'marquee') {
       if (interaction.moved) {
@@ -746,6 +828,7 @@ function startImageDrag(id, world) {
   if (!movingIds.includes(id)) movingIds.push(id);
   const annIdSet = new Set();
   const noteIdSet = new Set();
+  const graphicIdSet = new Set();
   for (const imgId of movingIds) {
     const im = getImageById(imgId);
     if (!im) continue;
@@ -753,6 +836,7 @@ function startImageDrag(id, world) {
     // US-092: and the text notes written on it — a remark whose arrow points at
     // a detail has to keep pointing at it.
     for (const note of getNotesOnImage(im)) noteIdSet.add(note.id);
+    for (const graphic of bgOwnedByImage(im.id)) graphicIdSet.add(graphic.id);
   }
   beginTrackedInteraction('drag-image', {
     id,
@@ -762,6 +846,7 @@ function startImageDrag(id, world) {
     imageIds: movingIds,
     groupedAnnotationIds: Array.from(annIdSet),
     groupedNoteIds: Array.from(noteIdSet),
+    groupedGraphicIds: Array.from(graphicIdSet),
   });
 }
 
@@ -849,6 +934,7 @@ function resizeImagesFromCorner(interaction, world) {
   // image, THEN scale each claimed object exactly once.
   const claimedAnnotations = new Map();
   const claimedNotes = new Map();
+  const claimedGraphics = new Map();
   const perImage = [];
   for (const s of start) {
     const image = getImageById(s.id);
@@ -862,6 +948,7 @@ function resizeImagesFromCorner(interaction, world) {
     for (const note of notesWithinBounds(previousBounds)) {
       if (!claimedNotes.has(note.id)) claimedNotes.set(note.id, factor);
     }
+    for (const graphic of bgOwnedByImage(s.id)) if (!claimedGraphics.has(graphic.id)) claimedGraphics.set(graphic.id, factor);
   }
   for (const { s, factor } of perImage) {
     const image = getImageById(s.id);
@@ -879,6 +966,9 @@ function resizeImagesFromCorner(interaction, world) {
   for (const [id, factor] of claimedNotes) {
     const note = getNoteById(id);
     if (note && validFactor(factor)) scaleNoteAbout(note, anchor, factor);
+  }
+  for (const [id, factor] of claimedGraphics) {
+    const graphic=getBoardGraphicById(id); if (graphic && validFactor(factor)) bgScaleAbout(graphic, anchor, factor, factor);
   }
 }
 

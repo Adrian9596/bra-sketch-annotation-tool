@@ -266,6 +266,9 @@
     // project + history exactly like lineWidth/drawColor.
     noteFontSize: NOTE_DEFAULT_FONT_SIZE,
     annotations: [],
+    // US-095: visual vector construction shapes. Deliberately separate from
+    // annotations, which are the measurement/POM collection.
+    graphics: [],
     deletedAutoAnnotations: [],
     // US-047: POM labels whose drawn line the TD deleted. Excluded from the
     // exported spec exactly like a hidden line (TD: "delete = hide"), until a
@@ -285,6 +288,8 @@
     showLabels: true,
     nextSequence: 1,
     selection: { kind: null, id: null },
+    // Session-only focused path-edit state for one selected Board Graphic.
+    graphicEdit: null,
     // Cmd/Ctrl+click multi-selection of images. Always includes the primary
     // `selection` when that is an image; empty otherwise. The primary stays the
     // resize/spec anchor — this set only widens what a group drag / delete acts
@@ -493,6 +498,9 @@
     toolCurved: document.getElementById('toolCurved'),
     toolEraser: document.getElementById('toolEraser'),
     toolText: document.getElementById('toolText'),
+    toolRectangle: document.getElementById('toolRectangle'),
+    toolCircle: document.getElementById('toolCircle'),
+    toolHexagon: document.getElementById('toolHexagon'),
     // US-093 / ADR 0053: Straight/Curved/Eraser/Text moved into one drop-down
     // to free this slot — see toolsMenuBtn below.
     toolAddPoint: document.getElementById('toolAddPoint'),
@@ -520,6 +528,10 @@
     pasteLineBtn: document.getElementById('pasteLineBtn'),
     reflectLineBtn: document.getElementById('reflectLineBtn'),
     deleteBtn: document.getElementById('deleteBtn'),
+    editPathBtn: document.getElementById('editPathBtn'),
+    cutPathBtn: document.getElementById('cutPathBtn'),
+    segmentStraightBtn: document.getElementById('segmentStraightBtn'),
+    segmentCurvedBtn: document.getElementById('segmentCurvedBtn'),
     clearBtn: document.getElementById('clearBtn'),
     lockImageBtn: document.getElementById('lockImageBtn'),
     lockImageLabel: document.getElementById('lockImageLabel'),
@@ -1392,6 +1404,473 @@
     t = clamp(t, 0, 1);
     const proj = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
     return distance(p, proj);
+  }
+
+  // ---- src/manual/board-graphics.js ----
+// US-095 / ADR 0054: non-measurement Board Graphics and path topology.
+// Board Graphics deliberately live outside state.annotations: nothing in the
+// POM/spec/grading/learning/Excel path reads this collection.
+
+  const BG_MIN_CREATE_SCREEN_PX = 8;
+  const BG_KAPPA = 0.5522847498307936;
+
+  function bgPoint(x, y) { return { x: Number(x) || 0, y: Number(y) || 0 }; }
+  function bgClonePoint(p) { return bgPoint(p && p.x, p && p.y); }
+  function bgNextId(prefix) { return prefix + '-' + (state.idCounter++); }
+
+  function getBoardGraphicById(id) {
+    return (state.graphics || []).find(g => g.id === id) || null;
+  }
+
+  function getSelectedBoardGraphic() {
+    return state.selection.kind === 'graphic' ? getBoardGraphicById(state.selection.id) : null;
+  }
+
+  function bgNormalizeNode(raw) {
+    const point = bgClonePoint(raw && raw.point);
+    return {
+      id: String(raw && raw.id || bgNextId('bgn')),
+      point,
+      handleIn: bgClonePoint(raw && raw.handleIn || point),
+      handleOut: bgClonePoint(raw && raw.handleOut || point),
+      segmentType: raw && raw.segmentType === 'curve' ? 'curve' : 'line',
+    };
+  }
+
+  function normalizeBoardGraphic(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const kind = ['rectangle', 'circle', 'hexagon'].includes(raw.shapeKind) ? raw.shapeKind : 'rectangle';
+    const mode = raw.mode === 'path' ? 'path' : 'live';
+    const live = raw.live || {};
+    const graphic = {
+      id: raw.id != null ? raw.id : bgNextId('bg'),
+      shapeKind: kind,
+      mode,
+      color: normalizeColorKey(raw.color || 'red'),
+      lineWidth: normalizeLineWidth(raw.lineWidth),
+      sourceImageId: raw.sourceImageId == null ? null : raw.sourceImageId,
+      live: mode === 'live' ? {
+        center: bgClonePoint(live.center),
+        width: Math.max(1, Number(live.width) || 1),
+        height: Math.max(1, Number(live.height) || 1),
+      } : null,
+      subpaths: [],
+    };
+    if (mode === 'path') {
+      graphic.subpaths = (Array.isArray(raw.subpaths) ? raw.subpaths : []).map(sp => ({
+        id: String(sp && sp.id || bgNextId('bgsp')),
+        closed: !!(sp && sp.closed),
+        nodes: (Array.isArray(sp && sp.nodes) ? sp.nodes : []).map(bgNormalizeNode),
+      })).filter(sp => sp.nodes.length >= 2);
+    }
+    return graphic;
+  }
+
+  function normalizeBoardGraphics(list) {
+    return (Array.isArray(list) ? list : []).map(normalizeBoardGraphic).filter(Boolean);
+  }
+
+  function bgBoxFromDrag(kind, start, current, shiftKey, altKey) {
+    let dx = current.x - start.x;
+    let dy = current.y - start.y;
+    if (shiftKey || kind === 'circle' || kind === 'hexagon') {
+      const side = Math.min(Math.abs(dx), Math.abs(dy));
+      dx = (dx < 0 ? -1 : 1) * side;
+      dy = (dy < 0 ? -1 : 1) * side;
+    }
+    let x1 = start.x, y1 = start.y, x2 = start.x + dx, y2 = start.y + dy;
+    if (altKey) { x1 = start.x - dx; y1 = start.y - dy; }
+    return {
+      x: Math.min(x1, x2), y: Math.min(y1, y2),
+      width: Math.abs(x2 - x1), height: Math.abs(y2 - y1),
+    };
+  }
+
+  function bgTopImageAt(point) {
+    for (let i = state.images.length - 1; i >= 0; i -= 1) {
+      const im = state.images[i];
+      if (point.x >= im.x && point.x <= im.x + im.width && point.y >= im.y && point.y <= im.y + im.height) return im;
+    }
+    return null;
+  }
+
+  function createBoardGraphicFromDrag(kind, start, current, shiftKey, altKey) {
+    const box = bgBoxFromDrag(kind, start, current, shiftKey, altKey);
+    if (Math.max(box.width, box.height) * state.zoom < BG_MIN_CREATE_SCREEN_PX) return null;
+    const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const owner = bgTopImageAt(center);
+    return normalizeBoardGraphic({
+      id: bgNextId('bg'), shapeKind: kind, mode: 'live', color: state.drawColor,
+      lineWidth: state.lineWidth, sourceImageId: owner ? owner.id : null,
+      live: { center, width: box.width, height: box.height },
+    });
+  }
+
+  function bgNode(point, segmentType, handleIn, handleOut) {
+    return bgNormalizeNode({ id: bgNextId('bgn'), point, segmentType, handleIn: handleIn || point, handleOut: handleOut || point });
+  }
+
+  function convertBoardGraphicToPath(graphic) {
+    if (!graphic || graphic.mode === 'path' || !graphic.live) return false;
+    const c = graphic.live.center, w = graphic.live.width, h = graphic.live.height;
+    const rx = w / 2, ry = h / 2;
+    let nodes;
+    if (graphic.shapeKind === 'circle') {
+      nodes = [
+        bgNode({ x: c.x, y: c.y - ry }, 'curve', { x: c.x - BG_KAPPA * rx, y: c.y - ry }, { x: c.x + BG_KAPPA * rx, y: c.y - ry }),
+        bgNode({ x: c.x + rx, y: c.y }, 'curve', { x: c.x + rx, y: c.y - BG_KAPPA * ry }, { x: c.x + rx, y: c.y + BG_KAPPA * ry }),
+        bgNode({ x: c.x, y: c.y + ry }, 'curve', { x: c.x + BG_KAPPA * rx, y: c.y + ry }, { x: c.x - BG_KAPPA * rx, y: c.y + ry }),
+        bgNode({ x: c.x - rx, y: c.y }, 'curve', { x: c.x - rx, y: c.y + BG_KAPPA * ry }, { x: c.x - rx, y: c.y - BG_KAPPA * ry }),
+      ];
+    } else if (graphic.shapeKind === 'hexagon') {
+      nodes = [];
+      const radius = Math.min(rx, ry);
+      for (let i = 0; i < 6; i += 1) {
+        const a = -Math.PI / 2 + i * Math.PI / 3;
+        const p = { x: c.x + Math.cos(a) * radius, y: c.y + Math.sin(a) * radius };
+        nodes.push(bgNode(p, 'line'));
+      }
+    } else {
+      nodes = [
+        bgNode({ x: c.x - rx, y: c.y - ry }, 'line'),
+        bgNode({ x: c.x + rx, y: c.y - ry }, 'line'),
+        bgNode({ x: c.x + rx, y: c.y + ry }, 'line'),
+        bgNode({ x: c.x - rx, y: c.y + ry }, 'line'),
+      ];
+    }
+    graphic.mode = 'path';
+    graphic.live = null;
+    graphic.subpaths = [{ id: bgNextId('bgsp'), closed: true, nodes }];
+    return true;
+  }
+
+  function bgSegments(graphic) {
+    const out = [];
+    if (!graphic) return out;
+    if (graphic.mode === 'live') {
+      const pathCopy = normalizeBoardGraphic(clone(graphic));
+      convertBoardGraphicToPath(pathCopy);
+      graphic = pathCopy;
+    }
+    for (const subpath of graphic.subpaths || []) {
+      const nodes = subpath.nodes || [];
+      const count = subpath.closed ? nodes.length : nodes.length - 1;
+      for (let i = 0; i < count; i += 1) {
+        const a = nodes[i], b = nodes[(i + 1) % nodes.length];
+        if (!a || !b) continue;
+        out.push({ subpath, index: i, a, b, type: a.segmentType === 'curve' ? 'curve' : 'line' });
+      }
+    }
+    return out;
+  }
+
+  function bgBezierPoint(seg, t) {
+    if (seg.type !== 'curve') return { x: seg.a.point.x + (seg.b.point.x - seg.a.point.x) * t, y: seg.a.point.y + (seg.b.point.y - seg.a.point.y) * t };
+    return bezierPoint(seg.a.point, seg.a.handleOut, seg.b.handleIn, seg.b.point, t);
+  }
+
+  function bgNearestOnSegment(seg, world) {
+    const samples = seg.type === 'curve' ? 48 : 1;
+    let best = null, prev = seg.a.point;
+    for (let i = 1; i <= samples; i += 1) {
+      const next = bgBezierPoint(seg, i / samples);
+      const dx = next.x - prev.x, dy = next.y - prev.y, l2 = dx * dx + dy * dy;
+      const u = l2 ? Math.max(0, Math.min(1, ((world.x - prev.x) * dx + (world.y - prev.y) * dy) / l2)) : 0;
+      const q = { x: prev.x + dx * u, y: prev.y + dy * u };
+      const d = Math.hypot(world.x - q.x, world.y - q.y);
+      if (!best || d < best.distance) best = { distance: d, t: (i - 1 + u) / samples, point: bgBezierPoint(seg, (i - 1 + u) / samples) };
+      prev = next;
+    }
+    return best;
+  }
+
+  function hitTestBoardGraphics(world) {
+    const tolerance = 9 / state.zoom;
+    const graphics = state.graphics || [];
+    for (let i = graphics.length - 1; i >= 0; i -= 1) {
+      const graphic = graphics[i];
+      for (const seg of bgSegments(graphic)) {
+        if (bgNearestOnSegment(seg, world).distance <= tolerance) return { id: graphic.id };
+      }
+    }
+    return null;
+  }
+
+  function hitTestGraphicEdit(world, graphic) {
+    if (!graphic || graphic.mode !== 'path') return null;
+    const nodeRadius = 9 / state.zoom, handleRadius = 8 / state.zoom;
+    const active = state.graphicEdit && state.graphicEdit.active;
+    if (active && active.kind === 'segment') {
+      const sp = (graphic.subpaths || []).find(x => x.id === active.subpathId);
+      const node = sp && sp.nodes.find(n => n.id === active.startNodeId);
+      const next = sp && sp.nodes[(sp.nodes.indexOf(node) + 1) % sp.nodes.length];
+      if (node && next && node.segmentType === 'curve') {
+        if (Math.hypot(world.x - node.handleOut.x, world.y - node.handleOut.y) <= handleRadius) return { kind: 'handleOut', subpathId: sp.id, nodeId: node.id };
+        if (Math.hypot(world.x - next.handleIn.x, world.y - next.handleIn.y) <= handleRadius) return { kind: 'handleIn', subpathId: sp.id, nodeId: next.id };
+      }
+    }
+    for (const sp of graphic.subpaths || []) for (const node of sp.nodes || []) {
+      if (Math.hypot(world.x - node.point.x, world.y - node.point.y) <= nodeRadius) return { kind: 'node', subpathId: sp.id, nodeId: node.id };
+    }
+    let best = null;
+    for (const seg of bgSegments(graphic)) {
+      const near = bgNearestOnSegment(seg, world);
+      if ((!best || near.distance < best.distance) && near.distance <= 9 / state.zoom) {
+        best = { kind: 'segment', subpathId: seg.subpath.id, startNodeId: seg.a.id, t: near.t, distance: near.distance };
+      }
+    }
+    return best;
+  }
+
+  function bgBounds(graphic) {
+    if (!graphic) return null;
+    if (graphic.mode === 'live' && graphic.live) return { x: graphic.live.center.x - graphic.live.width / 2, y: graphic.live.center.y - graphic.live.height / 2, width: graphic.live.width, height: graphic.live.height };
+    const pts = [];
+    for (const sp of graphic.subpaths || []) for (const n of sp.nodes || []) pts.push(n.point, n.handleIn, n.handleOut);
+    if (!pts.length) return null;
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    return { x, y, width: Math.max(1, Math.max(...xs) - x), height: Math.max(1, Math.max(...ys) - y) };
+  }
+
+  function bgHitResizeHandle(world, graphic) {
+    const b = bgBounds(graphic); if (!b) return null;
+    const corners = [
+      { name:'nw', x:b.x, y:b.y }, { name:'ne', x:b.x+b.width, y:b.y },
+      { name:'se', x:b.x+b.width, y:b.y+b.height }, { name:'sw', x:b.x, y:b.y+b.height },
+    ];
+    return corners.find(p => Math.hypot(world.x-p.x, world.y-p.y) <= 9/state.zoom) || null;
+  }
+
+  function bgOppositeCorner(bounds, name) {
+    return {
+      x: name.includes('w') ? bounds.x + bounds.width : bounds.x,
+      y: name.includes('n') ? bounds.y + bounds.height : bounds.y,
+    };
+  }
+
+  function bgResizeFromCorner(graphic, interaction, world, shiftKey, altKey) {
+    const start = interaction.startBounds, origin = interaction.origin;
+    if (!graphic || !start || !origin) return;
+    let sx = Math.abs(world.x-origin.x) / Math.max(1,start.width);
+    let sy = Math.abs(world.y-origin.y) / Math.max(1,start.height);
+    if (graphic.mode === 'live' && (shiftKey || graphic.shapeKind !== 'rectangle')) sx = sy = Math.min(sx, sy);
+    if (shiftKey && graphic.mode === 'path') sx = sy = Math.min(sx, sy);
+    sx = Math.max(0.05, sx); sy = Math.max(0.05, sy);
+    const source = normalizeBoardGraphic(interaction.startGraphic);
+    Object.assign(graphic, source);
+    const scaleOrigin = altKey ? {x:start.x+start.width/2,y:start.y+start.height/2} : origin;
+    bgScaleAbout(graphic, scaleOrigin, sx, sy);
+  }
+
+  function bgMoveEditPart(graphic, hit, target) {
+    if (!graphic || !hit) return false;
+    const sp = (graphic.subpaths || []).find(x => x.id === hit.subpathId);
+    const node = sp && sp.nodes.find(n => n.id === hit.nodeId);
+    if (!node) return false;
+    if (hit.kind === 'node') {
+      const dx=target.x-node.point.x, dy=target.y-node.point.y;
+      node.point=bgClonePoint(target); node.handleIn.x+=dx;node.handleIn.y+=dy;node.handleOut.x+=dx;node.handleOut.y+=dy;
+    } else if (hit.kind === 'handleIn') node.handleIn=bgClonePoint(target);
+    else if (hit.kind === 'handleOut') node.handleOut=bgClonePoint(target);
+    else return false;
+    return true;
+  }
+
+  function bgMove(graphic, dx, dy) {
+    if (!graphic || (!dx && !dy)) return;
+    if (graphic.mode === 'live') { graphic.live.center.x += dx; graphic.live.center.y += dy; return; }
+    for (const sp of graphic.subpaths || []) for (const n of sp.nodes || []) for (const key of ['point', 'handleIn', 'handleOut']) { n[key].x += dx; n[key].y += dy; }
+  }
+
+  function bgScaleAbout(graphic, origin, sx, sy) {
+    if (!graphic || !origin || !Number.isFinite(sx) || !Number.isFinite(sy)) return;
+    const scale = p => { p.x = origin.x + (p.x - origin.x) * sx; p.y = origin.y + (p.y - origin.y) * sy; };
+    if (graphic.mode === 'live') {
+      scale(graphic.live.center);
+      graphic.live.width = Math.max(1, graphic.live.width * Math.abs(sx));
+      graphic.live.height = Math.max(1, graphic.live.height * Math.abs(sy));
+      if (graphic.shapeKind !== 'rectangle') {
+        const side = Math.min(graphic.live.width, graphic.live.height);
+        graphic.live.width = side; graphic.live.height = side;
+      }
+      return;
+    }
+    for (const sp of graphic.subpaths || []) for (const n of sp.nodes || []) for (const key of ['point', 'handleIn', 'handleOut']) scale(n[key]);
+  }
+
+  function bgOwnedByImage(imageId) { return (state.graphics || []).filter(g => g.sourceImageId === imageId); }
+
+  function scaleOwnedGraphicsForImageResize(imageId, origin, factor) {
+    if (!Number.isFinite(factor) || factor <= 0 || Math.abs(factor-1)<1e-9) return;
+    for (const graphic of bgOwnedByImage(imageId)) bgScaleAbout(graphic, origin, factor, factor);
+  }
+
+  function bgEnterEdit(graphic) {
+    if (!graphic) return false;
+    const changed = convertBoardGraphicToPath(graphic);
+    state.graphicEdit = { graphicId: graphic.id, active: null };
+    if (changed) pushHistoryIfChanged();
+    updateUI(); requestRender();
+    return true;
+  }
+
+  function bgExitEdit() {
+    if (!state.graphicEdit) return false;
+    state.graphicEdit = null; updateUI(); requestRender(); return true;
+  }
+
+  function bgFindActive(graphic) {
+    const active = state.graphicEdit && state.graphicEdit.graphicId === graphic.id ? state.graphicEdit.active : null;
+    if (!active) return null;
+    const subpath = (graphic.subpaths || []).find(sp => sp.id === active.subpathId);
+    if (!subpath) return null;
+    const nodeIndex = active.nodeId ? subpath.nodes.findIndex(n => n.id === active.nodeId) : -1;
+    const segmentIndex = active.startNodeId ? subpath.nodes.findIndex(n => n.id === active.startNodeId) : -1;
+    return { active, subpath, nodeIndex, segmentIndex };
+  }
+
+  function bgInsertNodeOnSegment(subpath, segmentIndex, t) {
+    const nodes = subpath.nodes, a = nodes[segmentIndex], b = nodes[(segmentIndex + 1) % nodes.length];
+    if (!a || !b) return -1;
+    const safe = Math.max(0.001, Math.min(0.999, Number(t) || 0.5));
+    let node;
+    if (a.segmentType === 'curve') {
+      const split = subdivideCubicBezier(a.point, a.handleOut, b.handleIn, b.point, safe);
+      a.handleOut = bgClonePoint(split.left[1]);
+      b.handleIn = bgClonePoint(split.right[2]);
+      node = bgNode(split.left[3], 'curve', split.left[2], split.right[1]);
+    } else {
+      const p = { x: a.point.x + (b.point.x - a.point.x) * safe, y: a.point.y + (b.point.y - a.point.y) * safe };
+      node = bgNode(p, 'line');
+    }
+    nodes.splice(segmentIndex + 1, 0, node);
+    return segmentIndex + 1;
+  }
+
+  function bgCutNode(graphic, subpath, index) {
+    const nodes = subpath.nodes;
+    if (!nodes[index]) return false;
+    if (!subpath.closed && (index === 0 || index === nodes.length - 1)) return false;
+    if (subpath.closed) {
+      const rotated = nodes.slice(index).concat(nodes.slice(0, index));
+      const first = rotated[0];
+      const last = bgNormalizeNode({ id: bgNextId('bgn'), point: first.point, handleIn: first.handleIn, handleOut: first.point, segmentType: 'line' });
+      first.handleIn = bgClonePoint(first.point);
+      rotated.push(last);
+      subpath.nodes = rotated;
+      subpath.closed = false;
+      state.graphicEdit.active = { kind: 'node', subpathId: subpath.id, nodeId: last.id };
+      return true;
+    }
+    const left = nodes.slice(0, index + 1).map(n => bgNormalizeNode(clone(n)));
+    const right = nodes.slice(index).map(n => bgNormalizeNode(clone(n)));
+    right[0].id = bgNextId('bgn');
+    left[left.length - 1].handleOut = bgClonePoint(left[left.length - 1].point);
+    left[left.length - 1].segmentType = 'line';
+    right[0].handleIn = bgClonePoint(right[0].point);
+    subpath.nodes = left;
+    const newSubpath = { id: bgNextId('bgsp'), closed: false, nodes: right };
+    const at = graphic.subpaths.indexOf(subpath);
+    graphic.subpaths.splice(at + 1, 0, newSubpath);
+    state.graphicEdit.active = { kind: 'node', subpathId: newSubpath.id, nodeId: right[0].id };
+    return true;
+  }
+
+  function cutSelectedBoardGraphicPath() {
+    const graphic = getSelectedBoardGraphic();
+    const found = graphic && bgFindActive(graphic);
+    if (!found || !['node', 'segment'].includes(found.active.kind)) { showToast('Select a path node or segment first.'); return false; }
+    let index = found.nodeIndex;
+    if (found.active.kind === 'segment') index = bgInsertNodeOnSegment(found.subpath, found.segmentIndex, found.active.t);
+    if (index < 0 || !bgCutNode(graphic, found.subpath, index)) { showToast('That point is already an open endpoint.'); return false; }
+    pushHistoryIfChanged(); updateUI(); requestRender(); showToast('Path cut — subpaths remain one Board Graphic.');
+    return true;
+  }
+
+  function bgSetActiveSegmentType(type) {
+    const graphic = getSelectedBoardGraphic(), found = graphic && bgFindActive(graphic);
+    if (!found || found.active.kind !== 'segment' || found.segmentIndex < 0) return false;
+    const node = found.subpath.nodes[found.segmentIndex];
+    if (node.segmentType === type) return false;
+    const next = found.subpath.nodes[(found.segmentIndex + 1) % found.subpath.nodes.length];
+    node.segmentType = type;
+    if (type === 'line') { node.handleOut = bgClonePoint(node.point); next.handleIn = bgClonePoint(next.point); }
+    else {
+      node.handleOut = { x: node.point.x + (next.point.x - node.point.x) / 3, y: node.point.y + (next.point.y - node.point.y) / 3 };
+      next.handleIn = { x: next.point.x - (next.point.x - node.point.x) / 3, y: next.point.y - (next.point.y - node.point.y) / 3 };
+    }
+    pushHistoryIfChanged(); updateUI(); requestRender(); return true;
+  }
+
+  function drawBoardGraphicPath(graphic) {
+    for (const sp of (graphic.mode === 'path' ? graphic.subpaths : [])) {
+      const nodes = sp.nodes || []; if (nodes.length < 2) continue;
+      ctx.beginPath(); ctx.moveTo(nodes[0].point.x, nodes[0].point.y);
+      const count = sp.closed ? nodes.length : nodes.length - 1;
+      for (let i = 0; i < count; i += 1) {
+        const a = nodes[i], b = nodes[(i + 1) % nodes.length];
+        if (a.segmentType === 'curve') ctx.bezierCurveTo(a.handleOut.x, a.handleOut.y, b.handleIn.x, b.handleIn.y, b.point.x, b.point.y);
+        else ctx.lineTo(b.point.x, b.point.y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function drawBoardGraphic(graphic, alpha) {
+    if (!graphic) return;
+    ctx.save(); ctx.globalAlpha = alpha == null ? 1 : alpha;
+    ctx.strokeStyle = LINE_COLORS[normalizeColorKey(graphic.color)] || LINE_COLOR;
+    ctx.lineWidth = normalizeLineWidth(graphic.lineWidth) / featureZoom();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.setLineDash([]);
+    if (graphic.mode === 'live') {
+      const b = bgBounds(graphic); ctx.beginPath();
+      if (graphic.shapeKind === 'circle') ctx.arc(b.x + b.width / 2, b.y + b.height / 2, Math.min(b.width, b.height) / 2, 0, Math.PI * 2);
+      else if (graphic.shapeKind === 'hexagon') {
+        const c = graphic.live.center, r = Math.min(graphic.live.width, graphic.live.height) / 2;
+        for (let i = 0; i < 6; i += 1) { const a = -Math.PI / 2 + i * Math.PI / 3, p = { x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r }; if (!i) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); } ctx.closePath();
+      } else ctx.rect(b.x, b.y, b.width, b.height);
+      ctx.stroke();
+    } else drawBoardGraphicPath(graphic);
+    ctx.restore();
+  }
+
+  function drawBoardGraphics() { for (const graphic of (state.graphics || [])) drawBoardGraphic(graphic); }
+
+  function bgDrawHandle(p, active, square) {
+    const r = (active ? 5 : 4) / state.zoom;
+    ctx.save(); ctx.fillStyle = active ? '#356dff' : '#fff'; ctx.strokeStyle = '#356dff'; ctx.lineWidth = 1.5 / state.zoom; ctx.beginPath();
+    if (square) ctx.rect(p.x - r, p.y - r, r * 2, r * 2); else ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+
+  function drawBoardGraphicSelection(graphic) {
+    if (!graphic) return;
+    const editing = state.graphicEdit && state.graphicEdit.graphicId === graphic.id;
+    if (!editing) {
+      const b = bgBounds(graphic); if (!b) return;
+      ctx.save(); ctx.strokeStyle = 'rgba(53,109,255,.75)'; ctx.lineWidth = 1.2 / state.zoom; ctx.setLineDash([5 / state.zoom, 4 / state.zoom]); ctx.strokeRect(b.x, b.y, b.width, b.height); ctx.restore();
+      for (const p of [{x:b.x,y:b.y},{x:b.x+b.width,y:b.y},{x:b.x+b.width,y:b.y+b.height},{x:b.x,y:b.y+b.height}]) bgDrawHandle(p, false, true);
+      return;
+    }
+    const active = state.graphicEdit.active;
+    for (const sp of graphic.subpaths || []) for (const node of sp.nodes || []) bgDrawHandle(node.point, !!(active && active.kind === 'node' && active.nodeId === node.id), true);
+    const found = bgFindActive(graphic);
+    if (found && found.active.kind === 'segment' && found.segmentIndex >= 0) {
+      const a = found.subpath.nodes[found.segmentIndex], b = found.subpath.nodes[(found.segmentIndex + 1) % found.subpath.nodes.length];
+      if (a.segmentType === 'curve') {
+        ctx.save(); ctx.strokeStyle = 'rgba(53,109,255,.5)'; ctx.lineWidth = 1 / state.zoom; ctx.setLineDash([5/state.zoom,4/state.zoom]); ctx.beginPath(); ctx.moveTo(a.point.x,a.point.y);ctx.lineTo(a.handleOut.x,a.handleOut.y);ctx.moveTo(b.point.x,b.point.y);ctx.lineTo(b.handleIn.x,b.handleIn.y);ctx.stroke();ctx.restore();
+        bgDrawHandle(a.handleOut, false, false); bgDrawHandle(b.handleIn, false, false);
+      }
+    }
+  }
+
+  function drawBoardGraphicPreview() {
+    const inter = state.interaction;
+    if (!inter || inter.type !== 'draw-graphic') return;
+    const box = bgBoxFromDrag(inter.kind, inter.startWorld, inter.currentWorld, inter.shiftKey, inter.altKey);
+    const temp = normalizeBoardGraphic({ id: 'preview', shapeKind: inter.kind, mode:'live', color:state.drawColor, lineWidth:state.lineWidth, live:{center:{x:box.x+box.width/2,y:box.y+box.height/2},width:box.width,height:box.height} });
+    drawBoardGraphic(temp, 0.65);
   }
 
   // ---- src/ui/toast.js ----
@@ -14937,8 +15416,20 @@ const BOM_MATERIAL_LIBRARY = [
       when: () => state.images.length ? true : 'Add a Board image first.', action: () => setTool('eraser') }),
     appCommand({ id: 'board.tool.text', label: 'Text Note Tool', category: 'Board · Tools',
       page: 'board', mode: 'manual', shortcut: { key: 't' }, target: '#toolText', action: () => setTool('text') }),
+    ...['rectangle','circle','hexagon'].map(shape => appCommand({
+      id:'board.tool.'+shape, label:shape[0].toUpperCase()+shape.slice(1)+' Tool', category:'Board · Tools',
+      page:'board', mode:'manual', target:'#tool'+shape[0].toUpperCase()+shape.slice(1), action:()=>setTool(shape),
+    })),
     appCommand({ id: 'board.tool.add-point', label: 'Add Point to Selected Curve', category: 'Board · Tools',
       page: 'board', mode: 'manual', target: '#toolAddPoint', action: () => appCommandClick('#toolAddPoint') }),
+    appCommand({ id:'board.graphic.edit-path', label:'Edit Selected Graphic Path', category:'Board · Graphics',
+      page:'board', mode:'manual', target:'#editPathBtn', when:()=>getSelectedBoardGraphic()?true:'Select one Board Graphic first.', action:()=>bgEnterEdit(getSelectedBoardGraphic()) }),
+    appCommand({ id:'board.graphic.cut-path', label:'Cut Selected Graphic Path', category:'Board · Graphics',
+      page:'board', mode:'manual', target:'#cutPathBtn', when:()=>state.graphicEdit&&state.graphicEdit.active?true:'Select a path node or segment first.', action:()=>cutSelectedBoardGraphicPath() }),
+    appCommand({ id:'board.graphic.segment-straight', label:'Make Graphic Segment Straight', category:'Board · Graphics',
+      page:'board', mode:'manual', target:'#segmentStraightBtn', action:()=>bgSetActiveSegmentType('line') }),
+    appCommand({ id:'board.graphic.segment-curved', label:'Make Graphic Segment Curved', category:'Board · Graphics',
+      page:'board', mode:'manual', target:'#segmentCurvedBtn', action:()=>bgSetActiveSegmentType('curve') }),
     ...['solid', 'dashed', 'zigzag', 'cover', 'bartack'].map(style => appCommand({
       id: 'board.style.' + style, label: 'Line Style: ' + style[0].toUpperCase() + style.slice(1),
       category: 'Board · Style', page: 'board', mode: 'manual',
@@ -15258,7 +15749,7 @@ const BOM_MATERIAL_LIBRARY = [
     ['toolsMenuWrap', 'toolsMenuBtn', 'toolsMenuList'],
   ];
 
-  const TOOL_MENU_LABELS = { straight: 'Straight', curved: 'Curved', eraser: 'Eraser', text: 'Text' };
+  const TOOL_MENU_LABELS = { straight: 'Straight', curved: 'Curved', eraser: 'Eraser', text: 'Text', rectangle:'Rectangle', circle:'Circle', hexagon:'Hexagon' };
 
   function boardToolbarMenuRecords() {
     return BOARD_TOOLBAR_MENUS.map(([wrapId, buttonId, listId]) => ({
@@ -15344,10 +15835,11 @@ const BOM_MATERIAL_LIBRARY = [
     const isAuto = state.appMode === 'auto';
     const imageCount = state.images.length;
     const annotationCount = state.annotations.length;
-    const empty = imageCount === 0 && annotationCount === 0;
+    const empty = imageCount === 0 && annotationCount === 0 && (state.graphics || []).length === 0 && (state.notes || []).length === 0;
     const selectedAnnotation = getSelectedAnnotation();
     const selectedImage = getSelectedImage();
     const selectedNote = getSelectedNote();
+    const selectedGraphic = getSelectedBoardGraphic();
     const auto = state.autoMode;
     const hasSource = !!pickAutoSourceImage();
     const hasAnchors = auto.anchors.length > 0;
@@ -15379,8 +15871,14 @@ const BOM_MATERIAL_LIBRARY = [
     setBoardToolbarHidden(el.pasteLineBtn, !selectionMode || el.pasteLineBtn.disabled);
     // US-092: Delete is the note's only toolbar action — Copy / Reflect / Paste
     // are line operations and stay hidden for a selected note.
-    setBoardToolbarHidden(el.deleteBtn, !selectionMode || !(selectedAnnotation || selectedImage || selectedNote));
+    setBoardToolbarHidden(el.deleteBtn, !selectionMode || !(selectedAnnotation || selectedImage || selectedNote || selectedGraphic));
     setBoardToolbarHidden(el.lockImageBtn, !selectionMode || !selectedImage);
+    const editingGraphic = !!(selectedGraphic && state.graphicEdit && state.graphicEdit.graphicId === selectedGraphic.id);
+    const activeGraphicPart = editingGraphic && state.graphicEdit.active;
+    setBoardToolbarHidden(el.editPathBtn, !selectionMode || !selectedGraphic || editingGraphic);
+    setBoardToolbarHidden(el.cutPathBtn, !selectionMode || !editingGraphic || !activeGraphicPart || !['node','segment'].includes(activeGraphicPart.kind));
+    setBoardToolbarHidden(el.segmentStraightBtn, !selectionMode || !editingGraphic || !activeGraphicPart || activeGraphicPart.kind !== 'segment');
+    setBoardToolbarHidden(el.segmentCurvedBtn, !selectionMode || !editingGraphic || !activeGraphicPart || activeGraphicPart.kind !== 'segment');
     const contextGroup = document.getElementById('boardContextActions');
     if (contextGroup) {
       const actionable = Array.from(contextGroup.querySelectorAll('button'))
@@ -15748,6 +16246,9 @@ const BOM_MATERIAL_LIBRARY = [
     el.toolCurved.addEventListener('click', () => setTool('curved'));
     el.toolEraser.addEventListener('click', () => setTool('eraser'));
     el.toolText.addEventListener('click', () => setTool('text'));
+    el.toolRectangle.addEventListener('click', () => setTool('rectangle'));
+    el.toolCircle.addEventListener('click', () => setTool('circle'));
+    el.toolHexagon.addEventListener('click', () => setTool('hexagon'));
     // US-093 / ADR 0053: only visible while a curved annotation is selected
     // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
     // no extra guard needed here.
@@ -15800,6 +16301,10 @@ const BOM_MATERIAL_LIBRARY = [
     el.pasteLineBtn.addEventListener('click', pasteLineFromClipboard);
     el.reflectLineBtn.addEventListener('click', reflectSelectedAnnotation);
     el.deleteBtn.addEventListener('click', deleteSelected);
+    el.editPathBtn.addEventListener('click', () => bgEnterEdit(getSelectedBoardGraphic()));
+    el.cutPathBtn.addEventListener('click', cutSelectedBoardGraphicPath);
+    el.segmentStraightBtn.addEventListener('click', () => bgSetActiveSegmentType('line'));
+    el.segmentCurvedBtn.addEventListener('click', () => bgSetActiveSegmentType('curve'));
     el.clearBtn.addEventListener('click', clearAllAnnotations);
     el.lockImageBtn.addEventListener('click', toggleSelectedImageLock);
     el.fitBtn.addEventListener('click', fitSelectionOrAll);
@@ -15970,6 +16475,7 @@ const BOM_MATERIAL_LIBRARY = [
       return;
     }
     state.tool = tool;
+    if (tool !== 'select') state.graphicEdit = null;
     state.drawSession = null;
     state.eraseSession = null;
     if (tool === 'eraser') {
@@ -16037,6 +16543,7 @@ const BOM_MATERIAL_LIBRARY = [
   function setLineWidth(lineWidth) {
     const normalized = normalizeLineWidth(lineWidth);
     state.lineWidth = normalized;
+    if (applyToSelectedBoardGraphic({ lineWidth: normalized })) return;
     applyToSelectedAnnotation({ lineWidth: normalized });
   }
 
@@ -16056,6 +16563,7 @@ const BOM_MATERIAL_LIBRARY = [
     // can never double-apply; when nothing is selected both calls fall through
     // to just updating the draw default.
     if (applyColorToSelectedNote(color)) return;
+    if (applyToSelectedBoardGraphic({ color: normalizeColorKey(color) })) return;
     applyToSelectedAnnotation({ color });
   }
 
@@ -16110,6 +16618,13 @@ const BOM_MATERIAL_LIBRARY = [
     requestRender();
   }
 
+  function applyToSelectedBoardGraphic(settings) {
+    const graphic = getSelectedBoardGraphic();
+    if (!graphic) return false;
+    Object.assign(graphic, settings);
+    pushHistoryIfChanged(); updateUI(); requestRender(); return true;
+  }
+
   // ---- Calibration ----
   function setScaleFromSelection() {
     const ann = getSelectedAnnotation();
@@ -16158,6 +16673,7 @@ const BOM_MATERIAL_LIBRARY = [
       lineWidth: state.lineWidth,
       noteFontSize: state.noteFontSize,
       annotations: clone(state.annotations),
+      graphics: clone(state.graphics || []),
       images: state.images.map(stripImageForSnapshot),
       eraseStrokes: clone(state.eraseStrokes),
       notes: clone(state.notes || []),
@@ -16218,6 +16734,8 @@ const BOM_MATERIAL_LIBRARY = [
     state.noteFontSize = normalizeNoteFontSize(snapshot.noteFontSize);
     state.annotations = clone(snapshot.annotations || []);
     state.annotations.forEach(ensureCurveControls);
+    state.graphics = normalizeBoardGraphics(snapshot.graphics || []);
+    state.graphicEdit = null;
     state.eraseStrokes = clone(snapshot.eraseStrokes || []);
     state.notes = (snapshot.notes || []).map(normalizeNote).filter(Boolean);
     state.nextSequence = snapshot.nextSequence || (state.annotations.length + 1);
@@ -16297,6 +16815,7 @@ const BOM_MATERIAL_LIBRARY = [
       savedAt: new Date().toISOString(),
       state: {
         annotations: clone(state.annotations),
+        graphics: clone(state.graphics || []),
         images: state.images.map(img => ({
           id: img.id, dataURL: img.dataURL,
           x: img.x, y: img.y, width: img.width, height: img.height,
@@ -16501,6 +17020,9 @@ const BOM_MATERIAL_LIBRARY = [
 
       state.annotations = clone(s.annotations || []);
       state.annotations.forEach(ensureCurveControls);
+      // US-095 additive migration: pre-shape projects omit this key.
+      state.graphics = normalizeBoardGraphics(s.graphics || []);
+      state.graphicEdit = null;
       state.eraseStrokes = clone(s.eraseStrokes || []);
       // US-092. normalizeNote drops a record that could not be placed rather
       // than failing the whole load, and fills in fields a file written by an
@@ -16529,7 +17051,7 @@ const BOM_MATERIAL_LIBRARY = [
       // Reopen behavior: a project that contains applied lines opens in
       // Manual Mode, ready to edit. An empty or image-only project stays
       // Auto-first so detection can run right away.
-      state.appMode = state.annotations.length > 0 ? 'manual' : 'auto';
+      state.appMode = (state.annotations.length > 0 || state.graphics.length > 0 || state.notes.length > 0) ? 'manual' : 'auto';
       state.autoMode = makeInitialAutoModeState();
       state.hiddenAnnIds = [];
       state.hiddenDraftIds = [];
@@ -16671,6 +17193,7 @@ const BOM_MATERIAL_LIBRARY = [
     if (state.images && state.images.length > 0) return true;
     // US-092: a board holding only text notes is still work worth saving.
     if (state.notes && state.notes.length > 0) return true;
+    if (state.graphics && state.graphics.length > 0) return true;
     if (typeof hasMeaningfulConstructionWork === 'function' && hasMeaningfulConstructionWork()) return true;
     if (typeof hasMeaningfulBomWork === 'function' && hasMeaningfulBomWork()) return true;
     if (state.autoMode && state.autoMode.draftAnnotations && state.autoMode.draftAnnotations.length > 0) return true;
@@ -17742,6 +18265,7 @@ const BOM_MATERIAL_LIBRARY = [
     state.images = state.images.filter(image => image.id !== deletedId);
     if (state.images.length === before) return false;
     state.eraseStrokes = state.eraseStrokes.filter(stroke => stroke.imageId !== deletedId);
+    state.graphics = (state.graphics || []).filter(graphic => graphic.sourceImageId !== deletedId);
     const am = state.autoMode;
     if (am) {
       am.anchors = (am.anchors || []).filter(a => a.sourceImageId !== deletedId);
@@ -17808,6 +18332,11 @@ const BOM_MATERIAL_LIBRARY = [
       const before = (state.notes || []).length;
       state.notes = (state.notes || []).filter(note => note.id !== state.selection.id);
       if (state.notes.length === before) return;
+    } else if (state.selection.kind === 'graphic') {
+      const before = (state.graphics || []).length;
+      state.graphics = (state.graphics || []).filter(graphic => graphic.id !== state.selection.id);
+      if (state.graphics.length === before) return;
+      state.graphicEdit = null;
     } else if (state.selection.kind === 'image') {
       // Delete every selected photo (Cmd/Ctrl+click group), skipping locked
       // ones. US-052: deleteImageById purges each photo's Auto Mode state.
@@ -18096,6 +18625,7 @@ function setSelection(kind, id) {
     // widen the annotation set through the helpers below.
     state.selectedImageIds = kind === 'image' && id != null ? [id] : [];
     state.selectedAnnotationIds = kind === 'annotation' && id != null ? [id] : [];
+    if (kind !== 'graphic') state.graphicEdit = null;
     if (kind === 'annotation') {
       const ann = getAnnotationById(id);
       if (ann) {
@@ -18111,6 +18641,10 @@ function setSelection(kind, id) {
     if (kind === 'note') {
       const note = getNoteById(id);
       if (note) state.drawColor = normalizeColorKey(note.color);
+    }
+    if (kind === 'graphic') {
+      const graphic = getBoardGraphicById(id);
+      if (graphic) state.drawColor = normalizeColorKey(graphic.color);
     }
     updateUI();
     requestRender();
@@ -18521,6 +19055,40 @@ function setSelection(kind, id) {
       return;
     }
 
+    if (state.tool === 'rectangle' || state.tool === 'circle' || state.tool === 'hexagon') {
+      beginTrackedInteraction('draw-graphic', {
+        kind: state.tool, startWorld: bgClonePoint(world), currentWorld: bgClonePoint(world),
+        shiftKey: !!e.shiftKey, altKey: !!e.altKey,
+      });
+      return;
+    }
+
+    // US-095: path-edit handles are precise targets on the already-selected
+    // graphic and therefore win over line/photo body hits below.
+    const selectedGraphic = getSelectedBoardGraphic();
+    if (selectedGraphic && state.graphicEdit && state.graphicEdit.graphicId === selectedGraphic.id) {
+      const editHit = hitTestGraphicEdit(world, selectedGraphic);
+      if (editHit) {
+        state.graphicEdit.active = editHit;
+        if (editHit.kind === 'node' || editHit.kind === 'handleIn' || editHit.kind === 'handleOut') {
+          beginTrackedInteraction('drag-graphic-part', { id:selectedGraphic.id, hit:editHit, startWorld:bgClonePoint(world), prevWorld:bgClonePoint(world), armed:false });
+        } else { updateUI(); requestRender(); }
+        return;
+      }
+    }
+
+    if (selectedGraphic && !state.graphicEdit) {
+      const resizeHit = bgHitResizeHandle(world, selectedGraphic);
+      if (resizeHit) {
+        const bounds = bgBounds(selectedGraphic);
+        beginTrackedInteraction('drag-graphic-resize', {
+          id:selectedGraphic.id, corner:resizeHit.name, startWorld:bgClonePoint(world), armed:false,
+          startBounds:clone(bounds), origin:bgOppositeCorner(bounds, resizeHit.name), startGraphic:clone(selectedGraphic),
+        });
+        return;
+      }
+    }
+
     const selectedAnnotation = getSelectedAnnotation();
     // Endpoint/handle editing is a single-line action — a multi-selection is
     // for moving/copying the group, so skip handles when more than one is picked.
@@ -18624,6 +19192,15 @@ function setSelection(kind, id) {
       return;
     }
 
+    if (!e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      const graphicHit = hitTestBoardGraphics(world);
+      if (graphicHit) {
+        setSelection('graphic', graphicHit.id);
+        beginTrackedInteraction('drag-graphic', { id:graphicHit.id, startWorld:bgClonePoint(world), prevWorld:bgClonePoint(world), armed:false });
+        return;
+      }
+    }
+
     // Shift is dedicated to building a line multi-selection. A Shift+click that
     // misses every line must NOT fall through to the image branch below, which
     // would call setSelection('image', …) and wipe the group the TD is
@@ -18690,6 +19267,33 @@ function setSelection(kind, id) {
 
     const interaction = state.interaction;
     if (!interaction) return;
+
+    if (interaction.type === 'draw-graphic') {
+      interaction.currentWorld = bgClonePoint(world);
+      interaction.shiftKey = !!e.shiftKey; interaction.altKey = !!e.altKey;
+      requestRender(); return;
+    }
+
+    if (interaction.type === 'drag-graphic') {
+      if (!dragArmed(interaction, world)) return;
+      const graphic=getBoardGraphicById(interaction.id); if (!graphic) return;
+      const dx=world.x-interaction.prevWorld.x, dy=world.y-interaction.prevWorld.y;
+      if (dx||dy) { bgMove(graphic,dx,dy); interaction.prevWorld=bgClonePoint(world); interaction.changed=true; requestRender(); }
+      return;
+    }
+
+    if (interaction.type === 'drag-graphic-part') {
+      if (!dragArmed(interaction, world)) return;
+      const graphic=getBoardGraphicById(interaction.id); if (!graphic) return;
+      if (bgMoveEditPart(graphic,interaction.hit,world)) { interaction.changed=true; interaction.prevWorld=bgClonePoint(world); requestRender(); }
+      return;
+    }
+
+    if (interaction.type === 'drag-graphic-resize') {
+      if (!dragArmed(interaction, world)) return;
+      const graphic=getBoardGraphicById(interaction.id); if (!graphic) return;
+      bgResizeFromCorner(graphic,interaction,world,!!e.shiftKey,!!e.altKey); interaction.changed=true; requestRender(); return;
+    }
 
     if (interaction.type === 'pan') {
       const dx = screen.x - interaction.startScreen.x;
@@ -18836,6 +19440,9 @@ function setSelection(kind, id) {
             if (note) moveNote(note, dx, dy);
           }
         }
+        if (interaction.groupedGraphicIds) for (const graphicId of interaction.groupedGraphicIds) {
+          const graphic = getBoardGraphicById(graphicId); if (graphic) bgMove(graphic, dx, dy);
+        }
         interaction.changed = true;
         interaction.prevWorld = world;
         requestRender();
@@ -18893,6 +19500,15 @@ function setSelection(kind, id) {
     if (!interaction) return;
 
     document.body.classList.remove('grabbing');
+
+    if (interaction.type === 'draw-graphic') {
+      const graphic = createBoardGraphicFromDrag(interaction.kind, interaction.startWorld, interaction.currentWorld, interaction.shiftKey, interaction.altKey);
+      state.interaction = null;
+      if (graphic) {
+        state.graphics.push(graphic); setSelection('graphic', graphic.id); pushHistoryIfChanged();
+      }
+      updateUI(); requestRender(); return;
+    }
 
     if (interaction.type === 'marquee') {
       if (interaction.moved) {
@@ -19120,6 +19736,7 @@ function startImageDrag(id, world) {
   if (!movingIds.includes(id)) movingIds.push(id);
   const annIdSet = new Set();
   const noteIdSet = new Set();
+  const graphicIdSet = new Set();
   for (const imgId of movingIds) {
     const im = getImageById(imgId);
     if (!im) continue;
@@ -19127,6 +19744,7 @@ function startImageDrag(id, world) {
     // US-092: and the text notes written on it — a remark whose arrow points at
     // a detail has to keep pointing at it.
     for (const note of getNotesOnImage(im)) noteIdSet.add(note.id);
+    for (const graphic of bgOwnedByImage(im.id)) graphicIdSet.add(graphic.id);
   }
   beginTrackedInteraction('drag-image', {
     id,
@@ -19136,6 +19754,7 @@ function startImageDrag(id, world) {
     imageIds: movingIds,
     groupedAnnotationIds: Array.from(annIdSet),
     groupedNoteIds: Array.from(noteIdSet),
+    groupedGraphicIds: Array.from(graphicIdSet),
   });
 }
 
@@ -19223,6 +19842,7 @@ function resizeImagesFromCorner(interaction, world) {
   // image, THEN scale each claimed object exactly once.
   const claimedAnnotations = new Map();
   const claimedNotes = new Map();
+  const claimedGraphics = new Map();
   const perImage = [];
   for (const s of start) {
     const image = getImageById(s.id);
@@ -19236,6 +19856,7 @@ function resizeImagesFromCorner(interaction, world) {
     for (const note of notesWithinBounds(previousBounds)) {
       if (!claimedNotes.has(note.id)) claimedNotes.set(note.id, factor);
     }
+    for (const graphic of bgOwnedByImage(s.id)) if (!claimedGraphics.has(graphic.id)) claimedGraphics.set(graphic.id, factor);
   }
   for (const { s, factor } of perImage) {
     const image = getImageById(s.id);
@@ -19253,6 +19874,9 @@ function resizeImagesFromCorner(interaction, world) {
   for (const [id, factor] of claimedNotes) {
     const note = getNoteById(id);
     if (note && validFactor(factor)) scaleNoteAbout(note, anchor, factor);
+  }
+  for (const [id, factor] of claimedGraphics) {
+    const graphic=getBoardGraphicById(id); if (graphic && validFactor(factor)) bgScaleAbout(graphic, anchor, factor, factor);
   }
 }
 
@@ -20198,6 +20822,10 @@ function onWheel(e) {
       return;
     }
 
+    if (e.key === 'Enter' && state.appMode !== 'auto' && state.tool === 'select' && state.selection.kind === 'graphic') {
+      e.preventDefault(); bgEnterEdit(getSelectedBoardGraphic()); return;
+    }
+
     if ((e.key === 'Delete' || e.key === 'Backspace') && state.selection.kind != null) {
       // In Auto Mode, project annotations/drafts are locked from Delete (use
       // Discard Drafts or Mark Review-Only). Deleting an added PHOTO is allowed
@@ -20223,8 +20851,11 @@ function onWheel(e) {
         updateUI();
         requestRender();
       } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'add-point'
-                 || state.tool === 'eraser' || state.tool === 'text') {
+                 || state.tool === 'eraser' || state.tool === 'text'
+                 || ['rectangle','circle','hexagon'].includes(state.tool)) {
         setTool('select');
+      } else if (state.selection.kind === 'graphic' && state.graphicEdit) {
+        bgExitEdit();
       } else if (state.selection.kind === 'annotation' && state.selection.part) {
         // First Escape drops back to whole-line nudging; the next one
         // clears the selection itself.
@@ -20337,7 +20968,10 @@ function onWheel(e) {
 
   function getActiveLineWidth() {
     const selectedAnnotation = getSelectedAnnotation();
-    return selectedAnnotation ? getLineWidth(selectedAnnotation) : normalizeLineWidth(state.lineWidth);
+    const selectedGraphic = getSelectedBoardGraphic();
+    return selectedAnnotation ? getLineWidth(selectedAnnotation)
+      : selectedGraphic ? normalizeLineWidth(selectedGraphic.lineWidth)
+        : normalizeLineWidth(state.lineWidth);
   }
 
   // A note's own size control (US-092), mirroring getActiveLineWidth exactly:
@@ -20478,6 +21112,8 @@ function toggleLabels() {
 }
 
 function fitSelectionOrAll() {
+  const selectedGraphic = getSelectedBoardGraphic();
+  if (selectedGraphic) { fitBoundsToViewport(bgBounds(selectedGraphic)); return; }
   const selectedImage = getSelectedImage();
   if (selectedImage) {
     fitBoundsToViewport(getImageBounds(selectedImage));
@@ -20777,6 +21413,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // US-092: the Text tool has no image requirement — a note can be a title or
     // a general remark on an otherwise empty board.
     el.toolText.classList.toggle('active', state.tool === 'text');
+    el.toolRectangle.classList.toggle('active', state.tool === 'rectangle');
+    el.toolCircle.classList.toggle('active', state.tool === 'circle');
+    el.toolHexagon.classList.toggle('active', state.tool === 'hexagon');
     el.lineStyleControl.hidden = state.tool === 'eraser';
     el.lineWidthChip.hidden = state.tool === 'eraser';
     el.brushSizeChip.hidden = state.tool !== 'eraser';
@@ -20791,6 +21430,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     const selectedAnnotation = getSelectedAnnotation();
     const selectedImage = getSelectedImage();
     const selectedNote = getSelectedNote();
+    const selectedGraphic = getSelectedBoardGraphic();
     // US-092: the note's size chip lives beside Line, gated on a note being
     // selected OR the Text tool being ready to place one — never both chips
     // hidden at once for a note, never both shown at once for a line.
@@ -20814,7 +21454,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // up in the toolbar instead of leaving the stale draw default on display.
     const activeColor = selectedAnnotation ? normalizeColorKey(selectedAnnotation.color)
       : selectedNote ? normalizeColorKey(selectedNote.color)
-        : state.drawColor;
+        : selectedGraphic ? normalizeColorKey(selectedGraphic.color) : state.drawColor;
     const activeArrowType = selectedAnnotation ? getArrowType(selectedAnnotation) : state.arrowType;
     const activeLineWidth = getActiveLineWidth();
     updateLineStyleControl(activeStyle);
@@ -20847,6 +21487,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           : 'Select – Drag the note to move it, drag the <strong>+</strong> handle out to point an arrow at a detail, double-click to edit the text, <span class="kbd">⌫</span> deletes it.';
       } else if (selectedAnnotation) {
         toolText = 'Select – Drag line, endpoints, curve shape handle, or label. <span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
+      } else if (selectedGraphic) {
+        toolText = state.graphicEdit
+          ? 'Edit Path – Select and drag nodes, handles, or segments; Cut Path opens the active point.'
+          : 'Select – Drag or resize the Board Graphic; press Enter or double-click its outline for Edit Path.';
       } else if (selectedImage) {
         toolText = 'Select – Drag the image to move it, drag a corner handle to resize, use wheel to zoom, or hold <span class="kbd">Space</span> to pan.';
       } else {
@@ -20864,6 +21508,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
             : 'Curved Line – Click the end point to finish.');
     } else if (state.tool === 'add-point') {
       toolText = 'Add Point – Click the selected curve to add a bend point there. <span class="kbd">Alt</span> while dragging a handle moves it alone.';
+    } else if (['rectangle','circle','hexagon'].includes(state.tool)) {
+      toolText = TOOL_MENU_LABELS[state.tool] + ' – Drag a bounding box. Shift locks ratio; Alt/Option draws from centre.';
     } else {
       toolText = imageCount === 0
         ? 'Eraser – Paste or import an image first, then drag to paint white over unwanted lines.'
@@ -20887,16 +21533,16 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         : '<strong>Board:</strong> <span class="muted">No image loaded • Press <span class="kbd">Ctrl/Cmd + V</span> to paste</span>';
       el.boardCard.classList.add('no-image');
     }
-    el.boardCard.classList.toggle('is-empty', imageCount === 0 && annotationCount === 0);
+    el.boardCard.classList.toggle('is-empty', imageCount === 0 && annotationCount === 0 && (state.graphics || []).length === 0 && (state.notes || []).length === 0);
     el.imageStatus.innerHTML = modeTag + boardHtml;
 
-    el.countStatus.innerHTML = '<strong>Images:</strong> ' + imageCount + ' &nbsp;•&nbsp; <strong>Annotations:</strong> ' + annotationCount;
-    el.deleteBtn.disabled = !(selectedAnnotation || selectedNote || (selectedImage && !selectedImage.locked));
+    el.countStatus.innerHTML = '<strong>Images:</strong> ' + imageCount + ' &nbsp;•&nbsp; <strong>Annotations:</strong> ' + annotationCount + ' &nbsp;•&nbsp; <strong>Graphics:</strong> ' + (state.graphics || []).length;
+    el.deleteBtn.disabled = !(selectedAnnotation || selectedNote || selectedGraphic || (selectedImage && !selectedImage.locked));
     const lineActionsEnabled = state.appMode !== 'auto';
     el.copyLineBtn.disabled = !(selectedAnnotation && lineActionsEnabled);
     el.reflectLineBtn.disabled = !(selectedAnnotation && lineActionsEnabled);
     el.pasteLineBtn.disabled = !(hasLineClipboard() && lineActionsEnabled);
-    el.saveProjectBtn.disabled = annotationCount === 0 && imageCount === 0;
+    el.saveProjectBtn.disabled = annotationCount === 0 && imageCount === 0 && (state.graphics || []).length === 0 && (state.notes || []).length === 0;
     el.clearBtn.disabled = annotationCount === 0;
     el.fitBtn.disabled = imageCount === 0;
     // Lock toggle reflects the selected image's state. Without a selection
@@ -20982,6 +21628,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // US-092: notes are Manual-only to CREATE. They still RENDER in Auto (they
     // are board content, like applied lines) — this only closes the tool.
     el.toolText.disabled = isAuto;
+    el.toolRectangle.disabled = isAuto;
+    el.toolCircle.disabled = isAuto;
+    el.toolHexagon.disabled = isAuto;
     if (isAuto) {
       el.toolEraser.disabled = true;
       // US-052: Delete in Auto Mode removes a selected PHOTO only (annotations/
@@ -32580,6 +33229,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     return state.images.length === 0
       && state.annotations.length === 0
       && (state.notes || []).length === 0
+      && (state.graphics || []).length === 0
       && state.eraseStrokes.length === 0
       && state.autoMode.draftAnnotations.length === 0
       && !state.autoMode.detection;
@@ -32598,6 +33248,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     if (!window.confirm('Reset the working board? This deletes all photos and lines so you can start a new bra sketch. Undo will bring them back.')) return;
 
     state.annotations = [];
+    state.graphics = [];
     state.deletedAutoAnnotations = [];
     state.images = [];
     state.eraseStrokes = [];
@@ -32606,6 +33257,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     state.notes = [];
     state.nextSequence = 1;
     state.selection = { kind: null, id: null };
+    state.graphicEdit = null;
     state.drawSession = null;
     state.eraseSession = null;
     state.interaction = null;
@@ -35323,6 +35975,30 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         };
       },
       getAnnotations: () => clone(state.annotations),
+      // US-095 focused browser proof. The mutation seams call the same model
+      // functions as the toolbar/pointer paths and keep measurement state out.
+      getGraphics: () => clone(state.graphics || []),
+      graphics: {
+        addLive: (kind, box, sourceImageId) => {
+          const b = box || {x:0,y:0,width:100,height:100};
+          const graphic = normalizeBoardGraphic({ id:bgNextId('bg'), shapeKind:kind, mode:'live', color:state.drawColor,
+            lineWidth:state.lineWidth, sourceImageId:sourceImageId == null?null:sourceImageId,
+            live:{center:{x:b.x+b.width/2,y:b.y+b.height/2},width:b.width,height:b.height} });
+          state.graphics.push(graphic); setSelection('graphic',graphic.id); pushHistoryIfChanged(); requestRender(); return clone(graphic);
+        },
+        enterEdit: id => { setSelection('graphic',id); return bgEnterEdit(getSelectedBoardGraphic()); },
+        activateNode: (graphicId, subpathIndex, nodeIndex) => {
+          const g=getBoardGraphicById(graphicId), sp=g&&g.subpaths[subpathIndex], n=sp&&sp.nodes[nodeIndex]; if(!n)return false;
+          setSelection('graphic',graphicId); state.graphicEdit={graphicId,active:{kind:'node',subpathId:sp.id,nodeId:n.id}}; updateUI();requestRender();return true;
+        },
+        activateSegment: (graphicId, subpathIndex, segmentIndex, t) => {
+          const g=getBoardGraphicById(graphicId), sp=g&&g.subpaths[subpathIndex], n=sp&&sp.nodes[segmentIndex]; if(!n)return false;
+          setSelection('graphic',graphicId); state.graphicEdit={graphicId,active:{kind:'segment',subpathId:sp.id,startNodeId:n.id,t:Number.isFinite(t)?t:0.5}};updateUI();requestRender();return true;
+        },
+        cut: () => cutSelectedBoardGraphicPath(),
+        setSegmentType: type => bgSetActiveSegmentType(type),
+        selectImage: id => { setSelection('image', id); return !!getSelectedImage(); },
+      },
       // US-092 Board text notes. getNotes is the read side; addNote is the
       // test seam that stands in for the Text tool before the pointer layer
       // exists, and behaves like it will — one history entry per note, so a
@@ -35831,6 +36507,7 @@ function exportNotes() {
 function drawBoardContentForExport() {
   for (const image of state.images) drawImageItem(image);
   for (const stroke of state.eraseStrokes) drawEraseStroke(stroke);
+  drawBoardGraphics();
   const annotations = visibleExportAnnotations();
   for (const ann of annotations) drawLineCore(ann, 1);
   for (const note of exportNotes()) drawNote(note);
@@ -35844,6 +36521,7 @@ function getContentBounds() {
   const boxes = [];
   for (const image of state.images) boxes.push(getImageBounds(image));
   for (const ann of visibleExportAnnotations()) boxes.push(getAnnotationBounds(ann));
+  for (const graphic of (state.graphics || [])) boxes.push(bgBounds(graphic));
   // A note at the edge of the board must widen the frame, or the export crops
   // the very remark it was written to deliver. Leader tips count too — they
   // reach away from the box, and an arrow with its head sliced off is worse
@@ -37723,6 +38401,7 @@ function makeExportFileName() {
     // too — both are absolute world geometry that nothing else would move.
     scaleAnnotationsForImageResize(previousBounds, anchor, factor);
     scaleNotesForImageResize(previousBounds, anchor, factor);
+    scaleOwnedGraphicsForImageResize(image.id, anchor, factor);
   }
 
   function pointInLabelBounds(point, labelPos, seq, padding) {
@@ -39425,6 +40104,14 @@ function onDoubleClick(e) {
     openLabelEditor(annHit.id);
     return;
   }
+  if (state.appMode !== 'auto') {
+    const graphicHit = hitTestBoardGraphics(world);
+    if (graphicHit) {
+      setSelection('graphic', graphicHit.id);
+      bgEnterEdit(getSelectedBoardGraphic());
+      return;
+    }
+  }
   const imageHit = hitTestImages(world);
   if (imageHit) {
     setSelection('image', imageHit.id);
@@ -39502,6 +40189,10 @@ function requestRender() {
       drawEraseStrokeSession(state.eraseSession);
     }
 
+    // US-095: construction graphics sit above sketches/erasures but below POM
+    // annotations, so they remain visual context and never obscure the work.
+    drawBoardGraphics();
+
     // Auto Mode offline detection overlay — drawn below project annotations
     // so it never hides committed lines, but above the image so the TD can
     // sanity-check bbox / axis / band before generating POMs.
@@ -39575,6 +40266,7 @@ function requestRender() {
     if (state.drawSession) {
       drawPreview();
     }
+    drawBoardGraphicPreview();
 
     // Highlight every selected image. A single selection keeps its resize
     // handles; a Cmd/Ctrl+click group shows outlines only (move-together).
@@ -39629,6 +40321,11 @@ function requestRender() {
     if (state.appMode !== 'auto') {
       const selectedNote = getSelectedNote();
       if (selectedNote && selectedNote.id !== editingNoteId) drawNoteSelection(selectedNote);
+    }
+
+    if (state.appMode !== 'auto') {
+      const selectedGraphic = getSelectedBoardGraphic();
+      if (selectedGraphic) drawBoardGraphicSelection(selectedGraphic);
     }
 
     if (state.appMode === 'auto') {

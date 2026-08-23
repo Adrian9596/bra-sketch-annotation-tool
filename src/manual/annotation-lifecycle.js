@@ -15,6 +15,7 @@
     state.images = state.images.filter(image => image.id !== deletedId);
     if (state.images.length === before) return false;
     state.eraseStrokes = state.eraseStrokes.filter(stroke => stroke.imageId !== deletedId);
+    state.graphics = (state.graphics || []).filter(graphic => graphic.sourceImageId !== deletedId);
     const am = state.autoMode;
     if (am) {
       am.anchors = (am.anchors || []).filter(a => a.sourceImageId !== deletedId);
@@ -81,6 +82,11 @@
       const before = (state.notes || []).length;
       state.notes = (state.notes || []).filter(note => note.id !== state.selection.id);
       if (state.notes.length === before) return;
+    } else if (state.selection.kind === 'graphic') {
+      const before = (state.graphics || []).length;
+      state.graphics = (state.graphics || []).filter(graphic => graphic.id !== state.selection.id);
+      if (state.graphics.length === before) return;
+      state.graphicEdit = null;
     } else if (state.selection.kind === 'image') {
       // Delete every selected photo (Cmd/Ctrl+click group), skipping locked
       // ones. US-052: deleteImageById purges each photo's Auto Mode state.

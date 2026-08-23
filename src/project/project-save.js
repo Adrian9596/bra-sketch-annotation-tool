@@ -13,6 +13,7 @@
       savedAt: new Date().toISOString(),
       state: {
         annotations: clone(state.annotations),
+        graphics: clone(state.graphics || []),
         images: state.images.map(img => ({
           id: img.id, dataURL: img.dataURL,
           x: img.x, y: img.y, width: img.width, height: img.height,

@@ -16,6 +16,7 @@ function setSelection(kind, id) {
     // widen the annotation set through the helpers below.
     state.selectedImageIds = kind === 'image' && id != null ? [id] : [];
     state.selectedAnnotationIds = kind === 'annotation' && id != null ? [id] : [];
+    if (kind !== 'graphic') state.graphicEdit = null;
     if (kind === 'annotation') {
       const ann = getAnnotationById(id);
       if (ann) {
@@ -31,6 +32,10 @@ function setSelection(kind, id) {
     if (kind === 'note') {
       const note = getNoteById(id);
       if (note) state.drawColor = normalizeColorKey(note.color);
+    }
+    if (kind === 'graphic') {
+      const graphic = getBoardGraphicById(id);
+      if (graphic) state.drawColor = normalizeColorKey(graphic.color);
     }
     updateUI();
     requestRender();

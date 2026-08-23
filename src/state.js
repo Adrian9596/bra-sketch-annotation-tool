@@ -59,6 +59,9 @@
     // project + history exactly like lineWidth/drawColor.
     noteFontSize: NOTE_DEFAULT_FONT_SIZE,
     annotations: [],
+    // US-095: visual vector construction shapes. Deliberately separate from
+    // annotations, which are the measurement/POM collection.
+    graphics: [],
     deletedAutoAnnotations: [],
     // US-047: POM labels whose drawn line the TD deleted. Excluded from the
     // exported spec exactly like a hidden line (TD: "delete = hide"), until a
@@ -78,6 +81,8 @@
     showLabels: true,
     nextSequence: 1,
     selection: { kind: null, id: null },
+    // Session-only focused path-edit state for one selected Board Graphic.
+    graphicEdit: null,
     // Cmd/Ctrl+click multi-selection of images. Always includes the primary
     // `selection` when that is an image; empty otherwise. The primary stays the
     // resize/spec anchor — this set only widens what a group drag / delete acts

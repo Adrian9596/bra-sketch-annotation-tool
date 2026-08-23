@@ -47,6 +47,7 @@
     "construction-measurement-browser-test": "node test/browser-smoke.mjs",
     "mainpage-check": "node scripts/mainpage-check.mjs",
     "board-toolbar-check": "node scripts/board-toolbar-check.mjs",
+    "board-shape-check": "node scripts/board-shape-check.mjs",
     "keyboard-shortcuts-check": "node scripts/keyboard-shortcuts-check.mjs",
     "board-interaction-check": "node scripts/board-interaction-check.mjs",
     "curve-polyline-tests": "node scripts/curve-polyline-tests.mjs",

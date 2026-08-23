@@ -105,6 +105,30 @@
         };
       },
       getAnnotations: () => clone(state.annotations),
+      // US-095 focused browser proof. The mutation seams call the same model
+      // functions as the toolbar/pointer paths and keep measurement state out.
+      getGraphics: () => clone(state.graphics || []),
+      graphics: {
+        addLive: (kind, box, sourceImageId) => {
+          const b = box || {x:0,y:0,width:100,height:100};
+          const graphic = normalizeBoardGraphic({ id:bgNextId('bg'), shapeKind:kind, mode:'live', color:state.drawColor,
+            lineWidth:state.lineWidth, sourceImageId:sourceImageId == null?null:sourceImageId,
+            live:{center:{x:b.x+b.width/2,y:b.y+b.height/2},width:b.width,height:b.height} });
+          state.graphics.push(graphic); setSelection('graphic',graphic.id); pushHistoryIfChanged(); requestRender(); return clone(graphic);
+        },
+        enterEdit: id => { setSelection('graphic',id); return bgEnterEdit(getSelectedBoardGraphic()); },
+        activateNode: (graphicId, subpathIndex, nodeIndex) => {
+          const g=getBoardGraphicById(graphicId), sp=g&&g.subpaths[subpathIndex], n=sp&&sp.nodes[nodeIndex]; if(!n)return false;
+          setSelection('graphic',graphicId); state.graphicEdit={graphicId,active:{kind:'node',subpathId:sp.id,nodeId:n.id}}; updateUI();requestRender();return true;
+        },
+        activateSegment: (graphicId, subpathIndex, segmentIndex, t) => {
+          const g=getBoardGraphicById(graphicId), sp=g&&g.subpaths[subpathIndex], n=sp&&sp.nodes[segmentIndex]; if(!n)return false;
+          setSelection('graphic',graphicId); state.graphicEdit={graphicId,active:{kind:'segment',subpathId:sp.id,startNodeId:n.id,t:Number.isFinite(t)?t:0.5}};updateUI();requestRender();return true;
+        },
+        cut: () => cutSelectedBoardGraphicPath(),
+        setSegmentType: type => bgSetActiveSegmentType(type),
+        selectImage: id => { setSelection('image', id); return !!getSelectedImage(); },
+      },
       // US-092 Board text notes. getNotes is the read side; addNote is the
       // test seam that stands in for the Text tool before the pointer layer
       // exists, and behaves like it will — one history entry per note, so a

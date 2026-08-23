@@ -14,6 +14,9 @@
     toolCurved: document.getElementById('toolCurved'),
     toolEraser: document.getElementById('toolEraser'),
     toolText: document.getElementById('toolText'),
+    toolRectangle: document.getElementById('toolRectangle'),
+    toolCircle: document.getElementById('toolCircle'),
+    toolHexagon: document.getElementById('toolHexagon'),
     // US-093 / ADR 0053: Straight/Curved/Eraser/Text moved into one drop-down
     // to free this slot — see toolsMenuBtn below.
     toolAddPoint: document.getElementById('toolAddPoint'),
@@ -41,6 +44,10 @@
     pasteLineBtn: document.getElementById('pasteLineBtn'),
     reflectLineBtn: document.getElementById('reflectLineBtn'),
     deleteBtn: document.getElementById('deleteBtn'),
+    editPathBtn: document.getElementById('editPathBtn'),
+    cutPathBtn: document.getElementById('cutPathBtn'),
+    segmentStraightBtn: document.getElementById('segmentStraightBtn'),
+    segmentCurvedBtn: document.getElementById('segmentCurvedBtn'),
     clearBtn: document.getElementById('clearBtn'),
     lockImageBtn: document.getElementById('lockImageBtn'),
     lockImageLabel: document.getElementById('lockImageLabel'),

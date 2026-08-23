@@ -13,6 +13,9 @@
     el.toolCurved.addEventListener('click', () => setTool('curved'));
     el.toolEraser.addEventListener('click', () => setTool('eraser'));
     el.toolText.addEventListener('click', () => setTool('text'));
+    el.toolRectangle.addEventListener('click', () => setTool('rectangle'));
+    el.toolCircle.addEventListener('click', () => setTool('circle'));
+    el.toolHexagon.addEventListener('click', () => setTool('hexagon'));
     // US-093 / ADR 0053: only visible while a curved annotation is selected
     // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
     // no extra guard needed here.
@@ -65,6 +68,10 @@
     el.pasteLineBtn.addEventListener('click', pasteLineFromClipboard);
     el.reflectLineBtn.addEventListener('click', reflectSelectedAnnotation);
     el.deleteBtn.addEventListener('click', deleteSelected);
+    el.editPathBtn.addEventListener('click', () => bgEnterEdit(getSelectedBoardGraphic()));
+    el.cutPathBtn.addEventListener('click', cutSelectedBoardGraphicPath);
+    el.segmentStraightBtn.addEventListener('click', () => bgSetActiveSegmentType('line'));
+    el.segmentCurvedBtn.addEventListener('click', () => bgSetActiveSegmentType('curve'));
     el.clearBtn.addEventListener('click', clearAllAnnotations);
     el.lockImageBtn.addEventListener('click', toggleSelectedImageLock);
     el.fitBtn.addEventListener('click', fitSelectionOrAll);
@@ -235,6 +242,7 @@
       return;
     }
     state.tool = tool;
+    if (tool !== 'select') state.graphicEdit = null;
     state.drawSession = null;
     state.eraseSession = null;
     if (tool === 'eraser') {
@@ -302,6 +310,7 @@
   function setLineWidth(lineWidth) {
     const normalized = normalizeLineWidth(lineWidth);
     state.lineWidth = normalized;
+    if (applyToSelectedBoardGraphic({ lineWidth: normalized })) return;
     applyToSelectedAnnotation({ lineWidth: normalized });
   }
 
@@ -321,6 +330,7 @@
     // can never double-apply; when nothing is selected both calls fall through
     // to just updating the draw default.
     if (applyColorToSelectedNote(color)) return;
+    if (applyToSelectedBoardGraphic({ color: normalizeColorKey(color) })) return;
     applyToSelectedAnnotation({ color });
   }
 
@@ -373,6 +383,13 @@
     if (before !== after) pushHistoryIfChanged();
     updateUI();
     requestRender();
+  }
+
+  function applyToSelectedBoardGraphic(settings) {
+    const graphic = getSelectedBoardGraphic();
+    if (!graphic) return false;
+    Object.assign(graphic, settings);
+    pushHistoryIfChanged(); updateUI(); requestRender(); return true;
   }
 
   // ---- Calibration ----

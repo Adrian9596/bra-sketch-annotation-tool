@@ -58,6 +58,7 @@ function exportNotes() {
 function drawBoardContentForExport() {
   for (const image of state.images) drawImageItem(image);
   for (const stroke of state.eraseStrokes) drawEraseStroke(stroke);
+  drawBoardGraphics();
   const annotations = visibleExportAnnotations();
   for (const ann of annotations) drawLineCore(ann, 1);
   for (const note of exportNotes()) drawNote(note);
@@ -71,6 +72,7 @@ function getContentBounds() {
   const boxes = [];
   for (const image of state.images) boxes.push(getImageBounds(image));
   for (const ann of visibleExportAnnotations()) boxes.push(getAnnotationBounds(ann));
+  for (const graphic of (state.graphics || [])) boxes.push(bgBounds(graphic));
   // A note at the edge of the board must widen the frame, or the export crops
   // the very remark it was written to deliver. Leader tips count too — they
   // reach away from the box, and an arrow with its head sliced off is worse

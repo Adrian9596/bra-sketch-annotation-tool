@@ -286,6 +286,10 @@
       return;
     }
 
+    if (e.key === 'Enter' && state.appMode !== 'auto' && state.tool === 'select' && state.selection.kind === 'graphic') {
+      e.preventDefault(); bgEnterEdit(getSelectedBoardGraphic()); return;
+    }
+
     if ((e.key === 'Delete' || e.key === 'Backspace') && state.selection.kind != null) {
       // In Auto Mode, project annotations/drafts are locked from Delete (use
       // Discard Drafts or Mark Review-Only). Deleting an added PHOTO is allowed
@@ -311,8 +315,11 @@
         updateUI();
         requestRender();
       } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'add-point'
-                 || state.tool === 'eraser' || state.tool === 'text') {
+                 || state.tool === 'eraser' || state.tool === 'text'
+                 || ['rectangle','circle','hexagon'].includes(state.tool)) {
         setTool('select');
+      } else if (state.selection.kind === 'graphic' && state.graphicEdit) {
+        bgExitEdit();
       } else if (state.selection.kind === 'annotation' && state.selection.part) {
         // First Escape drops back to whole-line nudging; the next one
         // clears the selection itself.

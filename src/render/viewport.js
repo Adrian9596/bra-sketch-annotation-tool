@@ -117,6 +117,14 @@ function onDoubleClick(e) {
     openLabelEditor(annHit.id);
     return;
   }
+  if (state.appMode !== 'auto') {
+    const graphicHit = hitTestBoardGraphics(world);
+    if (graphicHit) {
+      setSelection('graphic', graphicHit.id);
+      bgEnterEdit(getSelectedBoardGraphic());
+      return;
+    }
+  }
   const imageHit = hitTestImages(world);
   if (imageHit) {
     setSelection('image', imageHit.id);

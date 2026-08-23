@@ -16,6 +16,7 @@ export const SOURCE_PARTS = [
   'src/auto/telemetry/session-timer.js',
   'src/curves.js',
   'src/geometry/math.js',
+  'src/manual/board-graphics.js',
   'src/ui/toast.js',
   'src/ui/dialogs/core.js',
   'src/ui/dialogs/command-palette-dialog.js',

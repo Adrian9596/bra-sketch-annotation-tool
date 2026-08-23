@@ -21,6 +21,7 @@
       lineWidth: state.lineWidth,
       noteFontSize: state.noteFontSize,
       annotations: clone(state.annotations),
+      graphics: clone(state.graphics || []),
       images: state.images.map(stripImageForSnapshot),
       eraseStrokes: clone(state.eraseStrokes),
       notes: clone(state.notes || []),
@@ -81,6 +82,8 @@
     state.noteFontSize = normalizeNoteFontSize(snapshot.noteFontSize);
     state.annotations = clone(snapshot.annotations || []);
     state.annotations.forEach(ensureCurveControls);
+    state.graphics = normalizeBoardGraphics(snapshot.graphics || []);
+    state.graphicEdit = null;
     state.eraseStrokes = clone(snapshot.eraseStrokes || []);
     state.notes = (snapshot.notes || []).map(normalizeNote).filter(Boolean);
     state.nextSequence = snapshot.nextSequence || (state.annotations.length + 1);

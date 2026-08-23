@@ -2898,6 +2898,9 @@
               <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6.5V5h14v1.5"/><path d="M12 5v14"/><path d="M9 19h6"/></svg>
               Text note
             </button>
+            <button id="toolRectangle" type="button" role="menuitem" title="Rectangle — drag a bounding box">Rectangle</button>
+            <button id="toolCircle" type="button" role="menuitem" title="Circle — drag a bounding box">Circle</button>
+            <button id="toolHexagon" type="button" role="menuitem" title="Regular hexagon — drag a bounding box">Hexagon</button>
           </div>
         </div>
         <!-- US-093 / ADR 0053: only reachable while a curved annotation is
@@ -2988,6 +2991,10 @@
         </svg>
         <span id="lockImageLabel">Lock</span>
       </button>
+      <button id="editPathBtn" type="button" title="Edit the selected Board Graphic path" hidden>Edit Path</button>
+      <button id="cutPathBtn" type="button" title="Cut at the active node or segment" hidden>Cut Path</button>
+      <button id="segmentStraightBtn" type="button" title="Make the active path segment straight" hidden>Straight edge</button>
+      <button id="segmentCurvedBtn" type="button" title="Make the active path segment curved" hidden>Curved edge</button>
     </div>
 
     <div class="toolbar-spacer" aria-hidden="true"></div>
@@ -3314,6 +3321,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=460dc9c25c98"></script>
+<script src="app.js?v=47ccfc4646c7"></script>
 </body>
 </html>

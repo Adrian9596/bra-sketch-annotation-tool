@@ -44,6 +44,7 @@
     return state.images.length === 0
       && state.annotations.length === 0
       && (state.notes || []).length === 0
+      && (state.graphics || []).length === 0
       && state.eraseStrokes.length === 0
       && state.autoMode.draftAnnotations.length === 0
       && !state.autoMode.detection;
@@ -62,6 +63,7 @@
     if (!window.confirm('Reset the working board? This deletes all photos and lines so you can start a new bra sketch. Undo will bring them back.')) return;
 
     state.annotations = [];
+    state.graphics = [];
     state.deletedAutoAnnotations = [];
     state.images = [];
     state.eraseStrokes = [];
@@ -70,6 +72,7 @@
     state.notes = [];
     state.nextSequence = 1;
     state.selection = { kind: null, id: null };
+    state.graphicEdit = null;
     state.drawSession = null;
     state.eraseSession = null;
     state.interaction = null;

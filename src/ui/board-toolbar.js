@@ -13,7 +13,7 @@
     ['toolsMenuWrap', 'toolsMenuBtn', 'toolsMenuList'],
   ];
 
-  const TOOL_MENU_LABELS = { straight: 'Straight', curved: 'Curved', eraser: 'Eraser', text: 'Text' };
+  const TOOL_MENU_LABELS = { straight: 'Straight', curved: 'Curved', eraser: 'Eraser', text: 'Text', rectangle:'Rectangle', circle:'Circle', hexagon:'Hexagon' };
 
   function boardToolbarMenuRecords() {
     return BOARD_TOOLBAR_MENUS.map(([wrapId, buttonId, listId]) => ({
@@ -99,10 +99,11 @@
     const isAuto = state.appMode === 'auto';
     const imageCount = state.images.length;
     const annotationCount = state.annotations.length;
-    const empty = imageCount === 0 && annotationCount === 0;
+    const empty = imageCount === 0 && annotationCount === 0 && (state.graphics || []).length === 0 && (state.notes || []).length === 0;
     const selectedAnnotation = getSelectedAnnotation();
     const selectedImage = getSelectedImage();
     const selectedNote = getSelectedNote();
+    const selectedGraphic = getSelectedBoardGraphic();
     const auto = state.autoMode;
     const hasSource = !!pickAutoSourceImage();
     const hasAnchors = auto.anchors.length > 0;
@@ -134,8 +135,14 @@
     setBoardToolbarHidden(el.pasteLineBtn, !selectionMode || el.pasteLineBtn.disabled);
     // US-092: Delete is the note's only toolbar action — Copy / Reflect / Paste
     // are line operations and stay hidden for a selected note.
-    setBoardToolbarHidden(el.deleteBtn, !selectionMode || !(selectedAnnotation || selectedImage || selectedNote));
+    setBoardToolbarHidden(el.deleteBtn, !selectionMode || !(selectedAnnotation || selectedImage || selectedNote || selectedGraphic));
     setBoardToolbarHidden(el.lockImageBtn, !selectionMode || !selectedImage);
+    const editingGraphic = !!(selectedGraphic && state.graphicEdit && state.graphicEdit.graphicId === selectedGraphic.id);
+    const activeGraphicPart = editingGraphic && state.graphicEdit.active;
+    setBoardToolbarHidden(el.editPathBtn, !selectionMode || !selectedGraphic || editingGraphic);
+    setBoardToolbarHidden(el.cutPathBtn, !selectionMode || !editingGraphic || !activeGraphicPart || !['node','segment'].includes(activeGraphicPart.kind));
+    setBoardToolbarHidden(el.segmentStraightBtn, !selectionMode || !editingGraphic || !activeGraphicPart || activeGraphicPart.kind !== 'segment');
+    setBoardToolbarHidden(el.segmentCurvedBtn, !selectionMode || !editingGraphic || !activeGraphicPart || activeGraphicPart.kind !== 'segment');
     const contextGroup = document.getElementById('boardContextActions');
     if (contextGroup) {
       const actionable = Array.from(contextGroup.querySelectorAll('button'))

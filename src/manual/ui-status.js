@@ -36,6 +36,9 @@
     // US-092: the Text tool has no image requirement — a note can be a title or
     // a general remark on an otherwise empty board.
     el.toolText.classList.toggle('active', state.tool === 'text');
+    el.toolRectangle.classList.toggle('active', state.tool === 'rectangle');
+    el.toolCircle.classList.toggle('active', state.tool === 'circle');
+    el.toolHexagon.classList.toggle('active', state.tool === 'hexagon');
     el.lineStyleControl.hidden = state.tool === 'eraser';
     el.lineWidthChip.hidden = state.tool === 'eraser';
     el.brushSizeChip.hidden = state.tool !== 'eraser';
@@ -50,6 +53,7 @@
     const selectedAnnotation = getSelectedAnnotation();
     const selectedImage = getSelectedImage();
     const selectedNote = getSelectedNote();
+    const selectedGraphic = getSelectedBoardGraphic();
     // US-092: the note's size chip lives beside Line, gated on a note being
     // selected OR the Text tool being ready to place one — never both chips
     // hidden at once for a note, never both shown at once for a line.
@@ -73,7 +77,7 @@
     // up in the toolbar instead of leaving the stale draw default on display.
     const activeColor = selectedAnnotation ? normalizeColorKey(selectedAnnotation.color)
       : selectedNote ? normalizeColorKey(selectedNote.color)
-        : state.drawColor;
+        : selectedGraphic ? normalizeColorKey(selectedGraphic.color) : state.drawColor;
     const activeArrowType = selectedAnnotation ? getArrowType(selectedAnnotation) : state.arrowType;
     const activeLineWidth = getActiveLineWidth();
     updateLineStyleControl(activeStyle);
@@ -106,6 +110,10 @@
           : 'Select – Drag the note to move it, drag the <strong>+</strong> handle out to point an arrow at a detail, double-click to edit the text, <span class="kbd">⌫</span> deletes it.';
       } else if (selectedAnnotation) {
         toolText = 'Select – Drag line, endpoints, curve shape handle, or label. <span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
+      } else if (selectedGraphic) {
+        toolText = state.graphicEdit
+          ? 'Edit Path – Select and drag nodes, handles, or segments; Cut Path opens the active point.'
+          : 'Select – Drag or resize the Board Graphic; press Enter or double-click its outline for Edit Path.';
       } else if (selectedImage) {
         toolText = 'Select – Drag the image to move it, drag a corner handle to resize, use wheel to zoom, or hold <span class="kbd">Space</span> to pan.';
       } else {
@@ -123,6 +131,8 @@
             : 'Curved Line – Click the end point to finish.');
     } else if (state.tool === 'add-point') {
       toolText = 'Add Point – Click the selected curve to add a bend point there. <span class="kbd">Alt</span> while dragging a handle moves it alone.';
+    } else if (['rectangle','circle','hexagon'].includes(state.tool)) {
+      toolText = TOOL_MENU_LABELS[state.tool] + ' – Drag a bounding box. Shift locks ratio; Alt/Option draws from centre.';
     } else {
       toolText = imageCount === 0
         ? 'Eraser – Paste or import an image first, then drag to paint white over unwanted lines.'
@@ -146,16 +156,16 @@
         : '<strong>Board:</strong> <span class="muted">No image loaded • Press <span class="kbd">Ctrl/Cmd + V</span> to paste</span>';
       el.boardCard.classList.add('no-image');
     }
-    el.boardCard.classList.toggle('is-empty', imageCount === 0 && annotationCount === 0);
+    el.boardCard.classList.toggle('is-empty', imageCount === 0 && annotationCount === 0 && (state.graphics || []).length === 0 && (state.notes || []).length === 0);
     el.imageStatus.innerHTML = modeTag + boardHtml;
 
-    el.countStatus.innerHTML = '<strong>Images:</strong> ' + imageCount + ' &nbsp;•&nbsp; <strong>Annotations:</strong> ' + annotationCount;
-    el.deleteBtn.disabled = !(selectedAnnotation || selectedNote || (selectedImage && !selectedImage.locked));
+    el.countStatus.innerHTML = '<strong>Images:</strong> ' + imageCount + ' &nbsp;•&nbsp; <strong>Annotations:</strong> ' + annotationCount + ' &nbsp;•&nbsp; <strong>Graphics:</strong> ' + (state.graphics || []).length;
+    el.deleteBtn.disabled = !(selectedAnnotation || selectedNote || selectedGraphic || (selectedImage && !selectedImage.locked));
     const lineActionsEnabled = state.appMode !== 'auto';
     el.copyLineBtn.disabled = !(selectedAnnotation && lineActionsEnabled);
     el.reflectLineBtn.disabled = !(selectedAnnotation && lineActionsEnabled);
     el.pasteLineBtn.disabled = !(hasLineClipboard() && lineActionsEnabled);
-    el.saveProjectBtn.disabled = annotationCount === 0 && imageCount === 0;
+    el.saveProjectBtn.disabled = annotationCount === 0 && imageCount === 0 && (state.graphics || []).length === 0 && (state.notes || []).length === 0;
     el.clearBtn.disabled = annotationCount === 0;
     el.fitBtn.disabled = imageCount === 0;
     // Lock toggle reflects the selected image's state. Without a selection
@@ -241,6 +251,9 @@
     // US-092: notes are Manual-only to CREATE. They still RENDER in Auto (they
     // are board content, like applied lines) — this only closes the tool.
     el.toolText.disabled = isAuto;
+    el.toolRectangle.disabled = isAuto;
+    el.toolCircle.disabled = isAuto;
+    el.toolHexagon.disabled = isAuto;
     if (isAuto) {
       el.toolEraser.disabled = true;
       // US-052: Delete in Auto Mode removes a selected PHOTO only (annotations/

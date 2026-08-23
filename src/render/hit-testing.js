@@ -390,6 +390,7 @@
     // too — both are absolute world geometry that nothing else would move.
     scaleAnnotationsForImageResize(previousBounds, anchor, factor);
     scaleNotesForImageResize(previousBounds, anchor, factor);
+    scaleOwnedGraphicsForImageResize(image.id, anchor, factor);
   }
 
   function pointInLabelBounds(point, labelPos, seq, padding) {

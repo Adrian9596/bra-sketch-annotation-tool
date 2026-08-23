@@ -62,6 +62,7 @@
     if (state.images && state.images.length > 0) return true;
     // US-092: a board holding only text notes is still work worth saving.
     if (state.notes && state.notes.length > 0) return true;
+    if (state.graphics && state.graphics.length > 0) return true;
     if (typeof hasMeaningfulConstructionWork === 'function' && hasMeaningfulConstructionWork()) return true;
     if (typeof hasMeaningfulBomWork === 'function' && hasMeaningfulBomWork()) return true;
     if (state.autoMode && state.autoMode.draftAnnotations && state.autoMode.draftAnnotations.length > 0) return true;

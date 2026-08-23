@@ -63,7 +63,10 @@
 
   function getActiveLineWidth() {
     const selectedAnnotation = getSelectedAnnotation();
-    return selectedAnnotation ? getLineWidth(selectedAnnotation) : normalizeLineWidth(state.lineWidth);
+    const selectedGraphic = getSelectedBoardGraphic();
+    return selectedAnnotation ? getLineWidth(selectedAnnotation)
+      : selectedGraphic ? normalizeLineWidth(selectedGraphic.lineWidth)
+        : normalizeLineWidth(state.lineWidth);
   }
 
   // A note's own size control (US-092), mirroring getActiveLineWidth exactly:

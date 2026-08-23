@@ -74,6 +74,9 @@
 
       state.annotations = clone(s.annotations || []);
       state.annotations.forEach(ensureCurveControls);
+      // US-095 additive migration: pre-shape projects omit this key.
+      state.graphics = normalizeBoardGraphics(s.graphics || []);
+      state.graphicEdit = null;
       state.eraseStrokes = clone(s.eraseStrokes || []);
       // US-092. normalizeNote drops a record that could not be placed rather
       // than failing the whole load, and fills in fields a file written by an
@@ -102,7 +105,7 @@
       // Reopen behavior: a project that contains applied lines opens in
       // Manual Mode, ready to edit. An empty or image-only project stays
       // Auto-first so detection can run right away.
-      state.appMode = state.annotations.length > 0 ? 'manual' : 'auto';
+      state.appMode = (state.annotations.length > 0 || state.graphics.length > 0 || state.notes.length > 0) ? 'manual' : 'auto';
       state.autoMode = makeInitialAutoModeState();
       state.hiddenAnnIds = [];
       state.hiddenDraftIds = [];

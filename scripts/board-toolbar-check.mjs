@@ -85,7 +85,7 @@ async function main() {
   // below.
   //
   // US-093 / ADR 0053 code review, 2026-08-21: a FOURTH claim went missing with
-  // them — that the four drawing tools still exist and are reachable at all.
+  // them — that every drawing tool still exists and is reachable at all.
   // VISIBLE_BUTTONS filters on rect.width > 0, and a button inside the `hidden`
   // #toolsMenuList measures 0x0, so deleting toolCurved from index.html would
   // have left this whole suite green. The Tools-menu block further down opens
@@ -121,7 +121,7 @@ async function main() {
   console.log('board-toolbar-check: menu keyboard ok');
 
   // The Tools drop-down carries the same contract as File/Export/More above,
-  // and it is the only place the four drawing tools can still be seen — see
+  // and it is the only place the drawing tools can still be seen — see
   // the empty-Manual comment. Assert the ids it holds, which of them are
   // actually reachable right now, and the same focus/ARIA/Escape behaviour.
   await s.eval(`document.getElementById('toolsMenuBtn').click()`);
@@ -135,29 +135,32 @@ async function main() {
   })`);
   check(toolsOpen.open && toolsOpen.expanded === 'true', 'Tools menu did not open with aria-expanded=true');
   check(JSON.stringify(toolsOpen.items) === JSON.stringify([
-    'toolStraight', 'toolCurved', 'toolEraser', 'toolText',
-  ]), `Tools menu must still hold all four drawing tools, got ${JSON.stringify(toolsOpen.items)}`);
+    'toolStraight', 'toolCurved', 'toolEraser', 'toolText', 'toolRectangle', 'toolCircle', 'toolHexagon',
+  ]), `Tools menu must hold all seven drawing tools, got ${JSON.stringify(toolsOpen.items)}`);
   // Eraser paints white over a photo, so it stays out of reach until one
   // exists; the populated-Manual check below is where it has to come back.
   check(JSON.stringify(toolsOpen.reachable) === JSON.stringify([
-    'toolStraight', 'toolCurved', 'toolText',
+    'toolStraight', 'toolCurved', 'toolText', 'toolRectangle', 'toolCircle', 'toolHexagon',
   ]), `empty Manual should offer Straight/Curved/Text and withhold Eraser, got ${JSON.stringify(toolsOpen.reachable)}`);
   check(toolsOpen.focus === 'toolStraight', `Tools menu should focus first enabled item, got ${toolsOpen.focus}`);
   await s.eval(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key:'End', bubbles:true }))`);
-  check(await s.eval(`document.activeElement.id === 'toolText'`), 'End should skip the hidden Eraser and focus Text note');
+  check(await s.eval(`document.activeElement.id === 'toolHexagon'`), 'End should focus the last reachable shape tool');
   await s.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }))`);
   const toolsClosed = await s.eval(`({ hidden:document.getElementById('toolsMenuList').hidden,
     expanded:document.getElementById('toolsMenuBtn').getAttribute('aria-expanded'), focus:document.activeElement.id })`);
   check(toolsClosed.hidden && toolsClosed.expanded === 'false', 'Escape did not close Tools menu');
   check(toolsClosed.focus === 'toolsMenuBtn', `Escape should return focus to Tools trigger, got ${toolsClosed.focus}`);
-  console.log('board-toolbar-check: Tools drop-down holds all four drawing tools, keyboard ok');
+  console.log('board-toolbar-check: Tools drop-down holds all seven drawing tools, keyboard ok');
 
-  // Add a real fixture without invoking detection: this isolates the Auto
+  // Add an offline fixture without invoking detection: this isolates the Auto
   // ready-state toolbar. Detection and Apply remain owned by smoke/golden.
   const autoReady = await s.eval(`(async () => {
     document.getElementById('modeAutoBtn').click();
-    const blob = await (await fetch('demo/demo1.jpg?toolbar=' + Date.now())).blob();
-    const dataURL = await new Promise(resolve => { const rd=new FileReader(); rd.onload=()=>resolve(rd.result); rd.readAsDataURL(blob); });
+    const fixture=document.createElement('canvas'); fixture.width=800; fixture.height=500;
+    const fctx=fixture.getContext('2d'); fctx.fillStyle='#fff'; fctx.fillRect(0,0,fixture.width,fixture.height);
+    fctx.strokeStyle='#111'; fctx.lineWidth=8; fctx.strokeRect(90,70,620,360);
+    fctx.beginPath(); fctx.moveTo(120,420); fctx.bezierCurveTo(260,100,540,100,680,420); fctx.stroke();
+    const dataURL = fixture.toDataURL('image/png');
     const result = await window.__braAutoModeDebug.addBoardImages([dataURL]);
     const visible = ${VISIBLE_BUTTONS};
     const primary = visible.filter(id => document.getElementById(id).classList.contains('context-primary'));
@@ -188,15 +191,15 @@ async function main() {
       && !populatedManual.contextButtons.includes('copyLineBtn'),
     `selected image should expose image actions only, got ${populatedManual.contextButtons}`);
   check(populatedManual.directUnits <= 7, `populated Manual should have at most 7 direct units, got ${populatedManual.directUnits}`);
-  // Once a photo exists all four tools must be reachable, Eraser included, and
+  // Once a photo exists all seven tools must be reachable, Eraser included, and
   // choosing one from the menu has to drive the same setTool() path the direct
   // button used to — the drop-down is the only route a TD now has to them.
   await s.eval(`document.getElementById('toolsMenuBtn').click()`);
   const toolsPopulated = await s.eval(`Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]'))
     .filter(button => !button.hidden && !button.disabled && button.offsetParent !== null).map(button => button.id)`);
   check(JSON.stringify(toolsPopulated) === JSON.stringify([
-    'toolStraight', 'toolCurved', 'toolEraser', 'toolText',
-  ]), `a populated Board must offer all four drawing tools, got ${JSON.stringify(toolsPopulated)}`);
+    'toolStraight', 'toolCurved', 'toolEraser', 'toolText', 'toolRectangle', 'toolCircle', 'toolHexagon',
+  ]), `a populated Board must offer all seven drawing tools, got ${JSON.stringify(toolsPopulated)}`);
   await s.eval(`document.getElementById('toolStraight').click()`);
   const afterToolPick = await s.eval(`({
     menuClosed: document.getElementById('toolsMenuList').hidden,

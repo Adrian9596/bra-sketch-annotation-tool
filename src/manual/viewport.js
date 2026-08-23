@@ -126,6 +126,8 @@ function toggleLabels() {
 }
 
 function fitSelectionOrAll() {
+  const selectedGraphic = getSelectedBoardGraphic();
+  if (selectedGraphic) { fitBoundsToViewport(bgBounds(selectedGraphic)); return; }
   const selectedImage = getSelectedImage();
   if (selectedImage) {
     fitBoundsToViewport(getImageBounds(selectedImage));
