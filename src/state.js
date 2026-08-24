@@ -88,6 +88,10 @@
     // project data, so it is absent from makeSnapshot and never round-trips
     // through undo or a saved project.
     activeStampId: null,
+    // US-098: null means a placed Template selects as one group. Double-click
+    // sets this to a templateGroupId so its member paths can be edited one at a
+    // time. Session-only; the grouping itself lives on annotations.
+    templateGroupEditId: null,
     // Cmd/Ctrl+click multi-selection of images. Always includes the primary
     // `selection` when that is an image; empty otherwise. The primary stays the
     // resize/spec anchor — this set only widens what a group drag / delete acts

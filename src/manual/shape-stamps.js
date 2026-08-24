@@ -1,16 +1,14 @@
-// US-097 / ADR 0056: the shape-stamp library.
+// US-097 + US-098 / ADR 0059: reusable multi-path Templates.
 //
-// A stamp is ONE line's geometry — every anchor and both handles of every
-// interior anchor — normalized into a unit box, plus the look it was saved
-// with. Nothing absolute survives the save: not position, not size, not the
-// sketch it came from. That is what makes a curve saved on a 2000px sketch
-// usable on a 600px one, which is the entire point.
+// A Template is one or more selected paths — every anchor and both handles of
+// every interior anchor — normalized into one collective unit box, plus the
+// look and Treatment each member was saved with. Nothing absolute survives
+// the save: not position, size, source sketch, POM identity or measurement.
 //
-// A placed stamp is an ORDINARY annotation. Its measurement role is derived
-// from its style exactly as ADR 0055 defines, so a stamp saved from a plain
-// line places a POM line and one saved from a zigzag places a construction
-// mark. There is deliberately no new collection — see ADR 0056, which
-// supersedes ADR 0055's Follow-Up on this point.
+// A placed Template becomes a session-only group of Sketch Elements. Normal
+// selection moves the group; double-click enters one-member editing. Members
+// stay outside the measurement contract even when their visual style is solid.
+// ADR 0059 supersedes the single-line/POM semantics in ADR 0056.
 //
 // Sibling files: the Tools-menu UI is src/ui/shape-stamp-panel.js; the shared
 // storage policy is src/manual/library-store.js; the placement gesture lives
@@ -20,7 +18,7 @@
   // Functions, not module-scope consts: the parts share one scope and a const
   // read during load would throw a TDZ ReferenceError.
   function shapeStampsStorageKey() { return 'bra-shape-stamps-v1'; }
-  function shapeStampsFormatVersion() { return 1; }
+  function shapeStampsFormatVersion() { return 2; }
 
   // Below this the drag is treated as a click and the stamp is placed at a
   // default size. Screen pixels, like BG_MIN_CREATE_SCREEN_PX.
@@ -30,7 +28,7 @@
   // extent there — a perfectly horizontal line has zero height.
   function stampEpsilon() { return 1e-6; }
 
-  // ---- Normalizing a line into a stamp -------------------------------------
+  // ---- Normalizing paths into a Template -----------------------------------
 
   // Every point that defines the drawn shape, handles included. The handles
   // have to be inside the box too, or a re-placed curve's bulge is scaled
@@ -65,6 +63,22 @@
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
   }
 
+  function shapeTemplateBounds(annotations) {
+    const points = [];
+    for (const ann of (Array.isArray(annotations) ? annotations : [])) {
+      points.push(...shapeStampGeometryPoints(ann));
+    }
+    if (!points.length) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of points) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+
   // Fraction of the bounding box. A collapsed axis maps to 0.5 — the line's
   // own centreline — so a horizontal line stamps back as a horizontal line
   // through the middle of whatever box it is given.
@@ -84,17 +98,11 @@
 
   // Build a stamp from a drawn line. Returns null for anything unusable rather
   // than saving a stamp that cannot be placed.
-  function shapeStampFromAnnotation(ann, name) {
-    const trimmed = String(name == null ? '' : name).trim();
-    if (!trimmed || !ann || !ann.start || !ann.end) return null;
-    const bounds = shapeStampBounds(ann);
-    if (!bounds) return null;
-    const eps = stampEpsilon();
+  function shapeTemplateMemberFromAnnotation(ann, bounds) {
+    if (!ann || !ann.start || !ann.end || !bounds) return null;
     const n = (p) => normalizeStampPoint(p, bounds);
     const curved = ann.type === 'curved';
     return {
-      id: libraryEntryId('st'),
-      name: trimmed.slice(0, 60),
       type: curved ? 'curved' : 'straight',
       start: n(ann.start),
       end: n(ann.end),
@@ -107,16 +115,39 @@
           handleOut: n(pt && pt.handleOut),
         })).filter(pt => pt.point && pt.handleIn && pt.handleOut)
         : [],
-      // 0 means "no preferred aspect": one of the axes had no extent, so any
-      // box height is as faithful as any other.
-      aspect: (bounds.width > eps && bounds.height > eps) ? (bounds.height / bounds.width) : 0,
-      // The look travels with the shape. It is what decides, via ADR 0055,
-      // whether the placed line is a measurement or a construction mark.
       style: normalizeLineStyle(ann.style),
       color: normalizeColorKey(ann.color),
       lineWidth: normalizeLineWidth(ann.lineWidth),
       arrowType: getArrowType(ann),
+      lineTreatment: hasLineTreatment(ann) ? normalizeLineTreatment(ann.lineTreatment) : null,
     };
+  }
+
+  function shapeStampFromAnnotations(annotations, name) {
+    const trimmed = String(name == null ? '' : name).trim();
+    const anns = (Array.isArray(annotations) ? annotations : []).filter(ann => ann && ann.start && ann.end);
+    if (!trimmed || !anns.length) return null;
+    const bounds = shapeTemplateBounds(anns);
+    if (!bounds) return null;
+    const eps = stampEpsilon();
+    const members = anns.map(ann => shapeTemplateMemberFromAnnotation(ann, bounds)).filter(Boolean);
+    if (!members.length) return null;
+    const first = members[0];
+    return {
+      id: libraryEntryId('st'),
+      name: trimmed.slice(0, 60),
+      members,
+      // Keep the first member mirrored at top level so v1 exports and the
+      // existing one-path test/debug hooks remain readable during migration.
+      ...clone(first),
+      // 0 means "no preferred aspect": one of the axes had no extent, so any
+      // box height is as faithful as any other.
+      aspect: (bounds.width > eps && bounds.height > eps) ? (bounds.height / bounds.width) : 0,
+    };
+  }
+
+  function shapeStampFromAnnotation(ann, name) {
+    return shapeStampFromAnnotations(ann ? [ann] : [], name);
   }
 
   function normalizeStampStoredPoint(raw) {
@@ -126,22 +157,18 @@
     return { x, y };
   }
 
-  function normalizeShapeStamp(raw) {
+  function normalizeShapeStampMember(raw) {
     if (!raw || typeof raw !== 'object') return null;
-    const name = String(raw.name == null ? '' : raw.name).trim();
     const start = normalizeStampStoredPoint(raw.start);
     const end = normalizeStampStoredPoint(raw.end);
-    if (!name || !start || !end) return null;
+    if (!start || !end) return null;
     const curved = raw.type === 'curved';
     const control1 = curved ? normalizeStampStoredPoint(raw.control1) : null;
     const control2 = curved ? normalizeStampStoredPoint(raw.control2) : null;
     // A curved stamp missing a control point is not repairable here — its
     // shape is gone. Fall back to straight rather than inventing a bow.
     const usableCurve = curved && control1 && control2;
-    const aspect = Number(raw.aspect);
     return {
-      id: String(raw.id || libraryEntryId('st')),
-      name: name.slice(0, 60),
       type: usableCurve ? 'curved' : 'straight',
       start,
       end,
@@ -154,11 +181,32 @@
           handleOut: normalizeStampStoredPoint(pt && pt.handleOut),
         })).filter(pt => pt.point && pt.handleIn && pt.handleOut)
         : [],
-      aspect: (Number.isFinite(aspect) && aspect > 0) ? aspect : 0,
       style: normalizeLineStyle(raw.style),
       color: normalizeColorKey(raw.color),
       lineWidth: normalizeLineWidth(raw.lineWidth),
       arrowType: ['single', 'double', 'none'].includes(raw.arrowType) ? raw.arrowType : 'none',
+      lineTreatment: normalizeLineTreatment(raw.lineTreatment),
+    };
+  }
+
+  function normalizeShapeStamp(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const name = String(raw.name == null ? '' : raw.name).trim();
+    if (!name) return null;
+    let members = (Array.isArray(raw.members) ? raw.members : [])
+      .map(normalizeShapeStampMember).filter(Boolean).slice(0, 80);
+    if (!members.length) {
+      const legacy = normalizeShapeStampMember(raw);
+      if (legacy) members = [legacy];
+    }
+    if (!members.length) return null;
+    const aspect = Number(raw.aspect);
+    return {
+      id: String(raw.id || libraryEntryId('st')),
+      name: name.slice(0, 60),
+      members,
+      aspect: (Number.isFinite(aspect) && aspect > 0) ? aspect : 0,
+      ...clone(members[0]),
     };
   }
 
@@ -209,26 +257,29 @@
 
   // ---- Mutations -----------------------------------------------------------
 
-  // Exactly one selected line. A group has no single geometry to save, and
-  // silently picking the primary would save something the TD did not point at.
-  function shapeStampSaveTarget() {
+  // One or more selected paths become one Template. A plain click on an
+  // existing Template selects all its members, so saving a placed group again
+  // is the same operation as saving a hand-built back wing.
+  function shapeStampSaveTargets() {
     const selected = (typeof getSelectedAnnotations === 'function') ? getSelectedAnnotations() : [];
-    if (selected.length === 1) return selected[0];
-    if (!selected.length && typeof getSelectedAnnotation === 'function') return getSelectedAnnotation();
-    return null;
+    if (selected.length) return selected;
+    const primary = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    return primary ? [primary] : [];
+  }
+
+  function shapeStampSaveTarget() {
+    return shapeStampSaveTargets()[0] || null;
   }
 
   function canSaveShapeStampReason() {
-    const selected = (typeof getSelectedAnnotations === 'function') ? getSelectedAnnotations() : [];
-    if (selected.length > 1) return 'Select just one line — a shape holds one line.';
-    if (!shapeStampSaveTarget()) return 'Select a line to save its shape.';
+    if (!shapeStampSaveTargets().length) return 'Select one or more lines to save as a Template.';
     return true;
   }
 
   function addShapeStampFromSelection(name) {
-    const ann = shapeStampSaveTarget();
-    if (!ann) return null;
-    const stamp = shapeStampFromAnnotation(ann, name);
+    const targets = shapeStampSaveTargets();
+    if (!targets.length) return null;
+    const stamp = shapeStampFromAnnotations(targets, name);
     if (!stamp) return null;
     commitShapeStamps([...getShapeStamps(), stamp]);
     return stamp;
@@ -347,27 +398,30 @@
   // ordering lesson (US-093): normalize the curve FIRST, derive the label after,
   // because computeDefaultLabelPosition walks getCurveBeziers and therefore
   // reads the very controls ensureCurveControls exists to supply.
-  function createAnnotationFromStamp(stamp, rawBox) {
-    if (!stamp) return null;
-    const box = normalizeStampBox(stamp, rawBox);
+  function createAnnotationFromTemplateMember(member, rawBox, groupId) {
+    if (!member) return null;
+    const box = normalizeStampBox(member, rawBox);
     const d = (p) => denormalizeStampPoint(p, box);
-    const curved = stamp.type === 'curved';
+    const curved = member.type === 'curved';
     const ann = {
       id: state.idCounter++,
       seq: state.nextSequence,
       type: curved ? 'curved' : 'straight',
-      style: stamp.style,
-      color: stamp.color,
-      arrowType: stamp.arrowType,
-      lineWidth: stamp.lineWidth,
-      start: d(stamp.start),
-      end: d(stamp.end),
+      style: member.style,
+      color: member.color,
+      arrowType: member.arrowType,
+      lineWidth: member.lineWidth,
+      lineTreatment: member.lineTreatment ? clone(member.lineTreatment) : null,
+      purpose: 'sketch-element',
+      templateGroupId: groupId || null,
+      start: d(member.start),
+      end: d(member.end),
       midPoint: null,
       midHandleIn: null,
       midHandleOut: null,
-      control1: curved ? d(stamp.control1) : null,
-      control2: curved ? d(stamp.control2) : null,
-      points: curved ? stamp.points.map(pt => ({
+      control1: curved ? d(member.control1) : null,
+      control2: curved ? d(member.control2) : null,
+      points: curved ? member.points.map(pt => ({
         point: d(pt.point), handleIn: d(pt.handleIn), handleOut: d(pt.handleOut),
       })) : [],
       label: null,
@@ -386,21 +440,32 @@
     return ann;
   }
 
+  function createAnnotationsFromStamp(stamp, rawBox, groupId) {
+    if (!stamp) return [];
+    const members = Array.isArray(stamp.members) && stamp.members.length ? stamp.members : [stamp];
+    return members.map(member => createAnnotationFromTemplateMember(member, rawBox, groupId)).filter(Boolean);
+  }
+
+  function createAnnotationFromStamp(stamp, rawBox) {
+    return createAnnotationsFromStamp(stamp, rawBox, null)[0] || null;
+  }
+
   // The one entry point the pointer layer calls on mouseup.
   function placeShapeStamp(stamp, start, current, shiftKey, altKey) {
     if (!stamp) return null;
     const dragged = stampBoxFromDrag(stamp, start, current, shiftKey, altKey);
     const tooSmall = Math.max(dragged.width, dragged.height) * state.zoom < stampMinCreateScreenPx();
     const box = tooSmall ? defaultStampBoxAt(stamp, start) : dragged;
-    const ann = createAnnotationFromStamp(stamp, box);
-    if (!ann) return null;
-    state.annotations.push(ann);
-    state.selection = { kind: 'annotation', id: ann.id };
-    state.selectedAnnotationIds = [ann.id];
-    // ADR 0055: a construction stamp spends no POM number.
-    consumePomSequenceFor(ann);
+    const groupId = 'template-' + state.idCounter++;
+    const anns = createAnnotationsFromStamp(stamp, box, groupId);
+    if (!anns.length) return null;
+    state.annotations.push(...anns);
+    state.selection = { kind: 'annotation', id: anns[0].id };
+    state.selectedAnnotationIds = anns.map(ann => ann.id);
+    state.templateGroupEditId = null;
+    // ADR 0058: Template members are Sketch Elements and spend no POM number.
     pushHistoryIfChanged();
-    return ann;
+    return anns[0];
   }
 
   // Drawn by building the annotation the release WOULD create and handing it to
@@ -420,10 +485,10 @@
     // not spend an id every mousemove.
     const savedId = state.idCounter;
     const savedSeq = state.nextSequence;
-    const preview = createAnnotationFromStamp(stamp, box);
+    const preview = createAnnotationsFromStamp(stamp, box, null);
     state.idCounter = savedId;
     state.nextSequence = savedSeq;
-    if (preview) drawLineCore(preview, 0.6);
+    for (const ann of preview) drawLineCore(ann, 0.6);
   }
 
   function setActiveShapeStamp(id) {

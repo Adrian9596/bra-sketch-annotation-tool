@@ -906,13 +906,14 @@
   /* US-097: the shape library shares .preset-list's styling but not its noun —
      an empty shape library reading "No presets yet." is simply wrong, and it
      ships empty by design (ADR 0056 declines to invent house geometry). */
-  #shapeStampList:empty::after{ content:'No saved shapes yet — select a line and use "Save selected line as shape".'; }
+  #shapeStampList:empty::after{ content:'No Templates yet — select one or more paths and save them for reuse.'; }
   .preset-divider{
     margin:6px 2px 3px; padding-top:6px;
     border-top:1px solid var(--hairline);
     color:var(--muted); font-size:11px; font-weight:600;
     letter-spacing:.04em; text-transform:uppercase;
   }
+  .preset-subgroup{ padding:5px 6px 2px; color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
   .preset-list{ display:flex; flex-direction:column; gap:3px; max-height:320px; overflow-y:auto; }
   .preset-list:empty::after{
     content:'No presets yet.';
@@ -932,6 +933,21 @@
   .preset-menu-actions{
     display:flex; flex-direction:column; gap:3px;
     margin-top:5px; padding-top:5px; border-top:1px solid var(--hairline);
+  }
+  .treatment-editor{ display:flex; flex-direction:column; gap:12px; min-width:min(680px, 82vw); }
+  .dialog-panel.treatment-dialog{ width:min(820px, 100%); }
+  .treatment-preview{ height:74px; border:1px solid var(--hairline); border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .treatment-preview svg{ width:100%; height:100%; }
+  .treatment-layers{ display:flex; flex-direction:column; gap:8px; max-height:46vh; overflow:auto; }
+  .treatment-layer{ display:grid; grid-template-columns:1.2fr repeat(5,minmax(64px,.75fr)) 30px; gap:7px; align-items:end; padding:9px; border:1px solid var(--hairline); border-radius:8px; background:#fafafa; }
+  .treatment-layer label{ display:flex; flex-direction:column; gap:3px; color:var(--muted); font-size:10px; font-weight:600; }
+  .treatment-layer input,.treatment-layer select{ width:100%; min-width:0; padding:6px; border:1px solid var(--hairline); border-radius:5px; background:#fff; color:var(--ink); }
+  .treatment-layer .treatment-layer-delete{ width:30px; height:30px; padding:0; }
+  @media (max-width:760px){
+    .dialog-panel.treatment-dialog{ width:min(560px, 100%); }
+    .treatment-editor{ min-width:min(92vw, 520px); }
+    .treatment-layer{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .treatment-layer .treatment-layer-delete{ grid-column:2; justify-self:end; }
   }
   .style-option{ display:flex; align-items:center; gap:10px; }
   .style-preview{ width:36px; height:14px; flex:0 0 auto; color:var(--accent); }
@@ -2945,13 +2961,13 @@
                  stamp IS choosing a tool, and US-082 caps the primary Board
                  surface. Rows are rendered from stored data by
                  src/ui/shape-stamp-panel.js. -->
-            <div class="preset-divider" role="separator">Saved shapes</div>
+            <div class="preset-divider" role="separator">Templates</div>
             <div id="shapeStampList" class="preset-list"></div>
             <div class="preset-menu-actions">
-              <button id="shapeStampSaveBtn" type="button" role="menuitem" title="Save the selected line's shape so it can be placed again on any sketch">Save selected line as shape…</button>
+              <button id="shapeStampSaveBtn" type="button" role="menuitem" title="Save the selected paths as one editable reusable Template">Save selection as Template…</button>
               <button id="shapeStampImportProjectBtn" type="button" role="menuitem" title="Add the shapes this project was drawn with to your library" hidden>Import from project</button>
-              <button id="shapeStampExportBtn" type="button" role="menuitem" title="Write the shape library to a JSON file">Export shapes JSON</button>
-              <button id="shapeStampImportBtn" type="button" role="menuitem" title="Merge a JSON file into the shape library">Import shapes JSON</button>
+              <button id="shapeStampExportBtn" type="button" role="menuitem" title="Write the Template library to a JSON file">Export Templates JSON</button>
+              <button id="shapeStampImportBtn" type="button" role="menuitem" title="Merge a JSON file into the Template library">Import Templates JSON</button>
             </div>
             <input id="shapeStampFileInput" type="file" accept="application/json,.json" hidden />
           </div>
@@ -2997,14 +3013,15 @@
                look — the same thing the five rows above are — so this is where
                a TD already looks for one. Same consolidation US-093 did with
                the drawing tools. -->
-          <div class="preset-divider" role="separator">Saved presets</div>
+          <div class="preset-divider" role="separator">Line Library</div>
           <div id="linePresetList" class="preset-list"></div>
           <div class="preset-menu-actions">
-            <button id="linePresetSaveBtn" type="button" role="menuitem" title="Save the selected line's look as a new preset">Save current look…</button>
+            <button id="lineTreatmentCustomizeBtn" type="button" role="menuitem" title="Edit the layered Treatment on the selected path without changing its geometry">Customize selected…</button>
+            <button id="linePresetSaveBtn" type="button" role="menuitem" title="Save the selected line's Treatment for later use">Save as new treatment…</button>
             <button id="linePresetImportProjectBtn" type="button" role="menuitem" title="Add the presets this project was drawn with to your library" hidden>Import from project</button>
             <button id="linePresetExportBtn" type="button" role="menuitem" title="Write the library to a JSON file">Export JSON</button>
             <button id="linePresetImportBtn" type="button" role="menuitem" title="Merge a JSON file into the library">Import JSON</button>
-            <button id="linePresetResetBtn" type="button" role="menuitem" title="Discard every preset and restore the built-in set">Reset to built-ins</button>
+            <button id="linePresetResetBtn" type="button" role="menuitem" title="Discard every saved Treatment and restore the built-in set">Reset treatments</button>
           </div>
           <input id="linePresetFileInput" type="file" accept="application/json,.json" hidden />
         </div>
@@ -3390,6 +3407,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=5dddcfd319fa"></script>
+<script src="app.js?v=f65131dfe5bb"></script>
 </body>
 </html>

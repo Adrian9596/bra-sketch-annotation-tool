@@ -1,4 +1,4 @@
-// US-097 / ADR 0056: the saved-shape section of the Tools menu.
+// US-097 + US-098 / ADR 0059: the Template section of the Tools menu.
 //
 // Presentation only, mirroring src/ui/line-preset-panel.js exactly: every
 // mutation goes through src/manual/shape-stamps.js, which owns the model, the
@@ -15,11 +15,13 @@
       x: pad + (p.x * (w - pad * 2)),
       y: pad + (p.y * (h - pad * 2)),
     });
-    const s0 = at(stamp.start);
-    let d = 'M' + s0.x.toFixed(2) + ' ' + s0.y.toFixed(2);
-    if (stamp.type === 'curved' && stamp.control1 && stamp.control2) {
-      let c1 = at(stamp.control1);
-      for (const pt of stamp.points) {
+    const members = Array.isArray(stamp.members) && stamp.members.length ? stamp.members : [stamp];
+    const paths = members.map(member => {
+      const s0 = at(member.start);
+      let d = 'M' + s0.x.toFixed(2) + ' ' + s0.y.toFixed(2);
+      if (member.type === 'curved' && member.control1 && member.control2) {
+        let c1 = at(member.control1);
+        for (const pt of member.points) {
         const hIn = at(pt.handleIn);
         const p = at(pt.point);
         d += ' C' + c1.x.toFixed(2) + ' ' + c1.y.toFixed(2)
@@ -27,18 +29,21 @@
           + ',' + p.x.toFixed(2) + ' ' + p.y.toFixed(2);
         c1 = at(pt.handleOut);
       }
-      const c2 = at(stamp.control2);
-      const e = at(stamp.end);
+      const c2 = at(member.control2);
+      const e = at(member.end);
       d += ' C' + c1.x.toFixed(2) + ' ' + c1.y.toFixed(2)
         + ',' + c2.x.toFixed(2) + ' ' + c2.y.toFixed(2)
         + ',' + e.x.toFixed(2) + ' ' + e.y.toFixed(2);
     } else {
-      const e = at(stamp.end);
+      const e = at(member.end);
       d += ' L' + e.x.toFixed(2) + ' ' + e.y.toFixed(2);
     }
+      const color = LINE_COLORS[member.color] || LINE_COLOR;
+      return '<path d="' + d + '" stroke="' + color + '"/>';
+    }).join('');
     return '<svg class="style-preview" viewBox="0 0 ' + w + ' ' + h + '" fill="none" '
       + 'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" '
-      + 'stroke-linejoin="round" aria-hidden="true"><path d="' + d + '"/></svg>';
+      + 'stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
   }
 
   function shapeStampRowTitle(stamp) {
@@ -48,10 +53,8 @@
     const ratio = stamp.aspect > 0
       ? `${stamp.aspect.toFixed(2)}:1 tall (Shift while dragging locks it)`
       : 'no fixed proportion';
-    const role = isStitchStyle(stamp.style)
-      ? 'Places a construction mark — drawn and exported, but no measurement row.'
-      : 'Places a measurement line.';
-    return `${stamp.name} — ${shape}, ${lineStyleLabel(stamp.style)}, ${stamp.color}, ${ratio}. ${role}`;
+    const count = Array.isArray(stamp.members) ? stamp.members.length : 1;
+    return `${stamp.name} — ${count} editable path${count === 1 ? '' : 's'}, ${shape}, ${ratio}. Places a grouped Sketch Element, never an automatic POM.`;
   }
 
   function renderShapeStampList() {
@@ -96,18 +99,18 @@
   function saveSelectedLineAsShape() {
     const reason = canSaveShapeStampReason();
     if (reason !== true) { showToast(reason); return; }
-    const ann = shapeStampSaveTarget();
-    const kind = ann.type === 'curved' ? 'Curve' : 'Straight line';
+    const targets = shapeStampSaveTargets();
+    const kind = targets.length > 1 ? `${targets.length} selected paths` : (targets[0].type === 'curved' ? 'Curve' : 'Straight line');
     openLinePresetNameDialog({
-      title: 'Save shape',
-      sub: `${kind}, ${lineStyleLabel(getLineStyle(ann))}, ${normalizeColorKey(ann.color)}`,
+      title: 'Save Template',
+      sub: `${kind}. Geometry, styles and Treatments are kept; POM identity and measurements are excluded.`,
       value: '',
-      confirmLabel: 'Save shape',
+      confirmLabel: 'Save Template',
       onConfirm: (name) => {
         const stamp = addShapeStampFromSelection(name);
-        if (!stamp) { showToast('Could not save that shape.'); return; }
+        if (!stamp) { showToast('Could not save that Template.'); return; }
         renderShapeStampList();
-        shapeStampToast(`Saved "${stamp.name}" — pick it from Tools to place it.`);
+        shapeStampToast(`Saved "${stamp.name}" — pick it from Templates to place it.`);
       },
     });
   }
@@ -130,7 +133,7 @@
       setActiveShapeStamp(id);
       closeBoardToolbarMenus(null, false);
       updateUI();
-      showToast(`Drag on the board to place "${stamp.name}" at that size. Shift keeps its proportions.`);
+      showToast(`Drag to place Template "${stamp.name}". Shift keeps its proportions.`);
       return;
     }
     if (action === 'up' || action === 'down') {
@@ -144,7 +147,7 @@
     }
     if (action === 'rename') {
       openLinePresetNameDialog({
-        title: 'Rename shape',
+        title: 'Rename Template',
         sub: stamp.name,
         value: stamp.name,
         confirmLabel: 'Rename',
@@ -168,7 +171,7 @@
       const after = getShapeStamps();
       const neighbour = after[Math.min(index, after.length - 1)];
       if (neighbour) refocusLibraryRowControl('shapeStampList', neighbour.id, { kind: 'stamp', name: 'delete' });
-      shapeStampToast(`Deleted "${stamp.name}".`);
+      shapeStampToast(`Deleted Template "${stamp.name}".`);
     }
   }
 
@@ -180,8 +183,8 @@
     reader.onload = () => {
       const added = importShapeStampsFromJson(String(reader.result || ''));
       renderShapeStampList();
-      if (!added) { showToast('That file held no saved shapes.'); return; }
-      shapeStampToast(`Imported ${added} shape${added > 1 ? 's' : ''}.`);
+      if (!added) { showToast('That file held no Templates.'); return; }
+      shapeStampToast(`Imported ${added} Template${added > 1 ? 's' : ''}.`);
     };
     reader.onerror = () => showToast('Could not read that file.');
     reader.readAsText(file);

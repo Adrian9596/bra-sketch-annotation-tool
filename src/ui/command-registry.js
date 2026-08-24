@@ -204,20 +204,20 @@
     // worth a palette entry; applying a specific preset is a click in the menu,
     // and registering one command per user-created preset would flood the
     // palette with rows that change under the TD's feet.
-    appCommand({ id: 'board.presets.open', label: 'Open Line Presets', category: 'Board · Style',
+    appCommand({ id: 'board.presets.open', label: 'Open Line Library', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#stitchesBtn',
       action: () => openLinePresetMenu() }),
-    appCommand({ id: 'board.presets.save', label: 'Save Current Look as Line Preset', category: 'Board · Style',
+    appCommand({ id: 'board.presets.save', label: 'Save Selected Line as Treatment', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#linePresetSaveBtn',
       action: () => saveCurrentLookAsPreset() }),
     // US-097 / ADR 0056: the saved-shape library. Same reasoning as the presets
     // above — Save is worth a palette entry, and picking a specific shape is a
     // click in the Tools menu rather than one command per user-created stamp.
-    appCommand({ id: 'board.shapes.save', label: 'Save Selected Line as Shape', category: 'Board · Style',
+    appCommand({ id: 'board.shapes.save', label: 'Save Selection as Template', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#shapeStampSaveBtn',
       when: () => (typeof canSaveShapeStampReason === 'function' ? canSaveShapeStampReason() : true),
       action: () => saveSelectedLineAsShape() }),
-    appCommand({ id: 'board.shapes.open', label: 'Open Saved Shapes', category: 'Board · Style',
+    appCommand({ id: 'board.shapes.open', label: 'Open Templates', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#toolsMenuBtn',
       action: () => {
         const record = boardToolbarMenuRecords().find(r => r.list && r.list.id === 'toolsMenuList');

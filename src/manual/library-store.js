@@ -19,7 +19,7 @@
 // Source part for app.js. Run `npm run build` after editing.
 
   // Read a library out of localStorage. `listKey` is the payload's array field
-  // ('presets' / 'stamps'). Returns { list, seeded }.
+  // ('presets' / 'stamps'). Returns { list, seeded, version }.
   function readLibraryStore(storageKey, listKey, normalizeList) {
     let stored = null;
     try {
@@ -32,6 +32,7 @@
       list: normalizeList(stored && stored[listKey]),
       // Only a payload we could actually parse can claim to have been seeded.
       seeded: !!(stored && stored.seeded),
+      version: Number(stored && stored.version) || 0,
     };
   }
 

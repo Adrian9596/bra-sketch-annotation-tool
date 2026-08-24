@@ -104,7 +104,12 @@
   // menu to behave.
   function isMeasurementAnnotation(ann) {
     if (!ann) return false;
-    if (!isStitchStyle(ann.style)) return true;
+    // US-098 / ADR 0058: geometry inserted from a Template is sketch
+    // structure, never a measurement merely because its visible spine is
+    // plain. A later Convert-to-POM command will remove this purpose
+    // explicitly; style alone cannot promote it.
+    if (ann.purpose === 'sketch-element') return false;
+    if (!isStitchStyle(ann.style) && !hasLineTreatment(ann)) return true;
     return hasManualPomLabel(ann);
   }
 

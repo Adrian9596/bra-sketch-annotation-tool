@@ -212,6 +212,15 @@
       getLinePresets: () => (typeof getLinePresets === 'function' ? clone(getLinePresets()) : null),
       applyLinePreset: (id) => (typeof applyLinePreset === 'function' ? applyLinePreset(id) : false),
       addLinePreset: (name) => (typeof addLinePreset === 'function' ? clone(addLinePreset(name)) : null),
+      addLineTreatment: (name, recipe) => (typeof addLineTreatment === 'function'
+        ? clone(addLineTreatment(name, recipe)) : null),
+      updateLineTreatment: (id, recipe, name) => (typeof updateLineTreatment === 'function'
+        ? updateLineTreatment(id, recipe, name) : false),
+      applyLineTreatmentToIds: (ids, recipe) => {
+        const anns = (Array.isArray(ids) ? ids : []).map(id => getAnnotationById(id)).filter(Boolean);
+        return typeof applyTreatmentRecipeToAnnotations === 'function'
+          ? applyTreatmentRecipeToAnnotations(recipe, anns) : 0;
+      },
       resetLinePresets: () => {
         if (typeof resetLinePresetsToBuiltins === 'function') resetLinePresetsToBuiltins();
       },
@@ -231,6 +240,27 @@
         ? importShapeStampsFromJson(text) : 0),
       setActiveShapeStamp: (id) => {
         if (typeof setActiveShapeStamp === 'function') setActiveShapeStamp(id);
+      },
+      addTemplateFromAnnotationIds: (name, ids) => {
+        const anns = (Array.isArray(ids) ? ids : []).map(id => getAnnotationById(id)).filter(Boolean);
+        const template = typeof shapeStampFromAnnotations === 'function'
+          ? shapeStampFromAnnotations(anns, name) : null;
+        if (!template) return null;
+        commitShapeStamps([...getShapeStamps(), template]);
+        return clone(template);
+      },
+      placeTemplateInBox: (id, box) => {
+        const template = getShapeStampById(id);
+        if (!template || !box) return [];
+        const groupId = 'template-' + state.idCounter++;
+        const anns = createAnnotationsFromStamp(template, box, groupId);
+        state.annotations.push(...anns);
+        if (anns.length) {
+          state.selection = { kind: 'annotation', id: anns[0].id };
+          state.selectedAnnotationIds = anns.map(ann => ann.id);
+        }
+        pushHistoryIfChanged(); updateUI(); requestRender();
+        return clone(anns);
       },
       sampleAnnotationShape: (annotationId, samples) => {
         const ann = state.annotations.find(a => a && a.id === annotationId);
@@ -386,6 +416,8 @@
         // that selected the wrong KIND of thing is otherwise invisible.
         tool: state.tool,
         selection: { kind: state.selection.kind, id: state.selection.id != null ? state.selection.id : null },
+        selectedAnnotationIds: getSelectedAnnotationIds().slice(),
+        templateGroupEditId: state.templateGroupEditId || null,
         noteCount: (state.notes || []).length,
         autoStatus: state.autoMode.status,
         lastError: state.autoMode.lastError,

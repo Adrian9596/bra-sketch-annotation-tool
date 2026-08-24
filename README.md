@@ -41,6 +41,12 @@ From there: a measurements panel with a graded size run, three tech-pack pages
 (main page, construction callouts, BOM), and export to `.xlsx` / PDF / clipboard
 PNG — all still offline.
 
+Manual Mode also includes a browser-local **Personal Sketch Library**. Save a
+multi-path detail such as a back wing as one reusable Template, or apply an
+editable layered Line Treatment such as Binding along any existing straight or
+curved path. Templates and Treatments remain sketch elements rather than POMs,
+and the library can be moved between browsers with JSON export/import.
+
 Press **Cmd/Ctrl+K** anywhere to search every stable command. Use
 **Cmd/Ctrl+1…5** to switch Board, Main Page, Construction, BOM, and Preview &
 Export; existing Board drawing shortcuts stay scoped to the Board.
@@ -81,8 +87,9 @@ npm run mainpage-check     # tech-pack MAIN PAGE sheet
 npm run construction-check # construction annotation page
 npm run bom-check          # BOM page
 npm run preview-check      # preview & export tab
-npm run line-presets-check # line presets, and stitch lines as construction marks
-npm run shape-stamps-check # saved shapes: normalize, re-place at any size
+npm run line-presets-check # line looks, Treatments, and measurement isolation
+npm run shape-stamps-check # Templates: grouped reusable path geometry
+npm run personal-library-check # Templates + layered Treatments + local persistence
 ```
 
 The suites that score detection accuracy against real sketches — `golden`,

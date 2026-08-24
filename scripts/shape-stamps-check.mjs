@@ -224,18 +224,21 @@ async function main() {
     document.getElementById('toolSelect').click(); await settle();
     const other = d.getAnnotations()[d.getAnnotations().length - 1];
 
-    // Two selected -> refuse.
+    // Two selected -> one reusable Template.
     await click(curve.start.x, curve.start.y);
     await click(other.start.x, other.start.y, { shiftKey: true });
     await openTools();
     document.getElementById('shapeStampSaveBtn').click();
     await settle();
-    const refusedDialog = !document.querySelector('.picker-overlay');
-    // showToast QUEUES rather than replaces, and the Escape above left
-    // "Drawing canceled." on screen — read only once the queue has drained, or
-    // this asserts the previous action's message.
-    await settle(); await settle(); await settle();
-    const refusedToast = (document.getElementById('toast') || {}).textContent || '';
+    const multiDialog = document.querySelector('.picker-overlay');
+    const multiInput = multiDialog && multiDialog.querySelector('input[type="text"]');
+    if (multiInput) {
+      multiInput.value = 'Two path Template';
+      multiInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    }
+    await settle();
+    const multiTemplate = d.getShapeStamps()[0] || null;
+    d.resetShapeStamps();
 
     // One selected -> save. Collapse the group first: a plain click on a line
     // that is already IN the group keeps the group, which is the whole point of
@@ -257,14 +260,15 @@ async function main() {
     await settle();
     const stamps = d.getShapeStamps();
     return {
-      refusedDialog, refusedToast, otherId: other.id, selectedForSave,
+      multiDialogOpened: !!multiDialog, multiTemplate, otherId: other.id, selectedForSave,
       dialogOpened: !!dialog,
       count: stamps.length, stamp: stamps[0] || null,
     };
   })()`);
-  check(saved.refusedDialog === true && /one line/i.test(saved.refusedToast),
-    `a two-line selection has no single geometry, so Save must refuse and say why `
-    + `(dialog suppressed ${saved.refusedDialog}, toast ${JSON.stringify(saved.refusedToast)})`);
+  check(saved.multiDialogOpened === true
+    && saved.multiTemplate && saved.multiTemplate.members.length === 2,
+    `a two-line selection saves one editable two-member Template `
+    + `(dialog ${saved.multiDialogOpened}, template ${JSON.stringify(saved.multiTemplate)})`);
   check(saved.selectedForSave && saved.selectedForSave.kind === 'annotation'
     && saved.selectedForSave.id === setup.curveId,
     `precondition: exactly the curve is selected for the save `
@@ -319,6 +323,8 @@ async function main() {
       // A chord would score ~0 against itself, so prove the source is not one.
       devAgainstChord: shapeDeviation(src, { points: src.points.map((p, i) => ({ x: i / (src.points.length - 1), y: 0.5 })) }),
       seqs: [small.seq, big.seq],
+      purposes: [small.purpose, big.purpose],
+      measured: [small, big].map(x => d.getMeasurementAnnIds().includes(x.id)),
       owners: [small.sourceImageId, big.sourceImageId], imgId: img.id,
       texts: [small.text, big.text],
       styles: [small.style, big.style],
@@ -340,9 +346,10 @@ async function main() {
   check(placed.devBig < 0.02,
     `a stamp placed LARGE keeps its source's shape (worst normalized deviation `
     + `${placed.devBig.toFixed(4)}, tolerance 0.02)`);
-  check(placed.seqs[0] !== placed.seqs[1],
-    `two placements of one stamp get DIFFERENT POM numbers (both ${placed.seqs[0]}) — the `
-    + `collision US-096 removed must not come back through this door`);
+  check(placed.purposes.every(x => x === 'sketch-element')
+    && placed.measured.every(x => x === false),
+    `Template placements are Sketch Elements, not automatic POMs `
+    + `(purpose ${JSON.stringify(placed.purposes)}, measured ${JSON.stringify(placed.measured)})`);
   check(placed.texts[0] === null && placed.texts[1] === null,
     `a placed line inherits no POM label from the source (got ${JSON.stringify(placed.texts)})`);
   check(placed.owners[0] === placed.imgId && placed.owners[1] === placed.imgId,

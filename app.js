@@ -295,6 +295,10 @@
     // project data, so it is absent from makeSnapshot and never round-trips
     // through undo or a saved project.
     activeStampId: null,
+    // US-098: null means a placed Template selects as one group. Double-click
+    // sets this to a templateGroupId so its member paths can be edited one at a
+    // time. Session-only; the grouping itself lives on annotations.
+    templateGroupEditId: null,
     // Cmd/Ctrl+click multi-selection of images. Always includes the primary
     // `selection` when that is an image; empty otherwise. The primary stays the
     // resize/spec anchor — this set only widens what a group drag / delete acts
@@ -521,6 +525,7 @@
     // src/ui/line-preset-panel.js rather than captured here.
     linePresetList: document.getElementById('linePresetList'),
     linePresetSaveBtn: document.getElementById('linePresetSaveBtn'),
+    lineTreatmentCustomizeBtn: document.getElementById('lineTreatmentCustomizeBtn'),
     linePresetExportBtn: document.getElementById('linePresetExportBtn'),
     linePresetImportBtn: document.getElementById('linePresetImportBtn'),
     linePresetImportProjectBtn: document.getElementById('linePresetImportProjectBtn'),
@@ -15524,20 +15529,20 @@ const BOM_MATERIAL_LIBRARY = [
     // worth a palette entry; applying a specific preset is a click in the menu,
     // and registering one command per user-created preset would flood the
     // palette with rows that change under the TD's feet.
-    appCommand({ id: 'board.presets.open', label: 'Open Line Presets', category: 'Board · Style',
+    appCommand({ id: 'board.presets.open', label: 'Open Line Library', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#stitchesBtn',
       action: () => openLinePresetMenu() }),
-    appCommand({ id: 'board.presets.save', label: 'Save Current Look as Line Preset', category: 'Board · Style',
+    appCommand({ id: 'board.presets.save', label: 'Save Selected Line as Treatment', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#linePresetSaveBtn',
       action: () => saveCurrentLookAsPreset() }),
     // US-097 / ADR 0056: the saved-shape library. Same reasoning as the presets
     // above — Save is worth a palette entry, and picking a specific shape is a
     // click in the Tools menu rather than one command per user-created stamp.
-    appCommand({ id: 'board.shapes.save', label: 'Save Selected Line as Shape', category: 'Board · Style',
+    appCommand({ id: 'board.shapes.save', label: 'Save Selection as Template', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#shapeStampSaveBtn',
       when: () => (typeof canSaveShapeStampReason === 'function' ? canSaveShapeStampReason() : true),
       action: () => saveSelectedLineAsShape() }),
-    appCommand({ id: 'board.shapes.open', label: 'Open Saved Shapes', category: 'Board · Style',
+    appCommand({ id: 'board.shapes.open', label: 'Open Templates', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#toolsMenuBtn',
       action: () => {
         const record = boardToolbarMenuRecords().find(r => r.list && r.list.id === 'toolsMenuList');
@@ -16353,7 +16358,7 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   // ---- src/ui/line-preset-panel.js ----
-// US-096 / ADR 0055: the line-preset dropdown.
+// US-096 + US-098 / ADR 0060: Line Treatment Library and layer editor.
 //
 // Presentation only. Every mutation goes through src/manual/line-presets.js,
 // which owns the model, the storage and the apply semantics — this file decides
@@ -16375,10 +16380,34 @@ const BOM_MATERIAL_LIBRARY = [
     return open + '<line x1="3" y1="7" x2="33" y2="7" stroke-width="1.8"/></svg>';
   }
 
+  function lineTreatmentPreviewSvg(preset) {
+    if (!preset || preset.kind !== 'treatment' || !preset.treatment) {
+      return linePresetPreviewSvg(preset && preset.style);
+    }
+    const layers = normalizeLineTreatmentLayers(preset.treatment.layers);
+    const body = layers.map(layer => {
+      const y = clamp(7 + layer.offset * 0.55, 1.5, 12.5);
+      const color = LINE_COLORS[layer.color] || LINE_COLOR;
+      const width = clamp(layer.width * 0.65, 0.7, 3.5);
+      if (layer.pattern === 'zigzag') {
+        const amp = clamp(layer.amplitude * 0.35, 1.5, 5);
+        const pts = [];
+        for (let x = 3, i = 0; x <= 33; x += 4, i += 1) pts.push(x + ',' + clamp(y + (i % 2 ? amp : -amp), 1, 13));
+        return '<polyline points="' + pts.join(' ') + '" stroke="' + color + '" stroke-width="' + width + '"/>';
+      }
+      const dash = layer.pattern === 'dashed' ? ' stroke-dasharray="5 3"' : '';
+      return '<line x1="3" y1="' + y + '" x2="33" y2="' + y + '" stroke="' + color + '" stroke-width="' + width + '"' + dash + '/>';
+    }).join('');
+    return '<svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + body + '</svg>';
+  }
+
   // What the row says it will do, spelled out because the consequence is not
   // obvious: picking a stitch preset takes the line OUT of the measurement
   // table (ADR 0055), and a TD should be able to read that before clicking.
   function linePresetRowTitle(preset) {
+    if (preset.kind === 'treatment' && preset.treatment) {
+      return `${preset.name} — ${preset.treatment.layers.length} editable layer${preset.treatment.layers.length === 1 ? '' : 's'}. Applies along the selected path without changing its geometry.`;
+    }
     const base = `${preset.name} — ${lineStyleLabel(preset.style)}, ${preset.color}, ${formatLineWidth(preset.lineWidth)} px`;
     return isStitchStyle(preset.style)
       ? base + '. A construction mark: drawn and exported, but no measurement row and no callout number.'
@@ -16398,22 +16427,32 @@ const BOM_MATERIAL_LIBRARY = [
     }
     const presets = getLinePresets();
     const swatch = (color) => LINE_COLORS[color] || LINE_COLOR;
-    el.linePresetList.innerHTML = presets.map((preset, index) => {
+    const rowHtml = (preset) => {
+      const kind = preset.kind === 'treatment' ? 'treatment' : 'look';
+      const siblings = presets.filter(item => (item.kind === 'treatment' ? 'treatment' : 'look') === kind);
+      const index = siblings.findIndex(item => item.id === preset.id);
       const first = index === 0 ? ' disabled' : '';
-      const last = index === presets.length - 1 ? ' disabled' : '';
+      const last = index === siblings.length - 1 ? ' disabled' : '';
       return '<div class="preset-row" data-preset-id="' + escapeHtml(preset.id) + '">'
         + '<button type="button" role="menuitem" class="preset-apply" data-preset-action="apply"'
         + ' style="color:' + escapeHtml(swatch(preset.color)) + '"'
         + ' title="' + escapeHtml(linePresetRowTitle(preset)) + '">'
-        + linePresetPreviewSvg(preset.style)
+        + lineTreatmentPreviewSvg(preset)
         + '<span>' + escapeHtml(preset.name) + '</span>'
         + '</button>'
         + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="up" aria-label="Move up" title="Move up"' + first + '>&#9650;</button>'
         + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="down" aria-label="Move down" title="Move down"' + last + '>&#9660;</button>'
         + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="rename" aria-label="Rename" title="Rename">&#9998;</button>'
+        + (preset.kind === 'treatment' ? '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="edit" aria-label="Edit treatment" title="Edit layers">&#9881;</button>' : '')
         + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="delete" aria-label="Delete" title="Delete">&times;</button>'
         + '</div>';
-    }).join('');
+    };
+    const treatments = presets.filter(preset => preset.kind === 'treatment');
+    const looks = presets.filter(preset => preset.kind !== 'treatment');
+    el.linePresetList.innerHTML = (treatments.length
+      ? '<div class="preset-subgroup">Construction treatments</div>' + treatments.map(rowHtml).join('') : '')
+      + (looks.length
+        ? '<div class="preset-subgroup">Saved line looks</div>' + looks.map(rowHtml).join('') : '');
   }
 
   // The library has no dropdown of its own: it lives in the Stitches menu, whose
@@ -16502,6 +16541,144 @@ const BOM_MATERIAL_LIBRARY = [
     });
   }
 
+  function treatmentLayerEditorRow(layer, index) {
+    const patterns = lineTreatmentPatterns().map(pattern => '<option value="' + pattern + '"'
+      + (layer.pattern === pattern ? ' selected' : '') + '>' + pattern + '</option>').join('');
+    const colors = Object.keys(LINE_COLORS).map(color => '<option value="' + color + '"'
+      + (layer.color === color ? ' selected' : '') + '>' + color + '</option>').join('');
+    return '<div class="treatment-layer" data-layer-index="' + index + '">'
+      + '<label>Pattern<select data-layer-field="pattern">' + patterns + '</select></label>'
+      + '<label>Offset<input data-layer-field="offset" type="number" min="-40" max="40" step="0.5" value="' + layer.offset + '"></label>'
+      + '<label>Width<input data-layer-field="width" type="number" min="0.5" max="16" step="0.5" value="' + layer.width + '"></label>'
+      + '<label>Color<select data-layer-field="color">' + colors + '</select></label>'
+      + '<label>Spacing<input data-layer-field="spacing" type="number" min="2" max="80" step="1" value="' + layer.spacing + '"></label>'
+      + '<label>Amplitude<input data-layer-field="amplitude" type="number" min="1" max="40" step="0.5" value="' + layer.amplitude + '"></label>'
+      + '<button type="button" class="treatment-layer-delete" data-delete-layer="' + index + '" aria-label="Delete layer" title="Delete layer">&times;</button>'
+      + '</div>';
+  }
+
+  function openLineTreatmentEditor({ title, name, recipe, confirmLabel, onConfirm }) {
+    const dialog = buildDialog({ title, sub: 'Layers follow the selected path. Offset moves a layer to either side; geometry and anchors stay unchanged.' });
+    dialog.panel.classList.add('treatment-dialog');
+    let layers = normalizeLineTreatmentLayers(recipe && recipe.layers);
+    if (!layers.length) layers = legacyStyleTreatmentLayers('solid', 'black', 2);
+    const body = document.createElement('div');
+    body.className = 'treatment-editor';
+    body.innerHTML = '<label class="scale-field">Treatment name<input data-treatment-name type="text" maxlength="60" placeholder="e.g. Binding 12 mm"></label>'
+      + '<div class="treatment-preview" aria-label="Treatment preview"><svg data-treatment-preview viewBox="0 0 520 74" aria-hidden="true"></svg></div>'
+      + '<div class="treatment-layers" data-treatment-layers></div>'
+      + '<button type="button" class="picker-btn" data-add-treatment-layer>+ Add layer</button>';
+    dialog.panel.appendChild(body);
+    const nameInput = body.querySelector('[data-treatment-name]');
+    const list = body.querySelector('[data-treatment-layers]');
+    const preview = body.querySelector('[data-treatment-preview]');
+    nameInput.value = name || (recipe && recipe.name) || '';
+
+    function readLayers() {
+      return Array.from(list.querySelectorAll('[data-layer-index]')).map(row => {
+        const value = field => row.querySelector('[data-layer-field="' + field + '"]').value;
+        return normalizeLineTreatmentLayer({
+          id: layers[Number(row.dataset.layerIndex)] && layers[Number(row.dataset.layerIndex)].id,
+          pattern: value('pattern'), offset: Number(value('offset')), width: Number(value('width')),
+          color: value('color'), spacing: Number(value('spacing')), amplitude: Number(value('amplitude')),
+        });
+      }).filter(Boolean);
+    }
+
+    function paintPreview() {
+      const rows = readLayers();
+      const svg = rows.map(layer => {
+        const y = clamp(37 + layer.offset * 1.7, 5, 69);
+        const color = LINE_COLORS[layer.color] || LINE_COLOR;
+        const width = clamp(layer.width, 0.5, 8);
+        if (layer.pattern === 'zigzag') {
+          const amp = clamp(layer.amplitude * 1.2, 2, 28);
+          const step = clamp(layer.spacing * 1.4, 4, 60);
+          const pts = [];
+          let i = 0;
+          for (let x = 18; x <= 502; x += step, i += 1) pts.push(x + ',' + clamp(y + (i % 2 ? amp : -amp), 3, 71));
+          return '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="' + width + '" stroke-linecap="round" stroke-linejoin="round"/>';
+        }
+        return '<line x1="18" y1="' + y + '" x2="502" y2="' + y + '" stroke="' + color + '" stroke-width="' + width + '" stroke-linecap="round"'
+          + (layer.pattern === 'dashed' ? ' stroke-dasharray="' + Math.max(2, layer.spacing * 0.6) + ' ' + Math.max(2, layer.spacing * 0.4) + '"' : '') + '/>';
+      }).join('');
+      preview.innerHTML = svg;
+    }
+
+    function renderRows() {
+      list.innerHTML = layers.map(treatmentLayerEditorRow).join('');
+      list.querySelectorAll('input,select').forEach(input => input.addEventListener('input', paintPreview));
+      list.querySelectorAll('[data-delete-layer]').forEach(button => button.addEventListener('click', () => {
+        layers = readLayers();
+        if (layers.length <= 1) { showToast('A Treatment needs at least one layer.'); return; }
+        layers.splice(Number(button.dataset.deleteLayer), 1);
+        renderRows();
+      }));
+      paintPreview();
+    }
+
+    body.querySelector('[data-add-treatment-layer]').addEventListener('click', () => {
+      layers = readLayers();
+      if (layers.length >= 8) { showToast('A Treatment can hold up to 8 layers.'); return; }
+      layers.push(normalizeLineTreatmentLayer({ pattern: 'solid', offset: 0, width: 2, color: 'black', spacing: 10, amplitude: 4 }));
+      renderRows();
+    });
+
+    const footer = document.createElement('div');
+    footer.className = 'picker-footer';
+    footer.innerHTML = '<span style="flex:1"></span>';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button'; cancelBtn.className = 'picker-btn'; cancelBtn.textContent = 'Cancel';
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button'; okBtn.className = 'picker-btn primary'; okBtn.textContent = confirmLabel || 'Apply';
+    footer.appendChild(cancelBtn); footer.appendChild(okBtn); dialog.panel.appendChild(footer);
+    cancelBtn.addEventListener('click', dialog.close);
+    okBtn.addEventListener('click', () => {
+      const nextName = nameInput.value.trim();
+      const nextLayers = readLayers();
+      if (!nextName) { nameInput.focus(); showToast('Give the Treatment a name first.'); return; }
+      if (!nextLayers.length) { showToast('Add at least one Treatment layer.'); return; }
+      dialog.close();
+      onConfirm({ name: nextName, layers: nextLayers });
+    });
+    renderRows();
+    dialog.open();
+    nameInput.focus();
+    nameInput.select();
+  }
+
+  function saveSelectedTreatmentToLibrary() {
+    const selected = getSelectedAnnotation();
+    // Backward-compatible escape hatch for the old named-look workflow: with
+    // no selected path, save the current draw defaults as a look. A real Line
+    // Treatment still requires a selected path because its recipe belongs to
+    // path depiction, not the next-line tool mode.
+    if (!selected) { saveCurrentLookAsPreset(); return; }
+    const recipe = currentLineTreatment();
+    openLineTreatmentEditor({
+      title: 'Save Line Treatment', name: recipe.name === 'Custom treatment' ? '' : recipe.name,
+      recipe, confirmLabel: 'Save treatment',
+      onConfirm: next => {
+        const saved = addLineTreatment(next.name, next);
+        renderLinePresetList();
+        linePresetToast(saved ? `Saved "${saved.name}" to Line Treatments.` : 'Could not save that Treatment.');
+      },
+    });
+  }
+
+  function customizeSelectedTreatment() {
+    const ann = getSelectedAnnotation();
+    if (!ann) { showToast('Select a line first.'); return; }
+    const recipe = currentLineTreatment();
+    openLineTreatmentEditor({
+      title: 'Customize selected line', name: recipe.name, recipe, confirmLabel: 'Apply to selected',
+      onConfirm: next => {
+        customizeSelectedLineTreatment(next);
+        showToast(`${next.name} customized on the selected line.`);
+      },
+    });
+  }
+
   function onLinePresetListClick(event) {
     const button = event.target.closest('[data-preset-action]');
     if (!button || button.disabled) return;
@@ -16519,7 +16696,7 @@ const BOM_MATERIAL_LIBRARY = [
       return;
     }
     if (action === 'up' || action === 'down') {
-      moveLinePreset(id, action === 'up' ? -1 : 1);
+      moveLinePresetWithinKind(id, action === 'up' ? -1 : 1);
       renderLinePresetList();
       refocusLibraryRowControl('linePresetList', id, { kind: 'preset', name: action });
       return;
@@ -16534,6 +16711,19 @@ const BOM_MATERIAL_LIBRARY = [
           renameLinePreset(id, name);
           renderLinePresetList();
           refocusLibraryRowControl('linePresetList', id, { kind: 'preset', name: 'rename' });
+        },
+      });
+      return;
+    }
+    if (action === 'edit' && preset.treatment) {
+      closeLineStyleMenu();
+      openLineTreatmentEditor({
+        title: 'Update Library Treatment', name: preset.name, recipe: preset.treatment,
+        confirmLabel: 'Update treatment',
+        onConfirm: next => {
+          updateLineTreatment(id, next, next.name);
+          renderLinePresetList();
+          linePresetToast(`Updated "${next.name}". Existing drawings were not changed.`);
         },
       });
       return;
@@ -16571,8 +16761,15 @@ const BOM_MATERIAL_LIBRARY = [
     el.linePresetSaveBtn.addEventListener('click', (event) => {
       event.stopPropagation();
       closeLineStyleMenu();
-      saveCurrentLookAsPreset();
+      saveSelectedTreatmentToLibrary();
     });
+    if (el.lineTreatmentCustomizeBtn) {
+      el.lineTreatmentCustomizeBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        closeLineStyleMenu();
+        customizeSelectedTreatment();
+      });
+    }
     el.linePresetExportBtn.addEventListener('click', (event) => {
       event.stopPropagation();
       exportLinePresetsFile();
@@ -16597,7 +16794,7 @@ const BOM_MATERIAL_LIBRARY = [
       event.stopPropagation();
       resetLinePresetsToBuiltins();
       renderLinePresetList();
-      linePresetToast('Line presets reset to the built-in set.');
+      linePresetToast('Line Treatments reset to the built-in set.');
     });
     // Dismissal is the Stitches menu's: the document click handler and Escape
     // in bindings.js / keyboard-shortcuts.js already own it, and every control
@@ -16606,7 +16803,7 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   // ---- src/ui/shape-stamp-panel.js ----
-// US-097 / ADR 0056: the saved-shape section of the Tools menu.
+// US-097 + US-098 / ADR 0059: the Template section of the Tools menu.
 //
 // Presentation only, mirroring src/ui/line-preset-panel.js exactly: every
 // mutation goes through src/manual/shape-stamps.js, which owns the model, the
@@ -16623,11 +16820,13 @@ const BOM_MATERIAL_LIBRARY = [
       x: pad + (p.x * (w - pad * 2)),
       y: pad + (p.y * (h - pad * 2)),
     });
-    const s0 = at(stamp.start);
-    let d = 'M' + s0.x.toFixed(2) + ' ' + s0.y.toFixed(2);
-    if (stamp.type === 'curved' && stamp.control1 && stamp.control2) {
-      let c1 = at(stamp.control1);
-      for (const pt of stamp.points) {
+    const members = Array.isArray(stamp.members) && stamp.members.length ? stamp.members : [stamp];
+    const paths = members.map(member => {
+      const s0 = at(member.start);
+      let d = 'M' + s0.x.toFixed(2) + ' ' + s0.y.toFixed(2);
+      if (member.type === 'curved' && member.control1 && member.control2) {
+        let c1 = at(member.control1);
+        for (const pt of member.points) {
         const hIn = at(pt.handleIn);
         const p = at(pt.point);
         d += ' C' + c1.x.toFixed(2) + ' ' + c1.y.toFixed(2)
@@ -16635,18 +16834,21 @@ const BOM_MATERIAL_LIBRARY = [
           + ',' + p.x.toFixed(2) + ' ' + p.y.toFixed(2);
         c1 = at(pt.handleOut);
       }
-      const c2 = at(stamp.control2);
-      const e = at(stamp.end);
+      const c2 = at(member.control2);
+      const e = at(member.end);
       d += ' C' + c1.x.toFixed(2) + ' ' + c1.y.toFixed(2)
         + ',' + c2.x.toFixed(2) + ' ' + c2.y.toFixed(2)
         + ',' + e.x.toFixed(2) + ' ' + e.y.toFixed(2);
     } else {
-      const e = at(stamp.end);
+      const e = at(member.end);
       d += ' L' + e.x.toFixed(2) + ' ' + e.y.toFixed(2);
     }
+      const color = LINE_COLORS[member.color] || LINE_COLOR;
+      return '<path d="' + d + '" stroke="' + color + '"/>';
+    }).join('');
     return '<svg class="style-preview" viewBox="0 0 ' + w + ' ' + h + '" fill="none" '
       + 'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" '
-      + 'stroke-linejoin="round" aria-hidden="true"><path d="' + d + '"/></svg>';
+      + 'stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
   }
 
   function shapeStampRowTitle(stamp) {
@@ -16656,10 +16858,8 @@ const BOM_MATERIAL_LIBRARY = [
     const ratio = stamp.aspect > 0
       ? `${stamp.aspect.toFixed(2)}:1 tall (Shift while dragging locks it)`
       : 'no fixed proportion';
-    const role = isStitchStyle(stamp.style)
-      ? 'Places a construction mark — drawn and exported, but no measurement row.'
-      : 'Places a measurement line.';
-    return `${stamp.name} — ${shape}, ${lineStyleLabel(stamp.style)}, ${stamp.color}, ${ratio}. ${role}`;
+    const count = Array.isArray(stamp.members) ? stamp.members.length : 1;
+    return `${stamp.name} — ${count} editable path${count === 1 ? '' : 's'}, ${shape}, ${ratio}. Places a grouped Sketch Element, never an automatic POM.`;
   }
 
   function renderShapeStampList() {
@@ -16704,18 +16904,18 @@ const BOM_MATERIAL_LIBRARY = [
   function saveSelectedLineAsShape() {
     const reason = canSaveShapeStampReason();
     if (reason !== true) { showToast(reason); return; }
-    const ann = shapeStampSaveTarget();
-    const kind = ann.type === 'curved' ? 'Curve' : 'Straight line';
+    const targets = shapeStampSaveTargets();
+    const kind = targets.length > 1 ? `${targets.length} selected paths` : (targets[0].type === 'curved' ? 'Curve' : 'Straight line');
     openLinePresetNameDialog({
-      title: 'Save shape',
-      sub: `${kind}, ${lineStyleLabel(getLineStyle(ann))}, ${normalizeColorKey(ann.color)}`,
+      title: 'Save Template',
+      sub: `${kind}. Geometry, styles and Treatments are kept; POM identity and measurements are excluded.`,
       value: '',
-      confirmLabel: 'Save shape',
+      confirmLabel: 'Save Template',
       onConfirm: (name) => {
         const stamp = addShapeStampFromSelection(name);
-        if (!stamp) { showToast('Could not save that shape.'); return; }
+        if (!stamp) { showToast('Could not save that Template.'); return; }
         renderShapeStampList();
-        shapeStampToast(`Saved "${stamp.name}" — pick it from Tools to place it.`);
+        shapeStampToast(`Saved "${stamp.name}" — pick it from Templates to place it.`);
       },
     });
   }
@@ -16738,7 +16938,7 @@ const BOM_MATERIAL_LIBRARY = [
       setActiveShapeStamp(id);
       closeBoardToolbarMenus(null, false);
       updateUI();
-      showToast(`Drag on the board to place "${stamp.name}" at that size. Shift keeps its proportions.`);
+      showToast(`Drag to place Template "${stamp.name}". Shift keeps its proportions.`);
       return;
     }
     if (action === 'up' || action === 'down') {
@@ -16752,7 +16952,7 @@ const BOM_MATERIAL_LIBRARY = [
     }
     if (action === 'rename') {
       openLinePresetNameDialog({
-        title: 'Rename shape',
+        title: 'Rename Template',
         sub: stamp.name,
         value: stamp.name,
         confirmLabel: 'Rename',
@@ -16776,7 +16976,7 @@ const BOM_MATERIAL_LIBRARY = [
       const after = getShapeStamps();
       const neighbour = after[Math.min(index, after.length - 1)];
       if (neighbour) refocusLibraryRowControl('shapeStampList', neighbour.id, { kind: 'stamp', name: 'delete' });
-      shapeStampToast(`Deleted "${stamp.name}".`);
+      shapeStampToast(`Deleted Template "${stamp.name}".`);
     }
   }
 
@@ -16788,8 +16988,8 @@ const BOM_MATERIAL_LIBRARY = [
     reader.onload = () => {
       const added = importShapeStampsFromJson(String(reader.result || ''));
       renderShapeStampList();
-      if (!added) { showToast('That file held no saved shapes.'); return; }
-      shapeStampToast(`Imported ${added} shape${added > 1 ? 's' : ''}.`);
+      if (!added) { showToast('That file held no Templates.'); return; }
+      shapeStampToast(`Imported ${added} Template${added > 1 ? 's' : ''}.`);
     };
     reader.onerror = () => showToast('Could not read that file.');
     reader.readAsText(file);
@@ -17098,7 +17298,10 @@ const BOM_MATERIAL_LIBRARY = [
   function setLineStyle(style) {
     const normalized = normalizeLineStyle(style);
     if (getSelectedAnnotationsForEdit().length) {
-      applyToSelectedAnnotations({ style: normalized });
+      // Choosing an ordinary style is the explicit way to remove a Treatment
+      // while preserving the source path. The layer recipe must not keep
+      // painting invisibly after the toolbar says Plain/Dashed/Zigzag.
+      applyToSelectedAnnotations({ style: normalized, lineTreatment: null });
       return;
     }
     setDefaultLineStyle(normalized);
@@ -19401,12 +19604,21 @@ const BOM_MATERIAL_LIBRARY = [
 // keyboard-shortcuts.js.
 
 function setSelection(kind, id) {
+    const nextAnn = kind === 'annotation' && id != null ? getAnnotationById(id) : null;
+    const nextGroupId = nextAnn && nextAnn.templateGroupId ? nextAnn.templateGroupId : null;
+    if (!nextGroupId || (state.templateGroupEditId && state.templateGroupEditId !== nextGroupId)) {
+      state.templateGroupEditId = null;
+    }
     state.selection = kind && id != null ? { kind, id } : { kind: null, id: null };
     // Keep the image + annotation multi-selections in lockstep: selecting one
     // (or anything else, or nothing) collapses the set. Shift+click / marquee
     // widen the annotation set through the helpers below.
     state.selectedImageIds = kind === 'image' && id != null ? [id] : [];
-    state.selectedAnnotationIds = kind === 'annotation' && id != null ? [id] : [];
+    state.selectedAnnotationIds = kind === 'annotation' && id != null
+      ? (nextGroupId && state.templateGroupEditId !== nextGroupId
+        ? state.annotations.filter(ann => ann.templateGroupId === nextGroupId).map(ann => ann.id)
+        : [id])
+      : [];
     if (kind !== 'graphic') state.graphicEdit = null;
     if (kind === 'annotation') {
       const ann = getAnnotationById(id);
@@ -19430,6 +19642,15 @@ function setSelection(kind, id) {
     }
     updateUI();
     requestRender();
+  }
+
+  function enterTemplateGroupForAnnotation(id) {
+    const ann = getAnnotationById(id);
+    if (!ann || !ann.templateGroupId) return false;
+    state.templateGroupEditId = ann.templateGroupId;
+    setSelection('annotation', id);
+    showToast('Editing Template member. Click outside the group to exit.');
+    return true;
   }
 
   // The set of currently-selected image ids. Derived from state so a direct
@@ -21906,7 +22127,7 @@ function onWheel(e) {
 // Source part for app.js. Run `npm run build` after editing.
 
   // Read a library out of localStorage. `listKey` is the payload's array field
-  // ('presets' / 'stamps'). Returns { list, seeded }.
+  // ('presets' / 'stamps'). Returns { list, seeded, version }.
   function readLibraryStore(storageKey, listKey, normalizeList) {
     let stored = null;
     try {
@@ -21919,6 +22140,7 @@ function onWheel(e) {
       list: normalizeList(stored && stored[listKey]),
       // Only a payload we could actually parse can claim to have been seeded.
       seeded: !!(stored && stored.seeded),
+      version: Number(stored && stored.version) || 0,
     };
   }
 
@@ -22010,7 +22232,7 @@ function onWheel(e) {
   }
 
   // ---- src/manual/line-presets.js ----
-// US-096 / ADR 0055: the line-preset library.
+// US-096 + US-098 / ADR 0060: line looks and layered Line Treatments.
 //
 // A preset is a NAMED LOOK and nothing else — style, colour, line width, arrow
 // type. It carries no geometry, so applying one can never move a line, change
@@ -22033,7 +22255,75 @@ function onWheel(e) {
   // `const` read during load would throw a TDZ ReferenceError from any part
   // that happens to run earlier. See CLAUDE.md "Living in one shared scope".
   function linePresetsStorageKey() { return 'bra-line-presets-v1'; }
-  function linePresetsFormatVersion() { return 1; }
+  function linePresetsFormatVersion() { return 2; }
+
+  function lineTreatmentPatterns() { return ['solid', 'dashed', 'zigzag']; }
+
+  function normalizeLineTreatmentLayer(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const pattern = lineTreatmentPatterns().includes(raw.pattern) ? raw.pattern : 'solid';
+    const offset = clamp(Number.isFinite(Number(raw.offset)) ? Number(raw.offset) : 0, -40, 40);
+    const width = clamp(Number.isFinite(Number(raw.width)) ? Number(raw.width) : DEFAULT_LINE_WIDTH, 0.5, 16);
+    const spacing = clamp(Number.isFinite(Number(raw.spacing)) ? Number(raw.spacing) : 10, 2, 80);
+    const amplitude = clamp(Number.isFinite(Number(raw.amplitude)) ? Number(raw.amplitude) : 4, 1, 40);
+    return {
+      id: String(raw.id || libraryEntryId('tl')),
+      pattern,
+      offset,
+      width,
+      color: normalizeColorKey(raw.color),
+      spacing,
+      amplitude,
+      hidden: !!raw.hidden,
+    };
+  }
+
+  function normalizeLineTreatmentLayers(list) {
+    return (Array.isArray(list) ? list : [])
+      .map(normalizeLineTreatmentLayer)
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+
+  function legacyStyleTreatmentLayers(style, color, lineWidth) {
+    const normalizedStyle = normalizeLineStyle(style);
+    const layerColor = normalizeColorKey(color);
+    const width = normalizeLineWidth(lineWidth);
+    if (normalizedStyle === 'cover') {
+      return [
+        normalizeLineTreatmentLayer({ pattern: 'dashed', offset: -4, width: width * 0.65, color: layerColor, spacing: 12 }),
+        normalizeLineTreatmentLayer({ pattern: 'dashed', offset: 4, width: width * 0.65, color: layerColor, spacing: 12 }),
+      ];
+    }
+    if (normalizedStyle === 'bartack') {
+      return [normalizeLineTreatmentLayer({ pattern: 'zigzag', offset: 0, width: width * 0.6, color: layerColor, spacing: 3, amplitude: 7 })];
+    }
+    return [normalizeLineTreatmentLayer({
+      pattern: normalizedStyle === 'zigzag' ? 'zigzag' : normalizedStyle === 'dashed' ? 'dashed' : 'solid',
+      offset: 0,
+      width,
+      color: layerColor,
+      spacing: normalizedStyle === 'zigzag' ? 5 : 10,
+      amplitude: normalizedStyle === 'zigzag' ? 5 : 4,
+    })];
+  }
+
+  function normalizeLineTreatment(raw, fallback) {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    let layers = normalizeLineTreatmentLayers(source.layers);
+    if (!layers.length && fallback) {
+      layers = legacyStyleTreatmentLayers(fallback.style, fallback.color, fallback.lineWidth);
+    }
+    if (!layers.length) return null;
+    return {
+      name: String(source.name || (fallback && fallback.name) || 'Custom treatment').trim().slice(0, 60),
+      layers,
+    };
+  }
+
+  function hasLineTreatment(ann) {
+    return !!(ann && normalizeLineTreatmentLayers(ann.lineTreatment && ann.lineTreatment.layers).length);
+  }
 
   // The set every TD starts with. Ids are stable strings (not the shared
   // idCounter) so an exported file imported on another machine matches by id
@@ -22047,9 +22337,14 @@ function onWheel(e) {
     return [
       { id: 'builtin-pom', name: 'POM line (red, arrows)', style: 'solid', color: 'red', lineWidth: 2.5, arrowType: 'double', builtin: true },
       { id: 'builtin-extension', name: 'Extension (dashed, one arrow)', style: 'dashed', color: 'red', lineWidth: 2.5, arrowType: 'single', builtin: true },
-      { id: 'builtin-zigzag', name: 'Zigzag (blue, no arrow)', style: 'zigzag', color: 'blue', lineWidth: 2.5, arrowType: 'none', builtin: true },
-      { id: 'builtin-cover', name: 'Cover stitch (blue, no arrow)', style: 'cover', color: 'blue', lineWidth: 2.5, arrowType: 'none', builtin: true },
-      { id: 'builtin-bartack', name: 'Bartack (black, no arrow)', style: 'bartack', color: 'black', lineWidth: 2.5, arrowType: 'none', builtin: true },
+      { id: 'builtin-zigzag', name: 'Zigzag (blue, no arrow)', style: 'zigzag', color: 'blue', lineWidth: 2.5, arrowType: 'none', builtin: true, kind: 'treatment', treatment: { name: 'Zigzag', layers: legacyStyleTreatmentLayers('zigzag', 'blue', 2.5) } },
+      { id: 'builtin-cover', name: 'Cover stitch (blue, no arrow)', style: 'cover', color: 'blue', lineWidth: 2.5, arrowType: 'none', builtin: true, kind: 'treatment', treatment: { name: 'Cover stitch', layers: legacyStyleTreatmentLayers('cover', 'blue', 2.5) } },
+      { id: 'builtin-bartack', name: 'Bartack (black, no arrow)', style: 'bartack', color: 'black', lineWidth: 2.5, arrowType: 'none', builtin: true, kind: 'treatment', treatment: { name: 'Bartack', layers: legacyStyleTreatmentLayers('bartack', 'black', 2.5) } },
+      { id: 'builtin-binding', name: 'Binding', style: 'solid', color: 'black', lineWidth: 2, arrowType: 'none', builtin: true, kind: 'treatment', treatment: { name: 'Binding', layers: [
+        normalizeLineTreatmentLayer({ pattern: 'solid', offset: -4, width: 1.8, color: 'black' }),
+        normalizeLineTreatmentLayer({ pattern: 'solid', offset: 4, width: 1.8, color: 'black' }),
+        normalizeLineTreatmentLayer({ pattern: 'dashed', offset: 0, width: 1.2, color: 'blue', spacing: 10 }),
+      ] } },
     ];
   }
 
@@ -22061,6 +22356,11 @@ function onWheel(e) {
     if (!raw || typeof raw !== 'object') return null;
     const name = String(raw.name == null ? '' : raw.name).trim();
     if (!name) return null;
+    const kind = raw.kind === 'treatment' || raw.treatment || raw.layers || isStitchStyle(raw.style)
+      ? 'treatment' : 'look';
+    const treatment = kind === 'treatment'
+      ? normalizeLineTreatment(raw.treatment || { layers: raw.layers }, raw)
+      : null;
     return {
       id: String(raw.id || libraryEntryId('lp')),
       name: name.slice(0, 60),
@@ -22069,6 +22369,8 @@ function onWheel(e) {
       lineWidth: normalizeLineWidth(raw.lineWidth),
       arrowType: normalizeLinePresetArrowType(raw.arrowType),
       builtin: !!raw.builtin,
+      kind,
+      treatment,
     };
   }
 
@@ -22095,7 +22397,16 @@ function onWheel(e) {
     // that keeps an emptied library empty — now lives in library-store.js and
     // is shared with the shape-stamp library, so the two cannot drift.
     const read = readLibraryStore(linePresetsStorageKey(), 'presets', normalizeLinePresetList);
-    linePresetStore = (read.list.length || read.seeded) ? read.list : builtinLinePresets();
+    if (read.version > 0 && read.version < linePresetsFormatVersion()) {
+      // v2 introduces true layered Treatments and the bundled Binding recipe.
+      // Merge them once even when a v1 profile deliberately stored an empty
+      // preset list; after this write the v2 seeded-empty contract is respected
+      // again, so deleting every Treatment still sticks across reload.
+      linePresetStore = libraryImportMerge(builtinLinePresets(), read.list);
+      saveLinePresets();
+    } else {
+      linePresetStore = (read.list.length || read.seeded) ? read.list : builtinLinePresets();
+    }
     return linePresetStore;
   }
 
@@ -22137,6 +22448,7 @@ function onWheel(e) {
         color: normalizeColorKey(ann.color),
         lineWidth: getLineWidth(ann),
         arrowType: getArrowType(ann),
+        treatment: hasLineTreatment(ann) ? normalizeLineTreatment(ann.lineTreatment) : null,
       };
     }
     return {
@@ -22144,6 +22456,7 @@ function onWheel(e) {
       color: normalizeColorKey(state.drawColor),
       lineWidth: normalizeLineWidth(state.lineWidth),
       arrowType: normalizeLinePresetArrowType(state.arrowType),
+      treatment: null,
     };
   }
 
@@ -22152,6 +22465,74 @@ function onWheel(e) {
     if (!preset) return null;
     commitLinePresets([...getLinePresets(), preset]);
     return preset;
+  }
+
+  function currentLineTreatment() {
+    const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    if (ann && hasLineTreatment(ann)) return normalizeLineTreatment(ann.lineTreatment);
+    const look = currentLineLook();
+    return normalizeLineTreatment(null, { ...look, name: 'Custom treatment' });
+  }
+
+  function addLineTreatment(name, recipe) {
+    const treatment = normalizeLineTreatment(recipe || currentLineTreatment(), { ...currentLineLook(), name });
+    if (!treatment) return null;
+    treatment.name = String(name || treatment.name || 'Custom treatment').trim().slice(0, 60);
+    const first = treatment.layers[0];
+    const preset = normalizeLinePreset({
+      id: libraryEntryId('lt'), name: treatment.name, kind: 'treatment', treatment,
+      style: 'solid', color: first.color, lineWidth: first.width, arrowType: 'none',
+    });
+    if (!preset) return null;
+    commitLinePresets([...getLinePresets(), preset]);
+    return preset;
+  }
+
+  function updateLineTreatment(id, recipe, name) {
+    const current = getLinePresetById(id);
+    if (!current) return false;
+    const treatment = normalizeLineTreatment(recipe, current);
+    if (!treatment) return false;
+    treatment.name = String(name || current.name || treatment.name).trim().slice(0, 60);
+    const first = treatment.layers[0];
+    commitLinePresets(getLinePresets().map(preset => preset.id === id ? {
+      ...preset,
+      name: treatment.name,
+      kind: 'treatment',
+      treatment,
+      style: 'solid',
+      color: first.color,
+      lineWidth: first.width,
+      arrowType: 'none',
+    } : preset));
+    return true;
+  }
+
+  function applyTreatmentRecipeToAnnotations(recipe, annotations, legacyLook) {
+    const treatment = normalizeLineTreatment(recipe);
+    const anns = Array.isArray(annotations) ? annotations.filter(Boolean) : [];
+    if (!treatment || !anns.length) return 0;
+    const before = snapshotFingerprint(makeSnapshot());
+    for (const ann of anns) {
+      ann.lineTreatment = clone(treatment);
+      if (legacyLook && typeof legacyLook === 'object') {
+        ann.style = normalizeLineStyle(legacyLook.style);
+        ann.color = normalizeColorKey(legacyLook.color);
+        ann.lineWidth = normalizeLineWidth(legacyLook.lineWidth);
+        ann.arrowType = normalizeLinePresetArrowType(legacyLook.arrowType);
+      } else {
+        ann.arrowType = 'none';
+      }
+    }
+    if (before !== snapshotFingerprint(makeSnapshot())) pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+    return anns.length;
+  }
+
+  function customizeSelectedLineTreatment(recipe) {
+    const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    return applyTreatmentRecipeToAnnotations(recipe, ann ? [ann] : []);
   }
 
   function renameLinePreset(id, name) {
@@ -22180,6 +22561,27 @@ function onWheel(e) {
     return true;
   }
 
+  // The menu presents Treatments and saved Looks as separate subgroups. Move
+  // within that visible subgroup so an enabled arrow always produces a visible
+  // result instead of silently crossing the subgroup boundary.
+  function moveLinePresetWithinKind(id, delta) {
+    const list = getLinePresets();
+    const index = list.findIndex(preset => preset.id === id);
+    if (index < 0) return false;
+    const kind = list[index].kind === 'treatment' ? 'treatment' : 'look';
+    const siblingIndices = list
+      .map((preset, presetIndex) => ({ preset, presetIndex }))
+      .filter(entry => (entry.preset.kind === 'treatment' ? 'treatment' : 'look') === kind)
+      .map(entry => entry.presetIndex);
+    const position = siblingIndices.indexOf(index);
+    const targetPosition = clamp(position + Math.sign(Number(delta) || 0), 0, siblingIndices.length - 1);
+    if (targetPosition === position) return false;
+    const targetIndex = siblingIndices[targetPosition];
+    [list[index], list[targetIndex]] = [list[targetIndex], list[index]];
+    commitLinePresets(list);
+    return true;
+  }
+
   function resetLinePresetsToBuiltins() {
     commitLinePresets(builtinLinePresets());
   }
@@ -22202,11 +22604,19 @@ function onWheel(e) {
     const selected = (typeof getSelectedAnnotationsForEdit === 'function')
       ? getSelectedAnnotationsForEdit() : [];
     if (selected.length) {
-      applyToSelectedAnnotations(settings);
+      if (preset.kind === 'treatment' && preset.treatment) {
+        applyTreatmentRecipeToAnnotations(preset.treatment, selected, preset);
+      } else {
+        applyToSelectedAnnotations({ ...settings, lineTreatment: null });
+      }
       showToast(selected.length > 1
         ? `${preset.name} applied to ${selected.length} lines.`
         : `${preset.name} applied.`);
       return true;
+    }
+    if (preset.kind === 'treatment') {
+      showToast('Select a straight or curved line, then apply the treatment.');
+      return false;
     }
     state.drawColor = settings.color;
     state.lineWidth = settings.lineWidth;
@@ -22287,19 +22697,17 @@ function onWheel(e) {
   }
 
   // ---- src/manual/shape-stamps.js ----
-// US-097 / ADR 0056: the shape-stamp library.
+// US-097 + US-098 / ADR 0059: reusable multi-path Templates.
 //
-// A stamp is ONE line's geometry — every anchor and both handles of every
-// interior anchor — normalized into a unit box, plus the look it was saved
-// with. Nothing absolute survives the save: not position, not size, not the
-// sketch it came from. That is what makes a curve saved on a 2000px sketch
-// usable on a 600px one, which is the entire point.
+// A Template is one or more selected paths — every anchor and both handles of
+// every interior anchor — normalized into one collective unit box, plus the
+// look and Treatment each member was saved with. Nothing absolute survives
+// the save: not position, size, source sketch, POM identity or measurement.
 //
-// A placed stamp is an ORDINARY annotation. Its measurement role is derived
-// from its style exactly as ADR 0055 defines, so a stamp saved from a plain
-// line places a POM line and one saved from a zigzag places a construction
-// mark. There is deliberately no new collection — see ADR 0056, which
-// supersedes ADR 0055's Follow-Up on this point.
+// A placed Template becomes a session-only group of Sketch Elements. Normal
+// selection moves the group; double-click enters one-member editing. Members
+// stay outside the measurement contract even when their visual style is solid.
+// ADR 0059 supersedes the single-line/POM semantics in ADR 0056.
 //
 // Sibling files: the Tools-menu UI is src/ui/shape-stamp-panel.js; the shared
 // storage policy is src/manual/library-store.js; the placement gesture lives
@@ -22309,7 +22717,7 @@ function onWheel(e) {
   // Functions, not module-scope consts: the parts share one scope and a const
   // read during load would throw a TDZ ReferenceError.
   function shapeStampsStorageKey() { return 'bra-shape-stamps-v1'; }
-  function shapeStampsFormatVersion() { return 1; }
+  function shapeStampsFormatVersion() { return 2; }
 
   // Below this the drag is treated as a click and the stamp is placed at a
   // default size. Screen pixels, like BG_MIN_CREATE_SCREEN_PX.
@@ -22319,7 +22727,7 @@ function onWheel(e) {
   // extent there — a perfectly horizontal line has zero height.
   function stampEpsilon() { return 1e-6; }
 
-  // ---- Normalizing a line into a stamp -------------------------------------
+  // ---- Normalizing paths into a Template -----------------------------------
 
   // Every point that defines the drawn shape, handles included. The handles
   // have to be inside the box too, or a re-placed curve's bulge is scaled
@@ -22354,6 +22762,22 @@ function onWheel(e) {
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
   }
 
+  function shapeTemplateBounds(annotations) {
+    const points = [];
+    for (const ann of (Array.isArray(annotations) ? annotations : [])) {
+      points.push(...shapeStampGeometryPoints(ann));
+    }
+    if (!points.length) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of points) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+
   // Fraction of the bounding box. A collapsed axis maps to 0.5 — the line's
   // own centreline — so a horizontal line stamps back as a horizontal line
   // through the middle of whatever box it is given.
@@ -22373,17 +22797,11 @@ function onWheel(e) {
 
   // Build a stamp from a drawn line. Returns null for anything unusable rather
   // than saving a stamp that cannot be placed.
-  function shapeStampFromAnnotation(ann, name) {
-    const trimmed = String(name == null ? '' : name).trim();
-    if (!trimmed || !ann || !ann.start || !ann.end) return null;
-    const bounds = shapeStampBounds(ann);
-    if (!bounds) return null;
-    const eps = stampEpsilon();
+  function shapeTemplateMemberFromAnnotation(ann, bounds) {
+    if (!ann || !ann.start || !ann.end || !bounds) return null;
     const n = (p) => normalizeStampPoint(p, bounds);
     const curved = ann.type === 'curved';
     return {
-      id: libraryEntryId('st'),
-      name: trimmed.slice(0, 60),
       type: curved ? 'curved' : 'straight',
       start: n(ann.start),
       end: n(ann.end),
@@ -22396,16 +22814,39 @@ function onWheel(e) {
           handleOut: n(pt && pt.handleOut),
         })).filter(pt => pt.point && pt.handleIn && pt.handleOut)
         : [],
-      // 0 means "no preferred aspect": one of the axes had no extent, so any
-      // box height is as faithful as any other.
-      aspect: (bounds.width > eps && bounds.height > eps) ? (bounds.height / bounds.width) : 0,
-      // The look travels with the shape. It is what decides, via ADR 0055,
-      // whether the placed line is a measurement or a construction mark.
       style: normalizeLineStyle(ann.style),
       color: normalizeColorKey(ann.color),
       lineWidth: normalizeLineWidth(ann.lineWidth),
       arrowType: getArrowType(ann),
+      lineTreatment: hasLineTreatment(ann) ? normalizeLineTreatment(ann.lineTreatment) : null,
     };
+  }
+
+  function shapeStampFromAnnotations(annotations, name) {
+    const trimmed = String(name == null ? '' : name).trim();
+    const anns = (Array.isArray(annotations) ? annotations : []).filter(ann => ann && ann.start && ann.end);
+    if (!trimmed || !anns.length) return null;
+    const bounds = shapeTemplateBounds(anns);
+    if (!bounds) return null;
+    const eps = stampEpsilon();
+    const members = anns.map(ann => shapeTemplateMemberFromAnnotation(ann, bounds)).filter(Boolean);
+    if (!members.length) return null;
+    const first = members[0];
+    return {
+      id: libraryEntryId('st'),
+      name: trimmed.slice(0, 60),
+      members,
+      // Keep the first member mirrored at top level so v1 exports and the
+      // existing one-path test/debug hooks remain readable during migration.
+      ...clone(first),
+      // 0 means "no preferred aspect": one of the axes had no extent, so any
+      // box height is as faithful as any other.
+      aspect: (bounds.width > eps && bounds.height > eps) ? (bounds.height / bounds.width) : 0,
+    };
+  }
+
+  function shapeStampFromAnnotation(ann, name) {
+    return shapeStampFromAnnotations(ann ? [ann] : [], name);
   }
 
   function normalizeStampStoredPoint(raw) {
@@ -22415,22 +22856,18 @@ function onWheel(e) {
     return { x, y };
   }
 
-  function normalizeShapeStamp(raw) {
+  function normalizeShapeStampMember(raw) {
     if (!raw || typeof raw !== 'object') return null;
-    const name = String(raw.name == null ? '' : raw.name).trim();
     const start = normalizeStampStoredPoint(raw.start);
     const end = normalizeStampStoredPoint(raw.end);
-    if (!name || !start || !end) return null;
+    if (!start || !end) return null;
     const curved = raw.type === 'curved';
     const control1 = curved ? normalizeStampStoredPoint(raw.control1) : null;
     const control2 = curved ? normalizeStampStoredPoint(raw.control2) : null;
     // A curved stamp missing a control point is not repairable here — its
     // shape is gone. Fall back to straight rather than inventing a bow.
     const usableCurve = curved && control1 && control2;
-    const aspect = Number(raw.aspect);
     return {
-      id: String(raw.id || libraryEntryId('st')),
-      name: name.slice(0, 60),
       type: usableCurve ? 'curved' : 'straight',
       start,
       end,
@@ -22443,11 +22880,32 @@ function onWheel(e) {
           handleOut: normalizeStampStoredPoint(pt && pt.handleOut),
         })).filter(pt => pt.point && pt.handleIn && pt.handleOut)
         : [],
-      aspect: (Number.isFinite(aspect) && aspect > 0) ? aspect : 0,
       style: normalizeLineStyle(raw.style),
       color: normalizeColorKey(raw.color),
       lineWidth: normalizeLineWidth(raw.lineWidth),
       arrowType: ['single', 'double', 'none'].includes(raw.arrowType) ? raw.arrowType : 'none',
+      lineTreatment: normalizeLineTreatment(raw.lineTreatment),
+    };
+  }
+
+  function normalizeShapeStamp(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const name = String(raw.name == null ? '' : raw.name).trim();
+    if (!name) return null;
+    let members = (Array.isArray(raw.members) ? raw.members : [])
+      .map(normalizeShapeStampMember).filter(Boolean).slice(0, 80);
+    if (!members.length) {
+      const legacy = normalizeShapeStampMember(raw);
+      if (legacy) members = [legacy];
+    }
+    if (!members.length) return null;
+    const aspect = Number(raw.aspect);
+    return {
+      id: String(raw.id || libraryEntryId('st')),
+      name: name.slice(0, 60),
+      members,
+      aspect: (Number.isFinite(aspect) && aspect > 0) ? aspect : 0,
+      ...clone(members[0]),
     };
   }
 
@@ -22498,26 +22956,29 @@ function onWheel(e) {
 
   // ---- Mutations -----------------------------------------------------------
 
-  // Exactly one selected line. A group has no single geometry to save, and
-  // silently picking the primary would save something the TD did not point at.
-  function shapeStampSaveTarget() {
+  // One or more selected paths become one Template. A plain click on an
+  // existing Template selects all its members, so saving a placed group again
+  // is the same operation as saving a hand-built back wing.
+  function shapeStampSaveTargets() {
     const selected = (typeof getSelectedAnnotations === 'function') ? getSelectedAnnotations() : [];
-    if (selected.length === 1) return selected[0];
-    if (!selected.length && typeof getSelectedAnnotation === 'function') return getSelectedAnnotation();
-    return null;
+    if (selected.length) return selected;
+    const primary = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    return primary ? [primary] : [];
+  }
+
+  function shapeStampSaveTarget() {
+    return shapeStampSaveTargets()[0] || null;
   }
 
   function canSaveShapeStampReason() {
-    const selected = (typeof getSelectedAnnotations === 'function') ? getSelectedAnnotations() : [];
-    if (selected.length > 1) return 'Select just one line — a shape holds one line.';
-    if (!shapeStampSaveTarget()) return 'Select a line to save its shape.';
+    if (!shapeStampSaveTargets().length) return 'Select one or more lines to save as a Template.';
     return true;
   }
 
   function addShapeStampFromSelection(name) {
-    const ann = shapeStampSaveTarget();
-    if (!ann) return null;
-    const stamp = shapeStampFromAnnotation(ann, name);
+    const targets = shapeStampSaveTargets();
+    if (!targets.length) return null;
+    const stamp = shapeStampFromAnnotations(targets, name);
     if (!stamp) return null;
     commitShapeStamps([...getShapeStamps(), stamp]);
     return stamp;
@@ -22636,27 +23097,30 @@ function onWheel(e) {
   // ordering lesson (US-093): normalize the curve FIRST, derive the label after,
   // because computeDefaultLabelPosition walks getCurveBeziers and therefore
   // reads the very controls ensureCurveControls exists to supply.
-  function createAnnotationFromStamp(stamp, rawBox) {
-    if (!stamp) return null;
-    const box = normalizeStampBox(stamp, rawBox);
+  function createAnnotationFromTemplateMember(member, rawBox, groupId) {
+    if (!member) return null;
+    const box = normalizeStampBox(member, rawBox);
     const d = (p) => denormalizeStampPoint(p, box);
-    const curved = stamp.type === 'curved';
+    const curved = member.type === 'curved';
     const ann = {
       id: state.idCounter++,
       seq: state.nextSequence,
       type: curved ? 'curved' : 'straight',
-      style: stamp.style,
-      color: stamp.color,
-      arrowType: stamp.arrowType,
-      lineWidth: stamp.lineWidth,
-      start: d(stamp.start),
-      end: d(stamp.end),
+      style: member.style,
+      color: member.color,
+      arrowType: member.arrowType,
+      lineWidth: member.lineWidth,
+      lineTreatment: member.lineTreatment ? clone(member.lineTreatment) : null,
+      purpose: 'sketch-element',
+      templateGroupId: groupId || null,
+      start: d(member.start),
+      end: d(member.end),
       midPoint: null,
       midHandleIn: null,
       midHandleOut: null,
-      control1: curved ? d(stamp.control1) : null,
-      control2: curved ? d(stamp.control2) : null,
-      points: curved ? stamp.points.map(pt => ({
+      control1: curved ? d(member.control1) : null,
+      control2: curved ? d(member.control2) : null,
+      points: curved ? member.points.map(pt => ({
         point: d(pt.point), handleIn: d(pt.handleIn), handleOut: d(pt.handleOut),
       })) : [],
       label: null,
@@ -22675,21 +23139,32 @@ function onWheel(e) {
     return ann;
   }
 
+  function createAnnotationsFromStamp(stamp, rawBox, groupId) {
+    if (!stamp) return [];
+    const members = Array.isArray(stamp.members) && stamp.members.length ? stamp.members : [stamp];
+    return members.map(member => createAnnotationFromTemplateMember(member, rawBox, groupId)).filter(Boolean);
+  }
+
+  function createAnnotationFromStamp(stamp, rawBox) {
+    return createAnnotationsFromStamp(stamp, rawBox, null)[0] || null;
+  }
+
   // The one entry point the pointer layer calls on mouseup.
   function placeShapeStamp(stamp, start, current, shiftKey, altKey) {
     if (!stamp) return null;
     const dragged = stampBoxFromDrag(stamp, start, current, shiftKey, altKey);
     const tooSmall = Math.max(dragged.width, dragged.height) * state.zoom < stampMinCreateScreenPx();
     const box = tooSmall ? defaultStampBoxAt(stamp, start) : dragged;
-    const ann = createAnnotationFromStamp(stamp, box);
-    if (!ann) return null;
-    state.annotations.push(ann);
-    state.selection = { kind: 'annotation', id: ann.id };
-    state.selectedAnnotationIds = [ann.id];
-    // ADR 0055: a construction stamp spends no POM number.
-    consumePomSequenceFor(ann);
+    const groupId = 'template-' + state.idCounter++;
+    const anns = createAnnotationsFromStamp(stamp, box, groupId);
+    if (!anns.length) return null;
+    state.annotations.push(...anns);
+    state.selection = { kind: 'annotation', id: anns[0].id };
+    state.selectedAnnotationIds = anns.map(ann => ann.id);
+    state.templateGroupEditId = null;
+    // ADR 0058: Template members are Sketch Elements and spend no POM number.
     pushHistoryIfChanged();
-    return ann;
+    return anns[0];
   }
 
   // Drawn by building the annotation the release WOULD create and handing it to
@@ -22709,10 +23184,10 @@ function onWheel(e) {
     // not spend an id every mousemove.
     const savedId = state.idCounter;
     const savedSeq = state.nextSequence;
-    const preview = createAnnotationFromStamp(stamp, box);
+    const preview = createAnnotationsFromStamp(stamp, box, null);
     state.idCounter = savedId;
     state.nextSequence = savedSeq;
-    if (preview) drawLineCore(preview, 0.6);
+    for (const ann of preview) drawLineCore(ann, 0.6);
   }
 
   function setActiveShapeStamp(id) {
@@ -23838,7 +24313,12 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // menu to behave.
   function isMeasurementAnnotation(ann) {
     if (!ann) return false;
-    if (!isStitchStyle(ann.style)) return true;
+    // US-098 / ADR 0058: geometry inserted from a Template is sketch
+    // structure, never a measurement merely because its visible spine is
+    // plain. A later Convert-to-POM command will remove this purpose
+    // explicitly; style alone cannot promote it.
+    if (ann.purpose === 'sketch-element') return false;
+    if (!isStitchStyle(ann.style) && !hasLineTreatment(ann)) return true;
     return hasManualPomLabel(ann);
   }
 
@@ -38252,6 +38732,15 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       getLinePresets: () => (typeof getLinePresets === 'function' ? clone(getLinePresets()) : null),
       applyLinePreset: (id) => (typeof applyLinePreset === 'function' ? applyLinePreset(id) : false),
       addLinePreset: (name) => (typeof addLinePreset === 'function' ? clone(addLinePreset(name)) : null),
+      addLineTreatment: (name, recipe) => (typeof addLineTreatment === 'function'
+        ? clone(addLineTreatment(name, recipe)) : null),
+      updateLineTreatment: (id, recipe, name) => (typeof updateLineTreatment === 'function'
+        ? updateLineTreatment(id, recipe, name) : false),
+      applyLineTreatmentToIds: (ids, recipe) => {
+        const anns = (Array.isArray(ids) ? ids : []).map(id => getAnnotationById(id)).filter(Boolean);
+        return typeof applyTreatmentRecipeToAnnotations === 'function'
+          ? applyTreatmentRecipeToAnnotations(recipe, anns) : 0;
+      },
       resetLinePresets: () => {
         if (typeof resetLinePresetsToBuiltins === 'function') resetLinePresetsToBuiltins();
       },
@@ -38271,6 +38760,27 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         ? importShapeStampsFromJson(text) : 0),
       setActiveShapeStamp: (id) => {
         if (typeof setActiveShapeStamp === 'function') setActiveShapeStamp(id);
+      },
+      addTemplateFromAnnotationIds: (name, ids) => {
+        const anns = (Array.isArray(ids) ? ids : []).map(id => getAnnotationById(id)).filter(Boolean);
+        const template = typeof shapeStampFromAnnotations === 'function'
+          ? shapeStampFromAnnotations(anns, name) : null;
+        if (!template) return null;
+        commitShapeStamps([...getShapeStamps(), template]);
+        return clone(template);
+      },
+      placeTemplateInBox: (id, box) => {
+        const template = getShapeStampById(id);
+        if (!template || !box) return [];
+        const groupId = 'template-' + state.idCounter++;
+        const anns = createAnnotationsFromStamp(template, box, groupId);
+        state.annotations.push(...anns);
+        if (anns.length) {
+          state.selection = { kind: 'annotation', id: anns[0].id };
+          state.selectedAnnotationIds = anns.map(ann => ann.id);
+        }
+        pushHistoryIfChanged(); updateUI(); requestRender();
+        return clone(anns);
       },
       sampleAnnotationShape: (annotationId, samples) => {
         const ann = state.annotations.find(a => a && a.id === annotationId);
@@ -38426,6 +38936,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         // that selected the wrong KIND of thing is otherwise invisible.
         tool: state.tool,
         selection: { kind: state.selection.kind, id: state.selection.id != null ? state.selection.id : null },
+        selectedAnnotationIds: getSelectedAnnotationIds().slice(),
+        templateGroupEditId: state.templateGroupEditId || null,
         noteCount: (state.notes || []).length,
         autoStatus: state.autoMode.status,
         lastError: state.autoMode.lastError,
@@ -40703,6 +41215,77 @@ function makeExportFileName() {
 // helpers they share. Source part for app.js. Run `npm run build`
 // after editing.
 
+  // US-098 / ADR 0060: a configurable Treatment is a stack of layers sampled
+  // from the SAME source path. Offsets and pattern sizes are screen-feature
+  // pixels, just like the legacy stitch renderer, so zooming never changes the
+  // construction symbol's apparent weight.
+  function drawLineTreatment(ann, treatment) {
+    const recipe = normalizeLineTreatment(treatment);
+    if (!recipe) return false;
+    const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : 96);
+    if (points.length < 2 || polylineLength(points) <= 0) return false;
+    for (const layer of recipe.layers) {
+      if (!layer.hidden) drawLineTreatmentLayer(points, layer);
+    }
+    return true;
+  }
+
+  function drawLineTreatmentLayer(points, layer) {
+    const z = Math.max(0.0001, featureZoom());
+    const offset = layer.offset / z;
+    const width = layer.width / z;
+    const color = LINE_COLORS[layer.color] || LINE_COLOR;
+    if (layer.pattern === 'zigzag') {
+      drawTreatmentZigzag(points, color, width, offset, layer.spacing / z, layer.amplitude / z);
+      return;
+    }
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.setLineDash(layer.pattern === 'dashed'
+      ? [Math.max(1, layer.spacing * 0.58) / z, Math.max(1, layer.spacing * 0.42) / z]
+      : []);
+    drawOffsetPolyline(points, offset);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawOffsetPolyline(points, offset) {
+    ctx.beginPath();
+    for (let i = 0; i < points.length; i += 1) {
+      const normal = polylineVertexNormal(points, i);
+      const x = points[i].x + normal.x * offset;
+      const y = points[i].y + normal.y * offset;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+  }
+
+  function drawTreatmentZigzag(points, color, width, offset, spacing, amplitude) {
+    const length = polylineLength(points);
+    const step = Math.max(1, spacing);
+    const count = Math.max(2, Math.ceil(length / step));
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i <= count; i += 1) {
+      const sample = samplePolylineAt(points, length * (i / count));
+      const side = i % 2 === 0 ? -1 : 1;
+      const across = offset + amplitude * side;
+      const x = sample.point.x + sample.normal.x * across;
+      const y = sample.point.y + sample.normal.y * across;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawZigzagStitchLine(ann, color, lineWidth) {
     const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : 72);
     const length = polylineLength(points);
@@ -40933,7 +41516,12 @@ function makeExportFileName() {
     let style = getLineStyle(ann);
     if (style === 'solid' && annotationCrossesViews(ann)) style = 'dashed';
 
-    if (style === 'zigzag') {
+    const treated = hasLineTreatment(ann) && drawLineTreatment(ann, ann.lineTreatment);
+    if (treated) {
+      // The Treatment recipe owns every visible layer. The annotation path
+      // remains the editable/hit-test spine and is deliberately not painted a
+      // second time underneath it.
+    } else if (style === 'zigzag') {
       drawZigzagStitchLine(ann, color, lineWidth);
     } else if (style === 'cover') {
       drawCoverStitchLine(ann, color, lineWidth);
@@ -40947,7 +41535,9 @@ function makeExportFileName() {
     }
 
     ctx.setLineDash([]);
-    if (ann.type === 'straight') {
+    if (treated) {
+      // Treatments are construction depiction, never POM arrow geometry.
+    } else if (ann.type === 'straight') {
       drawArrowheadsForStraight(ann, color, lineWidth);
     } else {
       drawArrowheadsForCurve(ann, color, lineWidth);
@@ -42368,6 +42958,11 @@ function onDoubleClick(e) {
   }
   const annHit = hitTestAnnotations(world);
   if (annHit) {
+    const ann = getAnnotationById(annHit.id);
+    if (ann && ann.templateGroupId && state.templateGroupEditId !== ann.templateGroupId) {
+      enterTemplateGroupForAnnotation(annHit.id);
+      return;
+    }
     setSelection('annotation', annHit.id);
     openLabelEditor(annHit.id);
     return;

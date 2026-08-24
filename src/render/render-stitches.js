@@ -3,6 +3,77 @@
 // helpers they share. Source part for app.js. Run `npm run build`
 // after editing.
 
+  // US-098 / ADR 0060: a configurable Treatment is a stack of layers sampled
+  // from the SAME source path. Offsets and pattern sizes are screen-feature
+  // pixels, just like the legacy stitch renderer, so zooming never changes the
+  // construction symbol's apparent weight.
+  function drawLineTreatment(ann, treatment) {
+    const recipe = normalizeLineTreatment(treatment);
+    if (!recipe) return false;
+    const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : 96);
+    if (points.length < 2 || polylineLength(points) <= 0) return false;
+    for (const layer of recipe.layers) {
+      if (!layer.hidden) drawLineTreatmentLayer(points, layer);
+    }
+    return true;
+  }
+
+  function drawLineTreatmentLayer(points, layer) {
+    const z = Math.max(0.0001, featureZoom());
+    const offset = layer.offset / z;
+    const width = layer.width / z;
+    const color = LINE_COLORS[layer.color] || LINE_COLOR;
+    if (layer.pattern === 'zigzag') {
+      drawTreatmentZigzag(points, color, width, offset, layer.spacing / z, layer.amplitude / z);
+      return;
+    }
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.setLineDash(layer.pattern === 'dashed'
+      ? [Math.max(1, layer.spacing * 0.58) / z, Math.max(1, layer.spacing * 0.42) / z]
+      : []);
+    drawOffsetPolyline(points, offset);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawOffsetPolyline(points, offset) {
+    ctx.beginPath();
+    for (let i = 0; i < points.length; i += 1) {
+      const normal = polylineVertexNormal(points, i);
+      const x = points[i].x + normal.x * offset;
+      const y = points[i].y + normal.y * offset;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+  }
+
+  function drawTreatmentZigzag(points, color, width, offset, spacing, amplitude) {
+    const length = polylineLength(points);
+    const step = Math.max(1, spacing);
+    const count = Math.max(2, Math.ceil(length / step));
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i <= count; i += 1) {
+      const sample = samplePolylineAt(points, length * (i / count));
+      const side = i % 2 === 0 ? -1 : 1;
+      const across = offset + amplitude * side;
+      const x = sample.point.x + sample.normal.x * across;
+      const y = sample.point.y + sample.normal.y * across;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawZigzagStitchLine(ann, color, lineWidth) {
     const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : 72);
     const length = polylineLength(points);

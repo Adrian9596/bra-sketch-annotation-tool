@@ -1,4 +1,4 @@
-// US-096 / ADR 0055: the line-preset library.
+// US-096 + US-098 / ADR 0060: line looks and layered Line Treatments.
 //
 // A preset is a NAMED LOOK and nothing else — style, colour, line width, arrow
 // type. It carries no geometry, so applying one can never move a line, change
@@ -21,7 +21,75 @@
   // `const` read during load would throw a TDZ ReferenceError from any part
   // that happens to run earlier. See CLAUDE.md "Living in one shared scope".
   function linePresetsStorageKey() { return 'bra-line-presets-v1'; }
-  function linePresetsFormatVersion() { return 1; }
+  function linePresetsFormatVersion() { return 2; }
+
+  function lineTreatmentPatterns() { return ['solid', 'dashed', 'zigzag']; }
+
+  function normalizeLineTreatmentLayer(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const pattern = lineTreatmentPatterns().includes(raw.pattern) ? raw.pattern : 'solid';
+    const offset = clamp(Number.isFinite(Number(raw.offset)) ? Number(raw.offset) : 0, -40, 40);
+    const width = clamp(Number.isFinite(Number(raw.width)) ? Number(raw.width) : DEFAULT_LINE_WIDTH, 0.5, 16);
+    const spacing = clamp(Number.isFinite(Number(raw.spacing)) ? Number(raw.spacing) : 10, 2, 80);
+    const amplitude = clamp(Number.isFinite(Number(raw.amplitude)) ? Number(raw.amplitude) : 4, 1, 40);
+    return {
+      id: String(raw.id || libraryEntryId('tl')),
+      pattern,
+      offset,
+      width,
+      color: normalizeColorKey(raw.color),
+      spacing,
+      amplitude,
+      hidden: !!raw.hidden,
+    };
+  }
+
+  function normalizeLineTreatmentLayers(list) {
+    return (Array.isArray(list) ? list : [])
+      .map(normalizeLineTreatmentLayer)
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+
+  function legacyStyleTreatmentLayers(style, color, lineWidth) {
+    const normalizedStyle = normalizeLineStyle(style);
+    const layerColor = normalizeColorKey(color);
+    const width = normalizeLineWidth(lineWidth);
+    if (normalizedStyle === 'cover') {
+      return [
+        normalizeLineTreatmentLayer({ pattern: 'dashed', offset: -4, width: width * 0.65, color: layerColor, spacing: 12 }),
+        normalizeLineTreatmentLayer({ pattern: 'dashed', offset: 4, width: width * 0.65, color: layerColor, spacing: 12 }),
+      ];
+    }
+    if (normalizedStyle === 'bartack') {
+      return [normalizeLineTreatmentLayer({ pattern: 'zigzag', offset: 0, width: width * 0.6, color: layerColor, spacing: 3, amplitude: 7 })];
+    }
+    return [normalizeLineTreatmentLayer({
+      pattern: normalizedStyle === 'zigzag' ? 'zigzag' : normalizedStyle === 'dashed' ? 'dashed' : 'solid',
+      offset: 0,
+      width,
+      color: layerColor,
+      spacing: normalizedStyle === 'zigzag' ? 5 : 10,
+      amplitude: normalizedStyle === 'zigzag' ? 5 : 4,
+    })];
+  }
+
+  function normalizeLineTreatment(raw, fallback) {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    let layers = normalizeLineTreatmentLayers(source.layers);
+    if (!layers.length && fallback) {
+      layers = legacyStyleTreatmentLayers(fallback.style, fallback.color, fallback.lineWidth);
+    }
+    if (!layers.length) return null;
+    return {
+      name: String(source.name || (fallback && fallback.name) || 'Custom treatment').trim().slice(0, 60),
+      layers,
+    };
+  }
+
+  function hasLineTreatment(ann) {
+    return !!(ann && normalizeLineTreatmentLayers(ann.lineTreatment && ann.lineTreatment.layers).length);
+  }
 
   // The set every TD starts with. Ids are stable strings (not the shared
   // idCounter) so an exported file imported on another machine matches by id
@@ -35,9 +103,14 @@
     return [
       { id: 'builtin-pom', name: 'POM line (red, arrows)', style: 'solid', color: 'red', lineWidth: 2.5, arrowType: 'double', builtin: true },
       { id: 'builtin-extension', name: 'Extension (dashed, one arrow)', style: 'dashed', color: 'red', lineWidth: 2.5, arrowType: 'single', builtin: true },
-      { id: 'builtin-zigzag', name: 'Zigzag (blue, no arrow)', style: 'zigzag', color: 'blue', lineWidth: 2.5, arrowType: 'none', builtin: true },
-      { id: 'builtin-cover', name: 'Cover stitch (blue, no arrow)', style: 'cover', color: 'blue', lineWidth: 2.5, arrowType: 'none', builtin: true },
-      { id: 'builtin-bartack', name: 'Bartack (black, no arrow)', style: 'bartack', color: 'black', lineWidth: 2.5, arrowType: 'none', builtin: true },
+      { id: 'builtin-zigzag', name: 'Zigzag (blue, no arrow)', style: 'zigzag', color: 'blue', lineWidth: 2.5, arrowType: 'none', builtin: true, kind: 'treatment', treatment: { name: 'Zigzag', layers: legacyStyleTreatmentLayers('zigzag', 'blue', 2.5) } },
+      { id: 'builtin-cover', name: 'Cover stitch (blue, no arrow)', style: 'cover', color: 'blue', lineWidth: 2.5, arrowType: 'none', builtin: true, kind: 'treatment', treatment: { name: 'Cover stitch', layers: legacyStyleTreatmentLayers('cover', 'blue', 2.5) } },
+      { id: 'builtin-bartack', name: 'Bartack (black, no arrow)', style: 'bartack', color: 'black', lineWidth: 2.5, arrowType: 'none', builtin: true, kind: 'treatment', treatment: { name: 'Bartack', layers: legacyStyleTreatmentLayers('bartack', 'black', 2.5) } },
+      { id: 'builtin-binding', name: 'Binding', style: 'solid', color: 'black', lineWidth: 2, arrowType: 'none', builtin: true, kind: 'treatment', treatment: { name: 'Binding', layers: [
+        normalizeLineTreatmentLayer({ pattern: 'solid', offset: -4, width: 1.8, color: 'black' }),
+        normalizeLineTreatmentLayer({ pattern: 'solid', offset: 4, width: 1.8, color: 'black' }),
+        normalizeLineTreatmentLayer({ pattern: 'dashed', offset: 0, width: 1.2, color: 'blue', spacing: 10 }),
+      ] } },
     ];
   }
 
@@ -49,6 +122,11 @@
     if (!raw || typeof raw !== 'object') return null;
     const name = String(raw.name == null ? '' : raw.name).trim();
     if (!name) return null;
+    const kind = raw.kind === 'treatment' || raw.treatment || raw.layers || isStitchStyle(raw.style)
+      ? 'treatment' : 'look';
+    const treatment = kind === 'treatment'
+      ? normalizeLineTreatment(raw.treatment || { layers: raw.layers }, raw)
+      : null;
     return {
       id: String(raw.id || libraryEntryId('lp')),
       name: name.slice(0, 60),
@@ -57,6 +135,8 @@
       lineWidth: normalizeLineWidth(raw.lineWidth),
       arrowType: normalizeLinePresetArrowType(raw.arrowType),
       builtin: !!raw.builtin,
+      kind,
+      treatment,
     };
   }
 
@@ -83,7 +163,16 @@
     // that keeps an emptied library empty — now lives in library-store.js and
     // is shared with the shape-stamp library, so the two cannot drift.
     const read = readLibraryStore(linePresetsStorageKey(), 'presets', normalizeLinePresetList);
-    linePresetStore = (read.list.length || read.seeded) ? read.list : builtinLinePresets();
+    if (read.version > 0 && read.version < linePresetsFormatVersion()) {
+      // v2 introduces true layered Treatments and the bundled Binding recipe.
+      // Merge them once even when a v1 profile deliberately stored an empty
+      // preset list; after this write the v2 seeded-empty contract is respected
+      // again, so deleting every Treatment still sticks across reload.
+      linePresetStore = libraryImportMerge(builtinLinePresets(), read.list);
+      saveLinePresets();
+    } else {
+      linePresetStore = (read.list.length || read.seeded) ? read.list : builtinLinePresets();
+    }
     return linePresetStore;
   }
 
@@ -125,6 +214,7 @@
         color: normalizeColorKey(ann.color),
         lineWidth: getLineWidth(ann),
         arrowType: getArrowType(ann),
+        treatment: hasLineTreatment(ann) ? normalizeLineTreatment(ann.lineTreatment) : null,
       };
     }
     return {
@@ -132,6 +222,7 @@
       color: normalizeColorKey(state.drawColor),
       lineWidth: normalizeLineWidth(state.lineWidth),
       arrowType: normalizeLinePresetArrowType(state.arrowType),
+      treatment: null,
     };
   }
 
@@ -140,6 +231,74 @@
     if (!preset) return null;
     commitLinePresets([...getLinePresets(), preset]);
     return preset;
+  }
+
+  function currentLineTreatment() {
+    const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    if (ann && hasLineTreatment(ann)) return normalizeLineTreatment(ann.lineTreatment);
+    const look = currentLineLook();
+    return normalizeLineTreatment(null, { ...look, name: 'Custom treatment' });
+  }
+
+  function addLineTreatment(name, recipe) {
+    const treatment = normalizeLineTreatment(recipe || currentLineTreatment(), { ...currentLineLook(), name });
+    if (!treatment) return null;
+    treatment.name = String(name || treatment.name || 'Custom treatment').trim().slice(0, 60);
+    const first = treatment.layers[0];
+    const preset = normalizeLinePreset({
+      id: libraryEntryId('lt'), name: treatment.name, kind: 'treatment', treatment,
+      style: 'solid', color: first.color, lineWidth: first.width, arrowType: 'none',
+    });
+    if (!preset) return null;
+    commitLinePresets([...getLinePresets(), preset]);
+    return preset;
+  }
+
+  function updateLineTreatment(id, recipe, name) {
+    const current = getLinePresetById(id);
+    if (!current) return false;
+    const treatment = normalizeLineTreatment(recipe, current);
+    if (!treatment) return false;
+    treatment.name = String(name || current.name || treatment.name).trim().slice(0, 60);
+    const first = treatment.layers[0];
+    commitLinePresets(getLinePresets().map(preset => preset.id === id ? {
+      ...preset,
+      name: treatment.name,
+      kind: 'treatment',
+      treatment,
+      style: 'solid',
+      color: first.color,
+      lineWidth: first.width,
+      arrowType: 'none',
+    } : preset));
+    return true;
+  }
+
+  function applyTreatmentRecipeToAnnotations(recipe, annotations, legacyLook) {
+    const treatment = normalizeLineTreatment(recipe);
+    const anns = Array.isArray(annotations) ? annotations.filter(Boolean) : [];
+    if (!treatment || !anns.length) return 0;
+    const before = snapshotFingerprint(makeSnapshot());
+    for (const ann of anns) {
+      ann.lineTreatment = clone(treatment);
+      if (legacyLook && typeof legacyLook === 'object') {
+        ann.style = normalizeLineStyle(legacyLook.style);
+        ann.color = normalizeColorKey(legacyLook.color);
+        ann.lineWidth = normalizeLineWidth(legacyLook.lineWidth);
+        ann.arrowType = normalizeLinePresetArrowType(legacyLook.arrowType);
+      } else {
+        ann.arrowType = 'none';
+      }
+    }
+    if (before !== snapshotFingerprint(makeSnapshot())) pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+    return anns.length;
+  }
+
+  function customizeSelectedLineTreatment(recipe) {
+    const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    return applyTreatmentRecipeToAnnotations(recipe, ann ? [ann] : []);
   }
 
   function renameLinePreset(id, name) {
@@ -168,6 +327,27 @@
     return true;
   }
 
+  // The menu presents Treatments and saved Looks as separate subgroups. Move
+  // within that visible subgroup so an enabled arrow always produces a visible
+  // result instead of silently crossing the subgroup boundary.
+  function moveLinePresetWithinKind(id, delta) {
+    const list = getLinePresets();
+    const index = list.findIndex(preset => preset.id === id);
+    if (index < 0) return false;
+    const kind = list[index].kind === 'treatment' ? 'treatment' : 'look';
+    const siblingIndices = list
+      .map((preset, presetIndex) => ({ preset, presetIndex }))
+      .filter(entry => (entry.preset.kind === 'treatment' ? 'treatment' : 'look') === kind)
+      .map(entry => entry.presetIndex);
+    const position = siblingIndices.indexOf(index);
+    const targetPosition = clamp(position + Math.sign(Number(delta) || 0), 0, siblingIndices.length - 1);
+    if (targetPosition === position) return false;
+    const targetIndex = siblingIndices[targetPosition];
+    [list[index], list[targetIndex]] = [list[targetIndex], list[index]];
+    commitLinePresets(list);
+    return true;
+  }
+
   function resetLinePresetsToBuiltins() {
     commitLinePresets(builtinLinePresets());
   }
@@ -190,11 +370,19 @@
     const selected = (typeof getSelectedAnnotationsForEdit === 'function')
       ? getSelectedAnnotationsForEdit() : [];
     if (selected.length) {
-      applyToSelectedAnnotations(settings);
+      if (preset.kind === 'treatment' && preset.treatment) {
+        applyTreatmentRecipeToAnnotations(preset.treatment, selected, preset);
+      } else {
+        applyToSelectedAnnotations({ ...settings, lineTreatment: null });
+      }
       showToast(selected.length > 1
         ? `${preset.name} applied to ${selected.length} lines.`
         : `${preset.name} applied.`);
       return true;
+    }
+    if (preset.kind === 'treatment') {
+      showToast('Select a straight or curved line, then apply the treatment.');
+      return false;
     }
     state.drawColor = settings.color;
     state.lineWidth = settings.lineWidth;

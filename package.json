@@ -57,7 +57,8 @@
     "bom-check": "node scripts/bom-check.mjs",
     "preview-check": "node scripts/preview-check.mjs",
     "line-presets-check": "node scripts/line-presets-check.mjs",
-    "shape-stamps-check": "node scripts/shape-stamps-check.mjs"
+    "shape-stamps-check": "node scripts/shape-stamps-check.mjs",
+    "personal-library-check": "node scripts/personal-library-check.mjs"
   },
   "devDependencies": {
     "@slidev/cli": "^52.16.0",

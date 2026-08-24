@@ -10,12 +10,21 @@
 // keyboard-shortcuts.js.
 
 function setSelection(kind, id) {
+    const nextAnn = kind === 'annotation' && id != null ? getAnnotationById(id) : null;
+    const nextGroupId = nextAnn && nextAnn.templateGroupId ? nextAnn.templateGroupId : null;
+    if (!nextGroupId || (state.templateGroupEditId && state.templateGroupEditId !== nextGroupId)) {
+      state.templateGroupEditId = null;
+    }
     state.selection = kind && id != null ? { kind, id } : { kind: null, id: null };
     // Keep the image + annotation multi-selections in lockstep: selecting one
     // (or anything else, or nothing) collapses the set. Shift+click / marquee
     // widen the annotation set through the helpers below.
     state.selectedImageIds = kind === 'image' && id != null ? [id] : [];
-    state.selectedAnnotationIds = kind === 'annotation' && id != null ? [id] : [];
+    state.selectedAnnotationIds = kind === 'annotation' && id != null
+      ? (nextGroupId && state.templateGroupEditId !== nextGroupId
+        ? state.annotations.filter(ann => ann.templateGroupId === nextGroupId).map(ann => ann.id)
+        : [id])
+      : [];
     if (kind !== 'graphic') state.graphicEdit = null;
     if (kind === 'annotation') {
       const ann = getAnnotationById(id);
@@ -39,6 +48,15 @@ function setSelection(kind, id) {
     }
     updateUI();
     requestRender();
+  }
+
+  function enterTemplateGroupForAnnotation(id) {
+    const ann = getAnnotationById(id);
+    if (!ann || !ann.templateGroupId) return false;
+    state.templateGroupEditId = ann.templateGroupId;
+    setSelection('annotation', id);
+    showToast('Editing Template member. Click outside the group to exit.');
+    return true;
   }
 
   // The set of currently-selected image ids. Derived from state so a direct

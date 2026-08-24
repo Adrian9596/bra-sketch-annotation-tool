@@ -272,7 +272,10 @@
   function setLineStyle(style) {
     const normalized = normalizeLineStyle(style);
     if (getSelectedAnnotationsForEdit().length) {
-      applyToSelectedAnnotations({ style: normalized });
+      // Choosing an ordinary style is the explicit way to remove a Treatment
+      // while preserving the source path. The layer recipe must not keep
+      // painting invisibly after the toolbar says Plain/Dashed/Zigzag.
+      applyToSelectedAnnotations({ style: normalized, lineTreatment: null });
       return;
     }
     setDefaultLineStyle(normalized);

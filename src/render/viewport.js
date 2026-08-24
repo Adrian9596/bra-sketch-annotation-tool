@@ -113,6 +113,11 @@ function onDoubleClick(e) {
   }
   const annHit = hitTestAnnotations(world);
   if (annHit) {
+    const ann = getAnnotationById(annHit.id);
+    if (ann && ann.templateGroupId && state.templateGroupEditId !== ann.templateGroupId) {
+      enterTemplateGroupForAnnotation(annHit.id);
+      return;
+    }
     setSelection('annotation', annHit.id);
     openLabelEditor(annHit.id);
     return;

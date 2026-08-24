@@ -32,6 +32,7 @@
     // src/ui/line-preset-panel.js rather than captured here.
     linePresetList: document.getElementById('linePresetList'),
     linePresetSaveBtn: document.getElementById('linePresetSaveBtn'),
+    lineTreatmentCustomizeBtn: document.getElementById('lineTreatmentCustomizeBtn'),
     linePresetExportBtn: document.getElementById('linePresetExportBtn'),
     linePresetImportBtn: document.getElementById('linePresetImportBtn'),
     linePresetImportProjectBtn: document.getElementById('linePresetImportProjectBtn'),

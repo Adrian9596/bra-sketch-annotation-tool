@@ -51,7 +51,12 @@
     let style = getLineStyle(ann);
     if (style === 'solid' && annotationCrossesViews(ann)) style = 'dashed';
 
-    if (style === 'zigzag') {
+    const treated = hasLineTreatment(ann) && drawLineTreatment(ann, ann.lineTreatment);
+    if (treated) {
+      // The Treatment recipe owns every visible layer. The annotation path
+      // remains the editable/hit-test spine and is deliberately not painted a
+      // second time underneath it.
+    } else if (style === 'zigzag') {
       drawZigzagStitchLine(ann, color, lineWidth);
     } else if (style === 'cover') {
       drawCoverStitchLine(ann, color, lineWidth);
@@ -65,7 +70,9 @@
     }
 
     ctx.setLineDash([]);
-    if (ann.type === 'straight') {
+    if (treated) {
+      // Treatments are construction depiction, never POM arrow geometry.
+    } else if (ann.type === 'straight') {
       drawArrowheadsForStraight(ann, color, lineWidth);
     } else {
       drawArrowheadsForCurve(ann, color, lineWidth);
