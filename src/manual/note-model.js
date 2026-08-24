@@ -24,15 +24,46 @@
   // (unlike the Construction/BOM callouts, whose pin carries its row's seq).
   function createNote(text, pos, options) {
     const opts = options || {};
+    // Older internal callers supplied only `color`. Treat that shape exactly
+    // like a pre-US-100 note so tests/integrations keep their boxed, one-colour
+    // pixels. The real Text tool passes all three new fields explicitly.
+    const legacyOptions = opts.color != null && opts.textColor == null
+      && opts.leaderColor == null && opts.appearance == null && opts.widthMode == null;
+    const textColor = normalizeColorKey(opts.textColor != null
+      ? opts.textColor : (opts.color != null ? opts.color : state.noteTextColor));
+    const leaderColor = normalizeColorKey(opts.leaderColor != null
+      ? opts.leaderColor : (legacyOptions ? textColor : state.noteLeaderColor));
     return {
       id: state.idCounter++,
       text: String(text == null ? '' : text),
       pos: { x: Number(pos && pos.x) || 0, y: Number(pos && pos.y) || 0 },
-      color: normalizeColorKey(opts.color || state.drawColor),
+      // `color` remains as a compatibility alias for older integrations. New
+      // rendering and UI use the explicit text/leader fields.
+      color: textColor,
+      textColor,
+      leaderColor,
+      appearance: normalizeNoteAppearance(opts.appearance != null
+        ? opts.appearance : (legacyOptions ? NOTE_APPEARANCE_BOX : state.noteAppearance)),
       fontSize: normalizeNoteFontSize(opts.fontSize),
       boxWidth: normalizeNoteBoxWidth(opts.boxWidth),
+      widthMode: normalizeNoteWidthMode(opts.widthMode,
+        legacyOptions ? NOTE_WIDTH_MODE_CONTENT : NOTE_WIDTH_MODE_FIXED),
       leaders: normalizeNoteLeaders(opts.leaders),
     };
+  }
+
+  function normalizeNoteAppearance(value, fallback) {
+    if (value === NOTE_APPEARANCE_BOX) return NOTE_APPEARANCE_BOX;
+    if (value === NOTE_APPEARANCE_TEXT_ONLY) return NOTE_APPEARANCE_TEXT_ONLY;
+    return fallback === NOTE_APPEARANCE_BOX
+      ? NOTE_APPEARANCE_BOX : NOTE_APPEARANCE_TEXT_ONLY;
+  }
+
+  function normalizeNoteWidthMode(value, fallback) {
+    if (value === NOTE_WIDTH_MODE_FIXED) return NOTE_WIDTH_MODE_FIXED;
+    if (value === NOTE_WIDTH_MODE_CONTENT) return NOTE_WIDTH_MODE_CONTENT;
+    return fallback === NOTE_WIDTH_MODE_FIXED
+      ? NOTE_WIDTH_MODE_FIXED : NOTE_WIDTH_MODE_CONTENT;
   }
 
   // Drop anything that is not a finite point rather than trusting the caller —
@@ -68,15 +99,51 @@
     const y = Number(raw.pos && raw.pos.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     const id = Number(raw.id);
+    const hasExplicitAppearance = raw.appearance === NOTE_APPEARANCE_TEXT_ONLY
+      || raw.appearance === NOTE_APPEARANCE_BOX;
+    const hasExplicitColors = raw.textColor != null || raw.leaderColor != null;
+    const legacy = !hasExplicitAppearance && !hasExplicitColors;
+    const legacyColor = normalizeColorKey(raw.color);
+    const textColor = normalizeColorKey(raw.textColor != null ? raw.textColor
+      : (legacy ? legacyColor : 'black'));
+    const leaderColor = normalizeColorKey(raw.leaderColor != null ? raw.leaderColor
+      : (legacy ? legacyColor : 'red'));
     return {
       id: Number.isFinite(id) ? id : state.idCounter++,
       text: String(raw.text == null ? '' : raw.text),
       pos: { x, y },
-      color: normalizeColorKey(raw.color),
+      color: textColor,
+      textColor,
+      leaderColor,
+      // Pre-US-100 notes were visibly boxed and used one colour for everything.
+      // Preserve those pixels; only newly-authored notes default Text-only.
+      appearance: normalizeNoteAppearance(raw.appearance,
+        legacy ? NOTE_APPEARANCE_BOX : NOTE_APPEARANCE_TEXT_ONLY),
       fontSize: normalizeNoteFontSize(raw.fontSize),
       boxWidth: normalizeNoteBoxWidth(raw.boxWidth),
+      // Legacy `boxWidth` was a wrap ceiling and the painted box shrink-wrapped
+      // to content. Keep that until the TD explicitly drags the width handle.
+      widthMode: normalizeNoteWidthMode(raw.widthMode,
+        legacy ? NOTE_WIDTH_MODE_CONTENT : NOTE_WIDTH_MODE_FIXED),
       leaders: normalizeNoteLeaders(raw.leaders),
     };
+  }
+
+  function noteTextColorOf(note) {
+    return normalizeColorKey(note && note.textColor != null ? note.textColor : note && note.color);
+  }
+
+  function noteLeaderColorOf(note) {
+    return normalizeColorKey(note && note.leaderColor != null
+      ? note.leaderColor : (note && note.color != null ? note.color : 'red'));
+  }
+
+  function noteAppearanceOf(note) {
+    return normalizeNoteAppearance(note && note.appearance, NOTE_APPEARANCE_BOX);
+  }
+
+  function noteWidthModeOf(note) {
+    return normalizeNoteWidthMode(note && note.widthMode, NOTE_WIDTH_MODE_CONTENT);
   }
 
   function getNoteById(id) {
@@ -130,8 +197,9 @@
     return lines.length ? lines : [''];
   }
 
-  // The note's text box in world coordinates, shrink-wrapped to the longest
-  // wrapped line but never wider than boxWidth. pos is its TOP-LEFT corner.
+  // The note's text box in world coordinates. US-100 notes use boxWidth as a
+  // real wrap-width boundary; legacy notes remain content-width until a TD
+  // explicitly resizes them. pos is its TOP-LEFT corner.
   function noteBounds(note) {
     if (!note || !note.pos) return null;
     const lines = wrapNoteLines(note);
@@ -144,12 +212,29 @@
     ctx.restore();
     // An empty note still needs a body: it has to stay visible and grabbable.
     const inner = Math.max(widest, fontSize * 1.6);
+    const contentWidth = inner + pad * 2;
     return {
       x: note.pos.x,
       y: note.pos.y,
-      width: inner + pad * 2,
+      width: noteWidthModeOf(note) === NOTE_WIDTH_MODE_FIXED
+        ? normalizeNoteBoxWidth(note.boxWidth) : contentWidth,
       height: lines.length * noteLineHeight(note) + pad * 2,
+      contentWidth,
       lines,
+    };
+  }
+
+  // Text-only notes have no painted rectangle, so their broad empty wrap area
+  // must not steal clicks or inflate export bounds. Box notes own the full box.
+  function noteVisibleBounds(note, box) {
+    const bounds = box || noteBounds(note);
+    if (!bounds) return null;
+    return {
+      x: bounds.x,
+      y: bounds.y,
+      width: noteAppearanceOf(note) === NOTE_APPEARANCE_BOX
+        ? bounds.width : Math.min(bounds.width, bounds.contentWidth || bounds.width),
+      height: bounds.height,
     };
   }
 
@@ -158,8 +243,9 @@
   function noteOuterBounds(note) {
     const box = noteBounds(note);
     if (!box) return null;
-    let minX = box.x, minY = box.y;
-    let maxX = box.x + box.width, maxY = box.y + box.height;
+    const visible = noteVisibleBounds(note, box);
+    let minX = visible.x, minY = visible.y;
+    let maxX = visible.x + visible.width, maxY = visible.y + visible.height;
     for (const leader of (note.leaders || [])) {
       minX = Math.min(minX, leader.x);
       minY = Math.min(minY, leader.y);
@@ -188,13 +274,19 @@
   // US-092 step 6: where the "pull a new arrow out of here" handle sits — just
   // outside the box's bottom-right corner, at a constant SCREEN offset so it is
   // reachable at any zoom and never covers the text. Deliberately OUTSIDE the
-  // box, not on its corner: a corner handle on a rectangle reads as "resize",
-  // and a note has no resize gesture.
+  // box, not on its corner: the real width-resize handle is at the right-edge
+  // midpoint, while this lower-right control is reserved for Add Leader.
   function noteLeaderAddHandle(note) {
     const box = noteBounds(note);
     if (!box) return null;
     const off = 9 / state.zoom;
     return { x: box.x + box.width + off, y: box.y + box.height + off };
+  }
+
+  function noteResizeHandle(note) {
+    const box = noteBounds(note);
+    if (!box) return null;
+    return { x: box.x + box.width, y: box.y + box.height / 2 };
   }
 
   // Move the note and everything attached to it. Leaders are absolute world

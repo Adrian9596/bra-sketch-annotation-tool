@@ -20,6 +20,9 @@
       arrowType: state.arrowType,
       lineWidth: state.lineWidth,
       noteFontSize: state.noteFontSize,
+      noteAppearance: state.noteAppearance,
+      noteTextColor: state.noteTextColor,
+      noteLeaderColor: state.noteLeaderColor,
       annotations: clone(state.annotations),
       graphics: clone(state.graphics || []),
       images: state.images.map(stripImageForSnapshot),
@@ -100,6 +103,9 @@
     state.arrowType = snapshot.arrowType || 'double';
     state.lineWidth = normalizeLineWidth(snapshot.lineWidth);
     state.noteFontSize = normalizeNoteFontSize(snapshot.noteFontSize);
+    state.noteAppearance = normalizeNoteAppearance(snapshot.noteAppearance);
+    state.noteTextColor = normalizeColorKey(snapshot.noteTextColor || 'black');
+    state.noteLeaderColor = normalizeColorKey(snapshot.noteLeaderColor || 'red');
     state.annotations = clone(snapshot.annotations || []);
     state.annotations.forEach(ensureCurveControls);
     state.graphics = normalizeBoardGraphics(snapshot.graphics || []);

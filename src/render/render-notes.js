@@ -17,13 +17,17 @@
   function drawNote(note) {
     const box = noteBounds(note);
     if (!box) return;
-    const color = LINE_COLORS[normalizeColorKey(note.color)] || LINE_COLOR;
+    const textColor = LINE_COLORS[noteTextColorOf(note)] || '#111827';
+    const leaderColor = LINE_COLORS[noteLeaderColorOf(note)] || LINE_COLOR;
     const fontSize = noteFontSizeOf(note);
+    const leaderBox = noteVisibleBounds(note, box);
 
     ctx.save();
-    for (const leader of (note.leaders || [])) drawNoteLeader(box, leader, color, fontSize);
-    drawNoteBox(box, color, fontSize, noteGroundFill(color));
-    drawNoteText(note, box, color, fontSize);
+    for (const leader of (note.leaders || [])) drawNoteLeader(leaderBox, leader, leaderColor, fontSize);
+    if (noteAppearanceOf(note) === NOTE_APPEARANCE_BOX) {
+      drawNoteBox(box, textColor, fontSize, noteGroundFill(textColor));
+    }
+    drawNoteText(note, box, textColor, fontSize);
     ctx.restore();
   }
 
@@ -95,8 +99,22 @@
     // grabbable — hitTestSelectedNoteHandles is selected-only for the same
     // reason.
     for (const leader of (note.leaders || [])) drawNoteLeaderHandle(leader);
+    const resize = noteResizeHandle(note);
+    if (resize) drawNoteResizeHandle(resize);
     const add = noteLeaderAddHandle(note);
     if (add) drawNoteLeaderAddHandle(add);
+  }
+
+  function drawNoteResizeHandle(point) {
+    const half = 5.5 / state.zoom;
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = SELECT_COLOR;
+    ctx.lineWidth = 2 / state.zoom;
+    ctx.setLineDash([]);
+    ctx.fillRect(point.x - half, point.y - half, half * 2, half * 2);
+    ctx.strokeRect(point.x - half, point.y - half, half * 2, half * 2);
+    ctx.restore();
   }
 
   // Hollow, like the photo's resize handles: it marks a point you can pick up.
@@ -116,8 +134,8 @@
 
   // Filled with a white plus: this one MAKES something rather than moving
   // something, and it sits where a rectangle's corner handle would, so it has
-  // to say "add" clearly enough not to be read as "resize" (a note has no
-  // resize gesture).
+  // to say "add" clearly enough not to be confused with the separate
+  // right-edge width handle.
   function drawNoteLeaderAddHandle(point) {
     const r = 7 / state.zoom;
     const arm = 3.4 / state.zoom;
@@ -146,10 +164,11 @@
   function drawNoteLeadersOnly(note) {
     const box = noteBounds(note);
     if (!box) return;
-    const color = LINE_COLORS[normalizeColorKey(note.color)] || LINE_COLOR;
+    const color = LINE_COLORS[noteLeaderColorOf(note)] || LINE_COLOR;
     const fontSize = noteFontSizeOf(note);
+    const leaderBox = noteVisibleBounds(note, box);
     ctx.save();
-    for (const leader of (note.leaders || [])) drawNoteLeader(box, leader, color, fontSize);
+    for (const leader of (note.leaders || [])) drawNoteLeader(leaderBox, leader, color, fontSize);
     ctx.restore();
   }
 

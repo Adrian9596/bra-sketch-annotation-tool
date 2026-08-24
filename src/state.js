@@ -47,6 +47,10 @@
   const NOTE_MAX_BOX_WIDTH = 4000;
   const NOTE_LINE_HEIGHT_RATIO = 1.32;
   const NOTE_PADDING_RATIO = 0.35; // box padding as a fraction of the font size
+  const NOTE_APPEARANCE_TEXT_ONLY = 'text-only';
+  const NOTE_APPEARANCE_BOX = 'box';
+  const NOTE_WIDTH_MODE_CONTENT = 'content';
+  const NOTE_WIDTH_MODE_FIXED = 'fixed';
 
   const state = {
     tool: 'select',
@@ -58,6 +62,11 @@
     // uses — the note's own equivalent of lineWidth. Persisted with the
     // project + history exactly like lineWidth/drawColor.
     noteFontSize: NOTE_DEFAULT_FONT_SIZE,
+    // US-100: sticky defaults for the next Board note. These are separate from
+    // drawColor because line ink and note text/leader colour are independent.
+    noteAppearance: NOTE_APPEARANCE_TEXT_ONLY,
+    noteTextColor: 'black',
+    noteLeaderColor: 'red',
     annotations: [],
     // US-095: visual vector construction shapes. Deliberately separate from
     // annotations, which are the measurement/POM collection.

@@ -198,6 +198,24 @@
       page: 'board', mode: 'manual', target: '#lineWidthInput', action: () => document.getElementById('lineWidthInput').focus() }),
     appCommand({ id: 'board.focus.note-size', label: 'Focus Note Font Size', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#fontSizeInput', action: () => document.getElementById('fontSizeInput').focus() }),
+    ...[['text-only', 'Text only'], ['box', 'Box']].map(([appearance, label]) => appCommand({
+      id: 'board.note.appearance.' + appearance, label: 'Note Appearance: ' + label,
+      category: 'Board · Note', page: 'board', mode: 'manual',
+      target: appearance === 'box' ? '#noteAppearanceBoxBtn' : '#noteAppearanceTextOnlyBtn',
+      action: () => setNoteAppearance(appearance),
+    })),
+    ...['red', 'blue', 'black', 'white'].map(color => appCommand({
+      id: 'board.note.text-color.' + color,
+      label: 'Note Text Color: ' + color[0].toUpperCase() + color.slice(1),
+      category: 'Board · Note', page: 'board', mode: 'manual',
+      target: '.note-text-color-btn[data-color="' + color + '"]', action: () => setNoteTextColor(color),
+    })),
+    ...['red', 'blue', 'black', 'white'].map(color => appCommand({
+      id: 'board.note.leader-color.' + color,
+      label: 'Note Leader Color: ' + color[0].toUpperCase() + color.slice(1),
+      category: 'Board · Note', page: 'board', mode: 'manual',
+      target: '.note-leader-color-btn[data-color="' + color + '"]', action: () => setNoteLeaderColor(color),
+    })),
     appCommand({ id: 'board.focus.brush-size', label: 'Focus Eraser Brush Size', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#brushSizeInput', action: () => document.getElementById('brushSizeInput').focus() }),
     // US-096 / ADR 0055: the preset library. Open + Save are the two actions

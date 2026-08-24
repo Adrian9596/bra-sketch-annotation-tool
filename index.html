@@ -168,6 +168,9 @@
   #colorMenuBtn[data-color="blue"] .color-swatch{ background:#2563eb; }
   #colorMenuBtn[data-color="black"] .color-swatch{ background:#111827; }
   #colorMenuBtn[data-color="white"] .color-swatch{ background:#fff; border-color:#e5e7eb; }
+  #noteStyleMenuBtn{ min-width:116px; }
+  #noteStyleMenuList{ min-width:230px; }
+  #noteStyleMenuList .toolbar-menu-label{ pointer-events:none; }
   @media (max-width: 1100px){
     .auto-step-indicator{ display:none !important; }
     #visionEngineChip{ display:none !important; }
@@ -3046,6 +3049,26 @@
         <span>Size</span>
         <input id="fontSizeInput" type="number" min="5" max="200" step="1" />
       </label>
+      <div id="noteStyleMenuWrap" class="toolbar-menu line-quick-menu" hidden>
+        <button id="noteStyleMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="noteStyleMenuList" title="Choose Text Note appearance and independent text/leader colours">Note: Text only</button>
+        <div id="noteStyleMenuList" class="toolbar-menu-list menu-left" role="menu" hidden>
+          <div class="toolbar-menu-label">Appearance</div>
+          <button id="noteAppearanceTextOnlyBtn" role="menuitem" type="button">Text only — transparent</button>
+          <button id="noteAppearanceBoxBtn" role="menuitem" type="button">Box — background + border</button>
+          <div class="toolbar-menu-separator" role="separator"></div>
+          <div class="toolbar-menu-label">Text color</div>
+          <button class="color-btn note-text-color-btn" data-color="red" role="menuitem" type="button"><span class="color-swatch"></span>Red</button>
+          <button class="color-btn note-text-color-btn" data-color="blue" role="menuitem" type="button"><span class="color-swatch"></span>Blue</button>
+          <button class="color-btn note-text-color-btn" data-color="black" role="menuitem" type="button"><span class="color-swatch"></span>Black</button>
+          <button class="color-btn note-text-color-btn" data-color="white" role="menuitem" type="button"><span class="color-swatch"></span>White</button>
+          <div class="toolbar-menu-separator" role="separator"></div>
+          <div class="toolbar-menu-label">Leader color</div>
+          <button class="color-btn note-leader-color-btn" data-color="red" role="menuitem" type="button"><span class="color-swatch"></span>Red</button>
+          <button class="color-btn note-leader-color-btn" data-color="blue" role="menuitem" type="button"><span class="color-swatch"></span>Blue</button>
+          <button class="color-btn note-leader-color-btn" data-color="black" role="menuitem" type="button"><span class="color-swatch"></span>Black</button>
+          <button class="color-btn note-leader-color-btn" data-color="white" role="menuitem" type="button"><span class="color-swatch"></span>White</button>
+        </div>
+      </div>
       <label id="brushSizeChip" class="chip" title="Eraser brush size in image pixels — use [ and ] to adjust" hidden>
         <span>Size</span>
         <input id="brushSizeInput" type="number" min="4" max="200" step="2" />
@@ -3416,6 +3439,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=a5500d226e23"></script>
+<script src="app.js?v=386c92850c22"></script>
 </body>
 </html>

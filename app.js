@@ -254,6 +254,10 @@
   const NOTE_MAX_BOX_WIDTH = 4000;
   const NOTE_LINE_HEIGHT_RATIO = 1.32;
   const NOTE_PADDING_RATIO = 0.35; // box padding as a fraction of the font size
+  const NOTE_APPEARANCE_TEXT_ONLY = 'text-only';
+  const NOTE_APPEARANCE_BOX = 'box';
+  const NOTE_WIDTH_MODE_CONTENT = 'content';
+  const NOTE_WIDTH_MODE_FIXED = 'fixed';
 
   const state = {
     tool: 'select',
@@ -265,6 +269,11 @@
     // uses — the note's own equivalent of lineWidth. Persisted with the
     // project + history exactly like lineWidth/drawColor.
     noteFontSize: NOTE_DEFAULT_FONT_SIZE,
+    // US-100: sticky defaults for the next Board note. These are separate from
+    // drawColor because line ink and note text/leader colour are independent.
+    noteAppearance: NOTE_APPEARANCE_TEXT_ONLY,
+    noteTextColor: 'black',
+    noteLeaderColor: 'red',
     annotations: [],
     // US-095: visual vector construction shapes. Deliberately separate from
     // annotations, which are the measurement/POM collection.
@@ -549,6 +558,13 @@
     lineWidthInput: document.getElementById('lineWidthInput'),
     fontSizeChip: document.getElementById('fontSizeChip'),
     fontSizeInput: document.getElementById('fontSizeInput'),
+    noteStyleMenuWrap: document.getElementById('noteStyleMenuWrap'),
+    noteStyleMenuBtn: document.getElementById('noteStyleMenuBtn'),
+    noteStyleMenuList: document.getElementById('noteStyleMenuList'),
+    noteAppearanceTextOnlyBtn: document.getElementById('noteAppearanceTextOnlyBtn'),
+    noteAppearanceBoxBtn: document.getElementById('noteAppearanceBoxBtn'),
+    noteTextColorBtns: Array.from(document.querySelectorAll('.note-text-color-btn')),
+    noteLeaderColorBtns: Array.from(document.querySelectorAll('.note-leader-color-btn')),
     brushSizeChip: document.getElementById('brushSizeChip'),
     brushSizeInput: document.getElementById('brushSizeInput'),
     arrowDoubleBtn: document.getElementById('arrowDoubleBtn'),
@@ -15530,6 +15546,24 @@ const BOM_MATERIAL_LIBRARY = [
       page: 'board', mode: 'manual', target: '#lineWidthInput', action: () => document.getElementById('lineWidthInput').focus() }),
     appCommand({ id: 'board.focus.note-size', label: 'Focus Note Font Size', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#fontSizeInput', action: () => document.getElementById('fontSizeInput').focus() }),
+    ...[['text-only', 'Text only'], ['box', 'Box']].map(([appearance, label]) => appCommand({
+      id: 'board.note.appearance.' + appearance, label: 'Note Appearance: ' + label,
+      category: 'Board · Note', page: 'board', mode: 'manual',
+      target: appearance === 'box' ? '#noteAppearanceBoxBtn' : '#noteAppearanceTextOnlyBtn',
+      action: () => setNoteAppearance(appearance),
+    })),
+    ...['red', 'blue', 'black', 'white'].map(color => appCommand({
+      id: 'board.note.text-color.' + color,
+      label: 'Note Text Color: ' + color[0].toUpperCase() + color.slice(1),
+      category: 'Board · Note', page: 'board', mode: 'manual',
+      target: '.note-text-color-btn[data-color="' + color + '"]', action: () => setNoteTextColor(color),
+    })),
+    ...['red', 'blue', 'black', 'white'].map(color => appCommand({
+      id: 'board.note.leader-color.' + color,
+      label: 'Note Leader Color: ' + color[0].toUpperCase() + color.slice(1),
+      category: 'Board · Note', page: 'board', mode: 'manual',
+      target: '.note-leader-color-btn[data-color="' + color + '"]', action: () => setNoteLeaderColor(color),
+    })),
     appCommand({ id: 'board.focus.brush-size', label: 'Focus Eraser Brush Size', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#brushSizeInput', action: () => document.getElementById('brushSizeInput').focus() }),
     // US-096 / ADR 0055: the preset library. Open + Save are the two actions
@@ -15851,6 +15885,7 @@ const BOM_MATERIAL_LIBRARY = [
     ['moreMenuWrap', 'moreMenuBtn', 'moreMenuList'],
     ['arrowMenuWrap', 'arrowMenuBtn', 'arrowMenuList'],
     ['colorMenuWrap', 'colorMenuBtn', 'colorMenuList'],
+    ['noteStyleMenuWrap', 'noteStyleMenuBtn', 'noteStyleMenuList'],
     // US-093 / ADR 0053: Straight/Curved/Eraser/Text consolidated here to
     // free a toolbar slot for the new "Add point" tool.
     ['toolsMenuWrap', 'toolsMenuBtn', 'toolsMenuList'],
@@ -16000,7 +16035,9 @@ const BOM_MATERIAL_LIBRARY = [
     // Empty Manual boards need authoring entry points, not line styling or
     // exporters. Those controls return as soon as there is Board content.
     const lineSettings = document.querySelector('.board-line-settings');
-    if (lineSettings) lineSettings.hidden = isAuto || empty || (!!selectedImage && state.tool === 'select');
+    const noteContext = !!selectedNote || state.tool === 'text';
+    if (lineSettings) lineSettings.hidden = isAuto || empty || noteContext
+      || (!!selectedImage && state.tool === 'select');
     setBoardToolbarHidden(el.toolEraser, isAuto || imageCount === 0);
     const exportWrap = document.getElementById('exportMenuWrap');
     if (exportWrap) exportWrap.hidden = isAuto || empty;
@@ -16190,9 +16227,12 @@ const BOM_MATERIAL_LIBRARY = [
     state.noteEditor = {
       id: null,
       pos: { x: world.x, y: world.y },
-      color: normalizeColorKey(state.drawColor),
+      textColor: normalizeColorKey(state.noteTextColor),
+      leaderColor: normalizeColorKey(state.noteLeaderColor),
+      appearance: normalizeNoteAppearance(state.noteAppearance),
       fontSize: newNoteWorldFontSize(),
       boxWidth: newNoteWorldBoxWidth(),
+      widthMode: NOTE_WIDTH_MODE_FIXED,
     };
     showNoteEditor('');
   }
@@ -16238,8 +16278,10 @@ const BOM_MATERIAL_LIBRARY = [
     const pos = note ? note.pos : session.pos;
     const worldFont = note ? noteFontSizeOf(note) : normalizeNoteFontSize(session.fontSize);
     const worldWidth = normalizeNoteBoxWidth(note ? note.boxWidth : session.boxWidth);
-    const colorKey = normalizeColorKey(note ? note.color : session.color);
+    const colorKey = note ? noteTextColorOf(note) : normalizeColorKey(session.textColor);
     const color = LINE_COLORS[colorKey] || LINE_COLOR;
+    const appearance = note ? noteAppearanceOf(note)
+      : normalizeNoteAppearance(session.appearance);
     const screen = worldToScreen(pos.x, pos.y);
     const style = el.noteEditor.style;
     style.left = screen.x + 'px';
@@ -16256,7 +16298,13 @@ const BOM_MATERIAL_LIBRARY = [
     style.color = color;
     // Same inversion the renderer applies: white ink needs a dark ground or the
     // TD is typing invisibly (see noteGroundFill).
+    // Editing chrome is intentionally readable even for a final Text-only
+    // note. The textarea is never exported; the committed renderer below it
+    // remains transparent, while this temporary ground prevents black text on
+    // dark sketch ink (or white text on white board) from becoming untypeable.
     style.background = noteGroundFill(color);
+    style.boxShadow = appearance === NOTE_APPEARANCE_BOX
+      ? '0 4px 14px rgba(17,24,39,.18)' : 'none';
     // The height is a function of the font size just set, so it has to follow a
     // zoom change — wheel-zooming mid-edit is entirely normal on this board.
     // Only ever runs while an editor is open, which is a rare state, and the
@@ -16338,9 +16386,12 @@ const BOM_MATERIAL_LIBRARY = [
       // An empty commit creates nothing — a stray click with the Text tool is
       // the commonest way to open this editor by accident.
       const note = createNote(raw, session.pos, {
-        color: session.color,
+        textColor: session.textColor,
+        leaderColor: session.leaderColor,
+        appearance: session.appearance,
         fontSize: session.fontSize,
         boxWidth: session.boxWidth,
+        widthMode: session.widthMode,
       });
       state.notes.push(note);
       // Audit-found bug: every OTHER creation gesture in this codebase selects
@@ -17128,6 +17179,18 @@ const BOM_MATERIAL_LIBRARY = [
     el.fontSizeInput.addEventListener('change', () => {
       el.fontSizeInput.value = formatNoteFontSize(getActiveNoteFontSize());
     });
+    if (el.noteAppearanceTextOnlyBtn) {
+      el.noteAppearanceTextOnlyBtn.addEventListener('click', () => setNoteAppearance(NOTE_APPEARANCE_TEXT_ONLY));
+    }
+    if (el.noteAppearanceBoxBtn) {
+      el.noteAppearanceBoxBtn.addEventListener('click', () => setNoteAppearance(NOTE_APPEARANCE_BOX));
+    }
+    for (const button of el.noteTextColorBtns || []) {
+      button.addEventListener('click', () => setNoteTextColor(button.dataset.color));
+    }
+    for (const button of el.noteLeaderColorBtns || []) {
+      button.addEventListener('click', () => setNoteLeaderColor(button.dataset.color));
+    }
 
     el.brushSizeInput.addEventListener('input', () => {
       const n = parseInt(el.brushSizeInput.value, 10);
@@ -17437,37 +17500,52 @@ const BOM_MATERIAL_LIBRARY = [
 
   function setDrawColor(color) {
     state.drawColor = color;
-    // US-092: the same four swatches retint a selected NOTE. The selection model
-    // is single-kind, so a note and a line can never both be selected and this
-    // can never double-apply; when nothing is selected both calls fall through
-    // to just updating the draw default.
-    if (applyColorToSelectedNote(color)) return;
     if (applyToSelectedBoardGraphic({ color: normalizeColorKey(color) })) return;
     applyToSelectedAnnotation({ color });
   }
 
-  // Returns true when a note claimed the change, so the caller stops. Style
-  // and arrow type have no meaning for a note and deliberately have no
-  // equivalent; line width and font size are each the OTHER kind's own
-  // control (setLineWidth / setNoteFontSize above) rather than a shared one,
-  // because "how thick" and "how big the text is" are not the same question.
-  function applyColorToSelectedNote(color) {
+  function setNoteAppearance(appearance) {
+    const next = normalizeNoteAppearance(appearance);
+    state.noteAppearance = next;
     const note = getSelectedNote();
-    if (!note) return false;
+    if (note && noteAppearanceOf(note) !== next) {
+      note.appearance = next;
+      pushHistoryIfChanged();
+    }
+    updateUI();
+    requestRender();
+  }
+
+  function setNoteTextColor(color) {
     const next = normalizeColorKey(color);
-    if (note.color !== next) {
+    state.noteTextColor = next;
+    const note = getSelectedNote();
+    if (note && noteTextColorOf(note) !== next) {
+      note.textColor = next;
+      // Keep the legacy alias synchronized for older consumers.
       note.color = next;
       pushHistoryIfChanged();
     }
     updateUI();
     requestRender();
-    return true;
   }
 
-  // Mirrors applyColorToSelectedNote: mutate the selected note's own fontSize
-  // directly and ride the generic snapshot-diff into history exactly the way
-  // note.color already does — notes carry no per-object lineWidth/arrowType,
-  // so there is nothing else here to fall through to.
+  function setNoteLeaderColor(color) {
+    const next = normalizeColorKey(color);
+    state.noteLeaderColor = next;
+    const note = getSelectedNote();
+    if (note && noteLeaderColorOf(note) !== next) {
+      note.leaderColor = next;
+      pushHistoryIfChanged();
+    }
+    updateUI();
+    requestRender();
+  }
+
+  // Mutate the selected note's own fontSize directly and ride the generic
+  // snapshot-diff into history exactly the way note appearance already does —
+  // notes carry no per-object lineWidth/arrowType, so there is nothing else
+  // here to fall through to.
   function applyFontSizeToSelectedNote(fontSize) {
     const note = getSelectedNote();
     if (!note) return false;
@@ -17581,6 +17659,9 @@ const BOM_MATERIAL_LIBRARY = [
       arrowType: state.arrowType,
       lineWidth: state.lineWidth,
       noteFontSize: state.noteFontSize,
+      noteAppearance: state.noteAppearance,
+      noteTextColor: state.noteTextColor,
+      noteLeaderColor: state.noteLeaderColor,
       annotations: clone(state.annotations),
       graphics: clone(state.graphics || []),
       images: state.images.map(stripImageForSnapshot),
@@ -17661,6 +17742,9 @@ const BOM_MATERIAL_LIBRARY = [
     state.arrowType = snapshot.arrowType || 'double';
     state.lineWidth = normalizeLineWidth(snapshot.lineWidth);
     state.noteFontSize = normalizeNoteFontSize(snapshot.noteFontSize);
+    state.noteAppearance = normalizeNoteAppearance(snapshot.noteAppearance);
+    state.noteTextColor = normalizeColorKey(snapshot.noteTextColor || 'black');
+    state.noteLeaderColor = normalizeColorKey(snapshot.noteLeaderColor || 'red');
     state.annotations = clone(snapshot.annotations || []);
     state.annotations.forEach(ensureCurveControls);
     state.graphics = normalizeBoardGraphics(snapshot.graphics || []);
@@ -17781,6 +17865,9 @@ const BOM_MATERIAL_LIBRARY = [
         arrowType: state.arrowType,
         lineWidth: state.lineWidth,
         noteFontSize: state.noteFontSize,
+        noteAppearance: normalizeNoteAppearance(state.noteAppearance),
+        noteTextColor: normalizeColorKey(state.noteTextColor || 'black'),
+        noteLeaderColor: normalizeColorKey(state.noteLeaderColor || 'red'),
         zoom: state.zoom,
         panX: state.panX,
         panY: state.panY,
@@ -18006,6 +18093,9 @@ const BOM_MATERIAL_LIBRARY = [
       // Additive like lineWidth: a file saved before this control existed has
       // no key, and normalizeNoteFontSize's own NaN fallback covers it.
       state.noteFontSize = normalizeNoteFontSize(s.noteFontSize);
+      state.noteAppearance = normalizeNoteAppearance(s.noteAppearance);
+      state.noteTextColor = normalizeColorKey(s.noteTextColor || 'black');
+      state.noteLeaderColor = normalizeColorKey(s.noteLeaderColor || 'red');
       state.tool = 'select';
       state.selection = { kind: null, id: null };
       state.drawSession = null;
@@ -19684,14 +19774,9 @@ function setSelection(kind, id) {
         state.arrowType = getArrowType(ann);
       }
     }
-    // US-092: a selected note adopts the colour swatch the same way, so the
-    // toolbar shows the note's own colour and a click on another swatch
-    // retints THAT note instead of silently changing the draw default.
-    // Style / arrow / width have no meaning for a note and stay untouched.
-    if (kind === 'note') {
-      const note = getNoteById(id);
-      if (note) state.drawColor = normalizeColorKey(note.color);
-    }
+    // US-100: selecting a note no longer mutates the line/graphic draw colour.
+    // The contextual Note menu reads text and leader colours directly from the
+    // selected note, keeping the two authoring domains independent.
     if (kind === 'graphic') {
       const graphic = getBoardGraphicById(id);
       if (graphic) state.drawColor = normalizeColorKey(graphic.color);
@@ -20365,6 +20450,8 @@ function setSelection(kind, id) {
     if (noteHandleHit) {
       if (noteHandleHit.part === 'leader-add') {
         startNoteLeaderCreate(selectedNoteForHandles.id, world);
+      } else if (noteHandleHit.part === 'resize-width') {
+        startNoteResize(selectedNoteForHandles.id, world);
       } else {
         startNoteLeaderDrag(selectedNoteForHandles.id, noteHandleHit.index, world);
       }
@@ -20637,6 +20724,21 @@ function setSelection(kind, id) {
         moveNote(note, dx, dy);
         interaction.changed = true;
         interaction.prevWorld = world;
+        requestRender();
+      }
+      return;
+    }
+
+    if (interaction.type === 'drag-note-resize') {
+      const note = getNoteById(interaction.id);
+      if (!note) return;
+      if (!dragArmed(interaction, world)) return;
+      const width = normalizeNoteBoxWidth(interaction.startWidth
+        + (world.x - interaction.startWorld.x));
+      if (note.widthMode !== NOTE_WIDTH_MODE_FIXED || Math.abs(note.boxWidth - width) > 0.000001) {
+        note.widthMode = NOTE_WIDTH_MODE_FIXED;
+        note.boxWidth = width;
+        interaction.changed = true;
         requestRender();
       }
       return;
@@ -21009,6 +21111,18 @@ function startNoteDrag(id, world) {
   beginTrackedInteraction('drag-note', {
     id, prevWorld: world,
     startWorld: { x: world.x, y: world.y }, armed: false,
+  });
+}
+
+function startNoteResize(id, world) {
+  const note = getNoteById(id);
+  const box = note && noteBounds(note);
+  if (!note || !box) return;
+  beginTrackedInteraction('drag-note-resize', {
+    id,
+    startWidth: box.width,
+    startWorld: { x: world.x, y: world.y },
+    armed: false,
   });
 }
 
@@ -23945,8 +24059,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       el.smartAlignToggleBtn.setAttribute('aria-checked', state.smartAlignEnabled ? 'true' : 'false');
       el.smartAlignToggleBtn.textContent = (state.smartAlignEnabled ? '✓ ' : '') + 'Smart Align';
     }
-    el.lineStyleControl.hidden = state.tool === 'eraser';
-    el.lineWidthChip.hidden = state.tool === 'eraser';
     el.brushSizeChip.hidden = state.tool !== 'eraser';
     if (el.brushSizeInput && document.activeElement !== el.brushSizeInput) {
       el.brushSizeInput.value = String(state.brushSize);
@@ -23960,10 +24072,14 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     const selectedImage = getSelectedImage();
     const selectedNote = getSelectedNote();
     const selectedGraphic = getSelectedBoardGraphic();
+    const noteContext = !!selectedNote || state.tool === 'text';
+    el.lineStyleControl.hidden = state.tool === 'eraser' || noteContext;
+    el.lineWidthChip.hidden = state.tool === 'eraser' || noteContext;
     // US-092: the note's size chip lives beside Line, gated on a note being
     // selected OR the Text tool being ready to place one — never both chips
     // hidden at once for a note, never both shown at once for a line.
     el.fontSizeChip.hidden = !(selectedNote || state.tool === 'text');
+    if (el.noteStyleMenuWrap) el.noteStyleMenuWrap.hidden = !noteContext;
     // US-093 / ADR 0053: only reachable while a curved annotation is
     // selected — same conditional-visibility convention as fontSizeChip /
     // brushSizeChip above, no disabled/greyed state anywhere else in this
@@ -23978,12 +24094,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       el.toolAddPoint.classList.toggle('active', state.tool === 'add-point');
     }
     const activeStyle = selectedAnnotation ? getLineStyle(selectedAnnotation) : state.drawStyle;
-    // A selected note owns the swatch too — read from the note itself rather
-    // than from state.drawColor, so an Undo that restores its old colour shows
-    // up in the toolbar instead of leaving the stale draw default on display.
     const activeColor = selectedAnnotation ? normalizeColorKey(selectedAnnotation.color)
-      : selectedNote ? normalizeColorKey(selectedNote.color)
-        : selectedGraphic ? normalizeColorKey(selectedGraphic.color) : state.drawColor;
+      : selectedGraphic ? normalizeColorKey(selectedGraphic.color) : state.drawColor;
     const activeArrowType = selectedAnnotation ? getArrowType(selectedAnnotation) : state.arrowType;
     const activeLineWidth = getActiveLineWidth();
     updateLineStyleControl(activeStyle);
@@ -24001,6 +24113,31 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     el.colorBlackBtn.classList.toggle('active', activeColor === 'black');
     el.colorWhiteBtn.classList.toggle('active', activeColor === 'white');
 
+    const activeNoteAppearance = selectedNote ? noteAppearanceOf(selectedNote)
+      : normalizeNoteAppearance(state.noteAppearance);
+    const activeNoteTextColor = selectedNote ? noteTextColorOf(selectedNote)
+      : normalizeColorKey(state.noteTextColor || 'black');
+    const activeNoteLeaderColor = selectedNote ? noteLeaderColorOf(selectedNote)
+      : normalizeColorKey(state.noteLeaderColor || 'red');
+    if (el.noteAppearanceTextOnlyBtn) {
+      el.noteAppearanceTextOnlyBtn.classList.toggle('active', activeNoteAppearance === NOTE_APPEARANCE_TEXT_ONLY);
+    }
+    if (el.noteAppearanceBoxBtn) {
+      el.noteAppearanceBoxBtn.classList.toggle('active', activeNoteAppearance === NOTE_APPEARANCE_BOX);
+    }
+    for (const button of el.noteTextColorBtns || []) {
+      button.classList.toggle('active', button.dataset.color === activeNoteTextColor);
+    }
+    for (const button of el.noteLeaderColorBtns || []) {
+      button.classList.toggle('active', button.dataset.color === activeNoteLeaderColor);
+    }
+    if (el.noteStyleMenuBtn) {
+      el.noteStyleMenuBtn.textContent = activeNoteAppearance === NOTE_APPEARANCE_BOX
+        ? 'Note: Box' : 'Note: Text only';
+      el.noteStyleMenuBtn.title = 'Text ' + activeNoteTextColor
+        + ', leader ' + activeNoteLeaderColor + '; choose Note appearance and colours';
+    }
+
     el.stitchesBtn.disabled = false;
     el.arrowDoubleBtn.disabled = false;
     el.arrowSingleBtn.disabled = false;
@@ -24008,7 +24145,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 
     let toolText = '';
     if (state.tool === 'text') {
-      toolText = 'Text – Click the board to write a note. <span class="kbd">Enter</span> makes a new line; <span class="kbd">⌘/Ctrl</span>+<span class="kbd">Enter</span> or a click on the board finishes it.';
+      toolText = 'Text – Click the board to write a note. New notes use the active Note appearance and colours. <span class="kbd">Enter</span> makes a new line; <span class="kbd">⌘/Ctrl</span>+<span class="kbd">Enter</span> or a click on the board finishes it.';
     } else if (state.tool === 'stamp') {
       const stamp = (typeof getActiveShapeStamp === 'function') ? getActiveShapeStamp() : null;
       toolText = stamp
@@ -24019,8 +24156,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     } else if (state.tool === 'select') {
       if (selectedNote) {
         toolText = selectedNote.leaders && selectedNote.leaders.length
-          ? 'Select – Drag the note or an arrow tip to move it, double-click a tip to remove that arrow, double-click the text to edit it, <span class="kbd">⌫</span> deletes the note.'
-          : 'Select – Drag the note to move it, drag the <strong>+</strong> handle out to point an arrow at a detail, double-click to edit the text, <span class="kbd">⌫</span> deletes it.';
+          ? 'Select – Drag the note, its right-edge width handle, or an arrow tip; double-click a tip to remove that arrow, double-click the text to edit it, <span class="kbd">⌫</span> deletes the note.'
+          : 'Select – Drag the note to move it, drag the right-edge handle to change wrap width, drag <strong>+</strong> to add an arrow, double-click to edit the text, <span class="kbd">⌫</span> deletes it.';
       } else if (selectedAnnotation) {
         toolText = 'Select – Drag line, endpoints, curve shape handle, or label. Smart Align is '
           + (state.smartAlignEnabled ? 'on; hold <span class="kbd">Alt/Option</span> to bypass it. ' : 'off. ')
@@ -24703,15 +24840,46 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // (unlike the Construction/BOM callouts, whose pin carries its row's seq).
   function createNote(text, pos, options) {
     const opts = options || {};
+    // Older internal callers supplied only `color`. Treat that shape exactly
+    // like a pre-US-100 note so tests/integrations keep their boxed, one-colour
+    // pixels. The real Text tool passes all three new fields explicitly.
+    const legacyOptions = opts.color != null && opts.textColor == null
+      && opts.leaderColor == null && opts.appearance == null && opts.widthMode == null;
+    const textColor = normalizeColorKey(opts.textColor != null
+      ? opts.textColor : (opts.color != null ? opts.color : state.noteTextColor));
+    const leaderColor = normalizeColorKey(opts.leaderColor != null
+      ? opts.leaderColor : (legacyOptions ? textColor : state.noteLeaderColor));
     return {
       id: state.idCounter++,
       text: String(text == null ? '' : text),
       pos: { x: Number(pos && pos.x) || 0, y: Number(pos && pos.y) || 0 },
-      color: normalizeColorKey(opts.color || state.drawColor),
+      // `color` remains as a compatibility alias for older integrations. New
+      // rendering and UI use the explicit text/leader fields.
+      color: textColor,
+      textColor,
+      leaderColor,
+      appearance: normalizeNoteAppearance(opts.appearance != null
+        ? opts.appearance : (legacyOptions ? NOTE_APPEARANCE_BOX : state.noteAppearance)),
       fontSize: normalizeNoteFontSize(opts.fontSize),
       boxWidth: normalizeNoteBoxWidth(opts.boxWidth),
+      widthMode: normalizeNoteWidthMode(opts.widthMode,
+        legacyOptions ? NOTE_WIDTH_MODE_CONTENT : NOTE_WIDTH_MODE_FIXED),
       leaders: normalizeNoteLeaders(opts.leaders),
     };
+  }
+
+  function normalizeNoteAppearance(value, fallback) {
+    if (value === NOTE_APPEARANCE_BOX) return NOTE_APPEARANCE_BOX;
+    if (value === NOTE_APPEARANCE_TEXT_ONLY) return NOTE_APPEARANCE_TEXT_ONLY;
+    return fallback === NOTE_APPEARANCE_BOX
+      ? NOTE_APPEARANCE_BOX : NOTE_APPEARANCE_TEXT_ONLY;
+  }
+
+  function normalizeNoteWidthMode(value, fallback) {
+    if (value === NOTE_WIDTH_MODE_FIXED) return NOTE_WIDTH_MODE_FIXED;
+    if (value === NOTE_WIDTH_MODE_CONTENT) return NOTE_WIDTH_MODE_CONTENT;
+    return fallback === NOTE_WIDTH_MODE_FIXED
+      ? NOTE_WIDTH_MODE_FIXED : NOTE_WIDTH_MODE_CONTENT;
   }
 
   // Drop anything that is not a finite point rather than trusting the caller —
@@ -24747,15 +24915,51 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     const y = Number(raw.pos && raw.pos.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     const id = Number(raw.id);
+    const hasExplicitAppearance = raw.appearance === NOTE_APPEARANCE_TEXT_ONLY
+      || raw.appearance === NOTE_APPEARANCE_BOX;
+    const hasExplicitColors = raw.textColor != null || raw.leaderColor != null;
+    const legacy = !hasExplicitAppearance && !hasExplicitColors;
+    const legacyColor = normalizeColorKey(raw.color);
+    const textColor = normalizeColorKey(raw.textColor != null ? raw.textColor
+      : (legacy ? legacyColor : 'black'));
+    const leaderColor = normalizeColorKey(raw.leaderColor != null ? raw.leaderColor
+      : (legacy ? legacyColor : 'red'));
     return {
       id: Number.isFinite(id) ? id : state.idCounter++,
       text: String(raw.text == null ? '' : raw.text),
       pos: { x, y },
-      color: normalizeColorKey(raw.color),
+      color: textColor,
+      textColor,
+      leaderColor,
+      // Pre-US-100 notes were visibly boxed and used one colour for everything.
+      // Preserve those pixels; only newly-authored notes default Text-only.
+      appearance: normalizeNoteAppearance(raw.appearance,
+        legacy ? NOTE_APPEARANCE_BOX : NOTE_APPEARANCE_TEXT_ONLY),
       fontSize: normalizeNoteFontSize(raw.fontSize),
       boxWidth: normalizeNoteBoxWidth(raw.boxWidth),
+      // Legacy `boxWidth` was a wrap ceiling and the painted box shrink-wrapped
+      // to content. Keep that until the TD explicitly drags the width handle.
+      widthMode: normalizeNoteWidthMode(raw.widthMode,
+        legacy ? NOTE_WIDTH_MODE_CONTENT : NOTE_WIDTH_MODE_FIXED),
       leaders: normalizeNoteLeaders(raw.leaders),
     };
+  }
+
+  function noteTextColorOf(note) {
+    return normalizeColorKey(note && note.textColor != null ? note.textColor : note && note.color);
+  }
+
+  function noteLeaderColorOf(note) {
+    return normalizeColorKey(note && note.leaderColor != null
+      ? note.leaderColor : (note && note.color != null ? note.color : 'red'));
+  }
+
+  function noteAppearanceOf(note) {
+    return normalizeNoteAppearance(note && note.appearance, NOTE_APPEARANCE_BOX);
+  }
+
+  function noteWidthModeOf(note) {
+    return normalizeNoteWidthMode(note && note.widthMode, NOTE_WIDTH_MODE_CONTENT);
   }
 
   function getNoteById(id) {
@@ -24809,8 +25013,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     return lines.length ? lines : [''];
   }
 
-  // The note's text box in world coordinates, shrink-wrapped to the longest
-  // wrapped line but never wider than boxWidth. pos is its TOP-LEFT corner.
+  // The note's text box in world coordinates. US-100 notes use boxWidth as a
+  // real wrap-width boundary; legacy notes remain content-width until a TD
+  // explicitly resizes them. pos is its TOP-LEFT corner.
   function noteBounds(note) {
     if (!note || !note.pos) return null;
     const lines = wrapNoteLines(note);
@@ -24823,12 +25028,29 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     ctx.restore();
     // An empty note still needs a body: it has to stay visible and grabbable.
     const inner = Math.max(widest, fontSize * 1.6);
+    const contentWidth = inner + pad * 2;
     return {
       x: note.pos.x,
       y: note.pos.y,
-      width: inner + pad * 2,
+      width: noteWidthModeOf(note) === NOTE_WIDTH_MODE_FIXED
+        ? normalizeNoteBoxWidth(note.boxWidth) : contentWidth,
       height: lines.length * noteLineHeight(note) + pad * 2,
+      contentWidth,
       lines,
+    };
+  }
+
+  // Text-only notes have no painted rectangle, so their broad empty wrap area
+  // must not steal clicks or inflate export bounds. Box notes own the full box.
+  function noteVisibleBounds(note, box) {
+    const bounds = box || noteBounds(note);
+    if (!bounds) return null;
+    return {
+      x: bounds.x,
+      y: bounds.y,
+      width: noteAppearanceOf(note) === NOTE_APPEARANCE_BOX
+        ? bounds.width : Math.min(bounds.width, bounds.contentWidth || bounds.width),
+      height: bounds.height,
     };
   }
 
@@ -24837,8 +25059,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   function noteOuterBounds(note) {
     const box = noteBounds(note);
     if (!box) return null;
-    let minX = box.x, minY = box.y;
-    let maxX = box.x + box.width, maxY = box.y + box.height;
+    const visible = noteVisibleBounds(note, box);
+    let minX = visible.x, minY = visible.y;
+    let maxX = visible.x + visible.width, maxY = visible.y + visible.height;
     for (const leader of (note.leaders || [])) {
       minX = Math.min(minX, leader.x);
       minY = Math.min(minY, leader.y);
@@ -24867,13 +25090,19 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // US-092 step 6: where the "pull a new arrow out of here" handle sits — just
   // outside the box's bottom-right corner, at a constant SCREEN offset so it is
   // reachable at any zoom and never covers the text. Deliberately OUTSIDE the
-  // box, not on its corner: a corner handle on a rectangle reads as "resize",
-  // and a note has no resize gesture.
+  // box, not on its corner: the real width-resize handle is at the right-edge
+  // midpoint, while this lower-right control is reserved for Add Leader.
   function noteLeaderAddHandle(note) {
     const box = noteBounds(note);
     if (!box) return null;
     const off = 9 / state.zoom;
     return { x: box.x + box.width + off, y: box.y + box.height + off };
+  }
+
+  function noteResizeHandle(note) {
+    const box = noteBounds(note);
+    if (!box) return null;
+    return { x: box.x + box.width, y: box.y + box.height / 2 };
   }
 
   // Move the note and everything attached to it. Leaders are absolute world
@@ -38927,6 +39156,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         if (typeof requestRender === 'function') requestRender();
         return clone(note);
       },
+      setNoteAppearance: value => { setNoteAppearance(value); return normalizeNoteAppearance(state.noteAppearance); },
+      setNoteTextColor: value => { setNoteTextColor(value); return normalizeColorKey(state.noteTextColor); },
+      setNoteLeaderColor: value => { setNoteLeaderColor(value); return normalizeColorKey(state.noteLeaderColor); },
       // US-092 step 6: where a note's grabbable geometry actually is — its
       // shrink-wrapped box, its leader tips, and the handle that pulls a new
       // arrow out. A test must AIM at these, and noteBounds depends on measured
@@ -38940,6 +39172,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         return {
           box: box ? { x: box.x, y: box.y, width: box.width, height: box.height } : null,
           add: clone(noteLeaderAddHandle(note)),
+          resize: clone(noteResizeHandle(note)),
           leaders: clone(note.leaders || []),
         };
       },
@@ -41323,6 +41556,8 @@ function makeExportFileName() {
       }
     }
     if (best) return best;
+    const resize = noteResizeHandle(note);
+    if (resize && distance(world, resize) <= radius) return { part: 'resize-width', index: -1 };
     const add = noteLeaderAddHandle(note);
     if (add && distance(world, add) <= radius) return { part: 'leader-add', index: -1 };
     return null;
@@ -41341,8 +41576,9 @@ function makeExportFileName() {
       const note = notes[i];
       const box = noteBounds(note);
       if (!box) continue;
-      if (world.x >= box.x && world.x <= box.x + box.width
-        && world.y >= box.y && world.y <= box.y + box.height) {
+      const hitBox = noteVisibleBounds(note, box);
+      if (world.x >= hitBox.x && world.x <= hitBox.x + hitBox.width
+        && world.y >= hitBox.y && world.y <= hitBox.y + hitBox.height) {
         return { id: note.id, part: 'box' };
       }
     }
@@ -42208,13 +42444,17 @@ function makeExportFileName() {
   function drawNote(note) {
     const box = noteBounds(note);
     if (!box) return;
-    const color = LINE_COLORS[normalizeColorKey(note.color)] || LINE_COLOR;
+    const textColor = LINE_COLORS[noteTextColorOf(note)] || '#111827';
+    const leaderColor = LINE_COLORS[noteLeaderColorOf(note)] || LINE_COLOR;
     const fontSize = noteFontSizeOf(note);
+    const leaderBox = noteVisibleBounds(note, box);
 
     ctx.save();
-    for (const leader of (note.leaders || [])) drawNoteLeader(box, leader, color, fontSize);
-    drawNoteBox(box, color, fontSize, noteGroundFill(color));
-    drawNoteText(note, box, color, fontSize);
+    for (const leader of (note.leaders || [])) drawNoteLeader(leaderBox, leader, leaderColor, fontSize);
+    if (noteAppearanceOf(note) === NOTE_APPEARANCE_BOX) {
+      drawNoteBox(box, textColor, fontSize, noteGroundFill(textColor));
+    }
+    drawNoteText(note, box, textColor, fontSize);
     ctx.restore();
   }
 
@@ -42286,8 +42526,22 @@ function makeExportFileName() {
     // grabbable — hitTestSelectedNoteHandles is selected-only for the same
     // reason.
     for (const leader of (note.leaders || [])) drawNoteLeaderHandle(leader);
+    const resize = noteResizeHandle(note);
+    if (resize) drawNoteResizeHandle(resize);
     const add = noteLeaderAddHandle(note);
     if (add) drawNoteLeaderAddHandle(add);
+  }
+
+  function drawNoteResizeHandle(point) {
+    const half = 5.5 / state.zoom;
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = SELECT_COLOR;
+    ctx.lineWidth = 2 / state.zoom;
+    ctx.setLineDash([]);
+    ctx.fillRect(point.x - half, point.y - half, half * 2, half * 2);
+    ctx.strokeRect(point.x - half, point.y - half, half * 2, half * 2);
+    ctx.restore();
   }
 
   // Hollow, like the photo's resize handles: it marks a point you can pick up.
@@ -42307,8 +42561,8 @@ function makeExportFileName() {
 
   // Filled with a white plus: this one MAKES something rather than moving
   // something, and it sits where a rectangle's corner handle would, so it has
-  // to say "add" clearly enough not to be read as "resize" (a note has no
-  // resize gesture).
+  // to say "add" clearly enough not to be confused with the separate
+  // right-edge width handle.
   function drawNoteLeaderAddHandle(point) {
     const r = 7 / state.zoom;
     const arm = 3.4 / state.zoom;
@@ -42337,10 +42591,11 @@ function makeExportFileName() {
   function drawNoteLeadersOnly(note) {
     const box = noteBounds(note);
     if (!box) return;
-    const color = LINE_COLORS[normalizeColorKey(note.color)] || LINE_COLOR;
+    const color = LINE_COLORS[noteLeaderColorOf(note)] || LINE_COLOR;
     const fontSize = noteFontSizeOf(note);
+    const leaderBox = noteVisibleBounds(note, box);
     ctx.save();
-    for (const leader of (note.leaders || [])) drawNoteLeader(box, leader, color, fontSize);
+    for (const leader of (note.leaders || [])) drawNoteLeader(leaderBox, leader, color, fontSize);
     ctx.restore();
   }
 

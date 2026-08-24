@@ -8,6 +8,7 @@
     ['moreMenuWrap', 'moreMenuBtn', 'moreMenuList'],
     ['arrowMenuWrap', 'arrowMenuBtn', 'arrowMenuList'],
     ['colorMenuWrap', 'colorMenuBtn', 'colorMenuList'],
+    ['noteStyleMenuWrap', 'noteStyleMenuBtn', 'noteStyleMenuList'],
     // US-093 / ADR 0053: Straight/Curved/Eraser/Text consolidated here to
     // free a toolbar slot for the new "Add point" tool.
     ['toolsMenuWrap', 'toolsMenuBtn', 'toolsMenuList'],
@@ -157,7 +158,9 @@
     // Empty Manual boards need authoring entry points, not line styling or
     // exporters. Those controls return as soon as there is Board content.
     const lineSettings = document.querySelector('.board-line-settings');
-    if (lineSettings) lineSettings.hidden = isAuto || empty || (!!selectedImage && state.tool === 'select');
+    const noteContext = !!selectedNote || state.tool === 'text';
+    if (lineSettings) lineSettings.hidden = isAuto || empty || noteContext
+      || (!!selectedImage && state.tool === 'select');
     setBoardToolbarHidden(el.toolEraser, isAuto || imageCount === 0);
     const exportWrap = document.getElementById('exportMenuWrap');
     if (exportWrap) exportWrap.hidden = isAuto || empty;

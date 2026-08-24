@@ -48,6 +48,18 @@
     el.fontSizeInput.addEventListener('change', () => {
       el.fontSizeInput.value = formatNoteFontSize(getActiveNoteFontSize());
     });
+    if (el.noteAppearanceTextOnlyBtn) {
+      el.noteAppearanceTextOnlyBtn.addEventListener('click', () => setNoteAppearance(NOTE_APPEARANCE_TEXT_ONLY));
+    }
+    if (el.noteAppearanceBoxBtn) {
+      el.noteAppearanceBoxBtn.addEventListener('click', () => setNoteAppearance(NOTE_APPEARANCE_BOX));
+    }
+    for (const button of el.noteTextColorBtns || []) {
+      button.addEventListener('click', () => setNoteTextColor(button.dataset.color));
+    }
+    for (const button of el.noteLeaderColorBtns || []) {
+      button.addEventListener('click', () => setNoteLeaderColor(button.dataset.color));
+    }
 
     el.brushSizeInput.addEventListener('input', () => {
       const n = parseInt(el.brushSizeInput.value, 10);
@@ -357,37 +369,52 @@
 
   function setDrawColor(color) {
     state.drawColor = color;
-    // US-092: the same four swatches retint a selected NOTE. The selection model
-    // is single-kind, so a note and a line can never both be selected and this
-    // can never double-apply; when nothing is selected both calls fall through
-    // to just updating the draw default.
-    if (applyColorToSelectedNote(color)) return;
     if (applyToSelectedBoardGraphic({ color: normalizeColorKey(color) })) return;
     applyToSelectedAnnotation({ color });
   }
 
-  // Returns true when a note claimed the change, so the caller stops. Style
-  // and arrow type have no meaning for a note and deliberately have no
-  // equivalent; line width and font size are each the OTHER kind's own
-  // control (setLineWidth / setNoteFontSize above) rather than a shared one,
-  // because "how thick" and "how big the text is" are not the same question.
-  function applyColorToSelectedNote(color) {
+  function setNoteAppearance(appearance) {
+    const next = normalizeNoteAppearance(appearance);
+    state.noteAppearance = next;
     const note = getSelectedNote();
-    if (!note) return false;
+    if (note && noteAppearanceOf(note) !== next) {
+      note.appearance = next;
+      pushHistoryIfChanged();
+    }
+    updateUI();
+    requestRender();
+  }
+
+  function setNoteTextColor(color) {
     const next = normalizeColorKey(color);
-    if (note.color !== next) {
+    state.noteTextColor = next;
+    const note = getSelectedNote();
+    if (note && noteTextColorOf(note) !== next) {
+      note.textColor = next;
+      // Keep the legacy alias synchronized for older consumers.
       note.color = next;
       pushHistoryIfChanged();
     }
     updateUI();
     requestRender();
-    return true;
   }
 
-  // Mirrors applyColorToSelectedNote: mutate the selected note's own fontSize
-  // directly and ride the generic snapshot-diff into history exactly the way
-  // note.color already does — notes carry no per-object lineWidth/arrowType,
-  // so there is nothing else here to fall through to.
+  function setNoteLeaderColor(color) {
+    const next = normalizeColorKey(color);
+    state.noteLeaderColor = next;
+    const note = getSelectedNote();
+    if (note && noteLeaderColorOf(note) !== next) {
+      note.leaderColor = next;
+      pushHistoryIfChanged();
+    }
+    updateUI();
+    requestRender();
+  }
+
+  // Mutate the selected note's own fontSize directly and ride the generic
+  // snapshot-diff into history exactly the way note appearance already does —
+  // notes carry no per-object lineWidth/arrowType, so there is nothing else
+  // here to fall through to.
   function applyFontSizeToSelectedNote(fontSize) {
     const note = getSelectedNote();
     if (!note) return false;

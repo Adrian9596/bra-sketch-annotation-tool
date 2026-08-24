@@ -51,6 +51,11 @@ Smart Hit catches any visible Treatment rail, while Smart Align helps move
 lines and Template groups onto nearby path points and axes. Paths may be
 prepared in the Scratch Area outside the sketch and saved from their selection.
 
+Board Text Notes default to transparent, borderless black text with red leader
+arrows. Select a note to switch between **Text only** and **Box**, set text and
+leader colours independently, or drag the midpoint handle on its right edge to
+change wrap width; height follows the wrapped text automatically.
+
 Press **Cmd/Ctrl+K** anywhere to search every stable command. Use
 **Cmd/Ctrl+1…5** to switch Board, Main Page, Construction, BOM, and Preview &
 Export; existing Board drawing shortcuts stay scoped to the Board.
@@ -94,6 +99,7 @@ npm run preview-check      # preview & export tab
 npm run line-presets-check # line looks, Treatments, and measurement isolation
 npm run shape-stamps-check # Templates: grouped reusable path geometry
 npm run personal-library-check # Templates + Treatment scale + Smart Hit/Align + local persistence
+npm run notes-check       # Text Notes, leaders, transparent/Box modes, resize, save/open
 ```
 
 The suites that score detection accuracy against real sketches — `golden`,

@@ -259,6 +259,8 @@
       }
     }
     if (best) return best;
+    const resize = noteResizeHandle(note);
+    if (resize && distance(world, resize) <= radius) return { part: 'resize-width', index: -1 };
     const add = noteLeaderAddHandle(note);
     if (add && distance(world, add) <= radius) return { part: 'leader-add', index: -1 };
     return null;
@@ -277,8 +279,9 @@
       const note = notes[i];
       const box = noteBounds(note);
       if (!box) continue;
-      if (world.x >= box.x && world.x <= box.x + box.width
-        && world.y >= box.y && world.y <= box.y + box.height) {
+      const hitBox = noteVisibleBounds(note, box);
+      if (world.x >= hitBox.x && world.x <= hitBox.x + hitBox.width
+        && world.y >= hitBox.y && world.y <= hitBox.y + hitBox.height) {
         return { id: note.id, part: 'box' };
       }
     }

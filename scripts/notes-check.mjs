@@ -223,6 +223,11 @@ async function main() {
       hitTestNotes: txt.includes('function hitTestNotes'),
       leaderHandles: txt.includes('function hitTestSelectedNoteHandles'),
       leaderAdd: txt.includes('function noteLeaderAddHandle'),
+      noteResize: txt.includes('function noteResizeHandle') && txt.includes("'drag-note-resize'"),
+      noteAppearance: typeof window.__braAutoModeDebug.setNoteAppearance === 'function',
+      noteColors: typeof window.__braAutoModeDebug.setNoteTextColor === 'function'
+        && typeof window.__braAutoModeDebug.setNoteLeaderColor === 'function',
+      noteStyleMenu: !!document.getElementById('noteStyleMenuBtn'),
       getNoteHandles: typeof window.__braAutoModeDebug.getNoteHandles === 'function',
       dragNote: txt.includes("'drag-note'"),
       noteEditor: txt.includes('function openNoteEditorForNewNote'),
@@ -231,7 +236,8 @@ async function main() {
   })()`);
   for (const key of ['drawNote', 'noteBounds', 'getNotes', 'addNote',
     'hitTestNotes', 'dragNote', 'noteEditor', 'getNoteEditor',
-    'leaderHandles', 'leaderAdd', 'getNoteHandles']) {
+    'leaderHandles', 'leaderAdd', 'noteResize', 'noteAppearance', 'noteColors',
+    'noteStyleMenu', 'getNoteHandles']) {
     check(served[key] === true,
       `the served bundle (${served.src}) predates US-092 — no ${key}. Run npm run build.`);
   }
@@ -629,8 +635,9 @@ async function main() {
     `the typed text did not survive the commit: ${JSON.stringify(create.note.text)}`);
   check(Math.abs(create.note.pos.x - create.at.x) < 1 && Math.abs(create.note.pos.y - create.at.y) < 1,
     `the note did not land where it was clicked: clicked (${create.at.x.toFixed(1)}, ${create.at.y.toFixed(1)}), got (${create.note.pos.x.toFixed(1)}, ${create.note.pos.y.toFixed(1)})`);
-  check(create.before === 0 && create.after > 40,
-    `the pointer-created note did not paint: ${create.before} -> ${create.after} red px`);
+  check(create.note.appearance === 'text-only' && create.note.textColor === 'black'
+    && create.note.leaderColor === 'red' && create.note.widthMode === 'fixed',
+    `a pointer-created note did not receive the approved defaults: ${JSON.stringify(create.note)}`);
   check(create.editorAfter === null, 'the editor stayed open after a commit');
   check(Math.abs(create.editorOffset.x) < 2 && Math.abs(create.editorOffset.y) < 2,
     `the committed note did not land where the editor was: offset (${create.editorOffset.x.toFixed(1)}, ${create.editorOffset.y.toFixed(1)}) px on screen`);
@@ -639,7 +646,7 @@ async function main() {
   // a new note is always born legible, and only THEN scales with the sketch.
   check(Math.abs(create.screenFont - 16) < 0.6,
     `a new note was not born at the default SCREEN size: ${create.screenFont.toFixed(1)}px on screen (fontSize ${create.note.fontSize.toFixed(2)} at zoom ${create.zoom.toFixed(2)})`);
-  console.log(`notes-check: a Text-tool click created a note at the click point, ${create.after} red px, born at ${create.screenFont.toFixed(1)} screen px (zoom ${create.zoom.toFixed(2)})`);
+  console.log(`notes-check: a Text-tool click created a transparent black/red note at the click point, born at ${create.screenFont.toFixed(1)} screen px (zoom ${create.zoom.toFixed(2)})`);
 
   // ---- 7c. An empty commit creates nothing -------------------------------
   const empty = await s.eval(`(async () => {
@@ -675,7 +682,7 @@ async function main() {
     };
     const out = {};
     for (const color of ['red', 'blue', 'black', 'white']) {
-      document.getElementById('color' + color[0].toUpperCase() + color.slice(1) + 'Btn').click();
+      d.setNoteTextColor(color);
       await settle();
       document.getElementById('toolText').click(); await settle();
       down(img.x + img.width * 0.75, img.y + img.height * 0.75);
@@ -687,7 +694,7 @@ async function main() {
         .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       await settle();
     }
-    document.getElementById('colorRedBtn').click();
+    d.setNoteTextColor('black');
     document.getElementById('toolSelect').click(); await settle();
     out.stillClosed = d.getNoteEditor() === null;
     return out;
@@ -1043,7 +1050,8 @@ async function main() {
     await new Promise(r => setTimeout(r, 120));
     await d.addBoardImages([solidImage('#f2f2f2', 600, 400)]);
     document.getElementById('modeManualBtn').click(); await settle();
-    document.getElementById('colorBlueBtn').click();
+    d.setNoteTextColor('black');
+    d.setNoteLeaderColor('blue');
     document.getElementById('toolText').click(); await settle();
     const img = d.getImages()[0];
     const at = { x: img.x + img.width * 0.04, y: img.y + img.height * 0.06 };
@@ -1803,6 +1811,240 @@ async function main() {
   check(sticky10c.savedNoteFontSize === 33,
     `the sticky SCREEN-px default did not round-trip into the project snapshot: ${sticky10c.savedNoteFontSize}`);
   console.log(`notes-check: with nothing selected, the chip sets the SCREEN-px default the NEXT note is born at (33 -> ${sticky10c.newNote.fontSize.toFixed(2)} world px at zoom ${sticky10c.zoom.toFixed(2)}), and the screen-px preference saves with the project`);
+
+  // ========================================================================
+  // 11. US-100 — Text-only/Box appearance, independent colours and a real
+  //     width handle. Text-only means transparent exported content, not an
+  //     invisible box that still paints or steals pointer hits. Width is the
+  //     single adjustable dimension; height follows wrapping.
+  // ========================================================================
+
+  const appearance11a = await s.eval(`(async () => {
+    const { d, settle, solidImage, meanColor, countColor, click } = window.__NC;
+    const realConfirm = window.confirm;
+    window.confirm = () => true;
+    try { document.getElementById('autoResetBoardBtn').click(); await settle(); }
+    finally { window.confirm = realConfirm; }
+    await new Promise(r => setTimeout(r, 120));
+    await d.addBoardImages([solidImage('#d0d0d0', 720, 460)]);
+    document.getElementById('modeManualBtn').click(); await settle();
+    const img = d.getImages()[0];
+    const pos = { x: img.x + 70, y: img.y + 70 };
+    const corner = { x: pos.x + 1, y: pos.y + 1, width: 4, height: 4 };
+    const before = meanColor(corner);
+    const note = d.addNote(
+      'Long binding instruction wraps into more lines when its width becomes narrower for the technical sketch',
+      pos,
+      {
+        textColor: 'black', leaderColor: 'red', appearance: 'text-only',
+        widthMode: 'fixed', boxWidth: 300, fontSize: 22,
+        leaders: [{ x: pos.x + 280, y: pos.y + 140 }],
+      }
+    );
+    await settle();
+    const after = meanColor(corner);
+    const painted = {
+      black: countColor({ x: pos.x, y: pos.y, width: 300, height: 150 }, [17, 24, 39], 20),
+      red: countColor({ x: pos.x, y: pos.y, width: 300, height: 150 }, [230, 57, 57], 20),
+    };
+    document.getElementById('toolSelect').click(); await settle();
+    await click(pos.x + 10, pos.y + 10);
+    const menu = document.getElementById('noteStyleMenuWrap');
+    const lineSettings = document.querySelector('.board-line-settings');
+    const activeAppearance = document.getElementById('noteAppearanceTextOnlyBtn').classList.contains('active');
+    const fields = d.getNotes().find(n => n.id === note.id);
+    return {
+      id: note.id, pos, before, after, painted, fields,
+      selection: d.getState().selection,
+      noteMenuHidden: menu.hidden,
+      lineMenuHidden: lineSettings.hidden,
+      activeAppearance,
+      trigger: document.getElementById('noteStyleMenuBtn').textContent,
+    };
+  })()`);
+  check(Math.abs(appearance11a.after.r - appearance11a.before.r) < 1
+      && Math.abs(appearance11a.after.g - appearance11a.before.g) < 1
+      && Math.abs(appearance11a.after.b - appearance11a.before.b) < 1,
+    `Text-only painted a fill/border over the sketch: before ${JSON.stringify(appearance11a.before)}, after ${JSON.stringify(appearance11a.after)}`);
+  check(appearance11a.painted.black.count > 35,
+    `the default black text did not paint enough glyph pixels: ${appearance11a.painted.black.count}`);
+  check(appearance11a.painted.red.count > 20,
+    `the default red leader did not paint enough pixels: ${appearance11a.painted.red.count}`);
+  check(appearance11a.fields.appearance === 'text-only'
+      && appearance11a.fields.textColor === 'black'
+      && appearance11a.fields.leaderColor === 'red'
+      && appearance11a.fields.widthMode === 'fixed',
+    `the new note fields are not the US-100 defaults: ${JSON.stringify(appearance11a.fields)}`);
+  check(appearance11a.selection.kind === 'note' && appearance11a.selection.id === appearance11a.id,
+    `clicking visible Text-only content did not select the note: ${JSON.stringify(appearance11a.selection)}`);
+  check(appearance11a.noteMenuHidden === false && appearance11a.lineMenuHidden === true,
+    `the contextual controls are wrong for a selected note: note hidden=${appearance11a.noteMenuHidden}, line hidden=${appearance11a.lineMenuHidden}`);
+  check(appearance11a.activeAppearance === true && /Text only/.test(appearance11a.trigger),
+    `the Note menu did not reflect Text-only: ${appearance11a.trigger}`);
+  console.log('notes-check: Text-only is truly transparent, with black text and a red leader in its own contextual menu');
+
+  const box11b = await s.eval(`(async () => {
+    const { d, settle, meanColor } = window.__NC;
+    const id = ${appearance11a.id};
+    const pos = ${JSON.stringify(appearance11a.pos)};
+    const corner = { x: pos.x + 1, y: pos.y + 1, width: 4, height: 4 };
+    d.setNoteAppearance('box'); await settle();
+    const boxed = {
+      note: d.getNotes().find(n => n.id === id),
+      ground: meanColor(corner),
+    };
+    document.getElementById('undoBtn').click(); await settle();
+    const undone = d.getNotes().find(n => n.id === id);
+    document.getElementById('redoBtn').click(); await settle();
+    const redone = d.getNotes().find(n => n.id === id);
+    d.setNoteAppearance('text-only'); await settle();
+    return { boxed, undone, redone, final: d.getNotes().find(n => n.id === id) };
+  })()`);
+  check(box11b.boxed.note.appearance === 'box' && box11b.boxed.ground.r > appearance11a.after.r + 20,
+    `Box appearance did not paint its light ground: ${JSON.stringify(box11b.boxed)}`);
+  check(box11b.undone.appearance === 'text-only' && box11b.redone.appearance === 'box',
+    `appearance did not round-trip through Undo/Redo: ${box11b.undone.appearance} -> ${box11b.redone.appearance}`);
+  check(box11b.final.appearance === 'text-only', 'the fixture did not return to Text-only after the Box check');
+  console.log('notes-check: Box paints a real ground, and appearance is one Undo/Redo step');
+
+  const colors11c = await s.eval(`(async () => {
+    const { d, settle, countColor } = window.__NC;
+    const id = ${appearance11a.id};
+    const pos = ${JSON.stringify(appearance11a.pos)};
+    d.setNoteTextColor('blue');
+    d.setNoteLeaderColor('red');
+    await settle();
+    const beforeLineColor = d.getNotes().find(n => n.id === id);
+    document.getElementById('colorBlackBtn').click(); await settle();
+    const afterLineColor = d.getNotes().find(n => n.id === id);
+    return {
+      beforeLineColor, afterLineColor,
+      blue: countColor({ x: pos.x, y: pos.y, width: 300, height: 150 }, [37, 99, 235], 20),
+      red: countColor({ x: pos.x, y: pos.y, width: 300, height: 150 }, [230, 57, 57], 20),
+    };
+  })()`);
+  check(colors11c.beforeLineColor.textColor === 'blue' && colors11c.beforeLineColor.leaderColor === 'red',
+    `text/leader colours did not stay independent: ${JSON.stringify(colors11c.beforeLineColor)}`);
+  check(colors11c.afterLineColor.textColor === 'blue' && colors11c.afterLineColor.leaderColor === 'red',
+    `the line-colour control leaked into the selected note: ${JSON.stringify(colors11c.afterLineColor)}`);
+  check(colors11c.blue.count > 35 && colors11c.red.count > 20,
+    `independent blue text/red leader pixels were not both present: ${JSON.stringify(colors11c)}`);
+  console.log('notes-check: text and leader colours change independently; line colour cannot retint a note');
+
+  const export11c2 = await s.eval(`(async () => {
+    const { d, settle } = window.__NC;
+    const decode = async () => {
+      const im = new Image();
+      im.src = d.exportBoardDataUrl();
+      await im.decode();
+      const c = document.createElement('canvas');
+      c.width = im.naturalWidth; c.height = im.naturalHeight;
+      const g = c.getContext('2d');
+      g.drawImage(im, 0, 0);
+      const data = g.getImageData(0, 0, c.width, c.height).data;
+      let gray = 0, blue = 0, red = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (Math.abs(data[i] - 208) <= 2 && Math.abs(data[i+1] - 208) <= 2 && Math.abs(data[i+2] - 208) <= 2) gray += 1;
+        if (Math.abs(data[i] - 37) <= 20 && Math.abs(data[i+1] - 99) <= 20 && Math.abs(data[i+2] - 235) <= 20) blue += 1;
+        if (Math.abs(data[i] - 230) <= 20 && Math.abs(data[i+1] - 57) <= 20 && Math.abs(data[i+2] - 57) <= 20) red += 1;
+      }
+      return { w: c.width, h: c.height, gray, blue, red };
+    };
+    const textOnly = await decode();
+    d.setNoteAppearance('box'); await settle();
+    const box = await decode();
+    d.setNoteAppearance('text-only'); await settle();
+    return { textOnly, box };
+  })()`);
+  check(export11c2.textOnly.w === export11c2.box.w && export11c2.textOnly.h === export11c2.box.h,
+    `appearance unexpectedly changed the image-owned export frame: ${JSON.stringify(export11c2)}`);
+  check(export11c2.textOnly.gray > export11c2.box.gray + 10000,
+    `Text-only export still appears to carry a Box ground: gray pixels ${export11c2.textOnly.gray} vs ${export11c2.box.gray}`);
+  check(export11c2.textOnly.blue > 35 && export11c2.textOnly.red > 20,
+    `the independent blue text/red leader did not reach the exported PNG: ${JSON.stringify(export11c2.textOnly)}`);
+  console.log(`notes-check: the exported PNG keeps Text-only transparent (+${export11c2.textOnly.gray - export11c2.box.gray} sketch-ground px versus Box) and carries both colours`);
+
+  const resize11d = await s.eval(`(async () => {
+    const { d, settle, drag } = window.__NC;
+    const id = ${appearance11a.id};
+    const before = d.getNotes().find(n => n.id === id);
+    const beforeHandles = d.getNoteHandles(id);
+    const interaction = await drag(
+      beforeHandles.resize.x, beforeHandles.resize.y,
+      beforeHandles.resize.x - 145, beforeHandles.resize.y
+    );
+    const after = d.getNotes().find(n => n.id === id);
+    const afterHandles = d.getNoteHandles(id);
+    document.getElementById('undoBtn').click(); await settle();
+    const undone = d.getNotes().find(n => n.id === id);
+    document.getElementById('redoBtn').click(); await settle();
+    const redone = d.getNotes().find(n => n.id === id);
+    return { before, beforeHandles, interaction, after, afterHandles, undone, redone };
+  })()`);
+  check(resize11d.interaction && resize11d.interaction.type === 'drag-note-resize',
+    `the right-edge handle started the wrong interaction: ${JSON.stringify(resize11d.interaction)}`);
+  check(resize11d.after.boxWidth < resize11d.before.boxWidth - 100,
+    `the width handle did not narrow the note: ${resize11d.before.boxWidth} -> ${resize11d.after.boxWidth}`);
+  check(resize11d.afterHandles.box.height > resize11d.beforeHandles.box.height,
+    `height did not auto-grow after narrower wrapping: ${resize11d.beforeHandles.box.height} -> ${resize11d.afterHandles.box.height}`);
+  check(resize11d.after.pos.x === resize11d.before.pos.x && resize11d.after.pos.y === resize11d.before.pos.y
+      && resize11d.after.fontSize === resize11d.before.fontSize
+      && JSON.stringify(resize11d.after.leaders) === JSON.stringify(resize11d.before.leaders),
+    `width resize moved or restyled unrelated note content: ${JSON.stringify({ before: resize11d.before, after: resize11d.after })}`);
+  check(Math.hypot(
+      resize11d.afterHandles.add.x - resize11d.afterHandles.resize.x,
+      resize11d.afterHandles.add.y - resize11d.afterHandles.resize.y
+    ) > 12,
+    'the width handle overlapped the lower-right + Add Leader handle');
+  check(Math.abs(resize11d.undone.boxWidth - resize11d.before.boxWidth) < 0.001
+      && Math.abs(resize11d.redone.boxWidth - resize11d.after.boxWidth) < 0.001,
+    `resize did not round-trip through Undo/Redo: ${resize11d.before.boxWidth}/${resize11d.after.boxWidth}/${resize11d.undone.boxWidth}/${resize11d.redone.boxWidth}`);
+  console.log(`notes-check: right-edge resize narrows width ${resize11d.before.boxWidth.toFixed(1)} -> ${resize11d.after.boxWidth.toFixed(1)} and wrapping auto-grows height ${resize11d.beforeHandles.box.height.toFixed(1)} -> ${resize11d.afterHandles.box.height.toFixed(1)}`);
+
+  const persistence11e = await s.eval(`(async () => {
+    const { d, settle } = window.__NC;
+    const id = ${appearance11a.id};
+    const snapshot = d.exportProject();
+    const expected = d.getNotes().find(n => n.id === id);
+    await d.loadProject(snapshot); await settle();
+    const reopened = d.getNotes().find(n => n.id === id);
+    const legacy = d.exportProject();
+    delete legacy.state.noteAppearance;
+    delete legacy.state.noteTextColor;
+    delete legacy.state.noteLeaderColor;
+    legacy.state.notes = [{
+      id: 99100,
+      text: 'legacy boxed note',
+      pos: { x: reopened.pos.x, y: reopened.pos.y + 210 },
+      color: 'blue', fontSize: 18, boxWidth: 220,
+      leaders: [{ x: reopened.pos.x + 300, y: reopened.pos.y + 250 }],
+    }];
+    await d.loadProject(legacy); await settle();
+    return {
+      expected, reopened,
+      legacy: d.getNotes()[0],
+      sticky: {
+        appearance: d.exportProject().state.noteAppearance,
+        textColor: d.exportProject().state.noteTextColor,
+        leaderColor: d.exportProject().state.noteLeaderColor,
+      },
+    };
+  })()`);
+  check(persistence11e.reopened.appearance === persistence11e.expected.appearance
+      && persistence11e.reopened.textColor === persistence11e.expected.textColor
+      && persistence11e.reopened.leaderColor === persistence11e.expected.leaderColor
+      && Math.abs(persistence11e.reopened.boxWidth - persistence11e.expected.boxWidth) < 0.001,
+    `new note fields did not survive project reopen: ${JSON.stringify(persistence11e)}`);
+  check(persistence11e.legacy.appearance === 'box'
+      && persistence11e.legacy.textColor === 'blue'
+      && persistence11e.legacy.leaderColor === 'blue'
+      && persistence11e.legacy.widthMode === 'content',
+    `a pre-US-100 note did not migrate to its old boxed, one-colour pixels: ${JSON.stringify(persistence11e.legacy)}`);
+  check(persistence11e.sticky.appearance === 'text-only'
+      && persistence11e.sticky.textColor === 'black'
+      && persistence11e.sticky.leaderColor === 'red',
+    `a legacy project did not receive the new sticky defaults: ${JSON.stringify(persistence11e.sticky)}`);
+  console.log('notes-check: resized notes reopen exactly; legacy notes reopen boxed with their original shared colour');
 
   const errors = await s.eval(`window.__ncConsoleErrors || []`);
   check(errors.length === 0, `page errors during the run: ${JSON.stringify(errors)}`);

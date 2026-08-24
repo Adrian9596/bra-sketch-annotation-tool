@@ -220,6 +220,8 @@
     if (noteHandleHit) {
       if (noteHandleHit.part === 'leader-add') {
         startNoteLeaderCreate(selectedNoteForHandles.id, world);
+      } else if (noteHandleHit.part === 'resize-width') {
+        startNoteResize(selectedNoteForHandles.id, world);
       } else {
         startNoteLeaderDrag(selectedNoteForHandles.id, noteHandleHit.index, world);
       }
@@ -492,6 +494,21 @@
         moveNote(note, dx, dy);
         interaction.changed = true;
         interaction.prevWorld = world;
+        requestRender();
+      }
+      return;
+    }
+
+    if (interaction.type === 'drag-note-resize') {
+      const note = getNoteById(interaction.id);
+      if (!note) return;
+      if (!dragArmed(interaction, world)) return;
+      const width = normalizeNoteBoxWidth(interaction.startWidth
+        + (world.x - interaction.startWorld.x));
+      if (note.widthMode !== NOTE_WIDTH_MODE_FIXED || Math.abs(note.boxWidth - width) > 0.000001) {
+        note.widthMode = NOTE_WIDTH_MODE_FIXED;
+        note.boxWidth = width;
+        interaction.changed = true;
         requestRender();
       }
       return;
@@ -864,6 +881,18 @@ function startNoteDrag(id, world) {
   beginTrackedInteraction('drag-note', {
     id, prevWorld: world,
     startWorld: { x: world.x, y: world.y }, armed: false,
+  });
+}
+
+function startNoteResize(id, world) {
+  const note = getNoteById(id);
+  const box = note && noteBounds(note);
+  if (!note || !box) return;
+  beginTrackedInteraction('drag-note-resize', {
+    id,
+    startWidth: box.width,
+    startWorld: { x: world.x, y: world.y },
+    armed: false,
   });
 }
 

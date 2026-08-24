@@ -43,8 +43,6 @@
       el.smartAlignToggleBtn.setAttribute('aria-checked', state.smartAlignEnabled ? 'true' : 'false');
       el.smartAlignToggleBtn.textContent = (state.smartAlignEnabled ? '✓ ' : '') + 'Smart Align';
     }
-    el.lineStyleControl.hidden = state.tool === 'eraser';
-    el.lineWidthChip.hidden = state.tool === 'eraser';
     el.brushSizeChip.hidden = state.tool !== 'eraser';
     if (el.brushSizeInput && document.activeElement !== el.brushSizeInput) {
       el.brushSizeInput.value = String(state.brushSize);
@@ -58,10 +56,14 @@
     const selectedImage = getSelectedImage();
     const selectedNote = getSelectedNote();
     const selectedGraphic = getSelectedBoardGraphic();
+    const noteContext = !!selectedNote || state.tool === 'text';
+    el.lineStyleControl.hidden = state.tool === 'eraser' || noteContext;
+    el.lineWidthChip.hidden = state.tool === 'eraser' || noteContext;
     // US-092: the note's size chip lives beside Line, gated on a note being
     // selected OR the Text tool being ready to place one — never both chips
     // hidden at once for a note, never both shown at once for a line.
     el.fontSizeChip.hidden = !(selectedNote || state.tool === 'text');
+    if (el.noteStyleMenuWrap) el.noteStyleMenuWrap.hidden = !noteContext;
     // US-093 / ADR 0053: only reachable while a curved annotation is
     // selected — same conditional-visibility convention as fontSizeChip /
     // brushSizeChip above, no disabled/greyed state anywhere else in this
@@ -76,12 +78,8 @@
       el.toolAddPoint.classList.toggle('active', state.tool === 'add-point');
     }
     const activeStyle = selectedAnnotation ? getLineStyle(selectedAnnotation) : state.drawStyle;
-    // A selected note owns the swatch too — read from the note itself rather
-    // than from state.drawColor, so an Undo that restores its old colour shows
-    // up in the toolbar instead of leaving the stale draw default on display.
     const activeColor = selectedAnnotation ? normalizeColorKey(selectedAnnotation.color)
-      : selectedNote ? normalizeColorKey(selectedNote.color)
-        : selectedGraphic ? normalizeColorKey(selectedGraphic.color) : state.drawColor;
+      : selectedGraphic ? normalizeColorKey(selectedGraphic.color) : state.drawColor;
     const activeArrowType = selectedAnnotation ? getArrowType(selectedAnnotation) : state.arrowType;
     const activeLineWidth = getActiveLineWidth();
     updateLineStyleControl(activeStyle);
@@ -99,6 +97,31 @@
     el.colorBlackBtn.classList.toggle('active', activeColor === 'black');
     el.colorWhiteBtn.classList.toggle('active', activeColor === 'white');
 
+    const activeNoteAppearance = selectedNote ? noteAppearanceOf(selectedNote)
+      : normalizeNoteAppearance(state.noteAppearance);
+    const activeNoteTextColor = selectedNote ? noteTextColorOf(selectedNote)
+      : normalizeColorKey(state.noteTextColor || 'black');
+    const activeNoteLeaderColor = selectedNote ? noteLeaderColorOf(selectedNote)
+      : normalizeColorKey(state.noteLeaderColor || 'red');
+    if (el.noteAppearanceTextOnlyBtn) {
+      el.noteAppearanceTextOnlyBtn.classList.toggle('active', activeNoteAppearance === NOTE_APPEARANCE_TEXT_ONLY);
+    }
+    if (el.noteAppearanceBoxBtn) {
+      el.noteAppearanceBoxBtn.classList.toggle('active', activeNoteAppearance === NOTE_APPEARANCE_BOX);
+    }
+    for (const button of el.noteTextColorBtns || []) {
+      button.classList.toggle('active', button.dataset.color === activeNoteTextColor);
+    }
+    for (const button of el.noteLeaderColorBtns || []) {
+      button.classList.toggle('active', button.dataset.color === activeNoteLeaderColor);
+    }
+    if (el.noteStyleMenuBtn) {
+      el.noteStyleMenuBtn.textContent = activeNoteAppearance === NOTE_APPEARANCE_BOX
+        ? 'Note: Box' : 'Note: Text only';
+      el.noteStyleMenuBtn.title = 'Text ' + activeNoteTextColor
+        + ', leader ' + activeNoteLeaderColor + '; choose Note appearance and colours';
+    }
+
     el.stitchesBtn.disabled = false;
     el.arrowDoubleBtn.disabled = false;
     el.arrowSingleBtn.disabled = false;
@@ -106,7 +129,7 @@
 
     let toolText = '';
     if (state.tool === 'text') {
-      toolText = 'Text – Click the board to write a note. <span class="kbd">Enter</span> makes a new line; <span class="kbd">⌘/Ctrl</span>+<span class="kbd">Enter</span> or a click on the board finishes it.';
+      toolText = 'Text – Click the board to write a note. New notes use the active Note appearance and colours. <span class="kbd">Enter</span> makes a new line; <span class="kbd">⌘/Ctrl</span>+<span class="kbd">Enter</span> or a click on the board finishes it.';
     } else if (state.tool === 'stamp') {
       const stamp = (typeof getActiveShapeStamp === 'function') ? getActiveShapeStamp() : null;
       toolText = stamp
@@ -117,8 +140,8 @@
     } else if (state.tool === 'select') {
       if (selectedNote) {
         toolText = selectedNote.leaders && selectedNote.leaders.length
-          ? 'Select – Drag the note or an arrow tip to move it, double-click a tip to remove that arrow, double-click the text to edit it, <span class="kbd">⌫</span> deletes the note.'
-          : 'Select – Drag the note to move it, drag the <strong>+</strong> handle out to point an arrow at a detail, double-click to edit the text, <span class="kbd">⌫</span> deletes it.';
+          ? 'Select – Drag the note, its right-edge width handle, or an arrow tip; double-click a tip to remove that arrow, double-click the text to edit it, <span class="kbd">⌫</span> deletes the note.'
+          : 'Select – Drag the note to move it, drag the right-edge handle to change wrap width, drag <strong>+</strong> to add an arrow, double-click to edit the text, <span class="kbd">⌫</span> deletes it.';
       } else if (selectedAnnotation) {
         toolText = 'Select – Drag line, endpoints, curve shape handle, or label. Smart Align is '
           + (state.smartAlignEnabled ? 'on; hold <span class="kbd">Alt/Option</span> to bypass it. ' : 'off. ')

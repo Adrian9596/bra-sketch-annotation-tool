@@ -100,6 +100,9 @@
       // Additive like lineWidth: a file saved before this control existed has
       // no key, and normalizeNoteFontSize's own NaN fallback covers it.
       state.noteFontSize = normalizeNoteFontSize(s.noteFontSize);
+      state.noteAppearance = normalizeNoteAppearance(s.noteAppearance);
+      state.noteTextColor = normalizeColorKey(s.noteTextColor || 'black');
+      state.noteLeaderColor = normalizeColorKey(s.noteLeaderColor || 'red');
       state.tool = 'select';
       state.selection = { kind: null, id: null };
       state.drawSession = null;

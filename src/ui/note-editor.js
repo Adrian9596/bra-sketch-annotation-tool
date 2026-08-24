@@ -48,9 +48,12 @@
     state.noteEditor = {
       id: null,
       pos: { x: world.x, y: world.y },
-      color: normalizeColorKey(state.drawColor),
+      textColor: normalizeColorKey(state.noteTextColor),
+      leaderColor: normalizeColorKey(state.noteLeaderColor),
+      appearance: normalizeNoteAppearance(state.noteAppearance),
       fontSize: newNoteWorldFontSize(),
       boxWidth: newNoteWorldBoxWidth(),
+      widthMode: NOTE_WIDTH_MODE_FIXED,
     };
     showNoteEditor('');
   }
@@ -96,8 +99,10 @@
     const pos = note ? note.pos : session.pos;
     const worldFont = note ? noteFontSizeOf(note) : normalizeNoteFontSize(session.fontSize);
     const worldWidth = normalizeNoteBoxWidth(note ? note.boxWidth : session.boxWidth);
-    const colorKey = normalizeColorKey(note ? note.color : session.color);
+    const colorKey = note ? noteTextColorOf(note) : normalizeColorKey(session.textColor);
     const color = LINE_COLORS[colorKey] || LINE_COLOR;
+    const appearance = note ? noteAppearanceOf(note)
+      : normalizeNoteAppearance(session.appearance);
     const screen = worldToScreen(pos.x, pos.y);
     const style = el.noteEditor.style;
     style.left = screen.x + 'px';
@@ -114,7 +119,13 @@
     style.color = color;
     // Same inversion the renderer applies: white ink needs a dark ground or the
     // TD is typing invisibly (see noteGroundFill).
+    // Editing chrome is intentionally readable even for a final Text-only
+    // note. The textarea is never exported; the committed renderer below it
+    // remains transparent, while this temporary ground prevents black text on
+    // dark sketch ink (or white text on white board) from becoming untypeable.
     style.background = noteGroundFill(color);
+    style.boxShadow = appearance === NOTE_APPEARANCE_BOX
+      ? '0 4px 14px rgba(17,24,39,.18)' : 'none';
     // The height is a function of the font size just set, so it has to follow a
     // zoom change — wheel-zooming mid-edit is entirely normal on this board.
     // Only ever runs while an editor is open, which is a rare state, and the
@@ -196,9 +207,12 @@
       // An empty commit creates nothing — a stray click with the Text tool is
       // the commonest way to open this editor by accident.
       const note = createNote(raw, session.pos, {
-        color: session.color,
+        textColor: session.textColor,
+        leaderColor: session.leaderColor,
+        appearance: session.appearance,
         fontSize: session.fontSize,
         boxWidth: session.boxWidth,
+        widthMode: session.widthMode,
       });
       state.notes.push(note);
       // Audit-found bug: every OTHER creation gesture in this codebase selects

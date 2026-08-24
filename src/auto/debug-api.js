@@ -141,6 +141,9 @@
         if (typeof requestRender === 'function') requestRender();
         return clone(note);
       },
+      setNoteAppearance: value => { setNoteAppearance(value); return normalizeNoteAppearance(state.noteAppearance); },
+      setNoteTextColor: value => { setNoteTextColor(value); return normalizeColorKey(state.noteTextColor); },
+      setNoteLeaderColor: value => { setNoteLeaderColor(value); return normalizeColorKey(state.noteLeaderColor); },
       // US-092 step 6: where a note's grabbable geometry actually is — its
       // shrink-wrapped box, its leader tips, and the handle that pulls a new
       // arrow out. A test must AIM at these, and noteBounds depends on measured
@@ -154,6 +157,7 @@
         return {
           box: box ? { x: box.x, y: box.y, width: box.width, height: box.height } : null,
           add: clone(noteLeaderAddHandle(note)),
+          resize: clone(noteResizeHandle(note)),
           leaders: clone(note.leaders || []),
         };
       },
