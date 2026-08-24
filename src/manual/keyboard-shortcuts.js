@@ -24,6 +24,14 @@
     // remain below because they are continuous interactions, not commands.
     if (dispatchAppCommandShortcut(e, inField)) return;
 
+    // Every branch below compares the LOWERCASED key and never reads shiftKey,
+    // so without this guard ⇧P exported a PDF, ⇧E an Excel file and ⇧R opened
+    // Reset Board. Shift+<single char> belongs to the registry above (⇧P/⇧E/⇧X
+    // path editing), which has already had its turn. Arrows, Tab, Escape and
+    // Delete are multi-character key names and keep their own shift handling;
+    // Space is excluded so Shift+Space still pans.
+    if (e.shiftKey && !isMeta && e.key.length === 1 && e.key !== ' ') return;
+
     // Undo / redo work everywhere, INCLUDING while a spec-panel field
     // (Size L / TOL / 中文 / description) is focused. Blur first so any
     // pending edit commits to history, then it is undone as a single step.
@@ -316,7 +324,9 @@
         requestRender();
       } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'add-point'
                  || state.tool === 'eraser' || state.tool === 'text'
+                 || state.tool === 'stamp'
                  || ['rectangle','circle','hexagon'].includes(state.tool)) {
+        // US-097: setTool('select') also disarms the chosen shape.
         setTool('select');
       } else if (state.selection.kind === 'graphic' && state.graphicEdit) {
         bgExitEdit();

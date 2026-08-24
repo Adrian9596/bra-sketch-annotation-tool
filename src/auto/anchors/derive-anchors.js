@@ -28,6 +28,16 @@
 //   intersection      [a1, a2, b1, b2] → line a1→a2 ∩ line b1→b2
 //   drop_to_line      [p, l1, l2] + axis → axis-aligned line through p
 //                                        ∩ (extended) line l1→l2
+//
+// `preserveOffset: true` on a drop_to_line rule keeps the gap the SEEDER put
+// between the anchor and that line instead of snapping it flat onto it. Both
+// current drop_to_line anchors need it: cf-bottom and cradle-cup-bottom are
+// seeded from HEM ink at their own column (US-061 — the band row, the band
+// chord and the per-column hem are three different rows, and a real hem arches
+// ~30px), so a plain projection threw that away the first time a TD nudged a
+// band end. Measured over the demo corpus the discarded gap is 0 on five of
+// seven sketches and up to 0.028 of image height on demo5 — small, but it is
+// the whole point of US-061 and it went silently.
 
   function anchorDerivationForKind(kind) {
     if (!kind) return null;
@@ -70,7 +80,8 @@
       const args = rule.args.map(kind => byKind[kind]);
       if (args.some(a => !a)) continue;
 
-      const pos = computeDerivedPosition(rule, args);
+      const pos = computeDerivedPosition(rule, args,
+        rule.preserveOffset ? (target.derivedOffset || 0) : 0);
       if (!pos) continue;
       const nx = clamp01(pos.x);
       const ny = clamp01(pos.y);
@@ -83,7 +94,10 @@
     return updated;
   }
 
-  function computeDerivedPosition(rule, args) {
+  // `offset` shifts the result along the rule's axis; it is 0 for every method
+  // except a preserveOffset drop_to_line (see deriveAnchors above).
+  function computeDerivedPosition(rule, args, offset) {
+    const shift = Number.isFinite(offset) ? offset : 0;
     const method = rule.method;
     if (method === 'midpoint' && args.length >= 2) {
       return {
@@ -115,7 +129,11 @@
         ? { x: p.x + 1, y: p.y }
         : { x: p.x, y: p.y + 1 };
       const hit = lineIntersectionPoint(p, p2, args[1], args[2]);
-      if (hit) return hit;
+      if (hit) {
+        return rule.axis === 'horizontal'
+          ? { x: hit.x + shift, y: hit.y }
+          : { x: hit.x, y: hit.y + shift };
+      }
       // A5: the target line is (near-)parallel to the drop — e.g. the band was
       // drawn vertical, so a vertical drop can't intersect it. Rather than
       // return null and leave the dependent (cf-bottom / cradle-cup-bottom)
@@ -123,8 +141,8 @@
       // MEAN of the two line-defining points along the drop axis so it still
       // tracks the primary.
       return rule.axis === 'horizontal'
-        ? { x: (args[1].x + args[2].x) / 2, y: p.y }
-        : { x: p.x, y: (args[1].y + args[2].y) / 2 };
+        ? { x: (args[1].x + args[2].x) / 2 + shift, y: p.y }
+        : { x: p.x, y: (args[1].y + args[2].y) / 2 + shift };
     }
     return null;
   }
@@ -139,6 +157,42 @@
     if (Math.abs(denom) < 1e-9) return null;
     const t = ((b1.x - a1.x) * d2y - (b1.y - a1.y) * d2x) / denom;
     return { x: a1.x + t * d1x, y: a1.y + t * d1y };
+  }
+
+  // Measure the gap the SEEDER left between a preserveOffset dependent and the
+  // line it is derived from, and record it on the anchor.
+  //
+  // This has to run at seed time, while the anchors are still exactly where
+  // detection put them. Measuring it lazily on the first cascade looks
+  // equivalent and is not: by then the primary has already moved, so the gap
+  // comes out relative to the NEW line and the dependent freezes in place
+  // instead of following. (That is not hypothetical — it is what the first cut
+  // of this did, and pipeline-tests caught it.)
+  //
+  // Anchors that never went through the seeder — synthetic ones in tests —
+  // simply have no derivedOffset, so the rules behave exactly as they did
+  // before preserveOffset existed.
+  function captureDerivedOffsets(anchors, schemaOverride) {
+    if (!Array.isArray(anchors) || !anchors.length) return anchors;
+    const schemaList = schemaOverride || ANCHOR_SCHEMA;
+    const byKind = Object.create(null);
+    for (const a of anchors) {
+      if (a && a.kind && !(a.kind in byKind)) byKind[a.kind] = a;
+    }
+    for (const schema of schemaList) {
+      const rule = schema && schema.derivation;
+      if (!rule || !rule.preserveOffset || !Array.isArray(rule.args)) continue;
+      const target = byKind[schema.kind];
+      if (!target) continue;
+      const args = rule.args.map(kind => byKind[kind]);
+      if (args.some(a => !a)) continue;
+      const base = computeDerivedPosition(rule, args, 0);
+      if (!base) continue;
+      target.derivedOffset = rule.axis === 'horizontal'
+        ? target.x - base.x
+        : target.y - base.y;
+    }
+    return anchors;
   }
 
   // Drag-cascade entry point: called from the anchor mousemove handler so

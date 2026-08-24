@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const BUILTIN_AUTO_MODE_RULE_JSON = {"version":{"pom_unit":"in","template_version":"core18-2026-07-18b","rule_version":"offline-vision-rules-v3","anchor_version":"anchors-2026-07-26-cup-width-own-height","suggestions_version":"sizeL-suggestions-v1"},"pomTemplate":{"rows":[{"id":"1","name":"1/2 Bottom band - Relax","zh":"下围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"primary","partner":"2","groupName":"1/2 Bottom band","primaryLabel":"Relax","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"2","name":"1/2 Bottom band - Extend","zh":"下围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"secondary","primary":"1"},"expected_confidence_tier":"high"},{"id":"3","name":"1/2 chest - Measure straight","zh":"胸围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"primary","partner":"4","groupName":"1/2 Chest","primaryLabel":"Measure straight","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"4","name":"1/2 chest - Extend","zh":"胸围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"secondary","primary":"3"},"expected_confidence_tier":"high"},{"id":"5","name":"Center front height","zh":"前中高度","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"6","name":"Cradle height at center front","zh":"托架前中高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"7","name":"Cradle height at bottom cup","zh":"托架底杯高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cup-top","cradle-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"8","name":"Cup height at center front","zh":"前中杯高","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cradle-cf-top"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"9","name":"Cup height","zh":"杯高","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-top","inner-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"10","name":"Cup width","zh":"杯宽","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-left","inner-cup-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"11","name":"Side seam length","zh":"侧缝长度","view":"back","refL":null,"requiredAnchors":["side-top","side-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"12","name":"Back center length","zh":"后中高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"13","name":"Back panel height","zh":"后背片高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"optionalAnchors":["back-panel-top","back-panel-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"14","name":"Shoulder strap length","zh":"肩带长度","view":"front_to_back","placementViewRole":"back","refL":null,"requiredAnchors":["strap-top","strap-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"},{"id":"15","name":"Back strap distances","zh":"后肩带间距","view":"back","refL":null,"requiredAnchors":["back-strap-left","back-strap-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"16","name":"Front apex distance","zh":"乳点间距","view":"front_outer","refL":null,"requiredAnchors":["apex-left","apex-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"17","name":"Neckline length","zh":"领口长","view":"front_outer","refL":null,"requiredAnchors":["171","172"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"18","name":"Armhole curve length","zh":"袖窿弧长","view":"front_outer","refL":null,"requiredAnchors":["181","182"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"}]},"anchorSchema":{"anchors":[{"kind":"cf-top","name":"CF top","group":"axis","hint":"Top of the center-front, where the cradle meets the chest line."},{"kind":"cf-bottom","name":"CF bottom","group":"axis","hint":"Bottom of the center front, on the underbust band.","derivation":{"method":"drop_to_line","args":["cf-top","band-left","band-right"],"axis":"vertical"}},{"kind":"cradle-cf-top","name":"Cradle CF","group":"axis","hint":"Where the cradle / cup-bottom seam approaches the center front. POM 6 top."},{"kind":"cradle-cup-top","name":"Cradle cup top","group":"axis","hint":"Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."},{"kind":"cradle-cup-bottom","name":"Cradle cup btm","group":"axis","hint":"Band baseline directly below the bottom-cup cradle point (POM 7 bottom).","derivation":{"method":"drop_to_line","args":["cradle-cup-top","band-left","band-right"],"axis":"vertical"}},{"kind":"band-left","name":"Band L","group":"band","hint":"Leftmost end of the underbust band line."},{"kind":"band-right","name":"Band R","group":"band","hint":"Rightmost end of the underbust band line."},{"kind":"chest-left","name":"Chest L","group":"chest","hint":"Left end of the chest / overbust horizontal line."},{"kind":"chest-right","name":"Chest R","group":"chest","hint":"Right end of the chest / overbust horizontal line."},{"kind":"inner-cup-top","name":"IC top","group":"inner-cup","hint":"Top of the cup (apex) on the front (outer) view — POM 9 start."},{"kind":"inner-cup-bottom","name":"IC btm","group":"inner-cup","hint":"Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."},{"kind":"inner-cup-left","name":"IC L","group":"inner-cup","hint":"Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."},{"kind":"inner-cup-right","name":"IC R","group":"inner-cup","hint":"Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."},{"kind":"side-top","name":"Side top","group":"side","hint":"Top of the side seam at the underarm."},{"kind":"side-bottom","name":"Side btm","group":"side","hint":"Bottom of the side seam at the band."},{"kind":"apex-left","name":"Apex L","group":"apex","hint":"Left shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"apex-right","name":"Apex R","group":"apex","hint":"Right shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"strap-top","name":"Front strap join","group":"strap","hint":"Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."},{"kind":"strap-bottom","name":"Back strap join","group":"strap","hint":"End of the shoulder strap at the back / back-panel join — POM 14 end."},{"kind":"back-top","name":"Back top","group":"back","hint":"Top edge of the back panel."},{"kind":"back-bottom","name":"Back btm","group":"back","hint":"Bottom edge of the back panel."},{"kind":"back-panel-top","name":"Panel top","group":"back","hint":"Upper point for back panel height."},{"kind":"back-panel-bottom","name":"Panel btm","group":"back","hint":"Lower point for back panel height."},{"kind":"back-strap-left","name":"Back strap L","group":"back","hint":"Left point of the back strap distance."},{"kind":"back-strap-right","name":"Back strap R","group":"back","hint":"Right point of the back strap distance."},{"kind":"171","name":"171","group":"neckline","hint":"Left upper neckline corner, where the cup/gore top edge meets the strap base."},{"kind":"172","name":"172","group":"neckline","hint":"Right upper neckline corner (mirror of Neckline L)."},{"kind":"181","name":"181","group":"armhole","hint":"Underarm side point at the bottom of the arm opening."},{"kind":"182","name":"182","group":"armhole","hint":"Strap/shoulder junction at the top of the arm opening."}]},"sizeLSuggestions":{"suggestions_version":"sizeL-suggestions-v1","unit":"in","provenance":{"corpus":"Measurements 2/library/_raw_intake/measurements_size_l.csv","conceptMap":"Measurements 2/library/pom_concepts.csv","tolDefaults":"Measurements 2/library/pom_tol_defaults.csv","sketchRatios":"Measurements 2/library/sketch_ratios.csv","generatedBy":"scripts/generate-sizeL-suggestions.mjs","corpusRows":2950,"styleVersions":225,"droppedRows":26,"note":"Derived from the approved Size-L corpus. Regenerate with the generator; never hand-edit. droppedRows = corpus rows whose concept is not yet canonicalized (raw_* intake phrases)."},"poms":{"1":{"concept":"band_relax","median":14,"min":12.74,"max":14.38,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"2":{"concept":"band_extended","median":19,"min":18,"max":19.25,"tol":"1/2","tolType":"min","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"3":{"concept":"chest_relax","median":17,"min":15.5,"max":17.5,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":198,"confidence":"medium","source":"library"},"4":{"concept":"chest_extended","median":22,"min":20,"max":22.77,"tol":"1/2","tolType":"min","sketchReliable":false,"n":197,"confidence":"medium","source":"library"},"5":{"concept":"cf_height","median":5.5,"min":1.32,"max":6.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":217,"confidence":"medium","source":"library"},"6":{"concept":"cradle_cf","median":2.25,"min":1.31,"max":3,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":163,"confidence":"medium","source":"library"},"7":{"concept":"cradle_under_cup","median":1.75,"min":1.11,"max":2.64,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":173,"confidence":"medium","source":"library"},"8":{"concept":"cup_height_cf","median":3,"min":1.75,"max":4,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":113,"confidence":"low","source":"library"},"9":{"concept":"cup_height","median":8,"min":5.805,"max":9.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":237,"confidence":"medium","source":"library"},"10":{"concept":"cup_width","median":8,"min":6.6,"max":9,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":221,"confidence":"medium","source":"library"},"11":{"concept":"sideseam_length","median":5.5,"min":4.5,"max":6,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":211,"confidence":"medium","source":"library"},"12":{"concept":"cb_height","median":3.75,"min":2,"max":7.24,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":239,"confidence":"medium","source":"library"},"13":{"concept":"back_panel_height","median":7.25,"min":3,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":181,"confidence":"medium","source":"library"},"14":{"concept":"strap_length","median":8,"min":4,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":155,"confidence":"low","source":"library"},"15":{"concept":"back_straps_distance","median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"16":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"17":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"18":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"}}}};
+  const BUILTIN_AUTO_MODE_RULE_JSON = {"version":{"pom_unit":"in","template_version":"core18-2026-07-18b","rule_version":"offline-vision-rules-v3","anchor_version":"anchors-2026-08-24-hem-offset-preserved","suggestions_version":"sizeL-suggestions-v1"},"pomTemplate":{"rows":[{"id":"1","name":"1/2 Bottom band - Relax","zh":"下围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"primary","partner":"2","groupName":"1/2 Bottom band","primaryLabel":"Relax","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"2","name":"1/2 Bottom band - Extend","zh":"下围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"secondary","primary":"1"},"expected_confidence_tier":"high"},{"id":"3","name":"1/2 chest - Measure straight","zh":"胸围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"primary","partner":"4","groupName":"1/2 Chest","primaryLabel":"Measure straight","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"4","name":"1/2 chest - Extend","zh":"胸围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"secondary","primary":"3"},"expected_confidence_tier":"high"},{"id":"5","name":"Center front height","zh":"前中高度","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"6","name":"Cradle height at center front","zh":"托架前中高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"7","name":"Cradle height at bottom cup","zh":"托架底杯高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cup-top","cradle-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"8","name":"Cup height at center front","zh":"前中杯高","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cradle-cf-top"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"9","name":"Cup height","zh":"杯高","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-top","inner-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"10","name":"Cup width","zh":"杯宽","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-left","inner-cup-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"11","name":"Side seam length","zh":"侧缝长度","view":"back","refL":null,"requiredAnchors":["side-top","side-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"12","name":"Back center length","zh":"后中高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"13","name":"Back panel height","zh":"后背片高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"optionalAnchors":["back-panel-top","back-panel-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"14","name":"Shoulder strap length","zh":"肩带长度","view":"front_to_back","placementViewRole":"back","refL":null,"requiredAnchors":["strap-top","strap-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"},{"id":"15","name":"Back strap distances","zh":"后肩带间距","view":"back","refL":null,"requiredAnchors":["back-strap-left","back-strap-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"16","name":"Front apex distance","zh":"乳点间距","view":"front_outer","refL":null,"requiredAnchors":["apex-left","apex-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"17","name":"Neckline length","zh":"领口长","view":"front_outer","refL":null,"requiredAnchors":["171","172"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"18","name":"Armhole curve length","zh":"袖窿弧长","view":"front_outer","refL":null,"requiredAnchors":["181","182"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"}]},"anchorSchema":{"anchors":[{"kind":"cf-top","name":"CF top","group":"axis","hint":"Top of the center-front, where the cradle meets the chest line."},{"kind":"cf-bottom","name":"CF bottom","group":"axis","hint":"Bottom of the center front, on the underbust band.","derivation":{"method":"drop_to_line","args":["cf-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"cradle-cf-top","name":"Cradle CF","group":"axis","hint":"Where the cradle / cup-bottom seam approaches the center front. POM 6 top."},{"kind":"cradle-cup-top","name":"Cradle cup top","group":"axis","hint":"Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."},{"kind":"cradle-cup-bottom","name":"Cradle cup btm","group":"axis","hint":"Band baseline directly below the bottom-cup cradle point (POM 7 bottom).","derivation":{"method":"drop_to_line","args":["cradle-cup-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"band-left","name":"Band L","group":"band","hint":"Leftmost end of the underbust band line."},{"kind":"band-right","name":"Band R","group":"band","hint":"Rightmost end of the underbust band line."},{"kind":"chest-left","name":"Chest L","group":"chest","hint":"Left end of the chest / overbust horizontal line."},{"kind":"chest-right","name":"Chest R","group":"chest","hint":"Right end of the chest / overbust horizontal line."},{"kind":"inner-cup-top","name":"IC top","group":"inner-cup","hint":"Top of the cup (apex) on the front (outer) view — POM 9 start."},{"kind":"inner-cup-bottom","name":"IC btm","group":"inner-cup","hint":"Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."},{"kind":"inner-cup-left","name":"IC L","group":"inner-cup","hint":"Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."},{"kind":"inner-cup-right","name":"IC R","group":"inner-cup","hint":"Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."},{"kind":"side-top","name":"Side top","group":"side","hint":"Top of the side seam at the underarm."},{"kind":"side-bottom","name":"Side btm","group":"side","hint":"Bottom of the side seam at the band."},{"kind":"apex-left","name":"Apex L","group":"apex","hint":"Left shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"apex-right","name":"Apex R","group":"apex","hint":"Right shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"strap-top","name":"Front strap join","group":"strap","hint":"Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."},{"kind":"strap-bottom","name":"Back strap join","group":"strap","hint":"End of the shoulder strap at the back / back-panel join — POM 14 end."},{"kind":"back-top","name":"Back top","group":"back","hint":"Top edge of the back panel."},{"kind":"back-bottom","name":"Back btm","group":"back","hint":"Bottom edge of the back panel."},{"kind":"back-panel-top","name":"Panel top","group":"back","hint":"Upper point for back panel height."},{"kind":"back-panel-bottom","name":"Panel btm","group":"back","hint":"Lower point for back panel height."},{"kind":"back-strap-left","name":"Back strap L","group":"back","hint":"Left point of the back strap distance."},{"kind":"back-strap-right","name":"Back strap R","group":"back","hint":"Right point of the back strap distance."},{"kind":"171","name":"171","group":"neckline","hint":"Left upper neckline corner, where the cup/gore top edge meets the strap base."},{"kind":"172","name":"172","group":"neckline","hint":"Right upper neckline corner (mirror of Neckline L)."},{"kind":"181","name":"181","group":"armhole","hint":"Underarm side point at the bottom of the arm opening."},{"kind":"182","name":"182","group":"armhole","hint":"Strap/shoulder junction at the top of the arm opening."}]},"sizeLSuggestions":{"suggestions_version":"sizeL-suggestions-v1","unit":"in","provenance":{"corpus":"Measurements 2/library/_raw_intake/measurements_size_l.csv","conceptMap":"Measurements 2/library/pom_concepts.csv","tolDefaults":"Measurements 2/library/pom_tol_defaults.csv","sketchRatios":"Measurements 2/library/sketch_ratios.csv","generatedBy":"scripts/generate-sizeL-suggestions.mjs","corpusRows":2950,"styleVersions":225,"droppedRows":26,"note":"Derived from the approved Size-L corpus. Regenerate with the generator; never hand-edit. droppedRows = corpus rows whose concept is not yet canonicalized (raw_* intake phrases)."},"poms":{"1":{"concept":"band_relax","median":14,"min":12.74,"max":14.38,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"2":{"concept":"band_extended","median":19,"min":18,"max":19.25,"tol":"1/2","tolType":"min","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"3":{"concept":"chest_relax","median":17,"min":15.5,"max":17.5,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":198,"confidence":"medium","source":"library"},"4":{"concept":"chest_extended","median":22,"min":20,"max":22.77,"tol":"1/2","tolType":"min","sketchReliable":false,"n":197,"confidence":"medium","source":"library"},"5":{"concept":"cf_height","median":5.5,"min":1.32,"max":6.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":217,"confidence":"medium","source":"library"},"6":{"concept":"cradle_cf","median":2.25,"min":1.31,"max":3,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":163,"confidence":"medium","source":"library"},"7":{"concept":"cradle_under_cup","median":1.75,"min":1.11,"max":2.64,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":173,"confidence":"medium","source":"library"},"8":{"concept":"cup_height_cf","median":3,"min":1.75,"max":4,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":113,"confidence":"low","source":"library"},"9":{"concept":"cup_height","median":8,"min":5.805,"max":9.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":237,"confidence":"medium","source":"library"},"10":{"concept":"cup_width","median":8,"min":6.6,"max":9,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":221,"confidence":"medium","source":"library"},"11":{"concept":"sideseam_length","median":5.5,"min":4.5,"max":6,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":211,"confidence":"medium","source":"library"},"12":{"concept":"cb_height","median":3.75,"min":2,"max":7.24,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":239,"confidence":"medium","source":"library"},"13":{"concept":"back_panel_height","median":7.25,"min":3,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":181,"confidence":"medium","source":"library"},"14":{"concept":"strap_length","median":8,"min":4,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":155,"confidence":"low","source":"library"},"15":{"concept":"back_straps_distance","median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"16":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"17":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"18":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"}}}};
 
   // ---- src/auto/rules/load-rules.js ----
 // Loads TD-editable Auto Mode rules from auto_mode_rules/*.json.
@@ -290,6 +290,11 @@
     selection: { kind: null, id: null },
     // Session-only focused path-edit state for one selected Board Graphic.
     graphicEdit: null,
+    // US-097 / ADR 0056: which saved shape the stamp tool will place. Session
+    // only — like state.tool itself, an armed tool is a view concern, not
+    // project data, so it is absent from makeSnapshot and never round-trips
+    // through undo or a saved project.
+    activeStampId: null,
     // Cmd/Ctrl+click multi-selection of images. Always includes the primary
     // `selection` when that is an image; empty otherwise. The primary stays the
     // resize/spec anchor — this set only widens what a group drag / delete acts
@@ -509,6 +514,25 @@
     stitchesBtnLabel: document.getElementById('stitchesBtnLabel'),
     stitchesMenu: document.getElementById('stitchesMenu'),
     styleOptionBtns: Array.from(document.querySelectorAll('.style-option')),
+    // US-096 / ADR 0055: the line-preset library, which lives INSIDE the
+    // Stitches menu above rather than in a toolbar unit of its own (US-082
+    // caps the primary surface). The rows inside #linePresetList are rendered
+    // from stored data, so they are looked up on demand in
+    // src/ui/line-preset-panel.js rather than captured here.
+    linePresetList: document.getElementById('linePresetList'),
+    linePresetSaveBtn: document.getElementById('linePresetSaveBtn'),
+    linePresetExportBtn: document.getElementById('linePresetExportBtn'),
+    linePresetImportBtn: document.getElementById('linePresetImportBtn'),
+    linePresetImportProjectBtn: document.getElementById('linePresetImportProjectBtn'),
+    linePresetResetBtn: document.getElementById('linePresetResetBtn'),
+    linePresetFileInput: document.getElementById('linePresetFileInput'),
+    // US-097 / ADR 0056: the saved-shape library, inside the Tools menu.
+    shapeStampList: document.getElementById('shapeStampList'),
+    shapeStampSaveBtn: document.getElementById('shapeStampSaveBtn'),
+    shapeStampImportProjectBtn: document.getElementById('shapeStampImportProjectBtn'),
+    shapeStampExportBtn: document.getElementById('shapeStampExportBtn'),
+    shapeStampImportBtn: document.getElementById('shapeStampImportBtn'),
+    shapeStampFileInput: document.getElementById('shapeStampFileInput'),
     lineWidthChip: document.getElementById('lineWidthChip'),
     lineWidthInput: document.getElementById('lineWidthInput'),
     fontSizeChip: document.getElementById('fontSizeChip'),
@@ -4484,7 +4508,9 @@
   function openSizeRunDialog() {
     const unit = state.calibration.unit;
     const annByPom = new Map();
-    for (const ann of state.annotations) annByPom.set(getLabelText(ann), ann);
+    // US-096: the measurement set only. An unlabelled zigzag/cover/bartack
+    // line is a construction mark and owns no POM row.
+    for (const ann of measurementAnnotations()) annByPom.set(getLabelText(ann), ann);
     const pomKeys = Object.keys(POM_TEMPLATE).sort((a, b) => Number(a) - Number(b));
 
     const dialog = buildDialog({
@@ -5435,11 +5461,28 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     requestRender();
   }
 
+  // US-096 / ADR 0055 code review, 2026-08-23: hiding is a POM-REVIEW gesture,
+  // so it can only apply to a measurement line.
+  //
+  // state.hiddenAnnIds is not pruned when a line changes role, and nothing else
+  // could prune it — a role flip is reachable from the Stitches menu, a preset,
+  // and the spec panel's own POM cell. Deriving the answer here instead makes it
+  // self-healing from every one of those paths at once.
+  //
+  // Without this, a hidden POM line restyled to a stitch style was stranded: not
+  // painted (render-loop and visibleExportAnnotations both skip hidden lines),
+  // no spec row left to carry its × toggle, and filtered out of
+  // getSelectedAnnotationIds so it could not even be clicked. It still counted
+  // in "Annotations: n" and still blocked Clear. It could also drive
+  // hideablePomCount() - hiddenPomCount() negative, which permanently
+  // suppressed the Hide-all control.
   function isAnnHidden(id) {
     if (id == null) return false;
     const ids = state.hiddenAnnIds;
     if (!Array.isArray(ids)) return false;
-    return ids.indexOf(id) !== -1;
+    if (ids.indexOf(id) === -1) return false;
+    const ann = (state.annotations || []).find(a => a && a.id === id);
+    return ann ? isMeasurementAnnotation(ann) : true;
   }
 
   function isDraftHidden(id) {
@@ -5468,8 +5511,12 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     requestRender();
   }
 
+  // Counted through isAnnHidden rather than off the raw array, so an id left
+  // behind by a line that has since become construction cannot make this
+  // exceed hideablePomCount() and drive the visible count negative.
   function hiddenPomCount() {
-    const a = Array.isArray(state.hiddenAnnIds) ? state.hiddenAnnIds.length : 0;
+    const a = Array.isArray(state.hiddenAnnIds)
+      ? state.hiddenAnnIds.filter(id => isAnnHidden(id)).length : 0;
     const d = Array.isArray(state.hiddenDraftIds) ? state.hiddenDraftIds.length : 0;
     return a + d;
   }
@@ -5479,7 +5526,9 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   // hideable, so they don't count. Drives whether the visibility control row
   // renders and whether "Hide all" has anything to act on.
   function hideablePomCount() {
-    let n = Array.isArray(state.annotations) ? state.annotations.length : 0;
+    // US-096: construction lines are not POMs, so they neither count towards
+    // "is there anything to hide" nor get hidden by Hide all.
+    let n = measurementAnnotations().length;
     if (state.appMode === 'auto' && state.autoMode && Array.isArray(state.autoMode.draftAnnotations)) {
       n += state.autoMode.draftAnnotations.length;
     }
@@ -5506,7 +5555,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   function hideAllPoms() {
     let changed = false;
     if (!Array.isArray(state.hiddenAnnIds)) state.hiddenAnnIds = [];
-    for (const ann of state.annotations) {
+    for (const ann of measurementAnnotations()) {
       if (ann && ann.id != null && state.hiddenAnnIds.indexOf(ann.id) === -1) {
         state.hiddenAnnIds.push(ann.id);
         changed = true;
@@ -6423,7 +6472,14 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
 
   function specPanelFingerprint() {
     const r = (p) => (p ? [Math.round(p.x * 1000), Math.round(p.y * 1000)] : 0);
-    const annBits = state.annotations.map(a => [
+    // US-096: the panel renders the measurement set, so the fingerprint that
+    // decides whether to rebuild it must be taken over the same set — reading
+    // the whole board here would rebuild on every construction-line drag, and
+    // (worse) MISS the rebuild when a line's style is the only thing that
+    // changed. `a.style` is in the bits below for exactly that reason: a
+    // plain-to-zigzag conversion adds or removes a row without moving a pixel.
+    const annBits = measurementAnnotations().map(a => [
+      a.style,
       a.id, a.seq, a.text, a.type,
       r(a.start), r(a.end), r(a.midPoint),
       r(a.control1), r(a.control2), r(a.midHandleIn), r(a.midHandleOut),
@@ -6524,7 +6580,10 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     el.specEmpty.style.display = 'none';
 
     // Lookup by effective POM label so each slot can find its annotation.
-    const anns = state.annotations.slice();
+    // US-096 / ADR 0055: rows come from the measurement set. A zigzag drawn to
+    // document topstitching is construction, not a POM, and must not appear
+    // here or in anything derived from here.
+    const anns = measurementAnnotations();
     const annByPom = new Map();
     for (const ann of anns) annByPom.set(getLabelText(ann), ann);
 
@@ -14988,7 +15047,9 @@ const BOM_MATERIAL_LIBRARY = [
 
   function pvSpecTableHtml() {
     const annByPom = new Map();
-    for (const ann of state.annotations) annByPom.set(getLabelText(ann), ann);
+    // US-096: the measurement set only. An unlabelled zigzag/cover/bartack
+    // line is a construction mark and owns no POM row.
+    for (const ann of measurementAnnotations()) annByPom.set(getLabelText(ann), ann);
     const pomKeys = specVisiblePomKeys(annByPom);
     const layout = selectedSizeRun();
     const fullIndexByLabel = new Map(SPEC_SIZE_RUN.map((c, i) => [c.label, i]));
@@ -15416,16 +15477,24 @@ const BOM_MATERIAL_LIBRARY = [
       when: () => state.images.length ? true : 'Add a Board image first.', action: () => setTool('eraser') }),
     appCommand({ id: 'board.tool.text', label: 'Text Note Tool', category: 'Board · Tools',
       page: 'board', mode: 'manual', shortcut: { key: 't' }, target: '#toolText', action: () => setTool('text') }),
-    ...['rectangle','circle','hexagon'].map(shape => appCommand({
+    // Shape shortcuts: 4 = rectangle (4 sides), O = circle (round like an O),
+    // 6 = hexagon (6 sides). Plain keys — page-nav uses ⌘4/⌘5, Open is ⌘O.
+    ...[['rectangle', '4'], ['circle', 'o'], ['hexagon', '6']].map(([shape, key]) => appCommand({
       id:'board.tool.'+shape, label:shape[0].toUpperCase()+shape.slice(1)+' Tool', category:'Board · Tools',
-      page:'board', mode:'manual', target:'#tool'+shape[0].toUpperCase()+shape.slice(1), action:()=>setTool(shape),
+      page:'board', mode:'manual', shortcut: { key }, target:'#tool'+shape[0].toUpperCase()+shape.slice(1), action:()=>setTool(shape),
     })),
+    // Path editing shares one ⇧-letter family — ⇧P point, ⇧E edit, ⇧X cut. The
+    // plain letters are taken (P export PDF, E export Excel, X eraser) and the
+    // three read as one group rather than three leftovers.
     appCommand({ id: 'board.tool.add-point', label: 'Add Point to Selected Curve', category: 'Board · Tools',
-      page: 'board', mode: 'manual', target: '#toolAddPoint', action: () => appCommandClick('#toolAddPoint') }),
+      page: 'board', mode: 'manual', shortcut: { key: 'p', shift: true },
+      target: '#toolAddPoint', action: () => appCommandClick('#toolAddPoint') }),
     appCommand({ id:'board.graphic.edit-path', label:'Edit Selected Graphic Path', category:'Board · Graphics',
-      page:'board', mode:'manual', target:'#editPathBtn', when:()=>getSelectedBoardGraphic()?true:'Select one Board Graphic first.', action:()=>bgEnterEdit(getSelectedBoardGraphic()) }),
+      page:'board', mode:'manual', shortcut: { key: 'e', shift: true },
+      target:'#editPathBtn', when:()=>getSelectedBoardGraphic()?true:'Select one Board Graphic first.', action:()=>bgEnterEdit(getSelectedBoardGraphic()) }),
     appCommand({ id:'board.graphic.cut-path', label:'Cut Selected Graphic Path', category:'Board · Graphics',
-      page:'board', mode:'manual', target:'#cutPathBtn', when:()=>state.graphicEdit&&state.graphicEdit.active?true:'Select a path node or segment first.', action:()=>cutSelectedBoardGraphicPath() }),
+      page:'board', mode:'manual', shortcut: { key: 'x', shift: true },
+      target:'#cutPathBtn', when:()=>state.graphicEdit&&state.graphicEdit.active?true:'Select a path node or segment first.', action:()=>cutSelectedBoardGraphicPath() }),
     appCommand({ id:'board.graphic.segment-straight', label:'Make Graphic Segment Straight', category:'Board · Graphics',
       page:'board', mode:'manual', target:'#segmentStraightBtn', action:()=>bgSetActiveSegmentType('line') }),
     appCommand({ id:'board.graphic.segment-curved', label:'Make Graphic Segment Curved', category:'Board · Graphics',
@@ -15451,6 +15520,29 @@ const BOM_MATERIAL_LIBRARY = [
       page: 'board', mode: 'manual', target: '#fontSizeInput', action: () => document.getElementById('fontSizeInput').focus() }),
     appCommand({ id: 'board.focus.brush-size', label: 'Focus Eraser Brush Size', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#brushSizeInput', action: () => document.getElementById('brushSizeInput').focus() }),
+    // US-096 / ADR 0055: the preset library. Open + Save are the two actions
+    // worth a palette entry; applying a specific preset is a click in the menu,
+    // and registering one command per user-created preset would flood the
+    // palette with rows that change under the TD's feet.
+    appCommand({ id: 'board.presets.open', label: 'Open Line Presets', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#stitchesBtn',
+      action: () => openLinePresetMenu() }),
+    appCommand({ id: 'board.presets.save', label: 'Save Current Look as Line Preset', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#linePresetSaveBtn',
+      action: () => saveCurrentLookAsPreset() }),
+    // US-097 / ADR 0056: the saved-shape library. Same reasoning as the presets
+    // above — Save is worth a palette entry, and picking a specific shape is a
+    // click in the Tools menu rather than one command per user-created stamp.
+    appCommand({ id: 'board.shapes.save', label: 'Save Selected Line as Shape', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#shapeStampSaveBtn',
+      when: () => (typeof canSaveShapeStampReason === 'function' ? canSaveShapeStampReason() : true),
+      action: () => saveSelectedLineAsShape() }),
+    appCommand({ id: 'board.shapes.open', label: 'Open Saved Shapes', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#toolsMenuBtn',
+      action: () => {
+        const record = boardToolbarMenuRecords().find(r => r.list && r.list.id === 'toolsMenuList');
+        if (record) openBoardToolbarMenu(record);
+      } }),
     appCommand({ id: 'board.copy.line', label: 'Copy Selected Line', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'c', meta: true }, target: '#copyLineBtn',
       when: appCommandSelectedAnnotationReason, action: () => copySelectedAnnotation() }),
@@ -15770,6 +15862,10 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   function openBoardToolbarMenu(record) {
+    // US-097: the Tools menu carries the saved-shape library, whose rows are
+    // stored data rather than markup, so they are rendered each time it opens.
+    if (record.list && record.list.id === 'toolsMenuList'
+      && typeof renderShapeStampList === 'function') renderShapeStampList();
     closeLineStyleMenu();
     closeBoardToolbarMenus(record.list, false);
     record.list.hidden = false;
@@ -15913,7 +16009,18 @@ const BOM_MATERIAL_LIBRARY = [
     // updateUI() (ui-status.js) — unchanged by moving them into this menu.
     const toolMenuBtn = document.getElementById('toolsMenuBtn');
     if (toolMenuBtn) {
-      const label = TOOL_MENU_LABELS[state.tool];
+      // US-097 code review, 2026-08-23: an armed stamp tool used to read as
+      // plain 'Tools ▾' — identical to Select — while the board was in a modal
+      // creation mode with the whole context-actions group hidden. Name the
+      // armed shape, so the one control still on screen says what a press will
+      // do. Truncated: a TD can name a shape anything.
+      let label = TOOL_MENU_LABELS[state.tool];
+      if (state.tool === 'stamp' && typeof getActiveShapeStamp === 'function') {
+        const stamp = getActiveShapeStamp();
+        label = stamp
+          ? (stamp.name.length > 18 ? stamp.name.slice(0, 17) + '…' : stamp.name)
+          : 'Shape';
+      }
       toolMenuBtn.textContent = label ? ('Tools: ' + label) : 'Tools ▾';
     }
 
@@ -15950,7 +16057,22 @@ const BOM_MATERIAL_LIBRARY = [
     el.labelEditor.style.left = screen.x + 'px';
     el.labelEditor.style.top = screen.y + 'px';
     el.labelEditor.style.color = getAnnotationColor(ann);
-    el.labelEditor.value = getLabelText(ann);
+    // US-096 / ADR 0055, second code review 2026-08-23: a construction line
+    // paints no callout, so there is no current label to pre-fill — and
+    // pre-filling one here was a zero-keystroke trap.
+    //
+    // getLabelText falls back to String(ann.seq), and a construction line is
+    // born holding state.nextSequence WITHOUT advancing it, so that number is
+    // exactly the one the next measurement line will take. The editor commits
+    // on blur (bindings.js), so a stray double-click on a stitch mark followed
+    // by a click anywhere else wrote `ann.text = "<that number>"` — which is
+    // the ADR's deliberate "a labelled stitch line still measures" exception,
+    // fired by accident, producing two measurement lines answering to one POM
+    // key. Before US-096 the same commit was a semantic no-op.
+    //
+    // Opening empty keeps the exception REACHABLE (a TD who genuinely wants a
+    // labelled stitch line types the number) while making it deliberate.
+    el.labelEditor.value = annotationShowsCallout(ann) ? getLabelText(ann) : (ann.text || '');
     requestRender();
     requestAnimationFrame(() => {
       el.labelEditor.focus();
@@ -16230,6 +16352,477 @@ const BOM_MATERIAL_LIBRARY = [
     requestRender();
   }
 
+  // ---- src/ui/line-preset-panel.js ----
+// US-096 / ADR 0055: the line-preset dropdown.
+//
+// Presentation only. Every mutation goes through src/manual/line-presets.js,
+// which owns the model, the storage and the apply semantics — this file decides
+// what the rows look like and which control calls what, exactly the split
+// src/ui/board-toolbar.js already uses for the rest of the toolbar.
+//
+// The rows are rendered from stored data rather than written into index.html,
+// because the list is the TD's own and changes at runtime.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // Inline SVG previews, one per style, matching the Stitches menu's own
+  // artwork so a preset reads as the same thing the Stitches menu offers.
+  function linePresetPreviewSvg(style) {
+    const open = '<svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+    if (style === 'dashed') return open + '<line x1="3" y1="7" x2="33" y2="7" stroke-width="1.8" stroke-dasharray="6 4"/></svg>';
+    if (style === 'zigzag') return open + '<polyline points="3,7 7,3 11,11 15,3 19,11 23,3 27,11 31,3 33,7" stroke-width="1.6"/></svg>';
+    if (style === 'cover') return open + '<line x1="3" y1="5" x2="33" y2="5" stroke-width="1.5" stroke-dasharray="5 4"/><line x1="3" y1="9" x2="33" y2="9" stroke-width="1.5" stroke-dasharray="5 4"/></svg>';
+    if (style === 'bartack') return open + '<line x1="3" y1="7" x2="33" y2="7" stroke-width="1.4" opacity="0.32"/><polyline points="8,4 11,10 14,4 17,10 20,4 23,10 26,4 28,10" stroke-width="1.5"/></svg>';
+    return open + '<line x1="3" y1="7" x2="33" y2="7" stroke-width="1.8"/></svg>';
+  }
+
+  // What the row says it will do, spelled out because the consequence is not
+  // obvious: picking a stitch preset takes the line OUT of the measurement
+  // table (ADR 0055), and a TD should be able to read that before clicking.
+  function linePresetRowTitle(preset) {
+    const base = `${preset.name} — ${lineStyleLabel(preset.style)}, ${preset.color}, ${formatLineWidth(preset.lineWidth)} px`;
+    return isStitchStyle(preset.style)
+      ? base + '. A construction mark: drawn and exported, but no measurement row and no callout number.'
+      : base + '. A measurement line.';
+  }
+
+  function renderLinePresetList() {
+    if (!el.linePresetList) return;
+    // Only offered while an opened project actually holds presets this browser
+    // lacks — otherwise it is a row that does nothing.
+    if (el.linePresetImportProjectBtn) {
+      const pending = getPendingProjectLinePresets().length;
+      el.linePresetImportProjectBtn.hidden = pending === 0;
+      el.linePresetImportProjectBtn.textContent = pending
+        ? `Import ${pending} preset${pending > 1 ? 's' : ''} from project`
+        : 'Import from project';
+    }
+    const presets = getLinePresets();
+    const swatch = (color) => LINE_COLORS[color] || LINE_COLOR;
+    el.linePresetList.innerHTML = presets.map((preset, index) => {
+      const first = index === 0 ? ' disabled' : '';
+      const last = index === presets.length - 1 ? ' disabled' : '';
+      return '<div class="preset-row" data-preset-id="' + escapeHtml(preset.id) + '">'
+        + '<button type="button" role="menuitem" class="preset-apply" data-preset-action="apply"'
+        + ' style="color:' + escapeHtml(swatch(preset.color)) + '"'
+        + ' title="' + escapeHtml(linePresetRowTitle(preset)) + '">'
+        + linePresetPreviewSvg(preset.style)
+        + '<span>' + escapeHtml(preset.name) + '</span>'
+        + '</button>'
+        + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="up" aria-label="Move up" title="Move up"' + first + '>&#9650;</button>'
+        + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="down" aria-label="Move down" title="Move down"' + last + '>&#9660;</button>'
+        + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="rename" aria-label="Rename" title="Rename">&#9998;</button>'
+        + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="delete" aria-label="Delete" title="Delete">&times;</button>'
+        + '</div>';
+    }).join('');
+  }
+
+  // The library has no dropdown of its own: it lives in the Stitches menu, whose
+  // openLineStyleMenu calls this. US-082 caps how many units may sit on the
+  // primary Board surface, and a preset IS a line look — the same thing the five
+  // built-in rows above it are — so a second trigger would have spent a slot to
+  // split one idea across two menus.
+  function openLinePresetMenu() {
+    openLineStyleMenu();
+  }
+
+  // Every library action ends in exactly one toast, worded for that action and
+  // truthful about whether it will survive a reload. saveLinePresets is silent
+  // precisely so this is the only message the TD sees.
+  function linePresetToast(message) {
+    showToast(linePresetsPersisted()
+      ? message
+      : message + ' (this session only — the browser refused to store it)');
+  }
+
+  // A one-field name prompt. Deliberately not window.prompt(): it is blocked in
+  // headless Chrome (so no suite could drive this flow) and it cannot be
+  // styled, focus-trapped, or dismissed with the same Escape contract as every
+  // other dialog in the app.
+  function openLinePresetNameDialog({ title, sub, value, confirmLabel, onConfirm }) {
+    const dialog = buildDialog({ title, sub });
+    const body = document.createElement('div');
+    body.className = 'scale-body';
+    body.innerHTML = '<div class="scale-field">'
+      + '<input type="text" maxlength="60" aria-label="Preset name" placeholder="e.g. Zigzag 3 mm" />'
+      + '</div>';
+    dialog.panel.appendChild(body);
+    const input = body.querySelector('input');
+    input.value = value || '';
+
+    const footer = document.createElement('div');
+    footer.className = 'picker-footer';
+    const spacer = document.createElement('span');
+    spacer.style.flex = '1';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'picker-btn';
+    cancelBtn.textContent = 'Cancel';
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.className = 'picker-btn primary';
+    okBtn.textContent = confirmLabel;
+    footer.appendChild(spacer);
+    footer.appendChild(cancelBtn);
+    footer.appendChild(okBtn);
+    dialog.panel.appendChild(footer);
+
+    function confirm() {
+      const name = input.value.trim();
+      if (!name) {
+        input.focus();
+        showToast('Give the preset a name first.');
+        return;
+      }
+      dialog.close();
+      onConfirm(name);
+    }
+    okBtn.addEventListener('click', confirm);
+    cancelBtn.addEventListener('click', dialog.close);
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); confirm(); }
+    });
+    dialog.open();
+    input.focus();
+    input.select();
+  }
+
+  function saveCurrentLookAsPreset() {
+    const look = currentLineLook();
+    openLinePresetNameDialog({
+      title: 'Save line preset',
+      sub: `${lineStyleLabel(look.style)}, ${look.color}, ${formatLineWidth(look.lineWidth)} px`,
+      value: '',
+      confirmLabel: 'Save preset',
+      onConfirm: (name) => {
+        const preset = addLinePreset(name);
+        if (!preset) { showToast('Could not save that preset.'); return; }
+        renderLinePresetList();
+        linePresetToast(`Saved "${preset.name}" to the line presets.`);
+      },
+    });
+  }
+
+  function onLinePresetListClick(event) {
+    const button = event.target.closest('[data-preset-action]');
+    if (!button || button.disabled) return;
+    const row = button.closest('[data-preset-id]');
+    if (!row) return;
+    event.stopPropagation();
+    const id = row.dataset.presetId;
+    const action = button.dataset.presetAction;
+    const preset = getLinePresetById(id);
+    if (!preset) return;
+
+    if (action === 'apply') {
+      applyLinePreset(id);
+      closeLineStyleMenu();
+      return;
+    }
+    if (action === 'up' || action === 'down') {
+      moveLinePreset(id, action === 'up' ? -1 : 1);
+      renderLinePresetList();
+      refocusLibraryRowControl('linePresetList', id, { kind: 'preset', name: action });
+      return;
+    }
+    if (action === 'rename') {
+      openLinePresetNameDialog({
+        title: 'Rename preset',
+        sub: preset.name,
+        value: preset.name,
+        confirmLabel: 'Rename',
+        onConfirm: (name) => {
+          renameLinePreset(id, name);
+          renderLinePresetList();
+          refocusLibraryRowControl('linePresetList', id, { kind: 'preset', name: 'rename' });
+        },
+      });
+      return;
+    }
+    if (action === 'delete') {
+      const order = getLinePresets().map(p => p.id);
+      const index = order.indexOf(id);
+      deleteLinePreset(id);
+      renderLinePresetList();
+      const after = getLinePresets();
+      const neighbour = after[Math.min(index, after.length - 1)];
+      if (neighbour) refocusLibraryRowControl('linePresetList', neighbour.id, { kind: 'preset', name: 'delete' });
+      linePresetToast(`Deleted "${preset.name}".`);
+    }
+  }
+
+  function onLinePresetImportFile(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const added = importLinePresetsFromJson(String(reader.result || ''));
+      renderLinePresetList();
+      if (!added) { showToast('That file held no line presets.'); return; }
+      linePresetToast(`Imported ${added} preset${added > 1 ? 's' : ''}.`);
+    };
+    reader.onerror = () => showToast('Could not read that file.');
+    reader.readAsText(file);
+  }
+
+  function bindLinePresetPanel() {
+    if (!el.linePresetList) return;
+    el.linePresetList.addEventListener('click', onLinePresetListClick);
+    el.linePresetSaveBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      closeLineStyleMenu();
+      saveCurrentLookAsPreset();
+    });
+    el.linePresetExportBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      exportLinePresetsFile();
+      closeLineStyleMenu();
+    });
+    el.linePresetImportBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      el.linePresetFileInput.click();
+    });
+    el.linePresetFileInput.addEventListener('change', onLinePresetImportFile);
+    if (el.linePresetImportProjectBtn) {
+      el.linePresetImportProjectBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const added = importPendingProjectLinePresets();
+        el.linePresetImportProjectBtn.hidden = true;
+        renderLinePresetList();
+        if (!added) { showToast('Nothing to import.'); return; }
+        linePresetToast(`Imported ${added} preset${added > 1 ? 's' : ''} from the project.`);
+      });
+    }
+    el.linePresetResetBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      resetLinePresetsToBuiltins();
+      renderLinePresetList();
+      linePresetToast('Line presets reset to the built-in set.');
+    });
+    // Dismissal is the Stitches menu's: the document click handler and Escape
+    // in bindings.js / keyboard-shortcuts.js already own it, and every control
+    // here stops propagation so operating the library does not close the menu
+    // under the TD's hand.
+  }
+
+  // ---- src/ui/shape-stamp-panel.js ----
+// US-097 / ADR 0056: the saved-shape section of the Tools menu.
+//
+// Presentation only, mirroring src/ui/line-preset-panel.js exactly: every
+// mutation goes through src/manual/shape-stamps.js, which owns the model, the
+// storage and the placement semantics.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // The preview is the stamp's OWN geometry, sampled into an SVG path and
+  // fitted to the swatch — not a generic curve icon. Two saved cup curves that
+  // differ only in their bow have to be distinguishable in the list, which is
+  // the whole reason a TD saved both.
+  function shapeStampPreviewSvg(stamp) {
+    const w = 36, h = 14, pad = 2;
+    const at = (p) => ({
+      x: pad + (p.x * (w - pad * 2)),
+      y: pad + (p.y * (h - pad * 2)),
+    });
+    const s0 = at(stamp.start);
+    let d = 'M' + s0.x.toFixed(2) + ' ' + s0.y.toFixed(2);
+    if (stamp.type === 'curved' && stamp.control1 && stamp.control2) {
+      let c1 = at(stamp.control1);
+      for (const pt of stamp.points) {
+        const hIn = at(pt.handleIn);
+        const p = at(pt.point);
+        d += ' C' + c1.x.toFixed(2) + ' ' + c1.y.toFixed(2)
+          + ',' + hIn.x.toFixed(2) + ' ' + hIn.y.toFixed(2)
+          + ',' + p.x.toFixed(2) + ' ' + p.y.toFixed(2);
+        c1 = at(pt.handleOut);
+      }
+      const c2 = at(stamp.control2);
+      const e = at(stamp.end);
+      d += ' C' + c1.x.toFixed(2) + ' ' + c1.y.toFixed(2)
+        + ',' + c2.x.toFixed(2) + ' ' + c2.y.toFixed(2)
+        + ',' + e.x.toFixed(2) + ' ' + e.y.toFixed(2);
+    } else {
+      const e = at(stamp.end);
+      d += ' L' + e.x.toFixed(2) + ' ' + e.y.toFixed(2);
+    }
+    return '<svg class="style-preview" viewBox="0 0 ' + w + ' ' + h + '" fill="none" '
+      + 'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" '
+      + 'stroke-linejoin="round" aria-hidden="true"><path d="' + d + '"/></svg>';
+  }
+
+  function shapeStampRowTitle(stamp) {
+    const shape = stamp.type === 'curved'
+      ? `curve, ${stamp.points.length + 1} segment${stamp.points.length ? 's' : ''}`
+      : 'straight';
+    const ratio = stamp.aspect > 0
+      ? `${stamp.aspect.toFixed(2)}:1 tall (Shift while dragging locks it)`
+      : 'no fixed proportion';
+    const role = isStitchStyle(stamp.style)
+      ? 'Places a construction mark — drawn and exported, but no measurement row.'
+      : 'Places a measurement line.';
+    return `${stamp.name} — ${shape}, ${lineStyleLabel(stamp.style)}, ${stamp.color}, ${ratio}. ${role}`;
+  }
+
+  function renderShapeStampList() {
+    if (!el.shapeStampList) return;
+    if (el.shapeStampImportProjectBtn) {
+      const pending = getPendingProjectShapeStamps().length;
+      el.shapeStampImportProjectBtn.hidden = pending === 0;
+      el.shapeStampImportProjectBtn.textContent = pending
+        ? `Import ${pending} shape${pending > 1 ? 's' : ''} from project`
+        : 'Import from project';
+    }
+    const stamps = getShapeStamps();
+    const swatch = (color) => LINE_COLORS[color] || LINE_COLOR;
+    el.shapeStampList.innerHTML = stamps.map((stamp, index) => {
+      const first = index === 0 ? ' disabled' : '';
+      const last = index === stamps.length - 1 ? ' disabled' : '';
+      const active = state.activeStampId === stamp.id ? ' active' : '';
+      return '<div class="preset-row" data-stamp-id="' + escapeHtml(stamp.id) + '">'
+        + '<button type="button" role="menuitem" class="preset-apply' + active + '" data-stamp-action="use"'
+        + ' style="color:' + escapeHtml(swatch(stamp.color)) + '"'
+        + ' title="' + escapeHtml(shapeStampRowTitle(stamp)) + '">'
+        + shapeStampPreviewSvg(stamp)
+        + '<span>' + escapeHtml(stamp.name) + '</span>'
+        + '</button>'
+        + '<button type="button" role="menuitem" class="preset-ctl" data-stamp-action="up" aria-label="Move up" title="Move up"' + first + '>&#9650;</button>'
+        + '<button type="button" role="menuitem" class="preset-ctl" data-stamp-action="down" aria-label="Move down" title="Move down"' + last + '>&#9660;</button>'
+        + '<button type="button" role="menuitem" class="preset-ctl" data-stamp-action="rename" aria-label="Rename" title="Rename">&#9998;</button>'
+        + '<button type="button" role="menuitem" class="preset-ctl" data-stamp-action="delete" aria-label="Delete" title="Delete">&times;</button>'
+        + '</div>';
+    }).join('');
+  }
+
+  // One truthful toast per action, worded for that action — the US-096 lesson:
+  // showToast queues rather than replaces, so a message fired from inside the
+  // storage layer is buried by the caller's own.
+  function shapeStampToast(message) {
+    showToast(shapeStampsPersisted()
+      ? message
+      : message + ' (this session only — the browser refused to store it)');
+  }
+
+  function saveSelectedLineAsShape() {
+    const reason = canSaveShapeStampReason();
+    if (reason !== true) { showToast(reason); return; }
+    const ann = shapeStampSaveTarget();
+    const kind = ann.type === 'curved' ? 'Curve' : 'Straight line';
+    openLinePresetNameDialog({
+      title: 'Save shape',
+      sub: `${kind}, ${lineStyleLabel(getLineStyle(ann))}, ${normalizeColorKey(ann.color)}`,
+      value: '',
+      confirmLabel: 'Save shape',
+      onConfirm: (name) => {
+        const stamp = addShapeStampFromSelection(name);
+        if (!stamp) { showToast('Could not save that shape.'); return; }
+        renderShapeStampList();
+        shapeStampToast(`Saved "${stamp.name}" — pick it from Tools to place it.`);
+      },
+    });
+  }
+
+  function onShapeStampListClick(event) {
+    const button = event.target.closest('[data-stamp-action]');
+    if (!button || button.disabled) return;
+    const row = button.closest('[data-stamp-id]');
+    if (!row) return;
+    event.stopPropagation();
+    const id = row.dataset.stampId;
+    const action = button.dataset.stampAction;
+    const stamp = getShapeStampById(id);
+    if (!stamp) return;
+
+    if (action === 'use') {
+      // Order matters: setTool('stamp') would disarm anything already chosen,
+      // so arm AFTER switching.
+      setTool('stamp');
+      setActiveShapeStamp(id);
+      closeBoardToolbarMenus(null, false);
+      updateUI();
+      showToast(`Drag on the board to place "${stamp.name}" at that size. Shift keeps its proportions.`);
+      return;
+    }
+    if (action === 'up' || action === 'down') {
+      moveShapeStamp(id, action === 'up' ? -1 : 1);
+      renderShapeStampList();
+      // The re-render replaced the button that was just pressed; put focus
+      // back on it, or arrow-key menu navigation dies and a repeated reorder
+      // needs the mouse.
+      refocusLibraryRowControl('shapeStampList', id, { kind: 'stamp', name: action });
+      return;
+    }
+    if (action === 'rename') {
+      openLinePresetNameDialog({
+        title: 'Rename shape',
+        sub: stamp.name,
+        value: stamp.name,
+        confirmLabel: 'Rename',
+        onConfirm: (name) => {
+          renameShapeStamp(id, name);
+          renderShapeStampList();
+          refocusLibraryRowControl('shapeStampList', id, { kind: 'stamp', name: 'rename' });
+        },
+      });
+      return;
+    }
+    if (action === 'delete') {
+      // The deleted row is gone, so there is nothing to refocus INSIDE it —
+      // move to the same control on whichever row took its place, or the one
+      // before it. Without this, focus falls to <body> and arrow navigation of
+      // the whole menu dies, the same failure the reorder fix names.
+      const order = getShapeStamps().map(s => s.id);
+      const index = order.indexOf(id);
+      deleteShapeStamp(id);
+      renderShapeStampList();
+      const after = getShapeStamps();
+      const neighbour = after[Math.min(index, after.length - 1)];
+      if (neighbour) refocusLibraryRowControl('shapeStampList', neighbour.id, { kind: 'stamp', name: 'delete' });
+      shapeStampToast(`Deleted "${stamp.name}".`);
+    }
+  }
+
+  function onShapeStampImportFile(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const added = importShapeStampsFromJson(String(reader.result || ''));
+      renderShapeStampList();
+      if (!added) { showToast('That file held no saved shapes.'); return; }
+      shapeStampToast(`Imported ${added} shape${added > 1 ? 's' : ''}.`);
+    };
+    reader.onerror = () => showToast('Could not read that file.');
+    reader.readAsText(file);
+  }
+
+  function bindShapeStampPanel() {
+    if (!el.shapeStampList) return;
+    el.shapeStampList.addEventListener('click', onShapeStampListClick);
+    el.shapeStampSaveBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      closeBoardToolbarMenus(null, false);
+      saveSelectedLineAsShape();
+    });
+    el.shapeStampExportBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      exportShapeStampsFile();
+      closeBoardToolbarMenus(null, false);
+    });
+    el.shapeStampImportBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      el.shapeStampFileInput.click();
+    });
+    el.shapeStampFileInput.addEventListener('change', onShapeStampImportFile);
+    el.shapeStampImportProjectBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const added = importPendingProjectShapeStamps();
+      el.shapeStampImportProjectBtn.hidden = true;
+      renderShapeStampList();
+      if (!added) { showToast('Nothing to import.'); return; }
+      shapeStampToast(`Imported ${added} shape${added > 1 ? 's' : ''} from the project.`);
+    });
+  }
+
   // ---- src/ui/bindings.js ----
 // Top-level UI bindings: bindUI() wires the toolbar, dropdowns, file
 // inputs, the canvas, the label editor, and keyboard shortcuts. Tool and
@@ -16255,6 +16848,9 @@ const BOM_MATERIAL_LIBRARY = [
     if (el.toolAddPoint) el.toolAddPoint.addEventListener('click', () => setTool('add-point'));
 
     el.stitchesBtn.addEventListener('click', toggleLineStyleMenu);
+    // US-096: the preset dropdown owns its own rows and handlers.
+    bindLinePresetPanel();
+    bindShapeStampPanel();
     el.styleOptionBtns.forEach((button) => {
       button.addEventListener('click', () => {
         setLineStyle(button.dataset.style);
@@ -16476,6 +17072,9 @@ const BOM_MATERIAL_LIBRARY = [
     }
     state.tool = tool;
     if (tool !== 'select') state.graphicEdit = null;
+    // US-097: leaving the stamp tool disarms the chosen shape, so a later
+    // press cannot place one the TD has stopped thinking about.
+    if (tool !== 'stamp') setActiveShapeStamp(null);
     state.drawSession = null;
     state.eraseSession = null;
     if (tool === 'eraser') {
@@ -16487,8 +17086,25 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
 
+  // US-096 / ADR 0055: the two things this used to do at once are now separate.
+  //
+  // With lines selected, the TD is restyling THOSE lines. It changes the whole
+  // selection (not just the primary, as before) and leaves state.drawStyle — and
+  // therefore the board's POM/Stitch mode — alone. Previously converting one
+  // line to zigzag hid every callout number on the board.
+  //
+  // With nothing selected, the TD is setting what the next line is born as, and
+  // that still carries the board-mode switch and its toast, unchanged.
   function setLineStyle(style) {
     const normalized = normalizeLineStyle(style);
+    if (getSelectedAnnotationsForEdit().length) {
+      applyToSelectedAnnotations({ style: normalized });
+      return;
+    }
+    setDefaultLineStyle(normalized);
+  }
+
+  function setDefaultLineStyle(normalized) {
     const wasStitchMode = isStitchMode();
     state.drawStyle = normalized;
     if (isStitchMode() !== wasStitchMode) {
@@ -16496,7 +17112,8 @@ const BOM_MATERIAL_LIBRARY = [
         ? 'Stitch mode — callout numbers hidden.'
         : 'POM mode — callout numbers shown.');
     }
-    applyToSelectedAnnotation({ style: normalized });
+    updateUI();
+    requestRender();
   }
 
   function toggleLineStyleMenu(e) {
@@ -16508,6 +17125,9 @@ const BOM_MATERIAL_LIBRARY = [
 
   function openLineStyleMenu() {
     if (el.stitchesBtn.disabled) return;
+    // US-096: the preset rows are stored data, so they are rendered each time
+    // the menu opens rather than written into index.html.
+    renderLinePresetList();
     el.stitchesMenu.hidden = false;
     el.stitchesBtn.setAttribute('aria-expanded', 'true');
   }
@@ -16602,6 +17222,36 @@ const BOM_MATERIAL_LIBRARY = [
     return true;
   }
 
+  // US-096: applies to the WHOLE selection. Restyling eight Shift-clicked lines
+  // used to take eight actions, because this only ever touched the primary.
+  //
+  // A style change can move a line in or out of the measurement set (ADR 0055),
+  // so a line re-entering it may need a fresh POM number — see
+  // reissuePomSequenceOnReentry.
+  function applyToSelectedAnnotations(settings) {
+    const anns = getSelectedAnnotationsForEdit();
+    if (!anns.length) {
+      updateUI();
+      requestRender();
+      return;
+    }
+
+    const before = snapshotFingerprint(makeSnapshot());
+    for (const ann of anns) {
+      const wasMeasurement = isMeasurementAnnotation(ann);
+      Object.assign(ann, settings);
+      if (!wasMeasurement && isMeasurementAnnotation(ann)) reissuePomSequenceOnReentry(ann);
+    }
+    const after = snapshotFingerprint(makeSnapshot());
+    if (before !== after) pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+  }
+
+  // Deliberately still the PRIMARY only. The colour swatch, arrow buttons and
+  // line-width chip all read back from the primary in updateUI, so widening
+  // them to the group is its own product decision, not a side effect of
+  // US-096. Style and presets are the two things that go plural here.
   function applyToSelectedAnnotation(settings) {
     const ann = getSelectedAnnotation();
     if (!ann) {
@@ -16689,6 +17339,26 @@ const BOM_MATERIAL_LIBRARY = [
       construction: state.construction ? clone(state.construction) : null,
       bom: state.bom ? clone(state.bom) : null,
       preview: state.preview ? clone(state.preview) : null,
+      // Auto Mode working state. Carried ONLY while Auto is the active mode, so
+      // Manual undo/redo behaves exactly as before (every snapshot simply gains
+      // the same `autoMode: null` key, and fingerprints are only ever compared
+      // with each other).
+      //
+      // Without this an anchor correction was outside history entirely: the
+      // fingerprint never changed, so pushHistoryIfChanged short-circuited and
+      // Ctrl/Cmd+Z did nothing at all while the Undo button stayed enabled —
+      // measured, a 0.074 drag survived two presses. The only way back was
+      // "Reset Anchors", which throws away EVERY correction rather than the last
+      // one. Drafts ride along because they are derived from the anchors: undoing
+      // the anchor without them would put the board straight back into the
+      // "line disagrees with its pins" state the re-sync exists to prevent.
+      autoMode: state.appMode === 'auto' ? {
+        anchors: clone(state.autoMode.anchors || []),
+        drafts: clone(state.autoMode.draftAnnotations || []),
+        anchorSelectedId: state.autoMode.anchorSelectedId != null
+          ? state.autoMode.anchorSelectedId : null,
+        status: state.autoMode.status || null,
+      } : null,
     };
   }
 
@@ -16778,6 +17448,23 @@ const BOM_MATERIAL_LIBRARY = [
       state.selection = { kind: null, id: null };
     }
 
+    // Auto Mode working state — mirror of makeSnapshot. Restored only while Auto
+    // is active: a snapshot taken in Auto that is restored after the Apply-Lines
+    // handoff must not resurrect anchors into a Manual board.
+    if (state.appMode === 'auto' && snapshot.autoMode) {
+      state.autoMode.anchors = clone(snapshot.autoMode.anchors || []);
+      state.autoMode.draftAnnotations = clone(snapshot.autoMode.drafts || []);
+      state.autoMode.draftAnnotations.forEach(ensureCurveControls);
+      if (snapshot.autoMode.status) state.autoMode.status = snapshot.autoMode.status;
+      const selectedAnchorId = snapshot.autoMode.anchorSelectedId;
+      state.autoMode.anchorSelectedId =
+        state.autoMode.anchors.some(a => a.id === selectedAnchorId) ? selectedAnchorId : null;
+      if (state.selection.kind === 'draft'
+          && !state.autoMode.draftAnnotations.some(d => d.id === state.selection.id)) {
+        state.selection = { kind: null, id: null };
+      }
+    }
+
     state.history.restoring = false;
     updateUI();
     requestRender();
@@ -16845,6 +17532,20 @@ const BOM_MATERIAL_LIBRARY = [
         gradeRules: clone(state.gradeRules || {}),
         customPoms: clone(state.customPoms || []),
         deletedPomKeys: clone(state.deletedPomKeys || []),
+        // US-096 / ADR 0055: a copy of the line-preset library, so a board
+        // opened on another machine can still be shown — and offered — the
+        // looks it was drawn with. Additive: files saved before US-096 have no
+        // key, and an absent key means "no embedded copy", never "empty
+        // library". The local library stays the source of truth; project-load
+        // offers these for import rather than overwriting it.
+        linePresets: (typeof serializeLinePresetsForProject === 'function')
+          ? serializeLinePresetsForProject()
+          : [],
+        // US-097 / ADR 0056: the saved-shape library, same additive+offered
+        // contract as linePresets above.
+        shapeStamps: (typeof serializeShapeStampsForProject === 'function')
+          ? serializeShapeStampsForProject()
+          : [],
         sizeSelection: state.sizeSelection ? clone(state.sizeSelection) : null,
         // US-068: MAIN PAGE sheet. Additive — files saved before US-068 have
         // no key and seed a default on open. US-080: the serializer injects
@@ -17038,6 +17739,11 @@ const BOM_MATERIAL_LIBRARY = [
       state.drawColor = s.drawColor || 'red';
       state.arrowType = s.arrowType || 'double';
       state.lineWidth = normalizeLineWidth(s.lineWidth);
+      // US-096: never write the local preset library from a project file. Note
+      // which of its presets are new and let the TD decide — a colleague's
+      // project must not silently rewrite this machine's tooling.
+      offerLinePresetsFromProject(s.linePresets);
+      offerShapeStampsFromProject(s.shapeStamps);
       // Additive like lineWidth: a file saved before this control existed has
       // no key, and normalizeNoteFontSize's own NaN fallback covers it.
       state.noteFontSize = normalizeNoteFontSize(s.noteFontSize);
@@ -18116,6 +18822,68 @@ const BOM_MATERIAL_LIBRARY = [
     };
   }
 
+  // US-096 / ADR 0055: POM sequence numbers are a measurement identity, so only
+  // a measurement line spends one. A run of stitch marks used to punch holes in
+  // the numbering — draw POM 1, three zigzags, and the next real line came out
+  // as POM 5.
+  //
+  // A construction line is still BORN with the current number (every factory
+  // above stamps `seq: state.nextSequence`), it just does not advance the
+  // counter, so the next measurement line reuses it. The duplicate is
+  // unreachable while the line stays construction — nothing that reads seq as a
+  // POM identity can see it — and reissuePomSequenceOnReentry resolves it at the
+  // one moment it could matter: conversion back to a measurement style.
+  function consumePomSequenceFor(ann) {
+    if (!isMeasurementAnnotation(ann)) return;
+    state.nextSequence += 1;
+  }
+
+  // Called when a line re-enters the measurement set (Zigzag -> Plain). It has
+  // to satisfy TWO things at once, and the first two attempts each got one of
+  // them and broke the other:
+  //
+  //   (i)  no two measurement lines may share a seq, and
+  //   (ii) state.nextSequence must end up strictly greater than this line's,
+  //        or the next drawn line is stamped with the same number.
+  //
+  // Attempt one reissued only on an existing conflict. That leaves (ii) broken
+  // in the common case: a construction line is born holding state.nextSequence
+  // WITHOUT advancing it (consumePomSequenceFor above), so at conversion time
+  // the counter still points at the number the line is carrying, nothing
+  // conflicts yet, and the very next drawn line collides. Every consumer does
+  // `annByPom.set(getLabelText(ann), ann)`, so one of the two silently vanished
+  // from the panel and both workbooks.
+  //
+  // Attempt two reissued unconditionally. That satisfies both, but destroys
+  // POM identity on a round trip — and second code review, 2026-08-23, is where
+  // that surfaced. An auto-applied line carries `text: null`, so its POM
+  // identity IS its seq. A TD who restyles the POM 8 line to zigzag by mistake
+  // and immediately picks Plain again got it renumbered to 19: same red line,
+  // same geometry, new number, POM 8's row silently emptied in both workbooks.
+  // The round trip is the likeliest way a TD meets this code at all, and the
+  // suite could not see it because it only ever drove a line BORN as
+  // construction.
+  //
+  // So: keep the number when it is free — a POM 8 line restyled and restyled
+  // back is still POM 8 — and only take a fresh one when it is genuinely taken.
+  // Either way, push the counter past it, which is the half attempt one missed.
+  //
+  // A line the TD labelled by hand is left alone entirely: its identity is
+  // `text`, not `seq`, so renumbering would be meaningless churn.
+  function reissuePomSequenceOnReentry(ann) {
+    if (!ann || hasManualPomLabel(ann)) return false;
+    const taken = (state.annotations || []).some(other => other !== ann
+      && other.seq === ann.seq
+      && isMeasurementAnnotation(other));
+    if (taken) {
+      ann.seq = state.nextSequence;
+      state.nextSequence += 1;
+      return true;
+    }
+    if (state.nextSequence <= ann.seq) state.nextSequence = ann.seq + 1;
+    return false;
+  }
+
   function computeDefaultLabelPosition(annLike) {
     if (annLike.type === 'straight') {
       const mid = midpoint(annLike.start, annLike.end);
@@ -18315,6 +19083,18 @@ const BOM_MATERIAL_LIBRARY = [
       if (state.annotations.length === before) return;
       if (!Array.isArray(state.deletedPomKeys)) state.deletedPomKeys = [];
       for (const ann of targets) {
+        // US-096 / ADR 0055 code review, 2026-08-23: a construction line owns no
+        // POM identity, so deleting one must say NOTHING about a POM — neither
+        // in the exported spec nor to learning.
+        //
+        // This `continue` sits above markDeletedAutoAnnotationForEvidence on
+        // purpose. It was originally placed below it, which left the ABSENCE
+        // half of learning capture open: erasing a restyled auto line still
+        // pushed a snapshot into state.deletedAutoAnnotations, and Save
+        // Evidence turned that into an "absent-confirmed" record teaching the
+        // style that it has no such POM — from a line the TD had already
+        // declared to be construction, not measurement.
+        if (!isMeasurementAnnotation(ann)) continue;
         // POM numbers are measurement identities, not list positions. Deleting
         // POM 7 must leave a gap instead of turning POM 8 into POM 7.
         if (typeof markDeletedAutoAnnotationForEvidence === 'function') markDeletedAutoAnnotationForEvidence(ann);
@@ -18503,7 +19283,9 @@ const BOM_MATERIAL_LIBRARY = [
       // before interior anchors existed.
       ann.label = computeDefaultLabelPosition(ann);
       state.annotations.push(ann);
-      state.nextSequence += 1;
+      // US-096: a pasted construction line spends no POM number, exactly as
+      // a freshly drawn one does not.
+      consumePomSequenceFor(ann);
       pastedIds.push(ann.id);
     }
     // Select the pasted group so it can be moved/nudged as one immediately.
@@ -18554,7 +19336,7 @@ const BOM_MATERIAL_LIBRARY = [
       // shape; backfill the anchor set for any older single-cubic source.
       ensureCurveControls(ann);
       state.annotations.push(ann);
-      state.nextSequence += 1;
+      consumePomSequenceFor(ann);
       reflectedIds.push(ann.id);
     }
     if (!reflectedIds.length) {
@@ -18629,7 +19411,7 @@ function setSelection(kind, id) {
     if (kind === 'annotation') {
       const ann = getAnnotationById(id);
       if (ann) {
-        state.drawStyle = ann.style || state.drawStyle;
+        adoptDrawStyleFrom(ann);
         state.drawColor = normalizeColorKey(ann.color);
         state.arrowType = getArrowType(ann);
       }
@@ -18733,10 +19515,24 @@ function setSelection(kind, id) {
     state.selection = { kind: 'annotation', id };
     const ann = getAnnotationById(id);
     if (ann) {
-      state.drawStyle = ann.style || state.drawStyle;
+      adoptDrawStyleFrom(ann);
       state.drawColor = normalizeColorKey(ann.color);
       state.arrowType = getArrowType(ann);
     }
+  }
+
+  // US-096 / ADR 0055: selecting a line still hands its look to the draw
+  // defaults, EXCEPT for the three stitch styles.
+  //
+  // state.drawStyle is what isStitchMode() reads, so adopting 'zigzag' from a
+  // clicked line put the whole board into Stitch mode and blanked every callout
+  // number — a board-wide change caused by nothing but a selection click. The
+  // toolbar still shows the selected line's real style: updateUI reads it from
+  // the annotation, not from this default (ui-status.js).
+  function adoptDrawStyleFrom(ann) {
+    if (!ann || !ann.style) return;
+    if (isStitchStyle(ann.style)) return;
+    state.drawStyle = ann.style;
   }
 
   // Shift+click: add the line to the multi-selection, or remove it if already in.
@@ -18859,6 +19655,26 @@ function setSelection(kind, id) {
     return state.selection.kind === 'annotation'
       ? state.annotations.find(a => a.id === state.selection.id) || null
       : null;
+  }
+
+  // The set a style / preset / colour edit should act on.
+  //
+  // US-096 / ADR 0055 code review, 2026-08-23: getSelectedAnnotations() filters
+  // hidden lines and getSelectedAnnotation() does not, and US-096 made the
+  // PLURAL one the arbiter of "is anything selected?". A hidden line can still
+  // be the primary selection — clicking a hidden POM's spec row calls
+  // setSelection (spec-row-builders.js) — so the toolbar showed that line's
+  // style as active while setLineStyle saw an empty selection and fell through
+  // to setDefaultLineStyle, flipping the WHOLE board into Stitch mode and
+  // blanking every callout number. Exactly the coupling ADR 0055 rule 4 forbids.
+  //
+  // Falling back to the primary keeps the toolbar's reading and the action's
+  // target the same object, whatever its visibility.
+  function getSelectedAnnotationsForEdit() {
+    const many = getSelectedAnnotations();
+    if (many.length) return many;
+    const primary = getSelectedAnnotation();
+    return primary ? [primary] : [];
   }
 
   // US-092. Notes have no multi-selection in v1 (the marquee stays lines-only),
@@ -19052,6 +19868,23 @@ function setSelection(kind, id) {
     // to the toolbar; S or Escape returns to Select.
     if (state.tool === 'text') {
       openNoteEditorForNewNote(world);
+      return;
+    }
+
+    // US-097 / ADR 0056: place a saved shape. Same interaction shape as
+    // draw-graphic below — press, drag the box, release — because it is the
+    // same gesture and the preview/commit plumbing is already proven.
+    if (state.tool === 'stamp') {
+      const stamp = getActiveShapeStamp();
+      if (!stamp) {
+        showToast('Pick a saved shape from Tools first.');
+        setTool('select');
+        return;
+      }
+      beginTrackedInteraction('draw-stamp', {
+        stampId: stamp.id, startWorld: clonePoint(world), currentWorld: clonePoint(world),
+        shiftKey: !!e.shiftKey, altKey: !!e.altKey,
+      });
       return;
     }
 
@@ -19267,6 +20100,12 @@ function setSelection(kind, id) {
 
     const interaction = state.interaction;
     if (!interaction) return;
+
+    if (interaction.type === 'draw-stamp') {
+      interaction.currentWorld = clonePoint(world);
+      interaction.shiftKey = !!e.shiftKey; interaction.altKey = !!e.altKey;
+      requestRender(); return;
+    }
 
     if (interaction.type === 'draw-graphic') {
       interaction.currentWorld = bgClonePoint(world);
@@ -19501,6 +20340,18 @@ function setSelection(kind, id) {
 
     document.body.classList.remove('grabbing');
 
+    if (interaction.type === 'draw-stamp') {
+      const stamp = getShapeStampById(interaction.stampId);
+      state.interaction = null;
+      const placed = placeShapeStamp(stamp, interaction.startWorld, interaction.currentWorld,
+        interaction.shiftKey, interaction.altKey);
+      // Stay armed: placing the same shape on the front and back views is the
+      // common case, and re-picking it from the menu each time is friction.
+      // Escape or another tool disarms, exactly like the drawing tools.
+      if (placed) showToast(`Placed "${stamp.name}". Esc to stop stamping.`);
+      updateUI(); requestRender(); return;
+    }
+
     if (interaction.type === 'draw-graphic') {
       const graphic = createBoardGraphicFromDrag(interaction.kind, interaction.startWorld, interaction.currentWorld, interaction.shiftKey, interaction.altKey);
       state.interaction = null;
@@ -19546,6 +20397,19 @@ function setSelection(kind, id) {
         // anchors are not part of history snapshots, so a pure anchor drag
         // never changes the fingerprint and the old gate silently dropped
         // every residual and anchor_dragged event.
+        //
+        // The panel is also refreshed HERE, unconditionally. moveAnchorBy
+        // re-syncs the drafts (anchor-drag-sync.js) and that can drop a draft's
+        // tdApproved and change its drawability / confidence — all of which the
+        // spec panel and the Apply button render, and none of which used to
+        // repaint: the canvas showed the corrected line while the row still read
+        // "Approved" until the TD happened to click something else. Anchors and
+        // drafts are part of the history snapshot now, so pushHistoryIfChanged
+        // below normally covers this too; the direct call stays because it does
+        // not depend on the fingerprint gate that swallowed the refresh in the
+        // first place. Once per commit, never per mousemove — updateUI rebuilds
+        // the whole spec table, against a re-sync deliberately kept at
+        // 0.05-0.08 ms.
         if (interaction.learnOrigin) {
           if (anchor && anchor.kind === interaction.learnOrigin.kind) {
             recordAnchorResidual(
@@ -19562,6 +20426,7 @@ function setSelection(kind, id) {
           }
         }
       }
+      if (interaction.type === 'drag-anchor') updateUI();
       const before = interaction.beforeFingerprint;
       const after = snapshotFingerprint(makeSnapshot());
       if (before !== after) {
@@ -20285,7 +21150,12 @@ function onWheel(e) {
         );
         state.annotations.push(ann);
         state.selection = { kind: 'annotation', id: ann.id };
-        state.nextSequence += 1;
+        // US-096 / ADR 0055: not a bare `state.nextSequence += 1` any more. A
+        // POM number is a measurement identity, so a construction line (an
+        // unlabelled zigzag/cover/bartack) spends none — see
+        // consumePomSequenceFor in src/manual/annotation-factory.js. The other
+        // two commit paths below call the same helper.
+        consumePomSequenceFor(ann);
         state.drawSession = null;
         pushHistoryIfChanged();
         updateUI();
@@ -20328,7 +21198,7 @@ function onWheel(e) {
       const curveAnn = createCurvedAnnotation(sess.start, world, sess.style, sess.color, sess.arrowType, sess.lineWidth, sess.mid);
       state.annotations.push(curveAnn);
       state.selection = { kind: 'annotation', id: curveAnn.id };
-      state.nextSequence += 1;
+      consumePomSequenceFor(curveAnn);
       state.drawSession = null;
       pushHistoryIfChanged();
       updateUI();
@@ -20347,7 +21217,7 @@ function onWheel(e) {
       const ann = createStraightAnnotation(start, end, drawSettings.style, drawSettings.color, drawSettings.arrowType, drawSettings.lineWidth);
       state.annotations.push(ann);
       state.selection = { kind: 'annotation', id: ann.id };
-      state.nextSequence += 1;
+      consumePomSequenceFor(ann);
 
       // Stay armed for an optional collinear dashed extension. The next click
       // along the line's axis commits a separate annotation with its own seq;
@@ -20559,6 +21429,14 @@ function onWheel(e) {
     // Complex gestures (nudge, point cycling, pan, brush stepping, Escape)
     // remain below because they are continuous interactions, not commands.
     if (dispatchAppCommandShortcut(e, inField)) return;
+
+    // Every branch below compares the LOWERCASED key and never reads shiftKey,
+    // so without this guard ⇧P exported a PDF, ⇧E an Excel file and ⇧R opened
+    // Reset Board. Shift+<single char> belongs to the registry above (⇧P/⇧E/⇧X
+    // path editing), which has already had its turn. Arrows, Tab, Escape and
+    // Delete are multi-character key names and keep their own shift handling;
+    // Space is excluded so Shift+Space still pans.
+    if (e.shiftKey && !isMeta && e.key.length === 1 && e.key !== ' ') return;
 
     // Undo / redo work everywhere, INCLUDING while a spec-panel field
     // (Size L / TOL / 中文 / description) is focused. Blur first so any
@@ -20852,7 +21730,9 @@ function onWheel(e) {
         requestRender();
       } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'add-point'
                  || state.tool === 'eraser' || state.tool === 'text'
+                 || state.tool === 'stamp'
                  || ['rectangle','circle','hexagon'].includes(state.tool)) {
+        // US-097: setTool('select') also disarms the chosen shape.
         setTool('select');
       } else if (state.selection.kind === 'graphic' && state.graphicEdit) {
         bgExitEdit();
@@ -20919,11 +21799,32 @@ function onWheel(e) {
     return LINE_COLORS[key] || LINE_COLOR;
   }
 
+  // The three looks that say "this is how it is sewn" rather than "this is how
+  // long it is". US-096 / ADR 0055 makes this the load-bearing predicate: a
+  // line wearing one of them is a construction mark, not a measurement, unless
+  // the TD explicitly labelled it with a POM number. See
+  // isMeasurementAnnotation in src/manual/annotation-lookup.js.
+  // A function, not a module-scope const: the parts share one scope and a
+  // `const` read during load would throw a TDZ ReferenceError from any part
+  // that happens to run earlier. See CLAUDE.md "Living in one shared scope".
+  function stitchStyles() {
+    return ['zigzag', 'cover', 'bartack'];
+  }
+
+  function isStitchStyle(style) {
+    return stitchStyles().includes(normalizeLineStyle(style));
+  }
+
   // The board has two modes, driven entirely by the active Stitches selection.
   // Plain/Dashed keep measurement (POM) mode; the three true stitch types put
   // the whole board into Stitch (construction) mode.
+  //
+  // US-096: this reads state.drawStyle — the style the NEXT line is born with —
+  // and nothing else. Restyling a selection deliberately no longer touches it
+  // (see setLineStyle in src/ui/bindings.js), because it used to mean that
+  // converting one line to zigzag blanked every callout number on the board.
   function isStitchMode() {
-    return state.drawStyle === 'zigzag' || state.drawStyle === 'cover' || state.drawStyle === 'bartack';
+    return isStitchStyle(state.drawStyle);
   }
 
   // Callout numbers are always hidden in Stitch mode; in POM mode they honor
@@ -20937,7 +21838,7 @@ function onWheel(e) {
   }
 
   function normalizeLineStyle(style) {
-    return ['solid', 'dashed', 'zigzag', 'cover', 'bartack'].includes(style) ? style : 'solid';
+    return ['solid', 'dashed', ...stitchStyles()].includes(style) ? style : 'solid';
   }
 
   function updateLineStyleControl(activeStyle) {
@@ -20981,6 +21882,895 @@ function onWheel(e) {
   function getActiveNoteFontSize() {
     const selectedNote = getSelectedNote();
     return selectedNote ? noteFontSizeOf(selectedNote) : normalizeNoteFontSize(state.noteFontSize);
+  }
+
+  // ---- src/manual/library-store.js ----
+// US-097 / ADR 0056: the storage policy shared by the two board libraries —
+// line presets (US-096) and shape stamps.
+//
+// This exists because every rule below was bought with a bug in US-096, and a
+// second hand-written copy of them for stamps would have bought each one again:
+//
+//   - a corrupt payload falls back to the built-in set instead of throwing;
+//   - "stored an empty library" and "never stored one" are DIFFERENT states,
+//     distinguished by a one-shot `seeded` marker, or deleting every entry
+//     silently resurrects the built-ins on the next reload (the US-074 trap);
+//   - a refused write (quota, private mode) is reported to the caller rather
+//     than toasted from in here — showToast queues rather than replaces, so a
+//     message fired here is buried by the caller's own, and its wording cannot
+//     be right for every action;
+//   - import MERGES by id rather than replacing, so importing a colleague's
+//     set never costs the TD their own.
+//
+// Callers own their normalizer and their built-in set; this owns the policy.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // Read a library out of localStorage. `listKey` is the payload's array field
+  // ('presets' / 'stamps'). Returns { list, seeded }.
+  function readLibraryStore(storageKey, listKey, normalizeList) {
+    let stored = null;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) stored = JSON.parse(raw);
+    } catch (_) {
+      stored = null;
+    }
+    return {
+      list: normalizeList(stored && stored[listKey]),
+      // Only a payload we could actually parse can claim to have been seeded.
+      seeded: !!(stored && stored.seeded),
+    };
+  }
+
+  // Returns true when the write reached durable storage. Deliberately silent on
+  // failure — see the header.
+  function writeLibraryStore(storageKey, listKey, version, list) {
+    try {
+      const payload = { version, seeded: true };
+      payload[listKey] = list;
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Merge incoming entries into `current` by id: an id that already exists is
+  // replaced, a new one is appended. Returns the merged list.
+  function libraryImportMerge(current, incoming) {
+    const byId = new Map((current || []).map(entry => [entry.id, entry]));
+    for (const entry of (incoming || [])) byId.set(entry.id, entry);
+    return [...byId.values()];
+  }
+
+  // The entries in `incoming` that `current` does not already have, by id. Both
+  // libraries use this for the "this project uses N you don't have" offer.
+  function libraryUnknownEntries(current, incoming) {
+    const known = new Set((current || []).map(entry => entry.id));
+    return (incoming || []).filter(entry => !known.has(entry.id));
+  }
+
+  // Move one entry up (-1) or down (+1), clamped rather than wrapping: a TD
+  // holding the button expects the row to stop at the end, not jump to the
+  // other one. Returns a new list, or null when nothing moved.
+  function libraryMoveEntry(list, id, delta) {
+    const next = (list || []).slice();
+    const from = next.findIndex(entry => entry.id === id);
+    if (from < 0) return null;
+    const to = Math.max(0, Math.min(next.length - 1, from + delta));
+    if (to === from) return null;
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    return next;
+  }
+
+  // A stable-enough id for a user-created library entry. Not the shared
+  // idCounter: these outlive any one project and travel between machines, so
+  // they must not collide with board object ids or with each other after an
+  // import.
+  function libraryEntryId(prefix) {
+    return prefix + '-' + Math.random().toString(36).slice(2, 10);
+  }
+
+  // US-097 code review, 2026-08-23: both library panels rebuild their whole row
+  // list with innerHTML after every reorder / rename / delete, which destroys
+  // the focused control. Focus then falls to <body>, and because
+  // moveBoardMenuFocus is bound on the menu element, keydown no longer passes
+  // through it — arrow-key navigation of the menu goes completely dead after
+  // one row mutation, and a TD reordering with the keyboard is stranded.
+  //
+  // Re-focusing the SAME action on the SAME entry also makes the obvious
+  // gesture work: press Down-arrow-button repeatedly to walk an entry to the
+  // bottom of the list without re-grabbing it each time.
+  function refocusLibraryRowControl(listId, entryId, action) {
+    const list = document.getElementById(listId);
+    if (!list || !entryId || !action) return false;
+    const row = list.querySelector('[data-' + action.kind + '-id="' + entryId + '"]');
+    if (!row) return false;
+    const pick = (name) => row.querySelector(
+      '[data-' + action.kind + '-action="' + name + '"]:not([disabled])');
+    const control = pick(action.name);
+    if (control) { control.focus(); return true; }
+    // The control that was pressed can legitimately become disabled — walking
+    // an entry to the first row disables its own Up. Fall back to the OPPOSITE
+    // arrow, named explicitly.
+    //
+    // Code review, 2026-08-23: the first version took "the first control in the
+    // row that is not disabled", which is the wide Apply/Use button — the one
+    // control in the row that CHANGES something. Parking keyboard focus on it
+    // at the exact moment a TD is repeat-pressing means the next Space applies
+    // the preset (under ADR 0055 a stitch preset silently turns the selected
+    // measurement line into a construction mark) or arms the stamp tool and
+    // closes the menu. A fallback must never land on a state-changing command.
+    const opposite = action.name === 'up' ? 'down' : (action.name === 'down' ? 'up' : null);
+    const alternate = opposite ? pick(opposite) : null;
+    if (alternate) { alternate.focus(); return true; }
+    // Nothing safe in this row (a one-entry list has both arrows disabled).
+    // Leave focus where it is rather than move it somewhere destructive.
+    return false;
+  }
+
+  // ---- src/manual/line-presets.js ----
+// US-096 / ADR 0055: the line-preset library.
+//
+// A preset is a NAMED LOOK and nothing else — style, colour, line width, arrow
+// type. It carries no geometry, so applying one can never move a line, change
+// what it measures, or change which POM it is. The only thing it can change
+// about a line's meaning is whether the line is a measurement at all, and that
+// falls out of isMeasurementAnnotation (annotation-lookup.js) deriving the role
+// from the style it just set.
+//
+// Storage is deliberately two-tier and offline throughout:
+//   - localStorage, keyed per browser, is the TD's own working set;
+//   - a copy travels inside the project file so a board opened on another
+//     machine can still show — and offer to import — the presets it was drawn
+//     with. Opening a project never silently overwrites the local library.
+//
+// Sibling files: the dropdown UI is src/ui/line-preset-panel.js; the style
+// normalizers it builds on are src/manual/style.js.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // Functions, not module-scope consts: every part shares one scope, and a
+  // `const` read during load would throw a TDZ ReferenceError from any part
+  // that happens to run earlier. See CLAUDE.md "Living in one shared scope".
+  function linePresetsStorageKey() { return 'bra-line-presets-v1'; }
+  function linePresetsFormatVersion() { return 1; }
+
+  // The set every TD starts with. Ids are stable strings (not the shared
+  // idCounter) so an exported file imported on another machine matches by id
+  // instead of duplicating the built-ins.
+  //
+  // The names deliberately do NOT repeat the five style rows this menu already
+  // shows above the divider. A preset is a style PLUS a colour, a width and an
+  // arrow choice, so each name says what it adds — otherwise the library reads
+  // as a second copy of the Stitches list and a TD cannot tell the two apart.
+  function builtinLinePresets() {
+    return [
+      { id: 'builtin-pom', name: 'POM line (red, arrows)', style: 'solid', color: 'red', lineWidth: 2.5, arrowType: 'double', builtin: true },
+      { id: 'builtin-extension', name: 'Extension (dashed, one arrow)', style: 'dashed', color: 'red', lineWidth: 2.5, arrowType: 'single', builtin: true },
+      { id: 'builtin-zigzag', name: 'Zigzag (blue, no arrow)', style: 'zigzag', color: 'blue', lineWidth: 2.5, arrowType: 'none', builtin: true },
+      { id: 'builtin-cover', name: 'Cover stitch (blue, no arrow)', style: 'cover', color: 'blue', lineWidth: 2.5, arrowType: 'none', builtin: true },
+      { id: 'builtin-bartack', name: 'Bartack (black, no arrow)', style: 'bartack', color: 'black', lineWidth: 2.5, arrowType: 'none', builtin: true },
+    ];
+  }
+
+  function normalizeLinePresetArrowType(value) {
+    return ['single', 'double', 'none'].includes(value) ? value : 'none';
+  }
+
+  function normalizeLinePreset(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const name = String(raw.name == null ? '' : raw.name).trim();
+    if (!name) return null;
+    return {
+      id: String(raw.id || libraryEntryId('lp')),
+      name: name.slice(0, 60),
+      style: normalizeLineStyle(raw.style),
+      color: normalizeColorKey(raw.color),
+      lineWidth: normalizeLineWidth(raw.lineWidth),
+      arrowType: normalizeLinePresetArrowType(raw.arrowType),
+      builtin: !!raw.builtin,
+    };
+  }
+
+  function normalizeLinePresetList(list) {
+    const out = [];
+    const seen = new Set();
+    for (const raw of (Array.isArray(list) ? list : [])) {
+      const preset = normalizeLinePreset(raw);
+      if (!preset || seen.has(preset.id)) continue;
+      seen.add(preset.id);
+      out.push(preset);
+    }
+    return out;
+  }
+
+  // Lazily-read cache of the stored library. Module scope, like lineClipboard:
+  // deliberately NOT part of state, so it is absent from history snapshots and
+  // an Undo cannot roll the library back.
+  let linePresetStore = null;
+
+  function getLinePresets() {
+    if (linePresetStore) return linePresetStore;
+    // US-097: the policy — corrupt-payload fallback, and the `seeded` marker
+    // that keeps an emptied library empty — now lives in library-store.js and
+    // is shared with the shape-stamp library, so the two cannot drift.
+    const read = readLibraryStore(linePresetsStorageKey(), 'presets', normalizeLinePresetList);
+    linePresetStore = (read.list.length || read.seeded) ? read.list : builtinLinePresets();
+    return linePresetStore;
+  }
+
+  function saveLinePresets() {
+    return writeLibraryStore(linePresetsStorageKey(), 'presets',
+      linePresetsFormatVersion(), getLinePresets());
+  }
+
+  // Whether the LAST commit reached durable storage. Read by the panel so each
+  // action can word its own toast — one message, correct for that action, and
+  // last on screen.
+  let lastLinePresetWritePersisted = true;
+
+  function linePresetsPersisted() {
+    return lastLinePresetWritePersisted;
+  }
+
+  function getLinePresetById(id) {
+    return getLinePresets().find(preset => preset.id === id) || null;
+  }
+
+  function commitLinePresets(list) {
+    linePresetStore = normalizeLinePresetList(list);
+    lastLinePresetWritePersisted = saveLinePresets();
+    if (typeof updateUI === 'function') updateUI();
+    return lastLinePresetWritePersisted;
+  }
+
+  // ---- Mutations -----------------------------------------------------------
+
+  // The look of the primary selected line, or the current draw defaults when
+  // nothing is selected — the same fallback the toolbar chips use, so "Save as
+  // preset" always has something honest to save.
+  function currentLineLook() {
+    const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    if (ann) {
+      return {
+        style: getLineStyle(ann),
+        color: normalizeColorKey(ann.color),
+        lineWidth: getLineWidth(ann),
+        arrowType: getArrowType(ann),
+      };
+    }
+    return {
+      style: normalizeLineStyle(state.drawStyle),
+      color: normalizeColorKey(state.drawColor),
+      lineWidth: normalizeLineWidth(state.lineWidth),
+      arrowType: normalizeLinePresetArrowType(state.arrowType),
+    };
+  }
+
+  function addLinePreset(name) {
+    const preset = normalizeLinePreset({ ...currentLineLook(), name });
+    if (!preset) return null;
+    commitLinePresets([...getLinePresets(), preset]);
+    return preset;
+  }
+
+  function renameLinePreset(id, name) {
+    const trimmed = String(name == null ? '' : name).trim();
+    if (!trimmed) return false;
+    const list = getLinePresets().map(preset => (preset.id === id
+      ? { ...preset, name: trimmed.slice(0, 60) } : preset));
+    commitLinePresets(list);
+    return true;
+  }
+
+  function deleteLinePreset(id) {
+    const list = getLinePresets().filter(preset => preset.id !== id);
+    if (list.length === getLinePresets().length) return false;
+    commitLinePresets(list);
+    return true;
+  }
+
+  // Move one preset up (-1) or down (+1). Clamped rather than wrapping: a TD
+  // holding the button expects the row to stop at the end, not jump to the
+  // other one.
+  function moveLinePreset(id, delta) {
+    const list = libraryMoveEntry(getLinePresets(), id, delta);
+    if (!list) return false;
+    commitLinePresets(list);
+    return true;
+  }
+
+  function resetLinePresetsToBuiltins() {
+    commitLinePresets(builtinLinePresets());
+  }
+
+  // ---- Applying ------------------------------------------------------------
+
+  // Apply to every selected line; with nothing selected, set the defaults the
+  // next drawn line is born with. Mirrors setLineStyle's split exactly — and
+  // like it, applying to a selection never changes the board's POM/Stitch mode
+  // (ADR 0055).
+  function applyLinePreset(id) {
+    const preset = getLinePresetById(id);
+    if (!preset) return false;
+    const settings = {
+      style: preset.style,
+      color: preset.color,
+      lineWidth: preset.lineWidth,
+      arrowType: preset.arrowType,
+    };
+    const selected = (typeof getSelectedAnnotationsForEdit === 'function')
+      ? getSelectedAnnotationsForEdit() : [];
+    if (selected.length) {
+      applyToSelectedAnnotations(settings);
+      showToast(selected.length > 1
+        ? `${preset.name} applied to ${selected.length} lines.`
+        : `${preset.name} applied.`);
+      return true;
+    }
+    state.drawColor = settings.color;
+    state.lineWidth = settings.lineWidth;
+    state.arrowType = settings.arrowType;
+    // Last, and through the shared setter, so the board-mode switch and its
+    // toast stay in exactly one place.
+    setDefaultLineStyle(settings.style);
+    showToast(`${preset.name} is now the default for new lines.`);
+    return true;
+  }
+
+  // ---- Portability ---------------------------------------------------------
+
+  function linePresetsEnvelope() {
+    return { format: 'bra-line-presets', version: linePresetsFormatVersion(), presets: getLinePresets() };
+  }
+
+  function exportLinePresetsFile() {
+    const blob = new Blob([JSON.stringify(linePresetsEnvelope(), null, 2)], { type: 'application/json' });
+    downloadBlob(blob, 'line-presets.json');
+  }
+
+  // Import is additive by id: a preset whose id already exists is replaced, a
+  // new one is appended. Merging rather than replacing means a TD who imports a
+  // colleague's set does not lose their own.
+  function importLinePresets(list) {
+    const incoming = normalizeLinePresetList(list);
+    if (!incoming.length) return 0;
+    commitLinePresets(libraryImportMerge(getLinePresets(), incoming));
+    return incoming.length;
+  }
+
+  function importLinePresetsFromJson(text) {
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch (_) { return 0; }
+    const list = Array.isArray(parsed) ? parsed : (parsed && parsed.presets);
+    return importLinePresets(list);
+  }
+
+  // ---- Project embedding ---------------------------------------------------
+
+  // What buildProjectSnapshot writes. Additive and optional: a file saved
+  // before US-096 simply has no key.
+  function serializeLinePresetsForProject() {
+    return clone(getLinePresets());
+  }
+
+  // What project-load hands back. Deliberately NOT applied automatically —
+  // the local library is the TD's own tooling and a project must not rewrite
+  // it. Returns the presets in the file that the local library does not
+  // already have, for the caller to offer.
+  function unknownLinePresetsFromProject(list) {
+    return libraryUnknownEntries(getLinePresets(), normalizeLinePresetList(list));
+  }
+
+  // The load-time half of the two-store contract. Never writes the library —
+  // it records what the file offers and tells the TD, who imports from the
+  // Presets menu if they want them. Silence when the file adds nothing new:
+  // most projects will carry the same built-ins the TD already has.
+  let pendingProjectLinePresets = [];
+
+  function offerLinePresetsFromProject(list) {
+    pendingProjectLinePresets = unknownLinePresetsFromProject(list);
+    if (!pendingProjectLinePresets.length) return 0;
+    const count = pendingProjectLinePresets.length;
+    showToast(`This project uses ${count} line preset${count > 1 ? 's' : ''} you don't have — Presets ▸ Import from project.`);
+    return count;
+  }
+
+  function getPendingProjectLinePresets() {
+    return pendingProjectLinePresets;
+  }
+
+  function importPendingProjectLinePresets() {
+    const added = importLinePresets(pendingProjectLinePresets);
+    pendingProjectLinePresets = [];
+    return added;
+  }
+
+  // ---- src/manual/shape-stamps.js ----
+// US-097 / ADR 0056: the shape-stamp library.
+//
+// A stamp is ONE line's geometry — every anchor and both handles of every
+// interior anchor — normalized into a unit box, plus the look it was saved
+// with. Nothing absolute survives the save: not position, not size, not the
+// sketch it came from. That is what makes a curve saved on a 2000px sketch
+// usable on a 600px one, which is the entire point.
+//
+// A placed stamp is an ORDINARY annotation. Its measurement role is derived
+// from its style exactly as ADR 0055 defines, so a stamp saved from a plain
+// line places a POM line and one saved from a zigzag places a construction
+// mark. There is deliberately no new collection — see ADR 0056, which
+// supersedes ADR 0055's Follow-Up on this point.
+//
+// Sibling files: the Tools-menu UI is src/ui/shape-stamp-panel.js; the shared
+// storage policy is src/manual/library-store.js; the placement gesture lives
+// with the other tools in src/manual/pointer-events.js.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // Functions, not module-scope consts: the parts share one scope and a const
+  // read during load would throw a TDZ ReferenceError.
+  function shapeStampsStorageKey() { return 'bra-shape-stamps-v1'; }
+  function shapeStampsFormatVersion() { return 1; }
+
+  // Below this the drag is treated as a click and the stamp is placed at a
+  // default size. Screen pixels, like BG_MIN_CREATE_SCREEN_PX.
+  function stampMinCreateScreenPx() { return 8; }
+
+  // A geometry point is degenerate along an axis when the source line had no
+  // extent there — a perfectly horizontal line has zero height.
+  function stampEpsilon() { return 1e-6; }
+
+  // ---- Normalizing a line into a stamp -------------------------------------
+
+  // Every point that defines the drawn shape, handles included. The handles
+  // have to be inside the box too, or a re-placed curve's bulge is scaled
+  // against a different rectangle than its anchors and the shape changes.
+  function shapeStampGeometryPoints(ann) {
+    const out = [];
+    const push = (p) => { if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) out.push(p); };
+    push(ann.start);
+    push(ann.end);
+    if (ann.type === 'curved') {
+      push(ann.control1);
+      push(ann.control2);
+      for (const pt of (Array.isArray(ann.points) ? ann.points : [])) {
+        push(pt && pt.point);
+        push(pt && pt.handleIn);
+        push(pt && pt.handleOut);
+      }
+    }
+    return out;
+  }
+
+  function shapeStampBounds(ann) {
+    const points = shapeStampGeometryPoints(ann);
+    if (!points.length) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of points) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+
+  // Fraction of the bounding box. A collapsed axis maps to 0.5 — the line's
+  // own centreline — so a horizontal line stamps back as a horizontal line
+  // through the middle of whatever box it is given.
+  function normalizeStampPoint(p, bounds) {
+    const eps = stampEpsilon();
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+    return {
+      x: bounds.width > eps ? (p.x - bounds.x) / bounds.width : 0.5,
+      y: bounds.height > eps ? (p.y - bounds.y) / bounds.height : 0.5,
+    };
+  }
+
+  function denormalizeStampPoint(p, box) {
+    if (!p) return null;
+    return { x: box.x + p.x * box.width, y: box.y + p.y * box.height };
+  }
+
+  // Build a stamp from a drawn line. Returns null for anything unusable rather
+  // than saving a stamp that cannot be placed.
+  function shapeStampFromAnnotation(ann, name) {
+    const trimmed = String(name == null ? '' : name).trim();
+    if (!trimmed || !ann || !ann.start || !ann.end) return null;
+    const bounds = shapeStampBounds(ann);
+    if (!bounds) return null;
+    const eps = stampEpsilon();
+    const n = (p) => normalizeStampPoint(p, bounds);
+    const curved = ann.type === 'curved';
+    return {
+      id: libraryEntryId('st'),
+      name: trimmed.slice(0, 60),
+      type: curved ? 'curved' : 'straight',
+      start: n(ann.start),
+      end: n(ann.end),
+      control1: curved ? n(ann.control1) : null,
+      control2: curved ? n(ann.control2) : null,
+      points: curved
+        ? (Array.isArray(ann.points) ? ann.points : []).map(pt => ({
+          point: n(pt && pt.point),
+          handleIn: n(pt && pt.handleIn),
+          handleOut: n(pt && pt.handleOut),
+        })).filter(pt => pt.point && pt.handleIn && pt.handleOut)
+        : [],
+      // 0 means "no preferred aspect": one of the axes had no extent, so any
+      // box height is as faithful as any other.
+      aspect: (bounds.width > eps && bounds.height > eps) ? (bounds.height / bounds.width) : 0,
+      // The look travels with the shape. It is what decides, via ADR 0055,
+      // whether the placed line is a measurement or a construction mark.
+      style: normalizeLineStyle(ann.style),
+      color: normalizeColorKey(ann.color),
+      lineWidth: normalizeLineWidth(ann.lineWidth),
+      arrowType: getArrowType(ann),
+    };
+  }
+
+  function normalizeStampStoredPoint(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const x = Number(raw.x), y = Number(raw.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
+  }
+
+  function normalizeShapeStamp(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const name = String(raw.name == null ? '' : raw.name).trim();
+    const start = normalizeStampStoredPoint(raw.start);
+    const end = normalizeStampStoredPoint(raw.end);
+    if (!name || !start || !end) return null;
+    const curved = raw.type === 'curved';
+    const control1 = curved ? normalizeStampStoredPoint(raw.control1) : null;
+    const control2 = curved ? normalizeStampStoredPoint(raw.control2) : null;
+    // A curved stamp missing a control point is not repairable here — its
+    // shape is gone. Fall back to straight rather than inventing a bow.
+    const usableCurve = curved && control1 && control2;
+    const aspect = Number(raw.aspect);
+    return {
+      id: String(raw.id || libraryEntryId('st')),
+      name: name.slice(0, 60),
+      type: usableCurve ? 'curved' : 'straight',
+      start,
+      end,
+      control1: usableCurve ? control1 : null,
+      control2: usableCurve ? control2 : null,
+      points: usableCurve
+        ? (Array.isArray(raw.points) ? raw.points : []).map(pt => ({
+          point: normalizeStampStoredPoint(pt && pt.point),
+          handleIn: normalizeStampStoredPoint(pt && pt.handleIn),
+          handleOut: normalizeStampStoredPoint(pt && pt.handleOut),
+        })).filter(pt => pt.point && pt.handleIn && pt.handleOut)
+        : [],
+      aspect: (Number.isFinite(aspect) && aspect > 0) ? aspect : 0,
+      style: normalizeLineStyle(raw.style),
+      color: normalizeColorKey(raw.color),
+      lineWidth: normalizeLineWidth(raw.lineWidth),
+      arrowType: ['single', 'double', 'none'].includes(raw.arrowType) ? raw.arrowType : 'none',
+    };
+  }
+
+  function normalizeShapeStampList(list) {
+    const out = [];
+    const seen = new Set();
+    for (const raw of (Array.isArray(list) ? list : [])) {
+      const stamp = normalizeShapeStamp(raw);
+      if (!stamp || seen.has(stamp.id)) continue;
+      seen.add(stamp.id);
+      out.push(stamp);
+    }
+    return out;
+  }
+
+  // ---- Storage -------------------------------------------------------------
+  //
+  // Module scope, like lineClipboard and linePresetStore: deliberately outside
+  // `state`, so it is absent from history snapshots and Undo cannot roll the
+  // library back.
+  let shapeStampStore = null;
+  let lastShapeStampWritePersisted = true;
+
+  // The library ships EMPTY. Seeding house curves would mean inventing
+  // geometry no TD has approved, which is worse than an empty list (ADR 0056).
+  function builtinShapeStamps() { return []; }
+
+  function getShapeStamps() {
+    if (shapeStampStore) return shapeStampStore;
+    const read = readLibraryStore(shapeStampsStorageKey(), 'stamps', normalizeShapeStampList);
+    shapeStampStore = (read.list.length || read.seeded) ? read.list : builtinShapeStamps();
+    return shapeStampStore;
+  }
+
+  function shapeStampsPersisted() { return lastShapeStampWritePersisted; }
+
+  function commitShapeStamps(list) {
+    shapeStampStore = normalizeShapeStampList(list);
+    lastShapeStampWritePersisted = writeLibraryStore(
+      shapeStampsStorageKey(), 'stamps', shapeStampsFormatVersion(), shapeStampStore);
+    if (typeof updateUI === 'function') updateUI();
+    return lastShapeStampWritePersisted;
+  }
+
+  function getShapeStampById(id) {
+    return getShapeStamps().find(stamp => stamp.id === id) || null;
+  }
+
+  // ---- Mutations -----------------------------------------------------------
+
+  // Exactly one selected line. A group has no single geometry to save, and
+  // silently picking the primary would save something the TD did not point at.
+  function shapeStampSaveTarget() {
+    const selected = (typeof getSelectedAnnotations === 'function') ? getSelectedAnnotations() : [];
+    if (selected.length === 1) return selected[0];
+    if (!selected.length && typeof getSelectedAnnotation === 'function') return getSelectedAnnotation();
+    return null;
+  }
+
+  function canSaveShapeStampReason() {
+    const selected = (typeof getSelectedAnnotations === 'function') ? getSelectedAnnotations() : [];
+    if (selected.length > 1) return 'Select just one line — a shape holds one line.';
+    if (!shapeStampSaveTarget()) return 'Select a line to save its shape.';
+    return true;
+  }
+
+  function addShapeStampFromSelection(name) {
+    const ann = shapeStampSaveTarget();
+    if (!ann) return null;
+    const stamp = shapeStampFromAnnotation(ann, name);
+    if (!stamp) return null;
+    commitShapeStamps([...getShapeStamps(), stamp]);
+    return stamp;
+  }
+
+  function renameShapeStamp(id, name) {
+    const trimmed = String(name == null ? '' : name).trim();
+    if (!trimmed) return false;
+    commitShapeStamps(getShapeStamps().map(stamp => (stamp.id === id
+      ? { ...stamp, name: trimmed.slice(0, 60) } : stamp)));
+    return true;
+  }
+
+  function deleteShapeStamp(id) {
+    const list = getShapeStamps().filter(stamp => stamp.id !== id);
+    if (list.length === getShapeStamps().length) return false;
+    // Code review, 2026-08-23: leave the stamp TOOL as well, not just the
+    // armed id. Clearing only activeStampId left the board in a modal creation
+    // mode that could create nothing — the trigger read "Tools: Shape", the
+    // status said "pick a saved shape first", and the whole context-actions
+    // group stays hidden while a non-select tool is active. Dropping to Select
+    // is the same thing Escape does, and it is what the TD wanted anyway:
+    // they just deleted the thing they were about to place.
+    if (state.activeStampId === id) {
+      setActiveShapeStamp(null);
+      if (state.tool === 'stamp' && typeof setTool === 'function') setTool('select');
+    }
+    commitShapeStamps(list);
+    return true;
+  }
+
+  function moveShapeStamp(id, delta) {
+    const list = libraryMoveEntry(getShapeStamps(), id, delta);
+    if (!list) return false;
+    commitShapeStamps(list);
+    return true;
+  }
+
+  // ---- Placement -----------------------------------------------------------
+
+  // Shift locks the stamp's saved aspect, matching ADR 0054's Rectangle gesture
+  // (Shift constrains, Alt draws from the centre). Without it the dragged box
+  // is what you get, distortion included — the tooltip names the saved aspect
+  // so the TD knows what they are stretching.
+  //
+  // Code review, 2026-08-23: the lock derives from whichever axis the TD
+  // dragged FURTHER, not always from dx. Driving it from dx alone collapsed the
+  // whole box on a vertical drag — 400px down with 5px of horizontal wander
+  // produced a 5px box, which then fell through placeShapeStamp's
+  // too-small branch and placed a default-size stamp at the press point. The
+  // peer gesture (bgBoxFromDrag) degenerates the same way, but there the
+  // outcome is "nothing was created", which reads as a too-small drag; here it
+  // was a real line of an unrelated size in an unrelated place.
+  function stampBoxFromDrag(stamp, start, current, shiftKey, altKey) {
+    let dx = current.x - start.x;
+    let dy = current.y - start.y;
+    if (shiftKey && stamp && stamp.aspect > 0) {
+      if (Math.abs(dy) > Math.abs(dx) * stamp.aspect) {
+        dx = (dx < 0 ? -1 : 1) * (Math.abs(dy) / stamp.aspect);
+      } else {
+        dy = (dy < 0 ? -1 : 1) * (Math.abs(dx) * stamp.aspect);
+      }
+    }
+    let x1 = start.x, y1 = start.y, x2 = start.x + dx, y2 = start.y + dy;
+    if (altKey) { x1 = start.x - dx; y1 = start.y - dy; }
+    return {
+      x: Math.min(x1, x2), y: Math.min(y1, y2),
+      width: Math.abs(x2 - x1), height: Math.abs(y2 - y1),
+    };
+  }
+
+  // The box a bare click gets. ADR 0056 diverges from ADR 0054 here on purpose:
+  // a too-small Rectangle drag creates nothing because the gesture IS the
+  // object's definition, but a stamp already exists and the TD has explicitly
+  // chosen it, so a click that produces nothing reads as a broken tool.
+  function defaultStampBoxAt(stamp, world) {
+    const image = (typeof bgTopImageAt === 'function') ? bgTopImageAt(world) : null;
+    const maxWidth = image && image.width ? image.width * 0.3 : 200;
+    // Code review, 2026-08-23: bound BOTH axes. Sizing only the width meant a
+    // tall stamp (aspect 4, say) was placed four times the sketch's own
+    // width high — off the sketch entirely for a gesture that is supposed to
+    // be the safe, no-thought one.
+    const maxHeight = image && image.height ? image.height * 0.3 : 100;
+    const aspect = (stamp && stamp.aspect > 0) ? stamp.aspect : 0.5;
+    let width = maxWidth;
+    let height = width * aspect;
+    if (height > maxHeight) { height = maxHeight; width = height / aspect; }
+    return { x: world.x - width / 2, y: world.y - height / 2, width, height };
+  }
+
+  // A box too thin to see in one axis would collapse the shape; give it a
+  // visible minimum so a near-horizontal drag still places a usable line.
+  //
+  // Code review, 2026-08-23: this is a MINIMUM and nothing else. It used to
+  // floor the height at `width * stamp.aspect`, which is not a minimum — it is
+  // the Shift-locked height, applied unconditionally. Three things followed:
+  // a free drag could never place a stamp flatter than it was saved (so Shift
+  // was a no-op across that whole regime, contradicting this module's own
+  // contract and the toast the TD is shown); the extra height was added
+  // entirely BELOW the drag, so the shape was in the wrong place as well as
+  // the wrong size; and an Alt placement stopped being centred on the press.
+  // A steep stamp made it dramatic — aspect 2 with a flat drag placed a shape
+  // hundreds of world units below the cursor.
+  //
+  // Growing about the CENTRE, not the origin, is the other half: a minimum
+  // applied to one edge would drift the placement away from the drag.
+  function normalizeStampBox(stamp, box) {
+    const minSide = 4 / Math.max(state.zoom, 0.0001);
+    let { x, y, width, height } = box;
+    if (width < minSide) { x -= (minSide - width) / 2; width = minSide; }
+    if (height < minSide) { y -= (minSide - height) / 2; height = minSide; }
+    return { x, y, width, height };
+  }
+
+  // Build the annotation. Mirrors pasteLineFromClipboard's record shape and its
+  // ordering lesson (US-093): normalize the curve FIRST, derive the label after,
+  // because computeDefaultLabelPosition walks getCurveBeziers and therefore
+  // reads the very controls ensureCurveControls exists to supply.
+  function createAnnotationFromStamp(stamp, rawBox) {
+    if (!stamp) return null;
+    const box = normalizeStampBox(stamp, rawBox);
+    const d = (p) => denormalizeStampPoint(p, box);
+    const curved = stamp.type === 'curved';
+    const ann = {
+      id: state.idCounter++,
+      seq: state.nextSequence,
+      type: curved ? 'curved' : 'straight',
+      style: stamp.style,
+      color: stamp.color,
+      arrowType: stamp.arrowType,
+      lineWidth: stamp.lineWidth,
+      start: d(stamp.start),
+      end: d(stamp.end),
+      midPoint: null,
+      midHandleIn: null,
+      midHandleOut: null,
+      control1: curved ? d(stamp.control1) : null,
+      control2: curved ? d(stamp.control2) : null,
+      points: curved ? stamp.points.map(pt => ({
+        point: d(pt.point), handleIn: d(pt.handleIn), handleOut: d(pt.handleOut),
+      })) : [],
+      label: null,
+      labelManual: false,
+      // Deliberately NOT inherited from the source line: a POM number is an
+      // identity, not a look, and stamping the same curve twice would otherwise
+      // produce two lines claiming one POM.
+      text: null,
+      value: null,
+    };
+    if (curved) ensureCurveControls(ann);
+    ann.label = computeDefaultLabelPosition(ann);
+    const owner = (typeof bgTopImageAt === 'function')
+      ? bgTopImageAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }) : null;
+    if (owner) ann.sourceImageId = owner.id;
+    return ann;
+  }
+
+  // The one entry point the pointer layer calls on mouseup.
+  function placeShapeStamp(stamp, start, current, shiftKey, altKey) {
+    if (!stamp) return null;
+    const dragged = stampBoxFromDrag(stamp, start, current, shiftKey, altKey);
+    const tooSmall = Math.max(dragged.width, dragged.height) * state.zoom < stampMinCreateScreenPx();
+    const box = tooSmall ? defaultStampBoxAt(stamp, start) : dragged;
+    const ann = createAnnotationFromStamp(stamp, box);
+    if (!ann) return null;
+    state.annotations.push(ann);
+    state.selection = { kind: 'annotation', id: ann.id };
+    state.selectedAnnotationIds = [ann.id];
+    // ADR 0055: a construction stamp spends no POM number.
+    consumePomSequenceFor(ann);
+    pushHistoryIfChanged();
+    return ann;
+  }
+
+  // Drawn by building the annotation the release WOULD create and handing it to
+  // the ordinary line renderer at reduced alpha. Not an approximation of the
+  // shape: it is the shape, so what the TD drags is exactly what they get —
+  // including the stitch pattern and the arrowheads.
+  function drawShapeStampPreview() {
+    const inter = state.interaction;
+    if (!inter || inter.type !== 'draw-stamp') return;
+    const stamp = getShapeStampById(inter.stampId);
+    if (!stamp) return;
+    const dragged = stampBoxFromDrag(stamp, inter.startWorld, inter.currentWorld,
+      inter.shiftKey, inter.altKey);
+    const tooSmall = Math.max(dragged.width, dragged.height) * state.zoom < stampMinCreateScreenPx();
+    const box = tooSmall ? defaultStampBoxAt(stamp, inter.startWorld) : dragged;
+    // Built WITHOUT touching state.idCounter / nextSequence — a preview must
+    // not spend an id every mousemove.
+    const savedId = state.idCounter;
+    const savedSeq = state.nextSequence;
+    const preview = createAnnotationFromStamp(stamp, box);
+    state.idCounter = savedId;
+    state.nextSequence = savedSeq;
+    if (preview) drawLineCore(preview, 0.6);
+  }
+
+  function setActiveShapeStamp(id) {
+    state.activeStampId = id || null;
+  }
+
+  function getActiveShapeStamp() {
+    return state.activeStampId ? getShapeStampById(state.activeStampId) : null;
+  }
+
+  // ---- Portability ---------------------------------------------------------
+
+  function shapeStampsEnvelope() {
+    return { format: 'bra-shape-stamps', version: shapeStampsFormatVersion(), stamps: getShapeStamps() };
+  }
+
+  function exportShapeStampsFile() {
+    const blob = new Blob([JSON.stringify(shapeStampsEnvelope(), null, 2)], { type: 'application/json' });
+    downloadBlob(blob, 'shape-stamps.json');
+  }
+
+  function importShapeStamps(list) {
+    const incoming = normalizeShapeStampList(list);
+    if (!incoming.length) return 0;
+    commitShapeStamps(libraryImportMerge(getShapeStamps(), incoming));
+    return incoming.length;
+  }
+
+  function importShapeStampsFromJson(text) {
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch (_) { return 0; }
+    const list = Array.isArray(parsed) ? parsed : (parsed && parsed.stamps);
+    return importShapeStamps(list);
+  }
+
+  // ---- Project embedding ---------------------------------------------------
+
+  function serializeShapeStampsForProject() {
+    return clone(getShapeStamps());
+  }
+
+  let pendingProjectShapeStamps = [];
+
+  function offerShapeStampsFromProject(list) {
+    pendingProjectShapeStamps = libraryUnknownEntries(
+      getShapeStamps(), normalizeShapeStampList(list));
+    if (!pendingProjectShapeStamps.length) return 0;
+    const count = pendingProjectShapeStamps.length;
+    showToast(`This project uses ${count} saved shape${count > 1 ? 's' : ''} you don't have — Tools ▸ Import from project.`);
+    return count;
+  }
+
+  function getPendingProjectShapeStamps() { return pendingProjectShapeStamps; }
+
+  function importPendingProjectShapeStamps() {
+    const added = importShapeStamps(pendingProjectShapeStamps);
+    pendingProjectShapeStamps = [];
+    return added;
   }
 
   // ---- src/manual/viewport.js ----
@@ -21480,6 +23270,13 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     let toolText = '';
     if (state.tool === 'text') {
       toolText = 'Text – Click the board to write a note. <span class="kbd">Enter</span> makes a new line; <span class="kbd">⌘/Ctrl</span>+<span class="kbd">Enter</span> or a click on the board finishes it.';
+    } else if (state.tool === 'stamp') {
+      const stamp = (typeof getActiveShapeStamp === 'function') ? getActiveShapeStamp() : null;
+      toolText = stamp
+        ? 'Shape – Drag on the board to place <strong>' + escapeHtml(stamp.name)
+          + '</strong> at that size. <span class="kbd">Shift</span> keeps its proportions, '
+          + '<span class="kbd">Esc</span> stops stamping.'
+        : 'Shape – Pick a saved shape from <strong>Tools</strong> first.';
     } else if (state.tool === 'select') {
       if (selectedNote) {
         toolText = selectedNote.leaders && selectedNote.leaders.length
@@ -22006,8 +23803,60 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   }
 
   function getLabelText(ann) {
-    if (ann && ann.text != null && String(ann.text).trim() !== '') return String(ann.text);
+    if (hasManualPomLabel(ann)) return String(ann.text);
     return String(ann.seq);
+  }
+
+  // US-096 / ADR 0055 -------------------------------------------------------
+  //
+  // A line the TD typed a POM number onto, as opposed to one merely wearing the
+  // sequence number it was born with. getLabelText falls back to `seq` so every
+  // line has SOMETHING to draw, but that fallback is a drawing artefact, not a
+  // statement of intent — only `text` is the TD saying "this line is POM 8".
+  // The distinction is what makes isMeasurementAnnotation safe to derive.
+  function hasManualPomLabel(ann) {
+    return !!(ann && ann.text != null && String(ann.text).trim() !== '');
+  }
+
+  // Is this line part of the MEASUREMENT set — the collection the spec panel,
+  // both Excel exports, the Preview page, grading and learning evidence all
+  // derive their rows from?
+  //
+  // Plain and Dashed always are. Zigzag / Cover / Bartack are construction
+  // marks: they say how a seam is sewn, not how long it is, so they are drawn
+  // on the board and in every visual export but produce no measurement row and
+  // no POM callout number.
+  //
+  // The one exception is deliberate: a stitch line the TD explicitly labelled
+  // keeps measuring. Dropping it would empty a POM cell in a workbook the
+  // factory may already be holding, which is a worse failure than one stray
+  // row. ADR 0055 records why.
+  //
+  // Role is DERIVED, never stored. That is the point: no schema change, no
+  // file migration, and converting a line back to Plain restores it as a
+  // measurement automatically, which is exactly how a TD expects the Stitches
+  // menu to behave.
+  function isMeasurementAnnotation(ann) {
+    if (!ann) return false;
+    if (!isStitchStyle(ann.style)) return true;
+    return hasManualPomLabel(ann);
+  }
+
+  // The single shared accessor for "the measurement set". Every consumer that
+  // means measurements calls this; every consumer that means "everything drawn
+  // on the board" (rendering, hit-testing, selection, drag, history, autosave,
+  // visual export) keeps reading state.annotations directly. Keeping the two
+  // readings textually distinct is what makes a future omission greppable.
+  function measurementAnnotations() {
+    return (state.annotations || []).filter(isMeasurementAnnotation);
+  }
+
+  // Whether THIS line paints its callout number. The global gate (labelsVisible)
+  // still applies — Stitch mode and the Hide Numbers toggle hide everything —
+  // and on top of it a construction line never numbers itself even while the
+  // board is in POM mode showing numbers for every real measurement.
+  function annotationShowsCallout(ann) {
+    return labelsVisible() && isMeasurementAnnotation(ann);
   }
 
   // The MEASURED length, which is not the drawn length once the sketch has been
@@ -23246,7 +25095,13 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       'apex-right':        detection.apexRight ? 'apexJoin' : 'ratio',
       '171':     detection.cfTopY != null ? 'cfTop' : 'ratio',
       '172':    (detection.apexRightInner || detection.apexRight) ? 'apexJoin' : 'ratio',
-      '181':       detection.sideTopRightInk ? 'ink' : (detection.sideRightX != null ? 'silhouette' : 'ratio'),
+      // 181 has no ink basis to report: the seeder places it from chest-right or
+      // the side column, never from the side-seam notch (see the long note in
+      // seed-front-view.js — the notch branch was dead, and reconnecting it
+      // measured worse). This used to test `detection.sideTopRightInk`, which
+      // nothing writes, so the 'ink' arm was unreachable anyway; it is gone so
+      // the basis cannot start claiming ink the seeder does not use.
+      '181':       detection.sideRightX != null ? 'silhouette' : 'ratio',
       '182':    (detection.apexRightOuter || detection.frontStrapStart) ? 'strapJoin' : 'ratio',
       'strap-top':         detection.frontStrapStart ? 'frontStrapSeam' : 'ratio',
       'strap-bottom':      (backPanelHeightInk || backPanelInk) ? 'backPanelJoin' : 'ratio',
@@ -30261,18 +32116,33 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         : inView(f, 0.86, 0.16);
       // Underarm (181): the BOTTOM of the arm opening, on the OUTER silhouette
       // where the armhole meets the side seam. Priority:
-      //   1. detected side-seam-top ink notch (the true underarm), when present.
-      //   2. chest-right — it sits on the outer silhouette at bust height, which
+      //   1. chest-right — it sits on the outer silhouette at bust height, which
       //      is where the armhole runs into the side; `sideRightX` alone lands
       //      too far IN (near the gore) on molded cups (TD 2026-07-18, demo5).
-      //   3. side column, partway DOWN from the strap junction toward the cradle.
+      //   2. side column, partway DOWN from the strap junction toward the cradle.
       // Pick whichever candidate is the most OUTER (largest x) so the anchor
       // reaches the arm edge rather than the center.
+      //
+      // There used to be a priority above both of these — "the detected
+      // side-seam-top ink notch, the true underarm" — guarded by
+      // `detection.sideTopRightInk`. The detector never writes that property
+      // (landmark-stage.js publishes the notch as `detection.sideTopRight`, and
+      // `sideTopRightInk` exists only as a local alias here and in
+      // landmark-qa.js), so the branch had never once executed and every sketch
+      // has always taken the silhouette path below.
+      //
+      // Reconnecting it was measured, 2026-08-24, and made 181 WORSE: mean error
+      // on the only ground-truth sample that labels it (EvelynBliss vA 2.0) went
+      // 0.2891 -> 0.3120 and `npm run accuracy` failed its regression gate. So
+      // the notch is deliberately not used, and the dead branch is deleted
+      // rather than left to look like a working priority.
+      //
+      // Do not "fix the typo" back in without re-running accuracy. 181 IS the
+      // worst anchor in the corpus at ~0.29, but neither candidate is close, so
+      // this needs TD ground truth on more sketches and a real look at what the
+      // underarm point should be — not a one-word change.
       let useArmhole181Bot;
-      if (detection.sideTopRightInk) {
-        useArmhole181Bot = { x: clamp01(detection.sideTopRightInk.x),
-                             y: clamp01(detection.sideTopRightInk.y) };
-      } else {
+      {
         const downRef = detection.cradleY != null ? detection.cradleY : cradle;
         const colY = useArmhole182Top.y + (downRef - useArmhole182Top.y) * 0.45;
         const colX = detection.sideRightX != null ? detection.sideRightX : sideR;
@@ -30664,7 +32534,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // Phase 2 shadow runs pass { skipLearning: true } so the residual is
     // computed against the unbiased prediction, never against an already-
     // biased one (which would compound the error and make the median drift).
-    if (options && options.skipLearning) return list;
+    if (options && options.skipLearning) return captureDerivedOffsets(list);
     const biased = applyLearningBiasToAnchors(list);
     // Phase 6: an anchor the learning loop actually moved is 'learned' — the
     // seed position is no longer purely the detector's landmark. The fine
@@ -30678,7 +32548,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         );
       }
     }
-    return biased;
+    // Record the hem gap each drop_to_line dependent was seeded with, while the
+    // anchors still hold exactly what detection placed. deriveAnchors replays it
+    // so a band nudge moves cf-bottom / cradle-cup-bottom WITH the band instead
+    // of flattening them onto its chord and discarding US-061's hem following.
+    return captureDerivedOffsets(biased);
   }
 
   function clamp01(v) { return Math.max(0, Math.min(1, Number(v) || 0)); }
@@ -31191,6 +33065,16 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 //   intersection      [a1, a2, b1, b2] → line a1→a2 ∩ line b1→b2
 //   drop_to_line      [p, l1, l2] + axis → axis-aligned line through p
 //                                        ∩ (extended) line l1→l2
+//
+// `preserveOffset: true` on a drop_to_line rule keeps the gap the SEEDER put
+// between the anchor and that line instead of snapping it flat onto it. Both
+// current drop_to_line anchors need it: cf-bottom and cradle-cup-bottom are
+// seeded from HEM ink at their own column (US-061 — the band row, the band
+// chord and the per-column hem are three different rows, and a real hem arches
+// ~30px), so a plain projection threw that away the first time a TD nudged a
+// band end. Measured over the demo corpus the discarded gap is 0 on five of
+// seven sketches and up to 0.028 of image height on demo5 — small, but it is
+// the whole point of US-061 and it went silently.
 
   function anchorDerivationForKind(kind) {
     if (!kind) return null;
@@ -31233,7 +33117,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       const args = rule.args.map(kind => byKind[kind]);
       if (args.some(a => !a)) continue;
 
-      const pos = computeDerivedPosition(rule, args);
+      const pos = computeDerivedPosition(rule, args,
+        rule.preserveOffset ? (target.derivedOffset || 0) : 0);
       if (!pos) continue;
       const nx = clamp01(pos.x);
       const ny = clamp01(pos.y);
@@ -31246,7 +33131,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     return updated;
   }
 
-  function computeDerivedPosition(rule, args) {
+  // `offset` shifts the result along the rule's axis; it is 0 for every method
+  // except a preserveOffset drop_to_line (see deriveAnchors above).
+  function computeDerivedPosition(rule, args, offset) {
+    const shift = Number.isFinite(offset) ? offset : 0;
     const method = rule.method;
     if (method === 'midpoint' && args.length >= 2) {
       return {
@@ -31278,7 +33166,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         ? { x: p.x + 1, y: p.y }
         : { x: p.x, y: p.y + 1 };
       const hit = lineIntersectionPoint(p, p2, args[1], args[2]);
-      if (hit) return hit;
+      if (hit) {
+        return rule.axis === 'horizontal'
+          ? { x: hit.x + shift, y: hit.y }
+          : { x: hit.x, y: hit.y + shift };
+      }
       // A5: the target line is (near-)parallel to the drop — e.g. the band was
       // drawn vertical, so a vertical drop can't intersect it. Rather than
       // return null and leave the dependent (cf-bottom / cradle-cup-bottom)
@@ -31286,8 +33178,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // MEAN of the two line-defining points along the drop axis so it still
       // tracks the primary.
       return rule.axis === 'horizontal'
-        ? { x: (args[1].x + args[2].x) / 2, y: p.y }
-        : { x: p.x, y: (args[1].y + args[2].y) / 2 };
+        ? { x: (args[1].x + args[2].x) / 2 + shift, y: p.y }
+        : { x: p.x, y: (args[1].y + args[2].y) / 2 + shift };
     }
     return null;
   }
@@ -31302,6 +33194,42 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     if (Math.abs(denom) < 1e-9) return null;
     const t = ((b1.x - a1.x) * d2y - (b1.y - a1.y) * d2x) / denom;
     return { x: a1.x + t * d1x, y: a1.y + t * d1y };
+  }
+
+  // Measure the gap the SEEDER left between a preserveOffset dependent and the
+  // line it is derived from, and record it on the anchor.
+  //
+  // This has to run at seed time, while the anchors are still exactly where
+  // detection put them. Measuring it lazily on the first cascade looks
+  // equivalent and is not: by then the primary has already moved, so the gap
+  // comes out relative to the NEW line and the dependent freezes in place
+  // instead of following. (That is not hypothetical — it is what the first cut
+  // of this did, and pipeline-tests caught it.)
+  //
+  // Anchors that never went through the seeder — synthetic ones in tests —
+  // simply have no derivedOffset, so the rules behave exactly as they did
+  // before preserveOffset existed.
+  function captureDerivedOffsets(anchors, schemaOverride) {
+    if (!Array.isArray(anchors) || !anchors.length) return anchors;
+    const schemaList = schemaOverride || ANCHOR_SCHEMA;
+    const byKind = Object.create(null);
+    for (const a of anchors) {
+      if (a && a.kind && !(a.kind in byKind)) byKind[a.kind] = a;
+    }
+    for (const schema of schemaList) {
+      const rule = schema && schema.derivation;
+      if (!rule || !rule.preserveOffset || !Array.isArray(rule.args)) continue;
+      const target = byKind[schema.kind];
+      if (!target) continue;
+      const args = rule.args.map(kind => byKind[kind]);
+      if (args.some(a => !a)) continue;
+      const base = computeDerivedPosition(rule, args, 0);
+      if (!base) continue;
+      target.derivedOffset = rule.axis === 'horizontal'
+        ? target.x - base.x
+        : target.y - base.y;
+    }
+    return anchors;
   }
 
   // Drag-cascade entry point: called from the anchor mousemove handler so
@@ -31492,9 +33420,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // moving cf-top or the band endpoints re-projects cf-bottom onto the
     // band line so POM 5/6 need one move instead of two.
     cascadeDerivedAnchors(anchor);
-    // Keep POM 1/2/3/4 drafts in sync with band/chest anchors so the
-    // 1/5-length rule for the dashed extensions holds live during the move.
-    syncBandChestDraftsFromAnchors(anchor.kind);
+    // Re-derive every draft on the board from the anchors as they now stand,
+    // through the same fixture builder Generate uses. No-op unless drafts are
+    // actually on the board (review / recovery state). Runs AFTER the cascade
+    // above so dependents like cf-bottom are already current.
+    resyncDraftsFromAnchors();
     requestRender();
     return true;
   }
@@ -31551,6 +33481,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       anchor_kind: anchor.kind,
     });
     pushHistoryIfChanged();
+    // Same reason as the drag-anchor branch of onMouseUp: the nudge re-synced
+    // the drafts, which can drop an approval and change a drawability tier, and
+    // pushHistoryIfChanged short-circuits for a pure anchor move because anchors
+    // are not in the snapshot — so nothing else would repaint the spec panel.
+    updateUI();
     requestRender();
   }
 
@@ -32420,123 +34355,251 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   }
 
   // ---- src/auto/drafts/anchor-drag-sync.js ----
-// Auto Mode live anchor-drag sync: keep the POM 1/2/3/4/16 draft lines in
-// step with their anchors while the TD drags a pin.
+// Auto Mode draft re-sync: keep the POM drafts on the board in step with the
+// anchors they were derived from.
 // Source part for app.js. Run `npm run build` after editing.
 //
-// Called from the drag-anchor mouse-move loop in
-// src/auto/anchors/anchor-interaction.js. This is the live counterpart to the
-// full fixture rebuild in pom-fixture-builder.js; the POM 16 slant limit below
-// is a hand-kept duplicate of that file's APEX_MAX_SLANT (see the comment at
-// its use site).
+// Called from moveAnchorBy (src/auto/anchors/anchor-interaction.js) — the one
+// mutation path for every anchor move: drag, keyboard nudge, snap-to-ink — and
+// from resetAnchorsToDetection (draft-actions.js), which re-seeds every anchor
+// at once.
+//
+// US-085 shipped a hand-written partial: it re-derived POM 1/2/3/4/16 inline
+// and left the other 13 stale, with its own copy of the POM 16 slant limit and
+// its own (wrong) idea of POM 1/3's geometry — it wrote the raw band/chest
+// anchor into the line instead of the forced-level end the fixture builder
+// produces, so the same anchors drew a different line depending on whether the
+// TD had just dragged or just pressed Generate. Measured on demo1: dragging
+// band-right left POM 7 396% long, POM 6 33%, POM 5 11%, and POM 1 slanted by
+// 0.074 — all of it applied to the board with no warning.
+//
+// So this file no longer re-derives anything. It calls the SAME
+// buildPOMFixtureFromAnchors the Generate action calls and copies the result
+// onto the existing draft records. One geometry source, so a line can no longer
+// disagree with itself; a full rebuild measures 0.05-0.08 ms on the demo
+// fixtures, which is nothing per mousemove.
+//
+// Two things it deliberately does NOT overwrite:
+//   - a draft the TD has hand-edited (tdEdited) — their correction outranks a
+//     re-derivation, and clobbering it would be a worse bug than the stale line
+//     this fixes;
+//   - a draft's identity and provenance (id, fixtureId, seq, sourceImageId,
+//     autoRunId, template/rule version).
+// An approval IS dropped when the geometry under it actually moves: the TD
+// approved a line that no longer exists.
 
-  // Keep Auto Mode POM 1/2/3/4/16 drafts geometrically tied to their anchors
-  // while the TD is dragging. POM 1 follows band-{left,right}; POM 3 follows
-  // chest-{left,right}; POMs 2 and 4 are dashed extensions that always read
-  // as 1/5 the length of their parent; POM 16 follows apex-{left,right}
-  // (US-085 — without this, correcting a mis-detected apex anchor by hand
-  // left POM 16's line drawn at the old, pre-drag position, the same
-  // "anchors right, line wrong" symptom ADR 0049 fixed for band/chest, but
-  // for a manual correction instead of a seeding fallback). Called from the
-  // drag-anchor mouse-move loop; runs only if drafts exist for the affected
-  // POMs. Other POMs' drafts still don't live-sync — a TD must re-generate
-  // after moving those anchors.
-  function syncBandChestDraftsFromAnchors(movedAnchorKind) {
-    if (state.appMode !== 'auto') return;
+  // Rebuild the fixture rows for one image's anchor set, keyed by POM.
+  //
+  // buildPOMFixtureFromAnchors reads state.autoMode.detection for contours,
+  // cupModel and landmark QA, so the inner-view pass has to swap the active
+  // detection exactly as generatePOMDraftsFromAnchors does — otherwise the
+  // front-outer contours would shape the inner photo's neckline and armhole.
+  function draftFixtureRowsByPom(anchorList, detectionForBuild) {
+    if (!Array.isArray(anchorList) || !anchorList.length) return null;
+    const saved = state.autoMode.detection;
+    let fixture = null;
+    try {
+      if (detectionForBuild) state.autoMode.detection = detectionForBuild;
+      fixture = buildPOMFixtureFromAnchors(anchorList);
+    } finally {
+      state.autoMode.detection = saved;
+    }
+    if (!fixture || !Array.isArray(fixture.annotations)) return null;
+    const byPom = new Map();
+    for (const row of fixture.annotations) byPom.set(String(row.pom), row);
+    return byPom;
+  }
+
+  // Geometry fingerprint used to decide whether a draft really moved. Taken
+  // before the rebuild and again after the post-passes below, never in between:
+  // the style-evidence blend rewrites the endpoints again, so a draft can be
+  // rewritten with raw fixture geometry and still end up exactly where it was.
+  function draftGeometryKey(draft) {
+    const p = (q) => q ? q.x.toFixed(6) + ',' + q.y.toFixed(6) : '-';
+    return [draft.drawability, p(draft.start), p(draft.end),
+      p(draft.control1), p(draft.control2)].join('|');
+  }
+
+  // Copy one rebuilt fixture row onto an existing draft. Mirrors the field
+  // derivation in buildDraftAnnotation (build-draft-annotation.js) — a field
+  // added there and not here would silently stop tracking its anchors.
+  //
+  // Writes unconditionally, even when the rebuilt geometry is identical. That
+  // looks wasteful and is load-bearing: the style-evidence pass below has to see
+  // every draft sitting on RAW fixture geometry. Skipping the unchanged ones
+  // would leave them holding their already-blended endpoints, and blending those
+  // again would compound the 40% pull on every mousemove. Resetting to raw first
+  // makes the whole re-sync idempotent. "Did it actually move" is answered later,
+  // by comparing geometry keys across the entire pass.
+  function applyFixtureRowToDraft(draft, row, image) {
+    if (!draft || !row || !image || !image.width) return false;
+    const reviewOnly = row.drawability === 'REVIEW_ONLY';
+    const curved = !reviewOnly && row.type === 'curved';
+    const next = {
+      start: reviewOnly ? null : worldFromNormalized(row.start, image),
+      end: reviewOnly ? null : worldFromNormalized(row.end, image),
+      control1: curved ? worldFromNormalized(row.control1, image) : null,
+      control2: curved ? worldFromNormalized(row.control2, image) : null,
+    };
+    draft.start = next.start;
+    draft.end = next.end;
+    draft.control1 = next.control1;
+    draft.control2 = next.control2;
+    draft.type = reviewOnly ? 'straight' : (row.type || 'straight');
+    draft.style = reviewOnly ? 'solid' : (row.style || 'solid');
+    draft.arrowType = reviewOnly ? 'double' : (row.arrowType || 'double');
+    draft.drawability = row.drawability;
+    draft.confidence = row.confidence || 'medium';
+    draft.endpointApproximate = row.drawability === 'APPROXIMATE';
+    draft.desc = row.desc || null;
+    draft.reason = row.reason || null;
+    draft.uncertainty = row.uncertainty || null;
+    draft.viewRole = row.viewRole || effectivePomViewRole(row.pom);
+    draft.sharedAnchorFamily = row.sharedAnchorFamily || null;
+    draft.proposedStartLandmark = row.proposedStartLandmark || null;
+    draft.proposedEndLandmark = row.proposedEndLandmark || null;
+    draft.missingAnchors = Array.isArray(row.missingAnchors) && row.missingAnchors.length
+      ? row.missingAnchors.slice() : null;
+    draft.reviewNotes = Array.isArray(row.reviewNotes) && row.reviewNotes.length
+      ? row.reviewNotes.slice() : null;
+    // Clear the style-evidence marks along with the geometry they described.
+    // The two passes at the end of the re-sync re-apply them from the store, so
+    // after this the draft is in exactly the state a fresh Generate would build.
+    // Leaving them set would be worse than untidy: applyStyleConfirmedEvidence-
+    // ToDrafts skips anything still flagged 'absent-confirmed', so a draft whose
+    // absence evidence has since been forgotten would be rebuilt with real
+    // geometry and then never receive the confirmed prior again.
+    draft.styleEvidenceId = null;
+    draft.styleEvidenceStatus = null;
+    draft.styleEvidenceSamples = null;
+    // A REVIEW_ONLY row has no line to caption. Otherwise re-derive the callout
+    // position unless the TD placed it by hand; the collision pass below then
+    // spreads the whole set, exactly as it does after Generate.
+    if (reviewOnly) {
+      draft.label = null;
+    } else if (!draft.labelManual) {
+      draft.label = computeDefaultLabelPosition(draft);
+    }
+    // Approval is NOT decided here — see the end of resyncDraftsFromAnchors.
+    // The style-evidence pass can move these endpoints again, so whether the
+    // line the TD approved actually changed is only knowable once every pass has
+    // run.
+    return true;
+  }
+
+  // Re-derive every draft on the board from the current anchor positions.
+  //
+  // No-op when there are no drafts, which is the ordinary flow: Detect seeds
+  // anchors without drafting, and Generate applies immediately and hands off to
+  // Manual Mode. Drafts and anchors only coexist in the review / recovery state
+  // (a failed apply, or REVIEW_ONLY rows left after returning from Manual) —
+  // which is exactly where the stale lines used to ship.
+  //
+  // Returns the number of drafts whose geometry or tier changed.
+  function resyncDraftsFromAnchors() {
+    if (state.appMode !== 'auto') return 0;
     const drafts = state.autoMode && state.autoMode.draftAnnotations;
-    if (!Array.isArray(drafts) || !drafts.length) return;
-    const relevant = movedAnchorKind === 'band-left'
-      || movedAnchorKind === 'band-right'
-      || movedAnchorKind === 'chest-left'
-      || movedAnchorKind === 'chest-right'
-      || movedAnchorKind === 'apex-left'
-      || movedAnchorKind === 'apex-right';
-    if (!relevant) return;
+    if (!Array.isArray(drafts) || !drafts.length) return 0;
+    const anchors = (state.autoMode && state.autoMode.anchors) || [];
+    if (!anchors.length) return 0;
 
-    const anchors = state.autoMode.anchors || [];
-    const byKind = Object.create(null);
-    for (const a of anchors) byKind[a.kind] = a;
-    const bandL = byKind['band-left'];
-    const bandR = byKind['band-right'];
-    const chestL = byKind['chest-left'];
-    const chestR = byKind['chest-right'];
-    const apexL = byKind['apex-left'];
-    const apexR = byKind['apex-right'];
-
-    const det = state.autoMode && state.autoMode.detection;
+    const det = state.autoMode.detection;
     const sourceImage = det
       ? (getImageById(det.sourceImageId) || pickAutoSourceImage())
       : pickAutoSourceImage();
-    if (!sourceImage || !sourceImage.width) return;
+    if (!sourceImage || !sourceImage.width) return 0;
 
-    const toWorld = (p) => worldFromNormalized(p, sourceImage);
-    const findDraft = (pom) => drafts.find(d => String(d.seq) === String(pom));
+    // One rebuilt row set per image a draft can live on. The front-outer pass
+    // sees only the anchors on the detection source image, the same filter
+    // generatePOMDraftsFromAnchors applies (US-049) — without it, anchors
+    // relocated onto a separate front-inner photo would drag the front-view
+    // POMs with them.
+    const rowsByImageId = new Map();
+    const frontRows = draftFixtureRowsByPom(
+      anchors.filter(an => an.sourceImageId === sourceImage.id), null);
+    if (frontRows) rowsByImageId.set(String(sourceImage.id), frontRows);
 
-    const updateLine = (draft, startNorm, endNorm) => {
-      if (!draft || isReviewOnlyDraft(draft)) return;
-      const newStart = toWorld(startNorm);
-      const newEnd = toWorld(endNorm);
-      if (newStart) draft.start = newStart;
-      if (newEnd) draft.end = newEnd;
-    };
-
-    if (bandL && bandR) {
-      updateLine(findDraft('1'), bandL, bandR);
-      const pom1Length = bandR.x - bandL.x;
-      const ext2End = { x: clamp01(bandR.x + pom1Length / 5), y: bandR.y };
-      updateLine(findDraft('2'), bandR, ext2End);
-    }
-    if (chestL && chestR) {
-      updateLine(findDraft('3'), chestL, chestR);
-      const pom3Length = chestR.x - chestL.x;
-      const ext4End = { x: clamp01(chestR.x + pom3Length / 5), y: chestR.y };
-      updateLine(findDraft('4'), chestR, ext4End);
-    }
-    if (apexL && apexR) {
-      const draft16 = findDraft('16');
-      // POM 16 doesn't use the plain updateLine helper above: unlike
-      // band/chest it is NOT forced level onto one anchor (ADR 0049 /
-      // US-084 — the apex pair is legitimately allowed to sit at different
-      // heights), so the line's own credibility can change as the TD drags
-      // an anchor, and drawability must flip between DRAWABLE and
-      // REVIEW_ONLY live rather than staying frozen. updateLine's "never
-      // touch a REVIEW_ONLY draft" rule would defeat exactly the case this
-      // exists for: un-REVIEW-ONLY-ing POM 16 IS the point of the TD's fix.
-      if (draft16) {
-        // Keep this in lockstep with APEX_MAX_SLANT in
-        // buildPOMFixtureFromAnchors (this file) and APEX_SLANT_LIMIT in
-        // src/auto-detection.js — contract E4 guards all three from
-        // drifting apart.
-        const APEX_MAX_SLANT = 0.06;
-        const apexSpanX = Math.abs(apexR.x - apexL.x);
-        const apexDy = Math.abs(apexR.y - apexL.y);
-        const apexSlant = apexSpanX > 0 ? apexDy / apexSpanX : Infinity;
-        if (apexSlant <= APEX_MAX_SLANT) {
-          const apexMidY = (apexL.y + apexR.y) / 2;
-          const newStart = toWorld({ x: apexL.x, y: apexMidY });
-          const newEnd = toWorld({ x: apexR.x, y: apexMidY });
-          if (newStart) draft16.start = newStart;
-          if (newEnd) draft16.end = newEnd;
-          draft16.drawability = 'DRAWABLE';
-          draft16.confidence = 'medium';
-          draft16.uncertainty = null;
-        } else {
-          // validate-fixture.js requires REVIEW_ONLY rows to carry null
-          // geometry ("must have null geometry") — leaving the pre-drag
-          // start/end in place would both violate that and silently draw a
-          // stale line under a "review only" label instead of no line.
-          draft16.start = null;
-          draft16.end = null;
-          draft16.drawability = 'REVIEW_ONLY';
-          draft16.confidence = 'low';
-          draft16.uncertainty = 'The two apex joins were detected ' + apexDy.toFixed(3)
-            + ' apart vertically over a ' + apexSpanX.toFixed(3) + ' span (slant '
-            + apexSlant.toFixed(3) + ', limit ' + APEX_MAX_SLANT
-            + ') — too steep for an apex-to-apex measurement, so one side is very'
-            + ' likely mis-detected. Place the apex anchors and re-generate.';
-        }
+    // US-049 inner-view pass: POM 9/10/17/18 measure on their own photo, so
+    // they are rebuilt against THAT photo's detection and anchor set.
+    const innerView = (det && Array.isArray(det.auxViews))
+      ? det.auxViews.find(v => v && v.viewRole === 'front_inner'
+        && v.detection && Array.isArray(v.anchors) && v.anchors.length)
+      : null;
+    if (innerView) {
+      const innerImage = getImageById(innerView.sourceImageId);
+      if (innerImage && innerImage.width) {
+        const innerRows = draftFixtureRowsByPom(innerView.anchors, innerView.detection);
+        if (innerRows) rowsByImageId.set(String(innerImage.id), innerRows);
       }
     }
+    if (!rowsByImageId.size) return 0;
+
+    const touched = [];
+    const geometryBefore = new Map();
+    for (const draft of drafts) {
+      if (!draft || !isAutoDraft(draft)) continue;
+      // The TD's own correction wins over anything re-derived from anchors.
+      if (draft.tdEdited) continue;
+      geometryBefore.set(draft, draftGeometryKey(draft));
+      const rows = rowsByImageId.get(String(draft.sourceImageId));
+      if (!rows) continue;
+      const row = rows.get(String(draft.seq));
+      if (!row) continue;
+      const image = getImageById(draft.sourceImageId);
+      if (applyFixtureRowToDraft(draft, row, image)) touched.push(draft);
+    }
+    if (!touched.length) return 0;
+
+    // Same post-passes Generate runs, in the same order (absence wipes, then
+    // the confirmed-style soft pull, then label de-collision), over the rebuilt
+    // rows only — a hand-edited draft is excluded above and must stay excluded
+    // here too. Each pass reads the freshly rebuilt geometry rather than its own
+    // previous output, so repeating this on every mousemove cannot compound.
+    //
+    // Evidence is scoped to drafts on the DETECTION SOURCE image, matching
+    // generate-drafts-action.js: it runs both passes before the inner-view pass
+    // replaces POM 9/10/17/18, so an inner-photo draft never gets blended — and
+    // the evidence medians are normalized against the source image anyway, so
+    // applying them to a draft on a different photo would place it by the wrong
+    // rectangle. It covers EVERY rebuilt front draft, not only the ones whose
+    // anchors moved: Generate blends the whole set, so blending a subset here
+    // would leave the board in a state Generate can never produce.
+    const frontTouched = touched.filter(d => String(d.sourceImageId) === String(sourceImage.id));
+    if (frontTouched.length && typeof applyStyleAbsenceEvidenceToDrafts === 'function') {
+      applyStyleAbsenceEvidenceToDrafts(frontTouched);
+    }
+    if (frontTouched.length && typeof applyStyleConfirmedEvidenceToDrafts === 'function') {
+      applyStyleConfirmedEvidenceToDrafts(frontTouched, sourceImage);
+    }
+    // Hand-edited drafts stay out of this too, not just out of the rebuild.
+    // The pass shifts any label with labelManual === false, and a tdEdited
+    // draft's label was never reset to its default here — so where every other
+    // callout starts each pass from a fresh default, that one would keep and
+    // compound its displacement move after move, drifting away from the line
+    // the TD deliberately placed. Excluding it can let a rebuilt callout overlap
+    // it, which is cosmetic and already possible; the drift was neither, since
+    // Apply copies the label position onto the applied annotation.
+    if (typeof nudgeAutoLabelsToAvoidCollisions === 'function') {
+      nudgeAutoLabelsToAvoidCollisions(drafts.filter(d => d && !d.tdEdited));
+    }
+
+    // Now that every pass has run, drop the approval on the drafts whose line
+    // actually ended up somewhere else. Deciding this before the blend would
+    // unapprove a draft on a style with stored evidence every single time any
+    // anchor moved, because the pre-blend rebuild always differs from the
+    // post-blend geometry the TD is looking at — even when the two passes
+    // together land it right back where it was.
+    let moved = 0;
+    for (const draft of touched) {
+      if (geometryBefore.get(draft) === draftGeometryKey(draft)) continue;
+      moved += 1;
+      if (draft.tdApproved) {
+        draft.tdApproved = false;
+        draft.tdApprovalRequired = true;
+        draft.approvedAt = null;
+      }
+    }
+    return moved;
   }
 
   // ---- src/auto/drafts/build-draft-annotation.js ----
@@ -32938,6 +35001,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     state.autoMode.anchorSelectedId = null;
     state.autoMode.anchorsHidden = false;
     state.autoMode.hiddenAnchorKinds = []; // US-038: fresh seed shows all
+    // This moves EVERY anchor at once, so any drafts under review would be left
+    // pointing at the pre-reset positions — the whole board detached, not just
+    // the one POM a drag touches. moveAnchorBy re-syncs on the drag path; this
+    // action bypassed it entirely.
+    resyncDraftsFromAnchors();
     pushHistoryIfChanged();
     updateUI();
     requestRender();
@@ -33171,6 +35239,17 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       reason: draft.reason || null,
       uncertainty: draft.uncertainty || null,
       sharedAnchorFamily: draft.sharedAnchorFamily || null,
+      // Style-evidence provenance. A 'confirmed-prior' line was pulled 40% off
+      // the anchors toward the median of past TD confirmations, and an
+      // 'absent-confirmed' one was wiped because the style is known not to
+      // measure that POM. Dropping these on Apply left no record anywhere that
+      // the line is not where detection put it — while the contract suite reads
+      // the same flag to decide which rows its line-anchor assertions may skip.
+      // Exactly what the note at the top of this file warns about: a field added
+      // to buildDraftAnnotation and not here vanishes silently.
+      styleEvidenceId: draft.styleEvidenceId || null,
+      styleEvidenceStatus: draft.styleEvidenceStatus || null,
+      styleEvidenceSamples: draft.styleEvidenceSamples != null ? draft.styleEvidenceSamples : null,
       viewRole: draft.viewRole || effectivePomViewRole(draft.seq),
       originDraftId: draft.id,
     };
@@ -34541,6 +36620,19 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   function evaluateManualPomSample(ann, options = {}) {
     if (!ann || !ann.start || !ann.end) return { status: 'skipped' };
     if (!isLearningEnabled())            return { status: 'skipped' };
+    // US-096 / ADR 0055 code review, 2026-08-23: a construction line carries no
+    // POM meaning, so its geometry must never bias a POM's anchor seed.
+    //
+    // This is the LIVE capture path (drag-commit in pointer-events.js, arrow
+    // nudge in line-nudge.js), and it was missed when the save-time path
+    // (isEligibleEvidenceAnnotation, style-evidence-capture.js) was gated.
+    // The gap was reachable and expensive: restyling an APPLIED auto line to
+    // zigzag leaves ann.auto / sourceMode / autoRunId intact, so isAutoDraft
+    // stays true and allowAuto makes labelText fall back to getLabelText(ann)
+    // — the seq the line was born with, i.e. the very POM number it no longer
+    // measures. Dragging it then wrote the stitch path into that POM's bucket,
+    // and the learning store outlives the project.
+    if (!isMeasurementAnnotation(ann)) return { status: 'skipped' };
     if (ann.auto === true && !options.allowAuto) return { status: 'skipped' };
 
     const explicitText = ann.text != null && String(ann.text).trim() !== ''
@@ -34989,6 +37081,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 
   function isEligibleEvidenceAnnotation(ann) {
     if (!ann) return false;
+    // US-096: a construction line carries no POM meaning, so learning must not
+    // take its geometry as evidence for the POM number it happens to sit on.
+    if (!isMeasurementAnnotation(ann)) return false;
     if (ann.drawability === 'REVIEW_ONLY') return false;
     if (!ann.start || !ann.end) return false;
     if (!Number.isFinite(ann.start.x) || !Number.isFinite(ann.start.y)) return false;
@@ -35359,6 +37454,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       const gapEnd   = Math.hypot(draft.end.x   - evE.x, draft.end.y   - evE.y);
       if (gapStart > maxGapPx || gapEnd > maxGapPx) continue;
       const a = STYLE_EVIDENCE_REUSE_BLEND;
+      // Keep the pre-blend chord: every other geometry field on the draft is an
+      // ABSOLUTE world point measured against it, so the carry below needs both
+      // the old frame and the new one.
+      const oldStart = { x: draft.start.x, y: draft.start.y };
+      const oldEnd = { x: draft.end.x, y: draft.end.y };
       draft.start = {
         x: draft.start.x * (1 - a) + evS.x * a,
         y: draft.start.y * (1 - a) + evS.y * a,
@@ -35367,6 +37467,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         x: draft.end.x * (1 - a) + evE.x * a,
         y: draft.end.y * (1 - a) + evE.y * a,
       };
+      carryDraftGeometryToNewChord(draft, oldStart, oldEnd);
       draft.styleEvidenceId = ev.latestRecordId;
       draft.styleEvidenceStatus = 'confirmed-prior';
       draft.styleEvidenceSamples = ev.sampleCount;
@@ -35377,6 +37478,75 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       changed += 1;
     }
     return changed;
+  }
+
+  // Carry a blended draft's non-endpoint geometry onto its new chord.
+  //
+  // applyStyleConfirmedEvidenceToDrafts rewrites start/end, but a draft's curve
+  // handles, interior anchors and label are absolute world points that
+  // buildDraftAnnotation baked from the PRE-blend geometry — nothing recomputes
+  // them. Left behind they stay exactly where they were: measured on demo1, a
+  // 0.06 evidence offset moved POM 14 / 17 / 18's endpoints 0.024 while
+  // control1, control2 and label each moved 0.000. That is a traced arc pulled
+  // out of shape under a callout number parked off its own line, and it reached
+  // the applied annotations — the real Generate button auto-applies.
+  //
+  // A cubic's handles are only meaningful relative to its chord, so carry every
+  // dependent point through the similarity (rotate + uniform scale + translate)
+  // that maps the old chord onto the new one. The arc keeps the shape the
+  // contour trace found for it; only its frame moves. Also the reason POM 14's
+  // "handles interpolate the strap span" invariant (validate-fixture.js) still
+  // holds after a blend that validateAutoFixture ran before.
+  //
+  // The field list mirrors scaleAnnotationAbout (src/manual/viewport.js) on
+  // purpose: that is the other place a whole annotation's geometry moves as a
+  // unit, and a field added to one and not the other is exactly how ann.points
+  // got torn once already (ADR 0053).
+  function carryDraftGeometryToNewChord(draft, oldStart, oldEnd) {
+    if (!draft || !oldStart || !oldEnd || !draft.start || !draft.end) return;
+    const ux = oldEnd.x - oldStart.x;
+    const uy = oldEnd.y - oldStart.y;
+    const den = ux * ux + uy * uy;
+    const vx = draft.end.x - draft.start.x;
+    const vy = draft.end.y - draft.start.y;
+    // A degenerate old chord (both endpoints coincided) has no frame to rotate
+    // out of, so fall back to a pure translation by the start delta. The P5
+    // guard in pom-fixture-builder demotes zero-length straight rows before
+    // they get here, but a curve can still be degenerate.
+    const rotate = den > 1e-12;
+    const cos = rotate ? (vx * ux + vy * uy) / den : 1;
+    const sin = rotate ? (vy * ux - vx * uy) / den : 0;
+    const carry = (p) => {
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+      const dx = p.x - oldStart.x;
+      const dy = p.y - oldStart.y;
+      p.x = draft.start.x + cos * dx - sin * dy;
+      p.y = draft.start.y + sin * dx + cos * dy;
+    };
+    for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
+      if (draft[key]) carry(draft[key]);
+    }
+    if (Array.isArray(draft.points)) {
+      for (const anchor of draft.points) {
+        if (!anchor) continue;
+        for (const field of ['point', 'handleIn', 'handleOut']) {
+          if (anchor[field]) carry(anchor[field]);
+        }
+      }
+    }
+    // The label is a DERIVED default on a generated draft (buildDraftAnnotation
+    // only honours an explicit fixture label, which no generated row sets), so
+    // re-derive it from the moved geometry rather than transporting it: its
+    // perpendicular offset is a fixed screen distance and must not pick up the
+    // chord's scale factor. A hand-placed label is a TD decision and rides the
+    // transform instead. Either way this runs before
+    // nudgeAutoLabelsToAvoidCollisions, so the de-collision pass still gets the
+    // last word — which is what the comment at its call site already claimed.
+    if (draft.labelManual) {
+      carry(draft.label);
+    } else if (typeof computeDefaultLabelPosition === 'function') {
+      draft.label = computeDefaultLabelPosition(draft);
+    }
   }
 
   function applyStyleAbsenceEvidenceToDrafts(drafts) {
@@ -36069,6 +38239,68 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         if (typeof renderSpecPanel === 'function') renderSpecPanel();
         return clone(getPomSpec(key));
       },
+      // US-096 / ADR 0055: the measurement set and the preset library.
+      //   getMeasurementAnnIds: the exact lines the spec panel, both workbooks
+      //     and Preview build rows from — the claim the story is about. A
+      //     construction line is absent here while still present in
+      //     getAnnotations() and getExportAnnIds() (it is drawn and exported,
+      //     just not measured).
+      //   getLinePresets / applyLinePreset: drive the library without opening
+      //     the menu, so a suite can assert the model separately from the UI.
+      getMeasurementAnnIds: () => (typeof measurementAnnotations === 'function'
+        ? measurementAnnotations().map(a => a.id) : null),
+      getLinePresets: () => (typeof getLinePresets === 'function' ? clone(getLinePresets()) : null),
+      applyLinePreset: (id) => (typeof applyLinePreset === 'function' ? applyLinePreset(id) : false),
+      addLinePreset: (name) => (typeof addLinePreset === 'function' ? clone(addLinePreset(name)) : null),
+      resetLinePresets: () => {
+        if (typeof resetLinePresetsToBuiltins === 'function') resetLinePresetsToBuiltins();
+      },
+      importLinePresetsJson: (text) => (typeof importLinePresetsFromJson === 'function'
+        ? importLinePresetsFromJson(text) : 0),
+      // US-097 / ADR 0056: the shape-stamp library. getShapeStamps returns the
+      // stored geometry so a suite can compare a placed line against the stamp
+      // it came from; sampleAnnotationShape returns the SHAPE of any line,
+      // normalized into its own bounding box, which is the only way to assert
+      // "the curve that came back is the curve that was saved" independently of
+      // where and how big it was placed.
+      getShapeStamps: () => (typeof getShapeStamps === 'function' ? clone(getShapeStamps()) : null),
+      resetShapeStamps: () => {
+        if (typeof commitShapeStamps === 'function') commitShapeStamps([]);
+      },
+      importShapeStampsJson: (text) => (typeof importShapeStampsFromJson === 'function'
+        ? importShapeStampsFromJson(text) : 0),
+      setActiveShapeStamp: (id) => {
+        if (typeof setActiveShapeStamp === 'function') setActiveShapeStamp(id);
+      },
+      sampleAnnotationShape: (annotationId, samples) => {
+        const ann = state.annotations.find(a => a && a.id === annotationId);
+        if (!ann || typeof getAnnotationPolyline !== 'function') return null;
+        const n = Math.max(8, Number(samples) || 64);
+        const pts = getAnnotationPolyline(ann, n);
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of pts) {
+          if (p.x < minX) minX = p.x;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.y > maxY) maxY = p.y;
+        }
+        const w = maxX - minX, h = maxY - minY;
+        const total = polylineLength(pts);
+        // Resampled at EQUAL ARC LENGTH, not at equal index: two renderings of
+        // the same curve at different sizes get different chord counts, so
+        // index-wise comparison would drift even for an identical shape.
+        const out = [];
+        for (let i = 0; i <= n; i += 1) {
+          const at = samplePolylineAt(pts, total * (i / n));
+          out.push({
+            x: w > 1e-6 ? (at.point.x - minX) / w : 0.5,
+            y: h > 1e-6 ? (at.point.y - minY) / h : 0.5,
+          });
+        }
+        return { points: out, width: w, height: h, aspect: w > 1e-6 ? h / w : 0 };
+      },
+      exportLinePresetsJson: () => (typeof linePresetsEnvelope === 'function'
+        ? JSON.stringify(linePresetsEnvelope()) : null),
       // Export image paths honor hidden POMs (scripts/export-hidden-tests.mjs).
       // getExportAnnIds: the exact applied-annotation set the export renderers
       //   (PDF / Copy Image / Excel embedded PNG) draw and crop from, so a test
@@ -36157,6 +38389,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         return targets.length;
       },
       applyApprovedDrafts: () => applyApprovedDraftsAtomically({ suppressPrompt: true }),
+      /* The draft -> applied-annotation field copy on its own, so a suite can
+         assert what survives Apply without having to drive a whole board into a
+         state where Apply succeeds. buildAppliedAnnotation is the mirror of
+         buildDraftAnnotation and a field missing from it vanishes silently. */
+      buildAppliedAnnotationForTest: (draft) => clone(buildAppliedAnnotation(clone(draft))),
       exportProject: () => clone(buildProjectSnapshot()),
       /* US-080: drives a MAIN PAGE sketch slot the way the upload/paste menu
          does, and hands back the RAW runtime state.mainPage — the one history
@@ -36251,6 +38488,15 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         classifyResidual: (kind, dx, dy) => classifyResidualStage(kind, dx, dy),
         getBias: (kind, anchor) => clone(getAnchorBias(kind, anchor)),
         getSampleCount: () => getLearningSampleCount(),
+        // US-096 / ADR 0055 code review, 2026-08-23: the LIVE TD-edit capture
+        // funnel (pointer-events drag-commit, line-nudge arrow keys) reached
+        // through directly, so a suite can prove a construction line is refused
+        // without having to run detection and stage a real drag.
+        evaluateManualPomSample: (annotationId, options) => {
+          const ann = state.annotations.find(a => a && a.id === annotationId);
+          if (!ann) return null;
+          return clone(evaluateManualPomSample(ann, options || {}));
+        },
         getBuckets: () => clone(learningStore.buckets),
         getParamSamples: () => clone(learningStore.paramSamples || {}),
         getDetectionParams: () => clone(getLearnedDetectionParams()),
@@ -36513,6 +38759,9 @@ function drawBoardContentForExport() {
   for (const note of exportNotes()) drawNote(note);
   if (!labelsVisible()) return;
   for (const ann of annotations) {
+    // US-096: same per-line gate the screen renderer applies. A construction
+    // line is exported (it is drawn above) but never numbered.
+    if (!isMeasurementAnnotation(ann)) continue;
     drawLabel(ann.label, getLabelText(ann), false, 1, getAnnotationColor(ann));
   }
 }
@@ -37317,7 +39566,10 @@ function makeExportFileName() {
     // both halves of the pair. Hidden state is session-only (not persisted),
     // so the export mirrors the current review view, just like the board.
     const hiddenPomKeys = new Set();
-    for (const ann of state.annotations) {
+    // US-096: a construction line owns no POM key, so it can neither hide a
+    // POM row nor claim one. Scanning the whole board here would let an
+    // unlabelled stitch mark sitting on sequence number 5 hide POM 5.
+    for (const ann of measurementAnnotations()) {
       if (isAnnHidden(ann.id)) hiddenPomKeys.add(String(getLabelText(ann)));
     }
     // US-047: a POM whose drawn line was DELETED is excluded from the spec just
@@ -37339,7 +39591,9 @@ function makeExportFileName() {
   // points, so the two exports can never disagree about the spec).
   function buildSpecSheetRows(now) {
     const annByPom = new Map();
-    for (const ann of state.annotations) annByPom.set(getLabelText(ann), ann);
+    // US-096: the measurement set only. An unlabelled zigzag/cover/bartack
+    // line is a construction mark and owns no POM row.
+    for (const ann of measurementAnnotations()) annByPom.set(getLabelText(ann), ann);
     const pomKeys = specVisiblePomKeys(annByPom);
 
     // US-011: the sheet emits only the SELECTED size columns. The grade math
@@ -38001,7 +40255,8 @@ function makeExportFileName() {
     };
     window.__braAutoModeDebug.buildFullSizeRun = (pomKey) => {
       const annByPom = new Map();
-      for (const ann of state.annotations) annByPom.set(getLabelText(ann), ann);
+      // US-096: the measurement set only — see measurementAnnotations().
+      for (const ann of measurementAnnotations()) annByPom.set(getLabelText(ann), ann);
       // Preserve the numeric-array contract: the descriptors are an internal
       // detail of the formula writer; callers still get the graded values.
       return buildFullSizeRun(pomKey, annByPom).map(c => c.value);
@@ -38121,7 +40376,13 @@ function makeExportFileName() {
       if (distance(world, ann.start) <= endpointRadius) return { part: 'start' };
       if (distance(world, ann.end) <= endpointRadius) return { part: 'end' };
     }
-    if (pointInLabelBounds(world, ann.label, getLabelText(ann), 9 / state.zoom)) return { part: 'label' };
+    // US-096 / ADR 0055: only a callout that is actually PAINTED is grabbable.
+    // A construction line paints no number, and its unpainted box — ~22-36 px
+    // wide, offset ~18 px off the line's midpoint — would otherwise steal
+    // presses in visibly empty space and route them to startLabelDrag, moving
+    // something the TD can never see.
+    if (annotationShowsCallout(ann)
+      && pointInLabelBounds(world, ann.label, getLabelText(ann), 9 / state.zoom)) return { part: 'label' };
     return null;
   }
 
@@ -38203,7 +40464,11 @@ function makeExportFileName() {
       // Skip hidden annotations — the canvas draws nothing for them, so
       // catching a click in an empty region would confuse the reviewer.
       if (isAnnHidden(ann.id)) continue;
-      if (pointInLabelBounds(world, ann.label, getLabelText(ann), 8 / state.zoom)) {
+      // Same rule as hitTestSelectedHandles: an unpainted callout is not a
+      // target. This test runs BEFORE the body test and walks topmost-first, so
+      // an invisible box here shadows the real POM line underneath it.
+      if (annotationShowsCallout(ann)
+        && pointInLabelBounds(world, ann.label, getLabelText(ann), 8 / state.zoom)) {
         return { id: ann.id, part: 'label' };
       }
       if (isPointNearAnnotation(world, ann, 8 / state.zoom)) {
@@ -38650,7 +40915,10 @@ function makeExportFileName() {
   // over a POM number. Keeps each number readable on a crowded 3-view board.
   function drawAnnotationLabel(ann) {
     if (state.editingLabelId === ann.id) return;
-    if (!labelsVisible()) return;
+    // US-096: labelsVisible() is the board-wide gate (Stitch mode, Hide
+    // Numbers); annotationShowsCallout adds the per-line one, so a stitch mark
+    // stays unnumbered even on a board that is numbering every real POM.
+    if (!annotationShowsCallout(ann)) return;
     drawLabel(ann.label, getLabelText(ann), state.selection.kind === 'annotation' && ann.id === state.selection.id, 1, getAnnotationColor(ann));
   }
 
@@ -40267,6 +42535,8 @@ function requestRender() {
       drawPreview();
     }
     drawBoardGraphicPreview();
+    // US-097: the stamp about to be placed, drawn by the real line renderer.
+    drawShapeStampPreview();
 
     // Highlight every selected image. A single selection keeps its resize
     // handles; a Cmd/Ctrl+click group shows outlines only (move-together).

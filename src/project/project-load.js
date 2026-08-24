@@ -92,6 +92,11 @@
       state.drawColor = s.drawColor || 'red';
       state.arrowType = s.arrowType || 'double';
       state.lineWidth = normalizeLineWidth(s.lineWidth);
+      // US-096: never write the local preset library from a project file. Note
+      // which of its presets are new and let the TD decide — a colleague's
+      // project must not silently rewrite this machine's tooling.
+      offerLinePresetsFromProject(s.linePresets);
+      offerShapeStampsFromProject(s.shapeStamps);
       // Additive like lineWidth: a file saved before this control existed has
       // no key, and normalizeNoteFontSize's own NaN fallback covers it.
       state.noteFontSize = normalizeNoteFontSize(s.noteFontSize);

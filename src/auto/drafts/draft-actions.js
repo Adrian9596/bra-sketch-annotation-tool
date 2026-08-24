@@ -86,6 +86,11 @@
     state.autoMode.anchorSelectedId = null;
     state.autoMode.anchorsHidden = false;
     state.autoMode.hiddenAnchorKinds = []; // US-038: fresh seed shows all
+    // This moves EVERY anchor at once, so any drafts under review would be left
+    // pointing at the pre-reset positions — the whole board detached, not just
+    // the one POM a drag touches. moveAnchorBy re-syncs on the drag path; this
+    // action bypassed it entirely.
+    resyncDraftsFromAnchors();
     pushHistoryIfChanged();
     updateUI();
     requestRender();

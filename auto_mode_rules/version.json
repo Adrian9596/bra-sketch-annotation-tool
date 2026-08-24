@@ -2,6 +2,6 @@
   "pom_unit": "in",
   "template_version": "core18-2026-07-18b",
   "rule_version": "offline-vision-rules-v3",
-  "anchor_version": "anchors-2026-07-26-cup-width-own-height",
+  "anchor_version": "anchors-2026-08-24-hem-offset-preserved",
   "suggestions_version": "sizeL-suggestions-v1"
 }

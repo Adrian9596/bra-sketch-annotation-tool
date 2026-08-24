@@ -226,7 +226,13 @@
       'apex-right':        detection.apexRight ? 'apexJoin' : 'ratio',
       '171':     detection.cfTopY != null ? 'cfTop' : 'ratio',
       '172':    (detection.apexRightInner || detection.apexRight) ? 'apexJoin' : 'ratio',
-      '181':       detection.sideTopRightInk ? 'ink' : (detection.sideRightX != null ? 'silhouette' : 'ratio'),
+      // 181 has no ink basis to report: the seeder places it from chest-right or
+      // the side column, never from the side-seam notch (see the long note in
+      // seed-front-view.js — the notch branch was dead, and reconnecting it
+      // measured worse). This used to test `detection.sideTopRightInk`, which
+      // nothing writes, so the 'ink' arm was unreachable anyway; it is gone so
+      // the basis cannot start claiming ink the seeder does not use.
+      '181':       detection.sideRightX != null ? 'silhouette' : 'ratio',
       '182':    (detection.apexRightOuter || detection.frontStrapStart) ? 'strapJoin' : 'ratio',
       'strap-top':         detection.frontStrapStart ? 'frontStrapSeam' : 'ratio',
       'strap-bottom':      (backPanelHeightInk || backPanelInk) ? 'backPanelJoin' : 'ratio',

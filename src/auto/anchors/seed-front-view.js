@@ -244,18 +244,33 @@
         : inView(f, 0.86, 0.16);
       // Underarm (181): the BOTTOM of the arm opening, on the OUTER silhouette
       // where the armhole meets the side seam. Priority:
-      //   1. detected side-seam-top ink notch (the true underarm), when present.
-      //   2. chest-right — it sits on the outer silhouette at bust height, which
+      //   1. chest-right — it sits on the outer silhouette at bust height, which
       //      is where the armhole runs into the side; `sideRightX` alone lands
       //      too far IN (near the gore) on molded cups (TD 2026-07-18, demo5).
-      //   3. side column, partway DOWN from the strap junction toward the cradle.
+      //   2. side column, partway DOWN from the strap junction toward the cradle.
       // Pick whichever candidate is the most OUTER (largest x) so the anchor
       // reaches the arm edge rather than the center.
+      //
+      // There used to be a priority above both of these — "the detected
+      // side-seam-top ink notch, the true underarm" — guarded by
+      // `detection.sideTopRightInk`. The detector never writes that property
+      // (landmark-stage.js publishes the notch as `detection.sideTopRight`, and
+      // `sideTopRightInk` exists only as a local alias here and in
+      // landmark-qa.js), so the branch had never once executed and every sketch
+      // has always taken the silhouette path below.
+      //
+      // Reconnecting it was measured, 2026-08-24, and made 181 WORSE: mean error
+      // on the only ground-truth sample that labels it (EvelynBliss vA 2.0) went
+      // 0.2891 -> 0.3120 and `npm run accuracy` failed its regression gate. So
+      // the notch is deliberately not used, and the dead branch is deleted
+      // rather than left to look like a working priority.
+      //
+      // Do not "fix the typo" back in without re-running accuracy. 181 IS the
+      // worst anchor in the corpus at ~0.29, but neither candidate is close, so
+      // this needs TD ground truth on more sketches and a real look at what the
+      // underarm point should be — not a one-word change.
       let useArmhole181Bot;
-      if (detection.sideTopRightInk) {
-        useArmhole181Bot = { x: clamp01(detection.sideTopRightInk.x),
-                             y: clamp01(detection.sideTopRightInk.y) };
-      } else {
+      {
         const downRef = detection.cradleY != null ? detection.cradleY : cradle;
         const colY = useArmhole182Top.y + (downRef - useArmhole182Top.y) * 0.45;
         const colX = detection.sideRightX != null ? detection.sideRightX : sideR;

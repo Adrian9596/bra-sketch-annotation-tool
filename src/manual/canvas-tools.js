@@ -198,7 +198,12 @@
         );
         state.annotations.push(ann);
         state.selection = { kind: 'annotation', id: ann.id };
-        state.nextSequence += 1;
+        // US-096 / ADR 0055: not a bare `state.nextSequence += 1` any more. A
+        // POM number is a measurement identity, so a construction line (an
+        // unlabelled zigzag/cover/bartack) spends none — see
+        // consumePomSequenceFor in src/manual/annotation-factory.js. The other
+        // two commit paths below call the same helper.
+        consumePomSequenceFor(ann);
         state.drawSession = null;
         pushHistoryIfChanged();
         updateUI();
@@ -241,7 +246,7 @@
       const curveAnn = createCurvedAnnotation(sess.start, world, sess.style, sess.color, sess.arrowType, sess.lineWidth, sess.mid);
       state.annotations.push(curveAnn);
       state.selection = { kind: 'annotation', id: curveAnn.id };
-      state.nextSequence += 1;
+      consumePomSequenceFor(curveAnn);
       state.drawSession = null;
       pushHistoryIfChanged();
       updateUI();
@@ -260,7 +265,7 @@
       const ann = createStraightAnnotation(start, end, drawSettings.style, drawSettings.color, drawSettings.arrowType, drawSettings.lineWidth);
       state.annotations.push(ann);
       state.selection = { kind: 'annotation', id: ann.id };
-      state.nextSequence += 1;
+      consumePomSequenceFor(ann);
 
       // Stay armed for an optional collinear dashed extension. The next click
       // along the line's axis commits a separate annotation with its own seq;

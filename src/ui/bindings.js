@@ -22,6 +22,9 @@
     if (el.toolAddPoint) el.toolAddPoint.addEventListener('click', () => setTool('add-point'));
 
     el.stitchesBtn.addEventListener('click', toggleLineStyleMenu);
+    // US-096: the preset dropdown owns its own rows and handlers.
+    bindLinePresetPanel();
+    bindShapeStampPanel();
     el.styleOptionBtns.forEach((button) => {
       button.addEventListener('click', () => {
         setLineStyle(button.dataset.style);
@@ -243,6 +246,9 @@
     }
     state.tool = tool;
     if (tool !== 'select') state.graphicEdit = null;
+    // US-097: leaving the stamp tool disarms the chosen shape, so a later
+    // press cannot place one the TD has stopped thinking about.
+    if (tool !== 'stamp') setActiveShapeStamp(null);
     state.drawSession = null;
     state.eraseSession = null;
     if (tool === 'eraser') {
@@ -254,8 +260,25 @@
   }
 
 
+  // US-096 / ADR 0055: the two things this used to do at once are now separate.
+  //
+  // With lines selected, the TD is restyling THOSE lines. It changes the whole
+  // selection (not just the primary, as before) and leaves state.drawStyle — and
+  // therefore the board's POM/Stitch mode — alone. Previously converting one
+  // line to zigzag hid every callout number on the board.
+  //
+  // With nothing selected, the TD is setting what the next line is born as, and
+  // that still carries the board-mode switch and its toast, unchanged.
   function setLineStyle(style) {
     const normalized = normalizeLineStyle(style);
+    if (getSelectedAnnotationsForEdit().length) {
+      applyToSelectedAnnotations({ style: normalized });
+      return;
+    }
+    setDefaultLineStyle(normalized);
+  }
+
+  function setDefaultLineStyle(normalized) {
     const wasStitchMode = isStitchMode();
     state.drawStyle = normalized;
     if (isStitchMode() !== wasStitchMode) {
@@ -263,7 +286,8 @@
         ? 'Stitch mode — callout numbers hidden.'
         : 'POM mode — callout numbers shown.');
     }
-    applyToSelectedAnnotation({ style: normalized });
+    updateUI();
+    requestRender();
   }
 
   function toggleLineStyleMenu(e) {
@@ -275,6 +299,9 @@
 
   function openLineStyleMenu() {
     if (el.stitchesBtn.disabled) return;
+    // US-096: the preset rows are stored data, so they are rendered each time
+    // the menu opens rather than written into index.html.
+    renderLinePresetList();
     el.stitchesMenu.hidden = false;
     el.stitchesBtn.setAttribute('aria-expanded', 'true');
   }
@@ -369,6 +396,36 @@
     return true;
   }
 
+  // US-096: applies to the WHOLE selection. Restyling eight Shift-clicked lines
+  // used to take eight actions, because this only ever touched the primary.
+  //
+  // A style change can move a line in or out of the measurement set (ADR 0055),
+  // so a line re-entering it may need a fresh POM number — see
+  // reissuePomSequenceOnReentry.
+  function applyToSelectedAnnotations(settings) {
+    const anns = getSelectedAnnotationsForEdit();
+    if (!anns.length) {
+      updateUI();
+      requestRender();
+      return;
+    }
+
+    const before = snapshotFingerprint(makeSnapshot());
+    for (const ann of anns) {
+      const wasMeasurement = isMeasurementAnnotation(ann);
+      Object.assign(ann, settings);
+      if (!wasMeasurement && isMeasurementAnnotation(ann)) reissuePomSequenceOnReentry(ann);
+    }
+    const after = snapshotFingerprint(makeSnapshot());
+    if (before !== after) pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+  }
+
+  // Deliberately still the PRIMARY only. The colour swatch, arrow buttons and
+  // line-width chip all read back from the primary in updateUI, so widening
+  // them to the group is its own product decision, not a side effect of
+  // US-096. Style and presets are the two things that go plural here.
   function applyToSelectedAnnotation(settings) {
     const ann = getSelectedAnnotation();
     if (!ann) {

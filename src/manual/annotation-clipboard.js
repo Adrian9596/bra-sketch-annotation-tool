@@ -107,7 +107,9 @@
       // before interior anchors existed.
       ann.label = computeDefaultLabelPosition(ann);
       state.annotations.push(ann);
-      state.nextSequence += 1;
+      // US-096: a pasted construction line spends no POM number, exactly as
+      // a freshly drawn one does not.
+      consumePomSequenceFor(ann);
       pastedIds.push(ann.id);
     }
     // Select the pasted group so it can be moved/nudged as one immediately.
@@ -158,7 +160,7 @@
       // shape; backfill the anchor set for any older single-cubic source.
       ensureCurveControls(ann);
       state.annotations.push(ann);
-      state.nextSequence += 1;
+      consumePomSequenceFor(ann);
       reflectedIds.push(ann.id);
     }
     if (!reflectedIds.length) {

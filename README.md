@@ -81,6 +81,8 @@ npm run mainpage-check     # tech-pack MAIN PAGE sheet
 npm run construction-check # construction annotation page
 npm run bom-check          # BOM page
 npm run preview-check      # preview & export tab
+npm run line-presets-check # line presets, and stitch lines as construction marks
+npm run shape-stamps-check # saved shapes: normalize, re-place at any size
 ```
 
 The suites that score detection accuracy against real sketches — `golden`,

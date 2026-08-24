@@ -25,6 +25,25 @@
     stitchesBtnLabel: document.getElementById('stitchesBtnLabel'),
     stitchesMenu: document.getElementById('stitchesMenu'),
     styleOptionBtns: Array.from(document.querySelectorAll('.style-option')),
+    // US-096 / ADR 0055: the line-preset library, which lives INSIDE the
+    // Stitches menu above rather than in a toolbar unit of its own (US-082
+    // caps the primary surface). The rows inside #linePresetList are rendered
+    // from stored data, so they are looked up on demand in
+    // src/ui/line-preset-panel.js rather than captured here.
+    linePresetList: document.getElementById('linePresetList'),
+    linePresetSaveBtn: document.getElementById('linePresetSaveBtn'),
+    linePresetExportBtn: document.getElementById('linePresetExportBtn'),
+    linePresetImportBtn: document.getElementById('linePresetImportBtn'),
+    linePresetImportProjectBtn: document.getElementById('linePresetImportProjectBtn'),
+    linePresetResetBtn: document.getElementById('linePresetResetBtn'),
+    linePresetFileInput: document.getElementById('linePresetFileInput'),
+    // US-097 / ADR 0056: the saved-shape library, inside the Tools menu.
+    shapeStampList: document.getElementById('shapeStampList'),
+    shapeStampSaveBtn: document.getElementById('shapeStampSaveBtn'),
+    shapeStampImportProjectBtn: document.getElementById('shapeStampImportProjectBtn'),
+    shapeStampExportBtn: document.getElementById('shapeStampExportBtn'),
+    shapeStampImportBtn: document.getElementById('shapeStampImportBtn'),
+    shapeStampFileInput: document.getElementById('shapeStampFileInput'),
     lineWidthChip: document.getElementById('lineWidthChip'),
     lineWidthInput: document.getElementById('lineWidthInput'),
     fontSizeChip: document.getElementById('fontSizeChip'),

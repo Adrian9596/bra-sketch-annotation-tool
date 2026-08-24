@@ -157,16 +157,24 @@
       when: () => state.images.length ? true : 'Add a Board image first.', action: () => setTool('eraser') }),
     appCommand({ id: 'board.tool.text', label: 'Text Note Tool', category: 'Board · Tools',
       page: 'board', mode: 'manual', shortcut: { key: 't' }, target: '#toolText', action: () => setTool('text') }),
-    ...['rectangle','circle','hexagon'].map(shape => appCommand({
+    // Shape shortcuts: 4 = rectangle (4 sides), O = circle (round like an O),
+    // 6 = hexagon (6 sides). Plain keys — page-nav uses ⌘4/⌘5, Open is ⌘O.
+    ...[['rectangle', '4'], ['circle', 'o'], ['hexagon', '6']].map(([shape, key]) => appCommand({
       id:'board.tool.'+shape, label:shape[0].toUpperCase()+shape.slice(1)+' Tool', category:'Board · Tools',
-      page:'board', mode:'manual', target:'#tool'+shape[0].toUpperCase()+shape.slice(1), action:()=>setTool(shape),
+      page:'board', mode:'manual', shortcut: { key }, target:'#tool'+shape[0].toUpperCase()+shape.slice(1), action:()=>setTool(shape),
     })),
+    // Path editing shares one ⇧-letter family — ⇧P point, ⇧E edit, ⇧X cut. The
+    // plain letters are taken (P export PDF, E export Excel, X eraser) and the
+    // three read as one group rather than three leftovers.
     appCommand({ id: 'board.tool.add-point', label: 'Add Point to Selected Curve', category: 'Board · Tools',
-      page: 'board', mode: 'manual', target: '#toolAddPoint', action: () => appCommandClick('#toolAddPoint') }),
+      page: 'board', mode: 'manual', shortcut: { key: 'p', shift: true },
+      target: '#toolAddPoint', action: () => appCommandClick('#toolAddPoint') }),
     appCommand({ id:'board.graphic.edit-path', label:'Edit Selected Graphic Path', category:'Board · Graphics',
-      page:'board', mode:'manual', target:'#editPathBtn', when:()=>getSelectedBoardGraphic()?true:'Select one Board Graphic first.', action:()=>bgEnterEdit(getSelectedBoardGraphic()) }),
+      page:'board', mode:'manual', shortcut: { key: 'e', shift: true },
+      target:'#editPathBtn', when:()=>getSelectedBoardGraphic()?true:'Select one Board Graphic first.', action:()=>bgEnterEdit(getSelectedBoardGraphic()) }),
     appCommand({ id:'board.graphic.cut-path', label:'Cut Selected Graphic Path', category:'Board · Graphics',
-      page:'board', mode:'manual', target:'#cutPathBtn', when:()=>state.graphicEdit&&state.graphicEdit.active?true:'Select a path node or segment first.', action:()=>cutSelectedBoardGraphicPath() }),
+      page:'board', mode:'manual', shortcut: { key: 'x', shift: true },
+      target:'#cutPathBtn', when:()=>state.graphicEdit&&state.graphicEdit.active?true:'Select a path node or segment first.', action:()=>cutSelectedBoardGraphicPath() }),
     appCommand({ id:'board.graphic.segment-straight', label:'Make Graphic Segment Straight', category:'Board · Graphics',
       page:'board', mode:'manual', target:'#segmentStraightBtn', action:()=>bgSetActiveSegmentType('line') }),
     appCommand({ id:'board.graphic.segment-curved', label:'Make Graphic Segment Curved', category:'Board · Graphics',
@@ -192,6 +200,29 @@
       page: 'board', mode: 'manual', target: '#fontSizeInput', action: () => document.getElementById('fontSizeInput').focus() }),
     appCommand({ id: 'board.focus.brush-size', label: 'Focus Eraser Brush Size', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#brushSizeInput', action: () => document.getElementById('brushSizeInput').focus() }),
+    // US-096 / ADR 0055: the preset library. Open + Save are the two actions
+    // worth a palette entry; applying a specific preset is a click in the menu,
+    // and registering one command per user-created preset would flood the
+    // palette with rows that change under the TD's feet.
+    appCommand({ id: 'board.presets.open', label: 'Open Line Presets', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#stitchesBtn',
+      action: () => openLinePresetMenu() }),
+    appCommand({ id: 'board.presets.save', label: 'Save Current Look as Line Preset', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#linePresetSaveBtn',
+      action: () => saveCurrentLookAsPreset() }),
+    // US-097 / ADR 0056: the saved-shape library. Same reasoning as the presets
+    // above — Save is worth a palette entry, and picking a specific shape is a
+    // click in the Tools menu rather than one command per user-created stamp.
+    appCommand({ id: 'board.shapes.save', label: 'Save Selected Line as Shape', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#shapeStampSaveBtn',
+      when: () => (typeof canSaveShapeStampReason === 'function' ? canSaveShapeStampReason() : true),
+      action: () => saveSelectedLineAsShape() }),
+    appCommand({ id: 'board.shapes.open', label: 'Open Saved Shapes', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#toolsMenuBtn',
+      action: () => {
+        const record = boardToolbarMenuRecords().find(r => r.list && r.list.id === 'toolsMenuList');
+        if (record) openBoardToolbarMenu(record);
+      } }),
     appCommand({ id: 'board.copy.line', label: 'Copy Selected Line', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'c', meta: true }, target: '#copyLineBtn',
       when: appCommandSelectedAnnotationReason, action: () => copySelectedAnnotation() }),

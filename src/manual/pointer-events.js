@@ -147,6 +147,23 @@
       return;
     }
 
+    // US-097 / ADR 0056: place a saved shape. Same interaction shape as
+    // draw-graphic below — press, drag the box, release — because it is the
+    // same gesture and the preview/commit plumbing is already proven.
+    if (state.tool === 'stamp') {
+      const stamp = getActiveShapeStamp();
+      if (!stamp) {
+        showToast('Pick a saved shape from Tools first.');
+        setTool('select');
+        return;
+      }
+      beginTrackedInteraction('draw-stamp', {
+        stampId: stamp.id, startWorld: clonePoint(world), currentWorld: clonePoint(world),
+        shiftKey: !!e.shiftKey, altKey: !!e.altKey,
+      });
+      return;
+    }
+
     if (state.tool === 'rectangle' || state.tool === 'circle' || state.tool === 'hexagon') {
       beginTrackedInteraction('draw-graphic', {
         kind: state.tool, startWorld: bgClonePoint(world), currentWorld: bgClonePoint(world),
@@ -359,6 +376,12 @@
 
     const interaction = state.interaction;
     if (!interaction) return;
+
+    if (interaction.type === 'draw-stamp') {
+      interaction.currentWorld = clonePoint(world);
+      interaction.shiftKey = !!e.shiftKey; interaction.altKey = !!e.altKey;
+      requestRender(); return;
+    }
 
     if (interaction.type === 'draw-graphic') {
       interaction.currentWorld = bgClonePoint(world);
@@ -593,6 +616,18 @@
 
     document.body.classList.remove('grabbing');
 
+    if (interaction.type === 'draw-stamp') {
+      const stamp = getShapeStampById(interaction.stampId);
+      state.interaction = null;
+      const placed = placeShapeStamp(stamp, interaction.startWorld, interaction.currentWorld,
+        interaction.shiftKey, interaction.altKey);
+      // Stay armed: placing the same shape on the front and back views is the
+      // common case, and re-picking it from the menu each time is friction.
+      // Escape or another tool disarms, exactly like the drawing tools.
+      if (placed) showToast(`Placed "${stamp.name}". Esc to stop stamping.`);
+      updateUI(); requestRender(); return;
+    }
+
     if (interaction.type === 'draw-graphic') {
       const graphic = createBoardGraphicFromDrag(interaction.kind, interaction.startWorld, interaction.currentWorld, interaction.shiftKey, interaction.altKey);
       state.interaction = null;
@@ -638,6 +673,19 @@
         // anchors are not part of history snapshots, so a pure anchor drag
         // never changes the fingerprint and the old gate silently dropped
         // every residual and anchor_dragged event.
+        //
+        // The panel is also refreshed HERE, unconditionally. moveAnchorBy
+        // re-syncs the drafts (anchor-drag-sync.js) and that can drop a draft's
+        // tdApproved and change its drawability / confidence — all of which the
+        // spec panel and the Apply button render, and none of which used to
+        // repaint: the canvas showed the corrected line while the row still read
+        // "Approved" until the TD happened to click something else. Anchors and
+        // drafts are part of the history snapshot now, so pushHistoryIfChanged
+        // below normally covers this too; the direct call stays because it does
+        // not depend on the fingerprint gate that swallowed the refresh in the
+        // first place. Once per commit, never per mousemove — updateUI rebuilds
+        // the whole spec table, against a re-sync deliberately kept at
+        // 0.05-0.08 ms.
         if (interaction.learnOrigin) {
           if (anchor && anchor.kind === interaction.learnOrigin.kind) {
             recordAnchorResidual(
@@ -654,6 +702,7 @@
           }
         }
       }
+      if (interaction.type === 'drag-anchor') updateUI();
       const before = interaction.beforeFingerprint;
       const after = snapshotFingerprint(makeSnapshot());
       if (before !== after) {

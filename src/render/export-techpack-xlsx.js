@@ -451,7 +451,8 @@
     };
     window.__braAutoModeDebug.buildFullSizeRun = (pomKey) => {
       const annByPom = new Map();
-      for (const ann of state.annotations) annByPom.set(getLabelText(ann), ann);
+      // US-096: the measurement set only — see measurementAnnotations().
+      for (const ann of measurementAnnotations()) annByPom.set(getLabelText(ann), ann);
       // Preserve the numeric-array contract: the descriptors are an internal
       // detail of the formula writer; callers still get the graded values.
       return buildFullSizeRun(pomKey, annByPom).map(c => c.value);

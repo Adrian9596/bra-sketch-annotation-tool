@@ -32,7 +32,10 @@
     // both halves of the pair. Hidden state is session-only (not persisted),
     // so the export mirrors the current review view, just like the board.
     const hiddenPomKeys = new Set();
-    for (const ann of state.annotations) {
+    // US-096: a construction line owns no POM key, so it can neither hide a
+    // POM row nor claim one. Scanning the whole board here would let an
+    // unlabelled stitch mark sitting on sequence number 5 hide POM 5.
+    for (const ann of measurementAnnotations()) {
       if (isAnnHidden(ann.id)) hiddenPomKeys.add(String(getLabelText(ann)));
     }
     // US-047: a POM whose drawn line was DELETED is excluded from the spec just
@@ -54,7 +57,9 @@
   // points, so the two exports can never disagree about the spec).
   function buildSpecSheetRows(now) {
     const annByPom = new Map();
-    for (const ann of state.annotations) annByPom.set(getLabelText(ann), ann);
+    // US-096: the measurement set only. An unlabelled zigzag/cover/bartack
+    // line is a construction mark and owns no POM row.
+    for (const ann of measurementAnnotations()) annByPom.set(getLabelText(ann), ann);
     const pomKeys = specVisiblePomKeys(annByPom);
 
     // US-011: the sheet emits only the SELECTED size columns. The grade math

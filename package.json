@@ -50,11 +50,14 @@
     "board-shape-check": "node scripts/board-shape-check.mjs",
     "keyboard-shortcuts-check": "node scripts/keyboard-shortcuts-check.mjs",
     "board-interaction-check": "node scripts/board-interaction-check.mjs",
+    "anchor-resync-check": "node scripts/anchor-resync-check.mjs",
     "curve-polyline-tests": "node scripts/curve-polyline-tests.mjs",
     "notes-check": "node scripts/notes-check.mjs",
     "construction-check": "node scripts/construction-check.mjs",
     "bom-check": "node scripts/bom-check.mjs",
-    "preview-check": "node scripts/preview-check.mjs"
+    "preview-check": "node scripts/preview-check.mjs",
+    "line-presets-check": "node scripts/line-presets-check.mjs",
+    "shape-stamps-check": "node scripts/shape-stamps-check.mjs"
   },
   "devDependencies": {
     "@slidev/cli": "^52.16.0",

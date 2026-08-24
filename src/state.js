@@ -83,6 +83,11 @@
     selection: { kind: null, id: null },
     // Session-only focused path-edit state for one selected Board Graphic.
     graphicEdit: null,
+    // US-097 / ADR 0056: which saved shape the stamp tool will place. Session
+    // only — like state.tool itself, an armed tool is a view concern, not
+    // project data, so it is absent from makeSnapshot and never round-trips
+    // through undo or a saved project.
+    activeStampId: null,
     // Cmd/Ctrl+click multi-selection of images. Always includes the primary
     // `selection` when that is an image; empty otherwise. The primary stays the
     // resize/spec anchor — this set only widens what a group drag / delete acts

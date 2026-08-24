@@ -199,6 +199,68 @@
         if (typeof renderSpecPanel === 'function') renderSpecPanel();
         return clone(getPomSpec(key));
       },
+      // US-096 / ADR 0055: the measurement set and the preset library.
+      //   getMeasurementAnnIds: the exact lines the spec panel, both workbooks
+      //     and Preview build rows from — the claim the story is about. A
+      //     construction line is absent here while still present in
+      //     getAnnotations() and getExportAnnIds() (it is drawn and exported,
+      //     just not measured).
+      //   getLinePresets / applyLinePreset: drive the library without opening
+      //     the menu, so a suite can assert the model separately from the UI.
+      getMeasurementAnnIds: () => (typeof measurementAnnotations === 'function'
+        ? measurementAnnotations().map(a => a.id) : null),
+      getLinePresets: () => (typeof getLinePresets === 'function' ? clone(getLinePresets()) : null),
+      applyLinePreset: (id) => (typeof applyLinePreset === 'function' ? applyLinePreset(id) : false),
+      addLinePreset: (name) => (typeof addLinePreset === 'function' ? clone(addLinePreset(name)) : null),
+      resetLinePresets: () => {
+        if (typeof resetLinePresetsToBuiltins === 'function') resetLinePresetsToBuiltins();
+      },
+      importLinePresetsJson: (text) => (typeof importLinePresetsFromJson === 'function'
+        ? importLinePresetsFromJson(text) : 0),
+      // US-097 / ADR 0056: the shape-stamp library. getShapeStamps returns the
+      // stored geometry so a suite can compare a placed line against the stamp
+      // it came from; sampleAnnotationShape returns the SHAPE of any line,
+      // normalized into its own bounding box, which is the only way to assert
+      // "the curve that came back is the curve that was saved" independently of
+      // where and how big it was placed.
+      getShapeStamps: () => (typeof getShapeStamps === 'function' ? clone(getShapeStamps()) : null),
+      resetShapeStamps: () => {
+        if (typeof commitShapeStamps === 'function') commitShapeStamps([]);
+      },
+      importShapeStampsJson: (text) => (typeof importShapeStampsFromJson === 'function'
+        ? importShapeStampsFromJson(text) : 0),
+      setActiveShapeStamp: (id) => {
+        if (typeof setActiveShapeStamp === 'function') setActiveShapeStamp(id);
+      },
+      sampleAnnotationShape: (annotationId, samples) => {
+        const ann = state.annotations.find(a => a && a.id === annotationId);
+        if (!ann || typeof getAnnotationPolyline !== 'function') return null;
+        const n = Math.max(8, Number(samples) || 64);
+        const pts = getAnnotationPolyline(ann, n);
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of pts) {
+          if (p.x < minX) minX = p.x;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.y > maxY) maxY = p.y;
+        }
+        const w = maxX - minX, h = maxY - minY;
+        const total = polylineLength(pts);
+        // Resampled at EQUAL ARC LENGTH, not at equal index: two renderings of
+        // the same curve at different sizes get different chord counts, so
+        // index-wise comparison would drift even for an identical shape.
+        const out = [];
+        for (let i = 0; i <= n; i += 1) {
+          const at = samplePolylineAt(pts, total * (i / n));
+          out.push({
+            x: w > 1e-6 ? (at.point.x - minX) / w : 0.5,
+            y: h > 1e-6 ? (at.point.y - minY) / h : 0.5,
+          });
+        }
+        return { points: out, width: w, height: h, aspect: w > 1e-6 ? h / w : 0 };
+      },
+      exportLinePresetsJson: () => (typeof linePresetsEnvelope === 'function'
+        ? JSON.stringify(linePresetsEnvelope()) : null),
       // Export image paths honor hidden POMs (scripts/export-hidden-tests.mjs).
       // getExportAnnIds: the exact applied-annotation set the export renderers
       //   (PDF / Copy Image / Excel embedded PNG) draw and crop from, so a test
@@ -287,6 +349,11 @@
         return targets.length;
       },
       applyApprovedDrafts: () => applyApprovedDraftsAtomically({ suppressPrompt: true }),
+      /* The draft -> applied-annotation field copy on its own, so a suite can
+         assert what survives Apply without having to drive a whole board into a
+         state where Apply succeeds. buildAppliedAnnotation is the mirror of
+         buildDraftAnnotation and a field missing from it vanishes silently. */
+      buildAppliedAnnotationForTest: (draft) => clone(buildAppliedAnnotation(clone(draft))),
       exportProject: () => clone(buildProjectSnapshot()),
       /* US-080: drives a MAIN PAGE sketch slot the way the upload/paste menu
          does, and hands back the RAW runtime state.mainPage — the one history
@@ -381,6 +448,15 @@
         classifyResidual: (kind, dx, dy) => classifyResidualStage(kind, dx, dy),
         getBias: (kind, anchor) => clone(getAnchorBias(kind, anchor)),
         getSampleCount: () => getLearningSampleCount(),
+        // US-096 / ADR 0055 code review, 2026-08-23: the LIVE TD-edit capture
+        // funnel (pointer-events drag-commit, line-nudge arrow keys) reached
+        // through directly, so a suite can prove a construction line is refused
+        // without having to run detection and stage a real drag.
+        evaluateManualPomSample: (annotationId, options) => {
+          const ann = state.annotations.find(a => a && a.id === annotationId);
+          if (!ann) return null;
+          return clone(evaluateManualPomSample(ann, options || {}));
+        },
         getBuckets: () => clone(learningStore.buckets),
         getParamSamples: () => clone(learningStore.paramSamples || {}),
         getDetectionParams: () => clone(getLearnedDetectionParams()),

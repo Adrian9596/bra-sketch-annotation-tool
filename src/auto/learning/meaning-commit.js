@@ -96,6 +96,19 @@
   function evaluateManualPomSample(ann, options = {}) {
     if (!ann || !ann.start || !ann.end) return { status: 'skipped' };
     if (!isLearningEnabled())            return { status: 'skipped' };
+    // US-096 / ADR 0055 code review, 2026-08-23: a construction line carries no
+    // POM meaning, so its geometry must never bias a POM's anchor seed.
+    //
+    // This is the LIVE capture path (drag-commit in pointer-events.js, arrow
+    // nudge in line-nudge.js), and it was missed when the save-time path
+    // (isEligibleEvidenceAnnotation, style-evidence-capture.js) was gated.
+    // The gap was reachable and expensive: restyling an APPLIED auto line to
+    // zigzag leaves ann.auto / sourceMode / autoRunId intact, so isAutoDraft
+    // stays true and allowAuto makes labelText fall back to getLabelText(ann)
+    // — the seq the line was born with, i.e. the very POM number it no longer
+    // measures. Dragging it then wrote the stitch path into that POM's bucket,
+    // and the learning store outlives the project.
+    if (!isMeasurementAnnotation(ann)) return { status: 'skipped' };
     if (ann.auto === true && !options.allowAuto) return { status: 'skipped' };
 
     const explicitText = ann.text != null && String(ann.text).trim() !== ''

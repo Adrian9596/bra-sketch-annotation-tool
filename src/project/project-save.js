@@ -43,6 +43,20 @@
         gradeRules: clone(state.gradeRules || {}),
         customPoms: clone(state.customPoms || []),
         deletedPomKeys: clone(state.deletedPomKeys || []),
+        // US-096 / ADR 0055: a copy of the line-preset library, so a board
+        // opened on another machine can still be shown — and offered — the
+        // looks it was drawn with. Additive: files saved before US-096 have no
+        // key, and an absent key means "no embedded copy", never "empty
+        // library". The local library stays the source of truth; project-load
+        // offers these for import rather than overwriting it.
+        linePresets: (typeof serializeLinePresetsForProject === 'function')
+          ? serializeLinePresetsForProject()
+          : [],
+        // US-097 / ADR 0056: the saved-shape library, same additive+offered
+        // contract as linePresets above.
+        shapeStamps: (typeof serializeShapeStampsForProject === 'function')
+          ? serializeShapeStampsForProject()
+          : [],
         sizeSelection: state.sizeSelection ? clone(state.sizeSelection) : null,
         // US-068: MAIN PAGE sheet. Additive — files saved before US-068 have
         // no key and seed a default on open. US-080: the serializer injects

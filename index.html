@@ -894,6 +894,45 @@
   .ghost-btn:hover{ background:#f7f7f9; }
 
   /* Stitch / line-style previews in the dropdown */
+  /* US-096: the Stitches menu now also carries the preset library, so it needs
+     the extra width a name plus four row controls takes, and a scroll cap so a
+     long library cannot run off the bottom of the screen. */
+  .style-menu-list:has(.preset-list){ min-width:296px; }
+  /* US-097: the Tools menu now carries the saved-shape library, whose rows need
+     the same width a name plus four controls takes. .toolbar-menu-list already
+     caps height and scrolls, so only the width needs widening — and only when
+     the library section is actually present. */
+  #toolsMenuList:has(.preset-list){ min-width:296px; max-width:min(340px, calc(100vw - 24px)); }
+  /* US-097: the shape library shares .preset-list's styling but not its noun —
+     an empty shape library reading "No presets yet." is simply wrong, and it
+     ships empty by design (ADR 0056 declines to invent house geometry). */
+  #shapeStampList:empty::after{ content:'No saved shapes yet — select a line and use "Save selected line as shape".'; }
+  .preset-divider{
+    margin:6px 2px 3px; padding-top:6px;
+    border-top:1px solid var(--hairline);
+    color:var(--muted); font-size:11px; font-weight:600;
+    letter-spacing:.04em; text-transform:uppercase;
+  }
+  .preset-list{ display:flex; flex-direction:column; gap:3px; max-height:320px; overflow-y:auto; }
+  .preset-list:empty::after{
+    content:'No presets yet.';
+    display:block; padding:8px 6px; color:var(--muted); font-size:12px;
+  }
+  .preset-row{ display:flex; align-items:center; gap:6px; }
+  /* The apply button takes the free space so the whole name is a click target,
+     not just the text. The row controls stay a fixed size beside it. */
+  .preset-row .preset-apply{ flex:1 1 auto; display:flex; align-items:center; gap:10px; min-width:0; }
+  .preset-row .preset-apply span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .preset-row .preset-ctl{
+    flex:0 0 auto; width:26px; padding:2px 0; text-align:center;
+    color:var(--muted); font-size:12px; line-height:1.1;
+  }
+  .preset-row .preset-ctl:hover:not(:disabled){ color:var(--ink); background:#eef0f4; }
+  .preset-row .preset-ctl:disabled{ opacity:.3; cursor:default; }
+  .preset-menu-actions{
+    display:flex; flex-direction:column; gap:3px;
+    margin-top:5px; padding-top:5px; border-top:1px solid var(--hairline);
+  }
   .style-option{ display:flex; align-items:center; gap:10px; }
   .style-preview{ width:36px; height:14px; flex:0 0 auto; color:var(--accent); }
 
@@ -2901,6 +2940,20 @@
             <button id="toolRectangle" type="button" role="menuitem" title="Rectangle — drag a bounding box">Rectangle</button>
             <button id="toolCircle" type="button" role="menuitem" title="Circle — drag a bounding box">Circle</button>
             <button id="toolHexagon" type="button" role="menuitem" title="Regular hexagon — drag a bounding box">Hexagon</button>
+            <!-- US-097 / ADR 0056: the saved-shape library. It lives here
+                 rather than in a toolbar unit of its own because choosing a
+                 stamp IS choosing a tool, and US-082 caps the primary Board
+                 surface. Rows are rendered from stored data by
+                 src/ui/shape-stamp-panel.js. -->
+            <div class="preset-divider" role="separator">Saved shapes</div>
+            <div id="shapeStampList" class="preset-list"></div>
+            <div class="preset-menu-actions">
+              <button id="shapeStampSaveBtn" type="button" role="menuitem" title="Save the selected line's shape so it can be placed again on any sketch">Save selected line as shape…</button>
+              <button id="shapeStampImportProjectBtn" type="button" role="menuitem" title="Add the shapes this project was drawn with to your library" hidden>Import from project</button>
+              <button id="shapeStampExportBtn" type="button" role="menuitem" title="Write the shape library to a JSON file">Export shapes JSON</button>
+              <button id="shapeStampImportBtn" type="button" role="menuitem" title="Merge a JSON file into the shape library">Import shapes JSON</button>
+            </div>
+            <input id="shapeStampFileInput" type="file" accept="application/json,.json" hidden />
           </div>
         </div>
         <!-- US-093 / ADR 0053: only reachable while a curved annotation is
@@ -2938,6 +2991,22 @@
             <svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="7" x2="33" y2="7" stroke-width="1.4" opacity="0.32"/><polyline points="8,4 11,10 14,4 17,10 20,4 23,10 26,4 28,10" stroke-width="1.5"/></svg>
             <span>Bartack</span>
           </button>
+          <!-- US-096 / ADR 0055: the line-preset library lives in this menu
+               rather than in a toolbar button of its own. US-082 caps how many
+               units sit on the primary Board surface, and a preset IS a line
+               look — the same thing the five rows above are — so this is where
+               a TD already looks for one. Same consolidation US-093 did with
+               the drawing tools. -->
+          <div class="preset-divider" role="separator">Saved presets</div>
+          <div id="linePresetList" class="preset-list"></div>
+          <div class="preset-menu-actions">
+            <button id="linePresetSaveBtn" type="button" role="menuitem" title="Save the selected line's look as a new preset">Save current look…</button>
+            <button id="linePresetImportProjectBtn" type="button" role="menuitem" title="Add the presets this project was drawn with to your library" hidden>Import from project</button>
+            <button id="linePresetExportBtn" type="button" role="menuitem" title="Write the library to a JSON file">Export JSON</button>
+            <button id="linePresetImportBtn" type="button" role="menuitem" title="Merge a JSON file into the library">Import JSON</button>
+            <button id="linePresetResetBtn" type="button" role="menuitem" title="Discard every preset and restore the built-in set">Reset to built-ins</button>
+          </div>
+          <input id="linePresetFileInput" type="file" accept="application/json,.json" hidden />
         </div>
       </div>
       <label id="lineWidthChip" class="chip" title="Line thickness in pixels for the active drawing tool or selected line">
@@ -3321,6 +3390,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=47ccfc4646c7"></script>
+<script src="app.js?v=5dddcfd319fa"></script>
 </body>
 </html>

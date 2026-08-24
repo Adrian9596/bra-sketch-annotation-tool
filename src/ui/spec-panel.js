@@ -52,7 +52,14 @@
 
   function specPanelFingerprint() {
     const r = (p) => (p ? [Math.round(p.x * 1000), Math.round(p.y * 1000)] : 0);
-    const annBits = state.annotations.map(a => [
+    // US-096: the panel renders the measurement set, so the fingerprint that
+    // decides whether to rebuild it must be taken over the same set — reading
+    // the whole board here would rebuild on every construction-line drag, and
+    // (worse) MISS the rebuild when a line's style is the only thing that
+    // changed. `a.style` is in the bits below for exactly that reason: a
+    // plain-to-zigzag conversion adds or removes a row without moving a pixel.
+    const annBits = measurementAnnotations().map(a => [
+      a.style,
       a.id, a.seq, a.text, a.type,
       r(a.start), r(a.end), r(a.midPoint),
       r(a.control1), r(a.control2), r(a.midHandleIn), r(a.midHandleOut),
@@ -153,7 +160,10 @@
     el.specEmpty.style.display = 'none';
 
     // Lookup by effective POM label so each slot can find its annotation.
-    const anns = state.annotations.slice();
+    // US-096 / ADR 0055: rows come from the measurement set. A zigzag drawn to
+    // document topstitching is construction, not a POM, and must not appear
+    // here or in anything derived from here.
+    const anns = measurementAnnotations();
     const annByPom = new Map();
     for (const ann of anns) annByPom.set(getLabelText(ann), ann);
 

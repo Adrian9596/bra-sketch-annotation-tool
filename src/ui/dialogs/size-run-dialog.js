@@ -17,7 +17,9 @@
   function openSizeRunDialog() {
     const unit = state.calibration.unit;
     const annByPom = new Map();
-    for (const ann of state.annotations) annByPom.set(getLabelText(ann), ann);
+    // US-096: the measurement set only. An unlabelled zigzag/cover/bartack
+    // line is a construction mark and owns no POM row.
+    for (const ann of measurementAnnotations()) annByPom.set(getLabelText(ann), ann);
     const pomKeys = Object.keys(POM_TEMPLATE).sort((a, b) => Number(a) - Number(b));
 
     const dialog = buildDialog({

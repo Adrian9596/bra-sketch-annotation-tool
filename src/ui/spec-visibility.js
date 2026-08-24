@@ -27,11 +27,28 @@
     requestRender();
   }
 
+  // US-096 / ADR 0055 code review, 2026-08-23: hiding is a POM-REVIEW gesture,
+  // so it can only apply to a measurement line.
+  //
+  // state.hiddenAnnIds is not pruned when a line changes role, and nothing else
+  // could prune it — a role flip is reachable from the Stitches menu, a preset,
+  // and the spec panel's own POM cell. Deriving the answer here instead makes it
+  // self-healing from every one of those paths at once.
+  //
+  // Without this, a hidden POM line restyled to a stitch style was stranded: not
+  // painted (render-loop and visibleExportAnnotations both skip hidden lines),
+  // no spec row left to carry its × toggle, and filtered out of
+  // getSelectedAnnotationIds so it could not even be clicked. It still counted
+  // in "Annotations: n" and still blocked Clear. It could also drive
+  // hideablePomCount() - hiddenPomCount() negative, which permanently
+  // suppressed the Hide-all control.
   function isAnnHidden(id) {
     if (id == null) return false;
     const ids = state.hiddenAnnIds;
     if (!Array.isArray(ids)) return false;
-    return ids.indexOf(id) !== -1;
+    if (ids.indexOf(id) === -1) return false;
+    const ann = (state.annotations || []).find(a => a && a.id === id);
+    return ann ? isMeasurementAnnotation(ann) : true;
   }
 
   function isDraftHidden(id) {
@@ -60,8 +77,12 @@
     requestRender();
   }
 
+  // Counted through isAnnHidden rather than off the raw array, so an id left
+  // behind by a line that has since become construction cannot make this
+  // exceed hideablePomCount() and drive the visible count negative.
   function hiddenPomCount() {
-    const a = Array.isArray(state.hiddenAnnIds) ? state.hiddenAnnIds.length : 0;
+    const a = Array.isArray(state.hiddenAnnIds)
+      ? state.hiddenAnnIds.filter(id => isAnnHidden(id)).length : 0;
     const d = Array.isArray(state.hiddenDraftIds) ? state.hiddenDraftIds.length : 0;
     return a + d;
   }
@@ -71,7 +92,9 @@
   // hideable, so they don't count. Drives whether the visibility control row
   // renders and whether "Hide all" has anything to act on.
   function hideablePomCount() {
-    let n = Array.isArray(state.annotations) ? state.annotations.length : 0;
+    // US-096: construction lines are not POMs, so they neither count towards
+    // "is there anything to hide" nor get hidden by Hide all.
+    let n = measurementAnnotations().length;
     if (state.appMode === 'auto' && state.autoMode && Array.isArray(state.autoMode.draftAnnotations)) {
       n += state.autoMode.draftAnnotations.length;
     }
@@ -98,7 +121,7 @@
   function hideAllPoms() {
     let changed = false;
     if (!Array.isArray(state.hiddenAnnIds)) state.hiddenAnnIds = [];
-    for (const ann of state.annotations) {
+    for (const ann of measurementAnnotations()) {
       if (ann && ann.id != null && state.hiddenAnnIds.indexOf(ann.id) === -1) {
         state.hiddenAnnIds.push(ann.id);
         changed = true;

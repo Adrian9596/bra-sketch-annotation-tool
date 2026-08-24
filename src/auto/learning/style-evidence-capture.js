@@ -35,6 +35,9 @@
 
   function isEligibleEvidenceAnnotation(ann) {
     if (!ann) return false;
+    // US-096: a construction line carries no POM meaning, so learning must not
+    // take its geometry as evidence for the POM number it happens to sit on.
+    if (!isMeasurementAnnotation(ann)) return false;
     if (ann.drawability === 'REVIEW_ONLY') return false;
     if (!ann.start || !ann.end) return false;
     if (!Number.isFinite(ann.start.x) || !Number.isFinite(ann.start.y)) return false;

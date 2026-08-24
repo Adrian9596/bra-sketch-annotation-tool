@@ -14,11 +14,32 @@
     return LINE_COLORS[key] || LINE_COLOR;
   }
 
+  // The three looks that say "this is how it is sewn" rather than "this is how
+  // long it is". US-096 / ADR 0055 makes this the load-bearing predicate: a
+  // line wearing one of them is a construction mark, not a measurement, unless
+  // the TD explicitly labelled it with a POM number. See
+  // isMeasurementAnnotation in src/manual/annotation-lookup.js.
+  // A function, not a module-scope const: the parts share one scope and a
+  // `const` read during load would throw a TDZ ReferenceError from any part
+  // that happens to run earlier. See CLAUDE.md "Living in one shared scope".
+  function stitchStyles() {
+    return ['zigzag', 'cover', 'bartack'];
+  }
+
+  function isStitchStyle(style) {
+    return stitchStyles().includes(normalizeLineStyle(style));
+  }
+
   // The board has two modes, driven entirely by the active Stitches selection.
   // Plain/Dashed keep measurement (POM) mode; the three true stitch types put
   // the whole board into Stitch (construction) mode.
+  //
+  // US-096: this reads state.drawStyle — the style the NEXT line is born with —
+  // and nothing else. Restyling a selection deliberately no longer touches it
+  // (see setLineStyle in src/ui/bindings.js), because it used to mean that
+  // converting one line to zigzag blanked every callout number on the board.
   function isStitchMode() {
-    return state.drawStyle === 'zigzag' || state.drawStyle === 'cover' || state.drawStyle === 'bartack';
+    return isStitchStyle(state.drawStyle);
   }
 
   // Callout numbers are always hidden in Stitch mode; in POM mode they honor
@@ -32,7 +53,7 @@
   }
 
   function normalizeLineStyle(style) {
-    return ['solid', 'dashed', 'zigzag', 'cover', 'bartack'].includes(style) ? style : 'solid';
+    return ['solid', 'dashed', ...stitchStyles()].includes(style) ? style : 'solid';
   }
 
   function updateLineStyleControl(activeStyle) {

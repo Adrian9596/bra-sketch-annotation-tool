@@ -492,6 +492,139 @@ async function main() {
     `a 2px press on the ${anchorJiggle.kind} anchor moved it ${anchorJiggle.movedNorm} in normalized space — anchor drags must arm like every other gesture`);
   console.log(`board-interaction-check: sub-3px press leaves the ${anchorJiggle.kind} anchor alone`);
 
+  // ---- Auto Mode: correcting an anchor moves the lines that read it ----
+  // The counterpart to the jiggle check above: a press below the arm threshold
+  // must move nothing, and a real drag must move EVERYTHING that reads the
+  // anchor. US-085 shipped a hand-written partial that re-derived POM 1/2/3/4/16
+  // inline and left the other 13 pointing at the pre-drag positions, so Apply
+  // committed them there: measured on demo1, dragging band-right left POM 7
+  // 396% long, POM 6 33%, POM 5 11%. It also wrote the RAW band anchor into
+  // POM 1 instead of the forced-level end the fixture builder produces, so the
+  // same anchors drew a different line depending on whether the TD had just
+  // dragged or just pressed Generate. No suite drove an anchor drag, so all of
+  // it stayed green.
+  //
+  // The oracle is buildPOMFixtureFromAnchors run on the anchors AS THEY NOW
+  // STAND — the same builder Generate calls, which is the point: there is only
+  // one geometry source now, so a draft cannot disagree with a regenerate. It is
+  // independent of the re-sync path under test (that path is the caller, not
+  // this function).
+  //
+  // Restores the board with "Reset Anchors", which re-seeds every anchor from
+  // the detection — deterministic, so the drafts come back to their pristine
+  // geometry for the checks below. That doubles as the gate for Reset Anchors
+  // itself, which used to move all 29 pins and re-sync none of the 18 drafts.
+  const anchorResync = await s.eval(`(() => {
+    const d = window.__braAutoModeDebug;
+    const canvas = document.getElementById('boardCanvas');
+    const w2s = (p) => { const v = d.getView(); const r = canvas.getBoundingClientRect();
+      return { x: p.x * v.zoom + v.panX + r.left, y: p.y * v.zoom + v.panY + r.top }; };
+    const ev = (t, x, y, o) => canvas.dispatchEvent(new MouseEvent(t, Object.assign({
+      bubbles: true, cancelable: true, clientX: x, clientY: y,
+      button: 0, buttons: t === 'mouseup' ? 0 : 1 }, o || {})));
+    const imgById = (id) => d.getImages().find(i => i.id === id) || d.getImages()[0];
+    const norm = (p, id) => { if (!p) return null; const I = imgById(id);
+      return { x: (p.x - I.x) / I.width, y: (p.y - I.y) / I.height }; };
+    const snapshot = () => { const o = {};
+      for (const x of d.getDrafts()) o[String(x.seq)] = x.start
+        ? { s: norm(x.start, x.sourceImageId), e: norm(x.end, x.sourceImageId), d: x.drawability }
+        : { s: null, e: null, d: x.drawability };
+      return o; };
+    const gap = (a, b) => (!a && !b) ? 0 : (!a || !b) ? Infinity
+      : Math.max(Math.hypot(a.s.x - b.s.x, a.s.y - b.s.y), Math.hypot(a.e.x - b.e.x, a.e.y - b.e.y));
+
+    const pristine = snapshot();
+    const draftCount = d.getDrafts().length;
+
+    // Drag band-right up. One gesture covers three things: POM 1 and 2 read the
+    // band pair directly; cf-bottom and cradle-cup-bottom are DERIVED from the
+    // band line, so the cascade moves them and POM 5/6/7 with them (pins the TD
+    // never touched); and it leaves the band pair un-level, which is the only
+    // state in which POM 1's forced-level rule can be observed at all. Dragging
+    // cf-top instead leaves band-left and band-right on their shared seeded row,
+    // so POM 1 comes out level either way and the slant assertion below cannot
+    // fail — verified, not assumed.
+    const a = d.getAnchors().find(x => x.kind === 'band-right');
+    if (!a) return { skipped: 'no band-right anchor' };
+    const I = imgById(a.sourceImageId);
+    const p = w2s({ x: I.x + a.x * I.width, y: I.y + a.y * I.height });
+    const sx = Math.round(p.x), sy = Math.round(p.y);
+    ev('mousedown', sx, sy);
+    for (let i = 1; i <= 6; i += 1) ev('mousemove', sx, sy - 26 * i / 6);
+    // Alt on release suppresses snap-to-ink so the drag distance stays known.
+    ev('mouseup', sx, sy - 26, { altKey: true });
+    const anchorMoved = (() => { const b = d.getAnchors().find(x => x.kind === 'band-right');
+      return b ? +Math.hypot(b.x - a.x, b.y - a.y).toFixed(6) : -1; })();
+    // The band pair must actually be un-level now, or the slant check is moot.
+    const bandSkew = (() => {
+      const bl = d.getAnchors().find(x => x.kind === 'band-left');
+      const br = d.getAnchors().find(x => x.kind === 'band-right');
+      return (bl && br) ? +Math.abs(br.y - bl.y).toFixed(6) : -1;
+    })();
+    const afterDrag = snapshot();
+
+    // Every draft must now agree with a regenerate from the current anchors.
+    const fresh = {};
+    for (const row of d.pipeline.buildPOMFixtureFromAnchors(d.getAnchors()).annotations) {
+      fresh[String(row.pom)] = row.start
+        ? { s: row.start, e: row.end, d: row.drawability }
+        : { s: null, e: null, d: row.drawability };
+    }
+    const stale = [];
+    for (const pom of Object.keys(afterDrag)) {
+      const live = afterDrag[pom], want = fresh[pom];
+      if (!want) continue;
+      if (live.d !== want.d) { stale.push('POM ' + pom + ' drawability ' + live.d + ' vs ' + want.d); continue; }
+      if (live.d === 'REVIEW_ONLY') continue;
+      const g = gap(live, want);
+      if (g > 1e-5) stale.push('POM ' + pom + ' off by ' + g.toFixed(5));
+    }
+    const followed = Object.keys(pristine).filter(pom => gap(pristine[pom], afterDrag[pom]) > 1e-9);
+    // POM 1 is a "measure straight" span: the builder forces end.y = start.y and
+    // validate-fixture asserts it. The old drag path dropped that force.
+    const p1 = afterDrag['1'];
+    const pom1Slant = (p1 && p1.s) ? Math.abs(p1.e.y - p1.s.y) : -1;
+
+    // Restore via the toolbar action, which is itself under test here.
+    const btn = document.getElementById('autoResetAnchorsBtn');
+    const resetClicked = !!btn && !btn.disabled;
+    if (resetClicked) btn.click();
+    const afterReset = snapshot();
+    const notRestored = Object.keys(pristine).filter(pom => gap(pristine[pom], afterReset[pom]) > 1e-6);
+    const resetFollowed = Object.keys(afterDrag).filter(pom => gap(afterDrag[pom], afterReset[pom]) > 1e-9);
+
+    return { skipped: null, draftCount, anchorMoved, bandSkew, stale, followed, pom1Slant,
+      resetClicked, notRestored, resetFollowed };
+  })()`);
+  check(!anchorResync.skipped, `the anchor-resync check could not run: ${anchorResync.skipped}`);
+  check(anchorResync.draftCount >= 15,
+    `expected the generated drafts on the board, got ${anchorResync.draftCount} — this check needs the pre-Apply state`);
+  check(anchorResync.anchorMoved > 0.001,
+    `the band-right drag moved the anchor only ${anchorResync.anchorMoved} — nothing was tested`);
+  check(anchorResync.bandSkew > 0.001,
+    `the band pair is still level after the drag (skew ${anchorResync.bandSkew}) — the POM 1 slant check below `
+    + `would pass for the wrong reason, so re-aim this drag`);
+  check(anchorResync.followed.length >= 4,
+    `only ${anchorResync.followed.length} draft(s) moved when band-right did — expected POM 1 and 2 directly plus `
+    + `POM 5/6/7 through the cf-bottom / cradle-cup-bottom cascade; if this drops the drags stopped re-syncing`);
+  check(anchorResync.stale.length === 0,
+    `after correcting band-right, ${anchorResync.stale.length} draft(s) disagree with a regenerate from the corrected `
+    + `anchors: ${JSON.stringify(anchorResync.stale.slice(0, 6))} — Apply would commit them at those coordinates`);
+  // NOT redundant with the check above: that one compares the drafts to the
+  // fixture builder, so a defect INSIDE the builder is invisible to it (both
+  // sides move together). This asserts the contract itself.
+  check(anchorResync.pom1Slant >= 0 && anchorResync.pom1Slant < 1e-9,
+    `POM 1 is drawn with |dy| = ${anchorResync.pom1Slant} over an un-level band pair (skew ${anchorResync.bandSkew}) — `
+    + `a "measure straight" span must be drawn level`);
+  check(anchorResync.resetClicked, 'the Reset Anchors action was not available to restore the board');
+  check(anchorResync.resetFollowed.length > 0,
+    'Reset Anchors re-seeded every anchor but no draft followed — the whole board would be detached from its pins');
+  check(anchorResync.notRestored.length === 0,
+    `Reset Anchors did not put the drafts back: ${JSON.stringify(anchorResync.notRestored)} still differ from the `
+    + `pristine geometry, so the checks below would start from the wrong board`);
+  console.log(`board-interaction-check: a band-right correction re-synced ${anchorResync.followed.length} drafts with `
+    + `0 stale, and Reset Anchors restored all ${anchorResync.draftCount}`);
+
   // ---- Auto Mode: the sketch carries its DRAFT lines, exactly as it carries
   // applied ones ----
   // Photos stay draggable in Auto Mode (US-052), and the drafts under review sit

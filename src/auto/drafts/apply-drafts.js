@@ -224,6 +224,17 @@
       reason: draft.reason || null,
       uncertainty: draft.uncertainty || null,
       sharedAnchorFamily: draft.sharedAnchorFamily || null,
+      // Style-evidence provenance. A 'confirmed-prior' line was pulled 40% off
+      // the anchors toward the median of past TD confirmations, and an
+      // 'absent-confirmed' one was wiped because the style is known not to
+      // measure that POM. Dropping these on Apply left no record anywhere that
+      // the line is not where detection put it — while the contract suite reads
+      // the same flag to decide which rows its line-anchor assertions may skip.
+      // Exactly what the note at the top of this file warns about: a field added
+      // to buildDraftAnnotation and not here vanishes silently.
+      styleEvidenceId: draft.styleEvidenceId || null,
+      styleEvidenceStatus: draft.styleEvidenceStatus || null,
+      styleEvidenceSamples: draft.styleEvidenceSamples != null ? draft.styleEvidenceSamples : null,
       viewRole: draft.viewRole || effectivePomViewRole(draft.seq),
       originDraftId: draft.id,
     };

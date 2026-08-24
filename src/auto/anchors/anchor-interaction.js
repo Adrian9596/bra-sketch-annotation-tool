@@ -108,9 +108,11 @@
     // moving cf-top or the band endpoints re-projects cf-bottom onto the
     // band line so POM 5/6 need one move instead of two.
     cascadeDerivedAnchors(anchor);
-    // Keep POM 1/2/3/4 drafts in sync with band/chest anchors so the
-    // 1/5-length rule for the dashed extensions holds live during the move.
-    syncBandChestDraftsFromAnchors(anchor.kind);
+    // Re-derive every draft on the board from the anchors as they now stand,
+    // through the same fixture builder Generate uses. No-op unless drafts are
+    // actually on the board (review / recovery state). Runs AFTER the cascade
+    // above so dependents like cf-bottom are already current.
+    resyncDraftsFromAnchors();
     requestRender();
     return true;
   }
@@ -167,6 +169,11 @@
       anchor_kind: anchor.kind,
     });
     pushHistoryIfChanged();
+    // Same reason as the drag-anchor branch of onMouseUp: the nudge re-synced
+    // the drafts, which can drop an approval and change a drawability tier, and
+    // pushHistoryIfChanged short-circuits for a pure anchor move because anchors
+    // are not in the snapshot — so nothing else would repaint the spec panel.
+    updateUI();
     requestRender();
   }
 

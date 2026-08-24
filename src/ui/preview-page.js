@@ -101,7 +101,9 @@
 
   function pvSpecTableHtml() {
     const annByPom = new Map();
-    for (const ann of state.annotations) annByPom.set(getLabelText(ann), ann);
+    // US-096: the measurement set only. An unlabelled zigzag/cover/bartack
+    // line is a construction mark and owns no POM row.
+    for (const ann of measurementAnnotations()) annByPom.set(getLabelText(ann), ann);
     const pomKeys = specVisiblePomKeys(annByPom);
     const layout = selectedSizeRun();
     const fullIndexByLabel = new Map(SPEC_SIZE_RUN.map((c, i) => [c.label, i]));

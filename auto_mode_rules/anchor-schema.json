@@ -18,7 +18,8 @@
           "band-left",
           "band-right"
         ],
-        "axis": "vertical"
+        "axis": "vertical",
+        "preserveOffset": true
       }
     },
     {
@@ -45,7 +46,8 @@
           "band-left",
           "band-right"
         ],
-        "axis": "vertical"
+        "axis": "vertical",
+        "preserveOffset": true
       }
     },
     {
@@ -76,25 +78,25 @@
       "kind": "inner-cup-top",
       "name": "IC top",
       "group": "inner-cup",
-      "hint": "Top of the cup (apex) on the front (outer) view — POM 9 start."
+      "hint": "Top of the cup (apex) on the front (outer) view \u2014 POM 9 start."
     },
     {
       "kind": "inner-cup-bottom",
       "name": "IC btm",
       "group": "inner-cup",
-      "hint": "Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."
+      "hint": "Bottom of the cup on the cup-bottom seam, front (outer) view \u2014 POM 9 end."
     },
     {
       "kind": "inner-cup-left",
       "name": "IC L",
       "group": "inner-cup",
-      "hint": "Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."
+      "hint": "Cup width, gore-side edge \u2014 the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."
     },
     {
       "kind": "inner-cup-right",
       "name": "IC R",
       "group": "inner-cup",
-      "hint": "Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."
+      "hint": "Cup width, armhole-side edge \u2014 the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."
     },
     {
       "kind": "side-top",
@@ -124,13 +126,13 @@
       "kind": "strap-top",
       "name": "Front strap join",
       "group": "strap",
-      "hint": "Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."
+      "hint": "Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap\u2019s top cut edge \u2014 POM 14 start."
     },
     {
       "kind": "strap-bottom",
       "name": "Back strap join",
       "group": "strap",
-      "hint": "End of the shoulder strap at the back / back-panel join — POM 14 end."
+      "hint": "End of the shoulder strap at the back / back-panel join \u2014 POM 14 end."
     },
     {
       "kind": "back-top",

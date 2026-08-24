@@ -33,7 +33,10 @@
   // over a POM number. Keeps each number readable on a crowded 3-view board.
   function drawAnnotationLabel(ann) {
     if (state.editingLabelId === ann.id) return;
-    if (!labelsVisible()) return;
+    // US-096: labelsVisible() is the board-wide gate (Stitch mode, Hide
+    // Numbers); annotationShowsCallout adds the per-line one, so a stitch mark
+    // stays unnumbered even on a board that is numbering every real POM.
+    if (!annotationShowsCallout(ann)) return;
     drawLabel(ann.label, getLabelText(ann), state.selection.kind === 'annotation' && ann.id === state.selection.id, 1, getAnnotationColor(ann));
   }
 

@@ -103,6 +103,13 @@
     let toolText = '';
     if (state.tool === 'text') {
       toolText = 'Text – Click the board to write a note. <span class="kbd">Enter</span> makes a new line; <span class="kbd">⌘/Ctrl</span>+<span class="kbd">Enter</span> or a click on the board finishes it.';
+    } else if (state.tool === 'stamp') {
+      const stamp = (typeof getActiveShapeStamp === 'function') ? getActiveShapeStamp() : null;
+      toolText = stamp
+        ? 'Shape – Drag on the board to place <strong>' + escapeHtml(stamp.name)
+          + '</strong> at that size. <span class="kbd">Shift</span> keeps its proportions, '
+          + '<span class="kbd">Esc</span> stops stamping.'
+        : 'Shape – Pick a saved shape from <strong>Tools</strong> first.';
     } else if (state.tool === 'select') {
       if (selectedNote) {
         toolText = selectedNote.leaders && selectedNote.leaders.length

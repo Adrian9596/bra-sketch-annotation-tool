@@ -34,6 +34,10 @@
   }
 
   function openBoardToolbarMenu(record) {
+    // US-097: the Tools menu carries the saved-shape library, whose rows are
+    // stored data rather than markup, so they are rendered each time it opens.
+    if (record.list && record.list.id === 'toolsMenuList'
+      && typeof renderShapeStampList === 'function') renderShapeStampList();
     closeLineStyleMenu();
     closeBoardToolbarMenus(record.list, false);
     record.list.hidden = false;
@@ -177,7 +181,18 @@
     // updateUI() (ui-status.js) — unchanged by moving them into this menu.
     const toolMenuBtn = document.getElementById('toolsMenuBtn');
     if (toolMenuBtn) {
-      const label = TOOL_MENU_LABELS[state.tool];
+      // US-097 code review, 2026-08-23: an armed stamp tool used to read as
+      // plain 'Tools ▾' — identical to Select — while the board was in a modal
+      // creation mode with the whole context-actions group hidden. Name the
+      // armed shape, so the one control still on screen says what a press will
+      // do. Truncated: a TD can name a shape anything.
+      let label = TOOL_MENU_LABELS[state.tool];
+      if (state.tool === 'stamp' && typeof getActiveShapeStamp === 'function') {
+        const stamp = getActiveShapeStamp();
+        label = stamp
+          ? (stamp.name.length > 18 ? stamp.name.slice(0, 17) + '…' : stamp.name)
+          : 'Shape';
+      }
       toolMenuBtn.textContent = label ? ('Tools: ' + label) : 'Tools ▾';
     }
 

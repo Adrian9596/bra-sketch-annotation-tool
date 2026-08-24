@@ -15,6 +15,15 @@ let server, chrome, userDataDir;
 const cleanupTasks = [];
 let passed = 0;
 
+// US-097: the Tools menu now has two regions — the drawing tools, and the
+// saved-shape library (rows + its own actions). This suite's claim has always
+// been "every drawing tool exists and is reachable", never "the menu contains
+// nothing else", so the tool assertions read the TOOL region specifically.
+// Keyboard navigation still covers the whole menu, which is asserted separately
+// below: a keyboard user must be able to reach a saved shape.
+const TOOL_MENU_ITEMS = `Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]'))
+  .filter(b => !b.closest('#shapeStampList') && !b.closest('.preset-menu-actions'))`;
+
 const VISIBLE_BUTTONS = `Array.from(document.querySelectorAll('#boardToolbarGroups button'))
   .filter(button => {
     const rect = button.getBoundingClientRect();
@@ -128,9 +137,13 @@ async function main() {
   const toolsOpen = await s.eval(`({
     open: !document.getElementById('toolsMenuList').hidden,
     expanded: document.getElementById('toolsMenuBtn').getAttribute('aria-expanded'),
-    items: Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]')).map(button => button.id),
-    reachable: Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]'))
+    items: ${TOOL_MENU_ITEMS}.map(button => button.id),
+    reachable: ${TOOL_MENU_ITEMS}
       .filter(button => !button.hidden && !button.disabled && button.offsetParent !== null).map(button => button.id),
+    // The WHOLE menu, library included — what keyboard navigation actually walks.
+    allReachable: Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]'))
+      .filter(button => !button.hidden && !button.disabled && button.offsetParent !== null).map(button => button.id),
+    hasShapeLibrary: !!document.querySelector('#toolsMenuList #shapeStampList'),
     focus: document.activeElement.id,
   })`);
   check(toolsOpen.open && toolsOpen.expanded === 'true', 'Tools menu did not open with aria-expanded=true');
@@ -143,8 +156,51 @@ async function main() {
     'toolStraight', 'toolCurved', 'toolText', 'toolRectangle', 'toolCircle', 'toolHexagon',
   ]), `empty Manual should offer Straight/Curved/Text and withhold Eraser, got ${JSON.stringify(toolsOpen.reachable)}`);
   check(toolsOpen.focus === 'toolStraight', `Tools menu should focus first enabled item, got ${toolsOpen.focus}`);
+  check(toolsOpen.hasShapeLibrary === true,
+    'US-097: the Tools menu carries the saved-shape library — no toolbar unit of its own');
   await s.eval(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key:'End', bubbles:true }))`);
-  check(await s.eval(`document.activeElement.id === 'toolHexagon'`), 'End should focus the last reachable shape tool');
+  // End goes to the end of the MENU, which since US-097 is the library's last
+  // action rather than the last tool. Named by id, not read back from the same
+  // query the implementation walks — comparing an implementation against itself
+  // proves only that it is self-consistent.
+  check(await s.eval(`document.activeElement.id`) === 'shapeStampImportBtn',
+    `End should focus the last item in the whole menu — the library's last action `
+    + `(got ${await s.eval('document.activeElement.id')})`);
+  check(toolsOpen.allReachable.length > toolsOpen.reachable.length,
+    'precondition: the library section really does add reachable items, or the check above '
+    + 'is just the old tool-only claim in disguise');
+
+  // With an EMPTY library the checks above only prove the library's ACTIONS are
+  // reachable. The claim worth making is that a saved SHAPE is, so seed one and
+  // walk to it. Code review, 2026-08-23: the first version of this block was
+  // written against the empty state and overstated what it proved.
+  await s.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }))`);
+  const seededRow = await s.eval(`(() => {
+    const d = window.__braAutoModeDebug;
+    if (!d || typeof d.importShapeStampsJson !== 'function') return { skipped: true };
+    d.importShapeStampsJson(JSON.stringify({ stamps: [{
+      id: 'st-toolbar-fixture', name: 'Toolbar fixture', type: 'straight',
+      start: { x: 0, y: 0 }, end: { x: 1, y: 1 }, aspect: 1,
+      style: 'solid', color: 'red', lineWidth: 2.5, arrowType: 'none',
+    }] }));
+    document.getElementById('toolsMenuBtn').click();
+    const rows = Array.from(document.querySelectorAll('#shapeStampList .preset-row'));
+    const menuItems = Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]'))
+      .filter(b => !b.hidden && !b.disabled && b.offsetParent !== null).map(b => b.id || b.dataset.stampAction);
+    return {
+      skipped: false,
+      rowCount: rows.length,
+      // The row's own controls have no ids, so identify them by action.
+      rowActionsReachable: menuItems.filter(x => ['use', 'up', 'down', 'rename', 'delete'].includes(x)),
+    };
+  })()`);
+  check(seededRow.skipped !== true, 'the shape-stamp debug hook is available to seed a fixture');
+  check(seededRow.rowCount === 1, `precondition: one saved shape is in the list (got ${seededRow.rowCount})`);
+  check(seededRow.rowActionsReachable.includes('use'),
+    `a saved SHAPE is reachable by keyboard menu navigation, not just the library's action `
+    + `buttons (reachable row controls: ${JSON.stringify(seededRow.rowActionsReachable)})`);
+  await s.eval(`window.__braAutoModeDebug.resetShapeStamps()`);
+  await s.eval(`document.getElementById('toolsMenuBtn').click()`);
   await s.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }))`);
   const toolsClosed = await s.eval(`({ hidden:document.getElementById('toolsMenuList').hidden,
     expanded:document.getElementById('toolsMenuBtn').getAttribute('aria-expanded'), focus:document.activeElement.id })`);
@@ -195,7 +251,7 @@ async function main() {
   // choosing one from the menu has to drive the same setTool() path the direct
   // button used to — the drop-down is the only route a TD now has to them.
   await s.eval(`document.getElementById('toolsMenuBtn').click()`);
-  const toolsPopulated = await s.eval(`Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]'))
+  const toolsPopulated = await s.eval(`${TOOL_MENU_ITEMS}
     .filter(button => !button.hidden && !button.disabled && button.offsetParent !== null).map(button => button.id)`);
   check(JSON.stringify(toolsPopulated) === JSON.stringify([
     'toolStraight', 'toolCurved', 'toolEraser', 'toolText', 'toolRectangle', 'toolCircle', 'toolHexagon',

@@ -64,6 +64,9 @@ function drawBoardContentForExport() {
   for (const note of exportNotes()) drawNote(note);
   if (!labelsVisible()) return;
   for (const ann of annotations) {
+    // US-096: same per-line gate the screen renderer applies. A construction
+    // line is exported (it is drawn above) but never numbered.
+    if (!isMeasurementAnnotation(ann)) continue;
     drawLabel(ann.label, getLabelText(ann), false, 1, getAnnotationColor(ann));
   }
 }

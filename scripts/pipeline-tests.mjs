@@ -1337,6 +1337,30 @@ console.log('\nstage: deriveAnchors — drag cascade');
       Math.abs(ccBottom.y - 0.82) < 1e-6, `y=${ccBottom.y}`);
   }
 
+  // preserveOffset: a dependent the SEEDER put off the band line keeps that gap.
+  //
+  // cf-bottom and cradle-cup-bottom are seeded from hem ink at their own column
+  // (US-061 — band row, band chord and per-column hem are three different rows,
+  // and a real hem arches). The plain projection above threw that away the first
+  // time a TD nudged a band end, silently undoing US-061. captureDerivedOffsets
+  // records the gap at seed time and deriveAnchors replays it; anchors that never
+  // went through the seeder carry no derivedOffset, which is why every block
+  // above still asserts the flat-on-the-line result.
+  {
+    const anchors = mkAnchors();
+    const cfBottom = anchors.find(a => a.kind === 'cf-bottom');
+    cfBottom.y = 0.83;             // seeded 0.03 below the flat band: a hem arch
+    cfBottom.derivedOffset = 0.03; // what captureDerivedOffsets records for it
+    anchors.find(a => a.kind === 'band-right').y = 0.90;
+    const updated = deriveAnchors(anchors, { changedKind: 'band-right' });
+    check('a hem-offset dependent still follows a band drag',
+      updated.includes('cf-bottom'), `updated=${JSON.stringify(updated)}`);
+    // Band line (0.10, 0.80) → (0.90, 0.90); at x=0.50 the chord is 0.85, and
+    // the seeded 0.03 hem gap has to survive on top of it.
+    check('cf-bottom keeps its seeded hem gap instead of flattening onto the chord',
+      Math.abs(cfBottom.y - 0.88) < 1e-9, `y=${cfBottom.y} (chord 0.85 + gap 0.03)`);
+  }
+
   // A pinned dependent never moves.
   {
     const anchors = mkAnchors();

@@ -69,8 +69,60 @@
   }
 
   function getLabelText(ann) {
-    if (ann && ann.text != null && String(ann.text).trim() !== '') return String(ann.text);
+    if (hasManualPomLabel(ann)) return String(ann.text);
     return String(ann.seq);
+  }
+
+  // US-096 / ADR 0055 -------------------------------------------------------
+  //
+  // A line the TD typed a POM number onto, as opposed to one merely wearing the
+  // sequence number it was born with. getLabelText falls back to `seq` so every
+  // line has SOMETHING to draw, but that fallback is a drawing artefact, not a
+  // statement of intent — only `text` is the TD saying "this line is POM 8".
+  // The distinction is what makes isMeasurementAnnotation safe to derive.
+  function hasManualPomLabel(ann) {
+    return !!(ann && ann.text != null && String(ann.text).trim() !== '');
+  }
+
+  // Is this line part of the MEASUREMENT set — the collection the spec panel,
+  // both Excel exports, the Preview page, grading and learning evidence all
+  // derive their rows from?
+  //
+  // Plain and Dashed always are. Zigzag / Cover / Bartack are construction
+  // marks: they say how a seam is sewn, not how long it is, so they are drawn
+  // on the board and in every visual export but produce no measurement row and
+  // no POM callout number.
+  //
+  // The one exception is deliberate: a stitch line the TD explicitly labelled
+  // keeps measuring. Dropping it would empty a POM cell in a workbook the
+  // factory may already be holding, which is a worse failure than one stray
+  // row. ADR 0055 records why.
+  //
+  // Role is DERIVED, never stored. That is the point: no schema change, no
+  // file migration, and converting a line back to Plain restores it as a
+  // measurement automatically, which is exactly how a TD expects the Stitches
+  // menu to behave.
+  function isMeasurementAnnotation(ann) {
+    if (!ann) return false;
+    if (!isStitchStyle(ann.style)) return true;
+    return hasManualPomLabel(ann);
+  }
+
+  // The single shared accessor for "the measurement set". Every consumer that
+  // means measurements calls this; every consumer that means "everything drawn
+  // on the board" (rendering, hit-testing, selection, drag, history, autosave,
+  // visual export) keeps reading state.annotations directly. Keeping the two
+  // readings textually distinct is what makes a future omission greppable.
+  function measurementAnnotations() {
+    return (state.annotations || []).filter(isMeasurementAnnotation);
+  }
+
+  // Whether THIS line paints its callout number. The global gate (labelsVisible)
+  // still applies — Stitch mode and the Hide Numbers toggle hide everything —
+  // and on top of it a construction line never numbers itself even while the
+  // board is in POM mode showing numbers for every real measurement.
+  function annotationShowsCallout(ann) {
+    return labelsVisible() && isMeasurementAnnotation(ann);
   }
 
   // The MEASURED length, which is not the drawn length once the sketch has been

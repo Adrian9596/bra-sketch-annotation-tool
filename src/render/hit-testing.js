@@ -110,7 +110,13 @@
       if (distance(world, ann.start) <= endpointRadius) return { part: 'start' };
       if (distance(world, ann.end) <= endpointRadius) return { part: 'end' };
     }
-    if (pointInLabelBounds(world, ann.label, getLabelText(ann), 9 / state.zoom)) return { part: 'label' };
+    // US-096 / ADR 0055: only a callout that is actually PAINTED is grabbable.
+    // A construction line paints no number, and its unpainted box — ~22-36 px
+    // wide, offset ~18 px off the line's midpoint — would otherwise steal
+    // presses in visibly empty space and route them to startLabelDrag, moving
+    // something the TD can never see.
+    if (annotationShowsCallout(ann)
+      && pointInLabelBounds(world, ann.label, getLabelText(ann), 9 / state.zoom)) return { part: 'label' };
     return null;
   }
 
@@ -192,7 +198,11 @@
       // Skip hidden annotations — the canvas draws nothing for them, so
       // catching a click in an empty region would confuse the reviewer.
       if (isAnnHidden(ann.id)) continue;
-      if (pointInLabelBounds(world, ann.label, getLabelText(ann), 8 / state.zoom)) {
+      // Same rule as hitTestSelectedHandles: an unpainted callout is not a
+      // target. This test runs BEFORE the body test and walks topmost-first, so
+      // an invisible box here shadows the real POM line underneath it.
+      if (annotationShowsCallout(ann)
+        && pointInLabelBounds(world, ann.label, getLabelText(ann), 8 / state.zoom)) {
         return { id: ann.id, part: 'label' };
       }
       if (isPointNearAnnotation(world, ann, 8 / state.zoom)) {

@@ -602,6 +602,217 @@ async function runEvidenceTests(cdp, imagePath) {
         record('Far-away confirmed evidence is rejected', false, String(e && e.message || e));
       }
 
+      // --- TEST 8: the blend carries handles, anchors and label ---------
+      // The blend rewrote start/end only. A draft's curve handles, interior
+      // anchors and label are ABSOLUTE world points baked from the PRE-blend
+      // geometry and nothing recomputed them, so they stayed put: measured on
+      // demo1, a 0.06 evidence offset moved POM 14/17/18's endpoints 0.024
+      // while control1, control2 and label each moved 0.000 — a traced arc
+      // pulled out of shape under a callout parked off its own line, applied
+      // straight to the board (the real Generate button auto-applies).
+      //
+      // The fixture is deliberately ASYMMETRIC: start and end are displaced by
+      // DIFFERENT vectors so the chord rotates and scales. A symmetric fixture
+      // moves both endpoints by the same delta, which scores a naive
+      // translate-everything identically to a correct carry and proves
+      // nothing — the naiveGap assertion below keeps this one honest.
+      //
+      // "Arc shape preserved" is asserted as chord-frame invariance:
+      //   t = ((P-A)·u)/|u|²   n = ((P-A)×u)/|u|²   with u = B-A
+      // both invariant under any similarity. Measured in WORLD coordinates on
+      // purpose — normalized image space is anisotropic (x/width vs y/height),
+      // so a world rotation is not a rotation there and the frame would move.
+      try {
+        const images = debug.getImages();
+        const image = images && images[0];
+        if (!image) throw new Error('source image missing for carry test');
+        E.clearAll();
+        M.setStyleId('CARRY-STYLE');
+
+        const W = (nx, ny) => ({ x: image.x + image.width * nx, y: image.y + image.height * ny });
+        const frame = (P, A, B) => {
+          const ux = B.x - A.x, uy = B.y - A.y, den = ux * ux + uy * uy;
+          const dx = P.x - A.x, dy = P.y - A.y;
+          return { t: (dx * ux + dy * uy) / den, n: (dy * ux - dx * uy) / den };
+        };
+        const sameFrame = (pb, A0, B0, pa, A1, B1) => {
+          const f0 = frame(pb, A0, B0), f1 = frame(pa, A1, B1);
+          return Math.abs(f1.t - f0.t) < 1e-9 && Math.abs(f1.n - f0.n) < 1e-9;
+        };
+        const gap = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+        // POM 1 straight — carries the label assertion. POM 17 curved with an
+        // interior anchor — carries the handle/anchor assertions. POM 18
+        // curved with a HAND-PLACED label — that branch transports instead of
+        // re-deriving, and is the one a naive "always recompute" would break.
+        for (const [pom, type, s0, e0] of [
+          ['1',  'straight', [0.20, 0.80], [0.80, 0.80]],
+          ['17', 'curved',   [0.30, 0.30], [0.60, 0.55]],
+          ['18', 'curved',   [0.35, 0.60], [0.55, 0.25]],
+        ]) {
+          E.add('CARRY-STYLE', {
+            id: 'ev_carry_' + pom, pom, meaningId: null, viewRole: 'front_outer',
+            source: 'td-edited-auto-line', tdStatus: 'confirmed',
+            line: { type,
+              start: { x: s0[0] + 0.07, y: s0[1] - 0.03 },
+              end:   { x: e0[0] - 0.05, y: e0[1] + 0.06 } },
+          });
+        }
+
+        // computeDefaultLabelPosition offsets a straight label by 18/zoom world
+        // units — a fixed SCREEN distance. Place the input label there so
+        // "re-derived" and "transported" give different answers: re-deriving
+        // leaves the offset at 18/zoom, transporting multiplies it by the
+        // chord's scale factor.
+        const labelOffset = 18 / ((debug.getView ? debug.getView() : debug.getViewport()).zoom || 1);
+        const mk = (seq, type, s0, e0, extra) => Object.assign({
+          id: 'draft-carry-' + seq, seq, drawability: 'DRAWABLE', type, confidence: 'medium',
+          start: W(s0[0], s0[1]), end: W(e0[0], e0[1]),
+        }, extra || {});
+        const mid1 = { x: (W(0.30, 0.30).x + W(0.60, 0.55).x) / 2, y: (W(0.30, 0.30).y + W(0.60, 0.55).y) / 2 };
+        const input = [
+          mk(1, 'straight', [0.20, 0.80], [0.80, 0.80], {
+            label: { x: W(0.50, 0.80).x, y: W(0.50, 0.80).y - labelOffset },
+          }),
+          mk(17, 'curved', [0.30, 0.30], [0.60, 0.55], {
+            control1: W(0.36, 0.31), control2: W(0.55, 0.49),
+            points: [{ point: { x: mid1.x + 7, y: mid1.y - 5 },
+                       handleIn: { x: mid1.x - 6, y: mid1.y - 9 },
+                       handleOut: { x: mid1.x + 20, y: mid1.y - 1 } }],
+            label: { x: mid1.x, y: mid1.y - 20 },
+          }),
+          mk(18, 'curved', [0.35, 0.60], [0.55, 0.25], {
+            control1: W(0.41, 0.52), control2: W(0.51, 0.36),
+            labelManual: true, label: { x: W(0.35, 0.60).x + 34, y: W(0.35, 0.60).y - 21 },
+          }),
+        ];
+        const before = JSON.parse(JSON.stringify(input));
+        const after = E.applyConfirmedToDrafts(input, image);
+        const B1 = (seq) => before.find(d => d.seq === seq);
+        const A1 = (seq) => after.find(d => d.seq === seq);
+
+        const problems = [];
+        for (const seq of [1, 17, 18]) {
+          const b = B1(seq), a = A1(seq);
+          if (!a || a.styleEvidenceStatus !== 'confirmed-prior') { problems.push('POM ' + seq + ': blend did not run'); continue; }
+          const lenB = gap(b.start, b.end), lenA = gap(a.start, a.end);
+          const rot = Math.abs(Math.atan2(a.end.y - a.start.y, a.end.x - a.start.x)
+            - Math.atan2(b.end.y - b.start.y, b.end.x - b.start.x));
+          // Guard the fixture itself: if the chord stops rotating/scaling this
+          // test silently degrades into one a naive translate would also pass.
+          if (rot < 0.01 && Math.abs(lenA / lenB - 1) < 0.02) {
+            problems.push('POM ' + seq + ': chord neither rotated nor scaled — fixture no longer discriminates');
+          }
+          for (const key of ['control1', 'control2']) {
+            if (!b[key]) continue;
+            if (!sameFrame(b[key], b.start, b.end, a[key], a.start, a.end)) {
+              problems.push('POM ' + seq + ' ' + key + ': arc shape not preserved');
+            }
+          }
+          if (Array.isArray(b.points)) {
+            for (let i = 0; i < b.points.length; i += 1) {
+              for (const f of ['point', 'handleIn', 'handleOut']) {
+                if (!sameFrame(b.points[i][f], b.start, b.end, a.points[i][f], a.start, a.end)) {
+                  problems.push('POM ' + seq + ' points[' + i + '].' + f + ': not carried');
+                }
+              }
+            }
+          }
+          if (b.labelManual) {
+            if (!sameFrame(b.label, b.start, b.end, a.label, a.start, a.end)) {
+              problems.push('POM ' + seq + ': hand-placed label was not carried');
+            }
+          } else if (gap(a.label, b.label) < 0.5) {
+            problems.push('POM ' + seq + ': derived label stayed behind (the original defect)');
+          }
+        }
+        // A derived label's offset is a fixed SCREEN distance, so re-deriving
+        // it must leave that offset alone even though the chord scaled.
+        // Transporting it instead would multiply the offset by the scale.
+        const b1 = B1(1), a1 = A1(1);
+        const midOf = (d) => ({ x: (d.start.x + d.end.x) / 2, y: (d.start.y + d.end.y) / 2 });
+        const offB = gap(b1.label, midOf(b1)), offA = gap(a1.label, midOf(a1));
+        const scale1 = gap(a1.start, a1.end) / gap(b1.start, b1.end);
+        if (Math.abs(offA - labelOffset) > 1e-6) {
+          problems.push('POM 1: derived label offset is ' + offA.toFixed(3) + ', expected the canonical '
+            + labelOffset.toFixed(3) + ' (was ' + offB.toFixed(3) + ' before, chord scaled x'
+            + scale1.toFixed(3) + ') — it was transported or left behind, not re-derived');
+        }
+        // Non-vacuity: how far a naive translate-by-start-delta would have
+        // landed from where the carry put a handle. If this collapses toward
+        // zero the assertions above stop distinguishing the two.
+        const b17 = B1(17), a17 = A1(17);
+        const naive = { x: b17.control1.x + (a17.start.x - b17.start.x),
+                        y: b17.control1.y + (a17.start.y - b17.start.y) };
+        const naiveGap = gap(a17.control1, naive);
+        if (!(naiveGap > 1)) {
+          problems.push('naive translate lands only ' + naiveGap.toFixed(3)
+            + 'px from the carry — the chord-frame assertions are not discriminating');
+        }
+
+        record('Confirmed-evidence blend carries handles, interior anchors and label',
+          problems.length === 0,
+          problems.length ? problems.join('; ')
+            : 'naiveGap=' + naiveGap.toFixed(2) + 'px, POM 1 label offset '
+              + offA.toFixed(2) + 'px held across a x' + scale1.toFixed(3) + ' chord scale',
+          { problems, naiveGap, offB, offA, labelOffset, scale1 });
+      } catch (e) {
+        record('Confirmed-evidence blend carries handles, interior anchors and label', false,
+          String(e && e.message || e));
+      }
+
+      // --- TEST 9: Apply carries the style-evidence provenance ----------
+      // A 'confirmed-prior' line was pulled 40% off its anchors toward the
+      // median of past TD confirmations. buildAppliedAnnotation enumerates its
+      // output fields explicitly and used to omit the three styleEvidence ones,
+      // so the moment the line was applied there was no record anywhere that it
+      // is not where detection put it — while pom-contract-tests reads exactly
+      // that flag to decide which rows its line-anchor assertions may skip.
+      try {
+        const images = debug.getImages();
+        const image = images && images[0];
+        if (!image) throw new Error('source image missing for provenance test');
+        E.clearAll();
+        M.setStyleId('PROVENANCE-STYLE');
+        E.add('PROVENANCE-STYLE', {
+          id: 'ev_prov_1', pom: '1', meaningId: null, viewRole: 'front_outer',
+          source: 'td-edited-auto-line', tdStatus: 'confirmed',
+          line: { type: 'straight', start: { x: 0.22, y: 0.79 }, end: { x: 0.78, y: 0.79 } },
+        });
+        const W = (nx, ny) => ({ x: image.x + image.width * nx, y: image.y + image.height * ny });
+        const drafts = [{
+          id: 'draft-prov-1', seq: 1, drawability: 'DRAWABLE', type: 'straight',
+          style: 'solid', arrowType: 'double', confidence: 'medium', lineWidth: 2,
+          auto: true, sourceMode: 'auto-mode', sourceImageId: image.id,
+          autoRunId: 'prov-run', templateVersion: 'x', ruleVersion: 'y',
+          viewRole: 'front_outer', tdApproved: true, tdEdited: false,
+          start: W(0.20, 0.80), end: W(0.80, 0.80), label: W(0.50, 0.78),
+        }];
+        const blended = E.applyConfirmedToDrafts(drafts, image);
+        const blendedDraft = blended.find(d => d.seq === 1);
+        // Same field copy Apply performs, exercised through the real builder.
+        const applied = debug.buildAppliedAnnotationForTest
+          ? debug.buildAppliedAnnotationForTest(blendedDraft)
+          : null;
+        const ok = !!blendedDraft
+          && blendedDraft.styleEvidenceStatus === 'confirmed-prior'
+          && !!applied
+          && applied.styleEvidenceStatus === 'confirmed-prior'
+          && applied.styleEvidenceId === blendedDraft.styleEvidenceId
+          && applied.styleEvidenceSamples === blendedDraft.styleEvidenceSamples;
+        record('Apply carries the style-evidence provenance onto the annotation', ok,
+          'draft=' + JSON.stringify(blendedDraft && {
+            id: blendedDraft.styleEvidenceId, st: blendedDraft.styleEvidenceStatus,
+            n: blendedDraft.styleEvidenceSamples })
+          + ' applied=' + JSON.stringify(applied && {
+            id: applied.styleEvidenceId, st: applied.styleEvidenceStatus,
+            n: applied.styleEvidenceSamples }),
+          { blendedDraft, applied });
+      } catch (e) {
+        record('Apply carries the style-evidence provenance onto the annotation', false,
+          String(e && e.message || e));
+      }
+
       return { tests };
     })()
   `);

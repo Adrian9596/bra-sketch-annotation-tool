@@ -20,7 +20,7 @@ function setSelection(kind, id) {
     if (kind === 'annotation') {
       const ann = getAnnotationById(id);
       if (ann) {
-        state.drawStyle = ann.style || state.drawStyle;
+        adoptDrawStyleFrom(ann);
         state.drawColor = normalizeColorKey(ann.color);
         state.arrowType = getArrowType(ann);
       }
@@ -124,10 +124,24 @@ function setSelection(kind, id) {
     state.selection = { kind: 'annotation', id };
     const ann = getAnnotationById(id);
     if (ann) {
-      state.drawStyle = ann.style || state.drawStyle;
+      adoptDrawStyleFrom(ann);
       state.drawColor = normalizeColorKey(ann.color);
       state.arrowType = getArrowType(ann);
     }
+  }
+
+  // US-096 / ADR 0055: selecting a line still hands its look to the draw
+  // defaults, EXCEPT for the three stitch styles.
+  //
+  // state.drawStyle is what isStitchMode() reads, so adopting 'zigzag' from a
+  // clicked line put the whole board into Stitch mode and blanked every callout
+  // number — a board-wide change caused by nothing but a selection click. The
+  // toolbar still shows the selected line's real style: updateUI reads it from
+  // the annotation, not from this default (ui-status.js).
+  function adoptDrawStyleFrom(ann) {
+    if (!ann || !ann.style) return;
+    if (isStitchStyle(ann.style)) return;
+    state.drawStyle = ann.style;
   }
 
   // Shift+click: add the line to the multi-selection, or remove it if already in.
@@ -250,6 +264,26 @@ function setSelection(kind, id) {
     return state.selection.kind === 'annotation'
       ? state.annotations.find(a => a.id === state.selection.id) || null
       : null;
+  }
+
+  // The set a style / preset / colour edit should act on.
+  //
+  // US-096 / ADR 0055 code review, 2026-08-23: getSelectedAnnotations() filters
+  // hidden lines and getSelectedAnnotation() does not, and US-096 made the
+  // PLURAL one the arbiter of "is anything selected?". A hidden line can still
+  // be the primary selection — clicking a hidden POM's spec row calls
+  // setSelection (spec-row-builders.js) — so the toolbar showed that line's
+  // style as active while setLineStyle saw an empty selection and fell through
+  // to setDefaultLineStyle, flipping the WHOLE board into Stitch mode and
+  // blanking every callout number. Exactly the coupling ADR 0055 rule 4 forbids.
+  //
+  // Falling back to the primary keeps the toolbar's reading and the action's
+  // target the same object, whatever its visibility.
+  function getSelectedAnnotationsForEdit() {
+    const many = getSelectedAnnotations();
+    if (many.length) return many;
+    const primary = getSelectedAnnotation();
+    return primary ? [primary] : [];
   }
 
   // US-092. Notes have no multi-selection in v1 (the marquee stays lines-only),

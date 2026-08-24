@@ -65,6 +65,18 @@
       if (state.annotations.length === before) return;
       if (!Array.isArray(state.deletedPomKeys)) state.deletedPomKeys = [];
       for (const ann of targets) {
+        // US-096 / ADR 0055 code review, 2026-08-23: a construction line owns no
+        // POM identity, so deleting one must say NOTHING about a POM — neither
+        // in the exported spec nor to learning.
+        //
+        // This `continue` sits above markDeletedAutoAnnotationForEvidence on
+        // purpose. It was originally placed below it, which left the ABSENCE
+        // half of learning capture open: erasing a restyled auto line still
+        // pushed a snapshot into state.deletedAutoAnnotations, and Save
+        // Evidence turned that into an "absent-confirmed" record teaching the
+        // style that it has no such POM — from a line the TD had already
+        // declared to be construction, not measurement.
+        if (!isMeasurementAnnotation(ann)) continue;
         // POM numbers are measurement identities, not list positions. Deleting
         // POM 7 must leave a gap instead of turning POM 8 into POM 7.
         if (typeof markDeletedAutoAnnotationForEvidence === 'function') markDeletedAutoAnnotationForEvidence(ann);

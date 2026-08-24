@@ -142,6 +142,8 @@ function requestRender() {
       drawPreview();
     }
     drawBoardGraphicPreview();
+    // US-097: the stamp about to be placed, drawn by the real line renderer.
+    drawShapeStampPreview();
 
     // Highlight every selected image. A single selection keeps its resize
     // handles; a Cmd/Ctrl+click group shows outlines only (move-together).

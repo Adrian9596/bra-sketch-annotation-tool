@@ -37,6 +37,26 @@
       construction: state.construction ? clone(state.construction) : null,
       bom: state.bom ? clone(state.bom) : null,
       preview: state.preview ? clone(state.preview) : null,
+      // Auto Mode working state. Carried ONLY while Auto is the active mode, so
+      // Manual undo/redo behaves exactly as before (every snapshot simply gains
+      // the same `autoMode: null` key, and fingerprints are only ever compared
+      // with each other).
+      //
+      // Without this an anchor correction was outside history entirely: the
+      // fingerprint never changed, so pushHistoryIfChanged short-circuited and
+      // Ctrl/Cmd+Z did nothing at all while the Undo button stayed enabled —
+      // measured, a 0.074 drag survived two presses. The only way back was
+      // "Reset Anchors", which throws away EVERY correction rather than the last
+      // one. Drafts ride along because they are derived from the anchors: undoing
+      // the anchor without them would put the board straight back into the
+      // "line disagrees with its pins" state the re-sync exists to prevent.
+      autoMode: state.appMode === 'auto' ? {
+        anchors: clone(state.autoMode.anchors || []),
+        drafts: clone(state.autoMode.draftAnnotations || []),
+        anchorSelectedId: state.autoMode.anchorSelectedId != null
+          ? state.autoMode.anchorSelectedId : null,
+        status: state.autoMode.status || null,
+      } : null,
     };
   }
 
@@ -124,6 +144,23 @@
     }
     if (state.selection.kind === 'note' && !state.notes.some(n => n.id === state.selection.id)) {
       state.selection = { kind: null, id: null };
+    }
+
+    // Auto Mode working state — mirror of makeSnapshot. Restored only while Auto
+    // is active: a snapshot taken in Auto that is restored after the Apply-Lines
+    // handoff must not resurrect anchors into a Manual board.
+    if (state.appMode === 'auto' && snapshot.autoMode) {
+      state.autoMode.anchors = clone(snapshot.autoMode.anchors || []);
+      state.autoMode.draftAnnotations = clone(snapshot.autoMode.drafts || []);
+      state.autoMode.draftAnnotations.forEach(ensureCurveControls);
+      if (snapshot.autoMode.status) state.autoMode.status = snapshot.autoMode.status;
+      const selectedAnchorId = snapshot.autoMode.anchorSelectedId;
+      state.autoMode.anchorSelectedId =
+        state.autoMode.anchors.some(a => a.id === selectedAnchorId) ? selectedAnchorId : null;
+      if (state.selection.kind === 'draft'
+          && !state.autoMode.draftAnnotations.some(d => d.id === state.selection.id)) {
+        state.selection = { kind: null, id: null };
+      }
     }
 
     state.history.restoring = false;

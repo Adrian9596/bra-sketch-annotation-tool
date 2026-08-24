@@ -124,6 +124,11 @@
       const gapEnd   = Math.hypot(draft.end.x   - evE.x, draft.end.y   - evE.y);
       if (gapStart > maxGapPx || gapEnd > maxGapPx) continue;
       const a = STYLE_EVIDENCE_REUSE_BLEND;
+      // Keep the pre-blend chord: every other geometry field on the draft is an
+      // ABSOLUTE world point measured against it, so the carry below needs both
+      // the old frame and the new one.
+      const oldStart = { x: draft.start.x, y: draft.start.y };
+      const oldEnd = { x: draft.end.x, y: draft.end.y };
       draft.start = {
         x: draft.start.x * (1 - a) + evS.x * a,
         y: draft.start.y * (1 - a) + evS.y * a,
@@ -132,6 +137,7 @@
         x: draft.end.x * (1 - a) + evE.x * a,
         y: draft.end.y * (1 - a) + evE.y * a,
       };
+      carryDraftGeometryToNewChord(draft, oldStart, oldEnd);
       draft.styleEvidenceId = ev.latestRecordId;
       draft.styleEvidenceStatus = 'confirmed-prior';
       draft.styleEvidenceSamples = ev.sampleCount;
@@ -142,6 +148,75 @@
       changed += 1;
     }
     return changed;
+  }
+
+  // Carry a blended draft's non-endpoint geometry onto its new chord.
+  //
+  // applyStyleConfirmedEvidenceToDrafts rewrites start/end, but a draft's curve
+  // handles, interior anchors and label are absolute world points that
+  // buildDraftAnnotation baked from the PRE-blend geometry — nothing recomputes
+  // them. Left behind they stay exactly where they were: measured on demo1, a
+  // 0.06 evidence offset moved POM 14 / 17 / 18's endpoints 0.024 while
+  // control1, control2 and label each moved 0.000. That is a traced arc pulled
+  // out of shape under a callout number parked off its own line, and it reached
+  // the applied annotations — the real Generate button auto-applies.
+  //
+  // A cubic's handles are only meaningful relative to its chord, so carry every
+  // dependent point through the similarity (rotate + uniform scale + translate)
+  // that maps the old chord onto the new one. The arc keeps the shape the
+  // contour trace found for it; only its frame moves. Also the reason POM 14's
+  // "handles interpolate the strap span" invariant (validate-fixture.js) still
+  // holds after a blend that validateAutoFixture ran before.
+  //
+  // The field list mirrors scaleAnnotationAbout (src/manual/viewport.js) on
+  // purpose: that is the other place a whole annotation's geometry moves as a
+  // unit, and a field added to one and not the other is exactly how ann.points
+  // got torn once already (ADR 0053).
+  function carryDraftGeometryToNewChord(draft, oldStart, oldEnd) {
+    if (!draft || !oldStart || !oldEnd || !draft.start || !draft.end) return;
+    const ux = oldEnd.x - oldStart.x;
+    const uy = oldEnd.y - oldStart.y;
+    const den = ux * ux + uy * uy;
+    const vx = draft.end.x - draft.start.x;
+    const vy = draft.end.y - draft.start.y;
+    // A degenerate old chord (both endpoints coincided) has no frame to rotate
+    // out of, so fall back to a pure translation by the start delta. The P5
+    // guard in pom-fixture-builder demotes zero-length straight rows before
+    // they get here, but a curve can still be degenerate.
+    const rotate = den > 1e-12;
+    const cos = rotate ? (vx * ux + vy * uy) / den : 1;
+    const sin = rotate ? (vy * ux - vx * uy) / den : 0;
+    const carry = (p) => {
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+      const dx = p.x - oldStart.x;
+      const dy = p.y - oldStart.y;
+      p.x = draft.start.x + cos * dx - sin * dy;
+      p.y = draft.start.y + sin * dx + cos * dy;
+    };
+    for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
+      if (draft[key]) carry(draft[key]);
+    }
+    if (Array.isArray(draft.points)) {
+      for (const anchor of draft.points) {
+        if (!anchor) continue;
+        for (const field of ['point', 'handleIn', 'handleOut']) {
+          if (anchor[field]) carry(anchor[field]);
+        }
+      }
+    }
+    // The label is a DERIVED default on a generated draft (buildDraftAnnotation
+    // only honours an explicit fixture label, which no generated row sets), so
+    // re-derive it from the moved geometry rather than transporting it: its
+    // perpendicular offset is a fixed screen distance and must not pick up the
+    // chord's scale factor. A hand-placed label is a TD decision and rides the
+    // transform instead. Either way this runs before
+    // nudgeAutoLabelsToAvoidCollisions, so the de-collision pass still gets the
+    // last word — which is what the comment at its call site already claimed.
+    if (draft.labelManual) {
+      carry(draft.label);
+    } else if (typeof computeDefaultLabelPosition === 'function') {
+      draft.label = computeDefaultLabelPosition(draft);
+    }
   }
 
   function applyStyleAbsenceEvidenceToDrafts(drafts) {

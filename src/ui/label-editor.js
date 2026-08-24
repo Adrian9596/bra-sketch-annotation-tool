@@ -20,7 +20,22 @@
     el.labelEditor.style.left = screen.x + 'px';
     el.labelEditor.style.top = screen.y + 'px';
     el.labelEditor.style.color = getAnnotationColor(ann);
-    el.labelEditor.value = getLabelText(ann);
+    // US-096 / ADR 0055, second code review 2026-08-23: a construction line
+    // paints no callout, so there is no current label to pre-fill — and
+    // pre-filling one here was a zero-keystroke trap.
+    //
+    // getLabelText falls back to String(ann.seq), and a construction line is
+    // born holding state.nextSequence WITHOUT advancing it, so that number is
+    // exactly the one the next measurement line will take. The editor commits
+    // on blur (bindings.js), so a stray double-click on a stitch mark followed
+    // by a click anywhere else wrote `ann.text = "<that number>"` — which is
+    // the ADR's deliberate "a labelled stitch line still measures" exception,
+    // fired by accident, producing two measurement lines answering to one POM
+    // key. Before US-096 the same commit was a semantic no-op.
+    //
+    // Opening empty keeps the exception REACHABLE (a TD who genuinely wants a
+    // labelled stitch line types the number) while making it deliberate.
+    el.labelEditor.value = annotationShowsCallout(ann) ? getLabelText(ann) : (ann.text || '');
     requestRender();
     requestAnimationFrame(() => {
       el.labelEditor.focus();

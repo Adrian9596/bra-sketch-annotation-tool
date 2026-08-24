@@ -143,7 +143,7 @@
     // Phase 2 shadow runs pass { skipLearning: true } so the residual is
     // computed against the unbiased prediction, never against an already-
     // biased one (which would compound the error and make the median drift).
-    if (options && options.skipLearning) return list;
+    if (options && options.skipLearning) return captureDerivedOffsets(list);
     const biased = applyLearningBiasToAnchors(list);
     // Phase 6: an anchor the learning loop actually moved is 'learned' — the
     // seed position is no longer purely the detector's landmark. The fine
@@ -157,7 +157,11 @@
         );
       }
     }
-    return biased;
+    // Record the hem gap each drop_to_line dependent was seeded with, while the
+    // anchors still hold exactly what detection placed. deriveAnchors replays it
+    // so a band nudge moves cf-bottom / cradle-cup-bottom WITH the band instead
+    // of flattening them onto its chord and discarding US-061's hem following.
+    return captureDerivedOffsets(biased);
   }
 
   function clamp01(v) { return Math.max(0, Math.min(1, Number(v) || 0)); }
