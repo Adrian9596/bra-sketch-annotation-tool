@@ -84,6 +84,13 @@ function requestRender() {
       drawDetectionOverlay(state.autoMode.detection);
     }
 
+    const hoveredAnnotation = state.appMode !== 'auto' && state.hoverAnnotationId != null
+      ? getAnnotationById(state.hoverAnnotationId) : null;
+    if (hoveredAnnotation && !isAnnHidden(hoveredAnnotation.id)
+        && !isAnnInSelection(hoveredAnnotation.id)) {
+      drawAnnotationHoverOutline(hoveredAnnotation);
+    }
+
     for (const ann of state.annotations) {
       if (isAnnHidden(ann.id)) continue;
       drawAnnotation(ann, false); // line body only — numbers drawn in the label pass below
@@ -225,6 +232,7 @@ function requestRender() {
     if (state.interaction && state.interaction.type === 'marquee' && state.interaction.moved) {
       drawMarquee(state.interaction);
     }
+    drawSmartAlignGuides();
 
     ctx.restore();
     positionLabelEditor();

@@ -25,6 +25,11 @@
 
   function lineTreatmentPatterns() { return ['solid', 'dashed', 'zigzag']; }
 
+  function normalizeLineTreatmentScale(value) {
+    const n = Number(value);
+    return clamp(Number.isFinite(n) ? n : 1, 0.25, 4);
+  }
+
   function normalizeLineTreatmentLayer(raw) {
     if (!raw || typeof raw !== 'object') return null;
     const pattern = lineTreatmentPatterns().includes(raw.pattern) ? raw.pattern : 'solid';
@@ -83,8 +88,36 @@
     if (!layers.length) return null;
     return {
       name: String(source.name || (fallback && fallback.name) || 'Custom treatment').trim().slice(0, 60),
+      // US-099: an instance-level visual multiplier. It deliberately lives on
+      // the recipe rather than the annotation geometry: a 50% Binding changes
+      // rails/stitches, never the path it follows or the value that path may
+      // measure. Missing values from every pre-US-099 project read as 100%.
+      scale: normalizeLineTreatmentScale(source.scale),
       layers,
     };
+  }
+
+  function scaledLineTreatmentLayers(treatment) {
+    const recipe = normalizeLineTreatment(treatment);
+    if (!recipe) return [];
+    const scale = recipe.scale;
+    return recipe.layers.map(layer => ({
+      ...layer,
+      offset: layer.offset * scale,
+      width: layer.width * scale,
+      spacing: layer.spacing * scale,
+      amplitude: layer.amplitude * scale,
+    }));
+  }
+
+  function lineTreatmentVisualExtent(treatment) {
+    let extent = 0;
+    for (const layer of scaledLineTreatmentLayers(treatment)) {
+      if (layer.hidden) continue;
+      const motif = layer.pattern === 'zigzag' ? layer.amplitude : 0;
+      extent = Math.max(extent, Math.abs(layer.offset) + motif + layer.width / 2);
+    }
+    return extent;
   }
 
   function hasLineTreatment(ann) {
@@ -100,7 +133,7 @@
   // arrow choice, so each name says what it adds — otherwise the library reads
   // as a second copy of the Stitches list and a TD cannot tell the two apart.
   function builtinLinePresets() {
-    return [
+    return normalizeLinePresetList([
       { id: 'builtin-pom', name: 'POM line (red, arrows)', style: 'solid', color: 'red', lineWidth: 2.5, arrowType: 'double', builtin: true },
       { id: 'builtin-extension', name: 'Extension (dashed, one arrow)', style: 'dashed', color: 'red', lineWidth: 2.5, arrowType: 'single', builtin: true },
       { id: 'builtin-zigzag', name: 'Zigzag (blue, no arrow)', style: 'zigzag', color: 'blue', lineWidth: 2.5, arrowType: 'none', builtin: true, kind: 'treatment', treatment: { name: 'Zigzag', layers: legacyStyleTreatmentLayers('zigzag', 'blue', 2.5) } },
@@ -111,7 +144,7 @@
         normalizeLineTreatmentLayer({ pattern: 'solid', offset: 4, width: 1.8, color: 'black' }),
         normalizeLineTreatmentLayer({ pattern: 'dashed', offset: 0, width: 1.2, color: 'blue', spacing: 10 }),
       ] } },
-    ];
+    ]);
   }
 
   function normalizeLinePresetArrowType(value) {

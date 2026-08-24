@@ -231,6 +231,64 @@
     ctx.restore();
   }
 
+  function drawAnnotationHoverOutline(ann) {
+    if (!ann || !ann.start || !ann.end) return;
+    const extent = hasLineTreatment(ann)
+      ? lineTreatmentVisualExtent(ann.lineTreatment)
+      : getLineWidth(ann) / 2;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(53,109,255,.22)';
+    ctx.lineWidth = Math.max(8, extent * 2 + 6) / Math.max(0.0001, state.zoom);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.setLineDash([]);
+    drawAnnotationPath(ann);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawSmartAlignGuides() {
+    const guides = Array.isArray(state.smartAlignGuides) ? state.smartAlignGuides : [];
+    if (!guides.length) return;
+    const z = Math.max(0.0001, state.zoom);
+    const rect = state.lastCanvasRect || el.canvas.getBoundingClientRect();
+    const min = screenToWorld(0, 0);
+    const max = screenToWorld(rect.width, rect.height);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(45,110,246,.9)';
+    ctx.fillStyle = 'rgba(45,110,246,.95)';
+    ctx.lineWidth = 1.2 / z;
+    ctx.setLineDash([6 / z, 5 / z]);
+    for (const guide of guides) {
+      if (guide.type === 'vertical') {
+        ctx.beginPath(); ctx.moveTo(guide.value, min.y); ctx.lineTo(guide.value, max.y); ctx.stroke();
+      } else if (guide.type === 'horizontal') {
+        ctx.beginPath(); ctx.moveTo(min.x, guide.value); ctx.lineTo(max.x, guide.value); ctx.stroke();
+      } else if (guide.type === 'line' && guide.start && guide.end) {
+        const vx = guide.end.x - guide.start.x, vy = guide.end.y - guide.start.y;
+        const length = Math.max(0.0001, Math.hypot(vx, vy));
+        const ux = vx / length, uy = vy / length;
+        const reach = Math.max(max.x - min.x, max.y - min.y) * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(guide.start.x - ux * reach, guide.start.y - uy * reach);
+        ctx.lineTo(guide.start.x + ux * reach, guide.start.y + uy * reach);
+        ctx.stroke();
+      } else if (guide.type === 'point' && guide.point) {
+        const radius = 7 / z;
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(guide.point.x, guide.point.y, radius, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(guide.point.x - radius * 1.5, guide.point.y);
+        ctx.lineTo(guide.point.x + radius * 1.5, guide.point.y);
+        ctx.moveTo(guide.point.x, guide.point.y - radius * 1.5);
+        ctx.lineTo(guide.point.x, guide.point.y + radius * 1.5);
+        ctx.stroke();
+        ctx.setLineDash([6 / z, 5 / z]);
+      }
+    }
+    ctx.restore();
+  }
+
   // Rubber-band selection rectangle, in world coordinates.
   function drawMarquee(m) {
     if (!m || !m.startWorld || !m.currentWorld) return;

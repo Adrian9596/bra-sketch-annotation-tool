@@ -309,6 +309,12 @@
     // includes the primary `selection` when it is an annotation. Widens what
     // group copy / reflect / delete / drag act on. Session-only.
     selectedAnnotationIds: [],
+    // US-099: pointer-assistance state is intentionally session-only. The
+    // geometry produced by a snapped drag enters ordinary history/project data;
+    // hover, guides and the current preference never do.
+    smartAlignEnabled: true,
+    smartAlignGuides: [],
+    hoverAnnotationId: null,
 
     zoom: 1,
     panX: 0,
@@ -510,6 +516,7 @@
     toolRectangle: document.getElementById('toolRectangle'),
     toolCircle: document.getElementById('toolCircle'),
     toolHexagon: document.getElementById('toolHexagon'),
+    smartAlignToggleBtn: document.getElementById('smartAlignToggleBtn'),
     // US-093 / ADR 0053: Straight/Curved/Eraser/Text moved into one drop-down
     // to free this slot — see toolsMenuBtn below.
     toolAddPoint: document.getElementById('toolAddPoint'),
@@ -15548,6 +15555,9 @@ const BOM_MATERIAL_LIBRARY = [
         const record = boardToolbarMenuRecords().find(r => r.list && r.list.id === 'toolsMenuList');
         if (record) openBoardToolbarMenu(record);
       } }),
+    appCommand({ id: 'board.smart-align.toggle', label: 'Toggle Smart Align', category: 'Board · Edit',
+      page: 'board', mode: 'manual', target: '#smartAlignToggleBtn',
+      action: () => toggleSmartAlign() }),
     appCommand({ id: 'board.copy.line', label: 'Copy Selected Line', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'c', meta: true }, target: '#copyLineBtn',
       when: appCommandSelectedAnnotationReason, action: () => copySelectedAnnotation() }),
@@ -16384,7 +16394,7 @@ const BOM_MATERIAL_LIBRARY = [
     if (!preset || preset.kind !== 'treatment' || !preset.treatment) {
       return linePresetPreviewSvg(preset && preset.style);
     }
-    const layers = normalizeLineTreatmentLayers(preset.treatment.layers);
+    const layers = scaledLineTreatmentLayers(preset.treatment);
     const body = layers.map(layer => {
       const y = clamp(7 + layer.offset * 0.55, 1.5, 12.5);
       const color = LINE_COLORS[layer.color] || LINE_COLOR;
@@ -16558,13 +16568,20 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   function openLineTreatmentEditor({ title, name, recipe, confirmLabel, onConfirm }) {
-    const dialog = buildDialog({ title, sub: 'Layers follow the selected path. Offset moves a layer to either side; geometry and anchors stay unchanged.' });
+    const dialog = buildDialog({ title, sub: 'Overall scale changes the visible treatment only. Layers follow the selected path; geometry, anchors and path length stay unchanged.' });
     dialog.panel.classList.add('treatment-dialog');
-    let layers = normalizeLineTreatmentLayers(recipe && recipe.layers);
+    const normalizedRecipe = normalizeLineTreatment(recipe) || { name: '', scale: 1, layers: [] };
+    let treatmentScale = normalizedRecipe.scale;
+    let layers = normalizeLineTreatmentLayers(normalizedRecipe.layers);
     if (!layers.length) layers = legacyStyleTreatmentLayers('solid', 'black', 2);
     const body = document.createElement('div');
     body.className = 'treatment-editor';
     body.innerHTML = '<label class="scale-field">Treatment name<input data-treatment-name type="text" maxlength="60" placeholder="e.g. Binding 12 mm"></label>'
+      + '<div class="treatment-scale-controls">'
+      + '<label>Overall scale<input data-treatment-scale-range type="range" min="25" max="400" step="5"></label>'
+      + '<label class="treatment-scale-number"><input data-treatment-scale-number type="number" min="25" max="400" step="5" aria-label="Treatment scale percent"><span>%</span></label>'
+      + '<button type="button" class="picker-btn" data-treatment-scale-reset>Reset 100%</button>'
+      + '</div>'
       + '<div class="treatment-preview" aria-label="Treatment preview"><svg data-treatment-preview viewBox="0 0 520 74" aria-hidden="true"></svg></div>'
       + '<div class="treatment-layers" data-treatment-layers></div>'
       + '<button type="button" class="picker-btn" data-add-treatment-layer>+ Add layer</button>';
@@ -16572,7 +16589,22 @@ const BOM_MATERIAL_LIBRARY = [
     const nameInput = body.querySelector('[data-treatment-name]');
     const list = body.querySelector('[data-treatment-layers]');
     const preview = body.querySelector('[data-treatment-preview]');
+    const scaleRange = body.querySelector('[data-treatment-scale-range]');
+    const scaleNumber = body.querySelector('[data-treatment-scale-number]');
     nameInput.value = name || (recipe && recipe.name) || '';
+    scaleRange.value = String(Math.round(treatmentScale * 100));
+    scaleNumber.value = scaleRange.value;
+
+    function readScale() {
+      return normalizeLineTreatmentScale(Number(scaleNumber.value) / 100);
+    }
+
+    function writeScale(value) {
+      treatmentScale = normalizeLineTreatmentScale(value);
+      const percent = Math.round(treatmentScale * 100);
+      scaleRange.value = String(percent);
+      scaleNumber.value = String(percent);
+    }
 
     function readLayers() {
       return Array.from(list.querySelectorAll('[data-layer-index]')).map(row => {
@@ -16587,7 +16619,8 @@ const BOM_MATERIAL_LIBRARY = [
 
     function paintPreview() {
       const rows = readLayers();
-      const svg = rows.map(layer => {
+      const effective = scaledLineTreatmentLayers({ name: nameInput.value || 'Preview', scale: readScale(), layers: rows });
+      const svg = effective.map(layer => {
         const y = clamp(37 + layer.offset * 1.7, 5, 69);
         const color = LINE_COLORS[layer.color] || LINE_COLOR;
         const width = clamp(layer.width, 0.5, 8);
@@ -16624,6 +16657,27 @@ const BOM_MATERIAL_LIBRARY = [
       renderRows();
     });
 
+    scaleRange.addEventListener('input', () => {
+      writeScale(Number(scaleRange.value) / 100);
+      paintPreview();
+    });
+    scaleNumber.addEventListener('input', () => {
+      const percent = Number(scaleNumber.value);
+      if (!Number.isFinite(percent)) return;
+      treatmentScale = normalizeLineTreatmentScale(percent / 100);
+      scaleRange.value = String(Math.round(treatmentScale * 100));
+      paintPreview();
+    });
+    scaleNumber.addEventListener('change', () => {
+      writeScale(Number(scaleNumber.value) / 100);
+      paintPreview();
+    });
+    body.querySelector('[data-treatment-scale-reset]').addEventListener('click', () => {
+      writeScale(1);
+      paintPreview();
+      scaleRange.focus();
+    });
+
     const footer = document.createElement('div');
     footer.className = 'picker-footer';
     footer.innerHTML = '<span style="flex:1"></span>';
@@ -16639,7 +16693,7 @@ const BOM_MATERIAL_LIBRARY = [
       if (!nextName) { nameInput.focus(); showToast('Give the Treatment a name first.'); return; }
       if (!nextLayers.length) { showToast('Add at least one Treatment layer.'); return; }
       dialog.close();
-      onConfirm({ name: nextName, layers: nextLayers });
+      onConfirm({ name: nextName, scale: readScale(), layers: nextLayers });
     });
     renderRows();
     dialog.open();
@@ -16908,7 +16962,7 @@ const BOM_MATERIAL_LIBRARY = [
     const kind = targets.length > 1 ? `${targets.length} selected paths` : (targets[0].type === 'curved' ? 'Curve' : 'Straight line');
     openLinePresetNameDialog({
       title: 'Save Template',
-      sub: `${kind}. Geometry, styles and Treatments are kept; POM identity and measurements are excluded.`,
+      sub: `${kind}, including Scratch Area paths outside the sketch. Geometry, styles and Treatments are kept; POM identity and measurements are excluded.`,
       value: '',
       confirmLabel: 'Save Template',
       onConfirm: (name) => {
@@ -17042,6 +17096,7 @@ const BOM_MATERIAL_LIBRARY = [
     el.toolRectangle.addEventListener('click', () => setTool('rectangle'));
     el.toolCircle.addEventListener('click', () => setTool('circle'));
     el.toolHexagon.addEventListener('click', () => setTool('hexagon'));
+    if (el.smartAlignToggleBtn) el.smartAlignToggleBtn.addEventListener('click', toggleSmartAlign);
     // US-093 / ADR 0053: only visible while a curved annotation is selected
     // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
     // no extra guard needed here.
@@ -17230,6 +17285,7 @@ const BOM_MATERIAL_LIBRARY = [
     el.canvas.addEventListener('mousedown', onMouseDown);
     el.canvas.addEventListener('dblclick', onDoubleClick);
     el.canvas.addEventListener('mousemove', onMouseMove);
+    el.canvas.addEventListener('mouseleave', clearAnnotationHover);
     window.addEventListener('mouseup', onMouseUp);
     el.canvas.addEventListener('wheel', onWheel, { passive: false });
     // US-036: touch/pen layer — routes into the mouse handlers above; mouse
@@ -19942,6 +19998,150 @@ function setSelection(kind, id) {
       : `Unlocked all ${state.images.length} image${state.images.length === 1 ? '' : 's'}.`);
   }
 
+  // ---- src/manual/smart-align.js ----
+// US-099: translation-only Smart Align for lines and Template groups.
+// Source part for app.js. Run `npm run build` after editing.
+
+  function setSmartAlignEnabled(enabled, announce) {
+    state.smartAlignEnabled = !!enabled;
+    state.smartAlignGuides = [];
+    if (announce !== false) showToast(state.smartAlignEnabled
+      ? 'Smart Align on. Hold Alt/Option during a drag to bypass it.'
+      : 'Smart Align off.');
+    updateUI();
+    requestRender();
+    return state.smartAlignEnabled;
+  }
+
+  function toggleSmartAlign() {
+    return setSmartAlignEnabled(!state.smartAlignEnabled, true);
+  }
+
+  function smartAlignKeyPoints(ann) {
+    if (!ann || !ann.start || !ann.end) return [];
+    const points = [clonePoint(ann.start), clonePoint(ann.end)];
+    const polyline = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : 48);
+    const length = polylineLength(polyline);
+    if (length > 0) points.push(samplePolylineAt(polyline, length / 2).point);
+    return points;
+  }
+
+  function smartAlignTranslated(point, dx, dy) {
+    return { x: point.x + dx, y: point.y + dy };
+  }
+
+  function smartAlignAngleDelta(a, b) {
+    const ax = a.end.x - a.start.x, ay = a.end.y - a.start.y;
+    const bx = b.end.x - b.start.x, by = b.end.y - b.start.y;
+    const al = Math.hypot(ax, ay), bl = Math.hypot(bx, by);
+    if (al <= 0.0001 || bl <= 0.0001) return Infinity;
+    const dot = clamp(Math.abs((ax * bx + ay * by) / (al * bl)), -1, 1);
+    return Math.acos(dot);
+  }
+
+  function smartAlignResult(dx, dy, guides) {
+    return { dx, dy, guides: Array.isArray(guides) ? guides : [] };
+  }
+
+  function computeSmartAlignment(startAnnotations, movingIds, rawDx, rawDy, bypass) {
+    const dx = Number(rawDx) || 0, dy = Number(rawDy) || 0;
+    if (!state.smartAlignEnabled || bypass) return smartAlignResult(dx, dy, []);
+    const moving = (Array.isArray(startAnnotations) ? startAnnotations : []).filter(Boolean);
+    if (!moving.length) return smartAlignResult(dx, dy, []);
+    const movingSet = new Set(Array.isArray(movingIds) ? movingIds : []);
+    const references = state.annotations.filter(ann => !movingSet.has(ann.id) && !isAnnHidden(ann.id));
+    if (!references.length) return smartAlignResult(dx, dy, []);
+
+    const z = Math.max(0.0001, state.zoom);
+    const endpointLimit = 10 / z;
+    let bestEndpoint = null;
+    for (const source of moving) {
+      for (const movingPoint of [source.start, source.end]) {
+        const proposed = smartAlignTranslated(movingPoint, dx, dy);
+        for (const reference of references) {
+          for (const referencePoint of [reference.start, reference.end]) {
+            const dist = distance(proposed, referencePoint);
+            if (dist <= endpointLimit && (!bestEndpoint || dist < bestEndpoint.dist)) {
+              bestEndpoint = {
+                dist,
+                dx: dx + referencePoint.x - proposed.x,
+                dy: dy + referencePoint.y - proposed.y,
+                guide: { type: 'point', point: clonePoint(referencePoint), referenceId: reference.id },
+              };
+            }
+          }
+        }
+      }
+    }
+    if (bestEndpoint) return smartAlignResult(bestEndpoint.dx, bestEndpoint.dy, [bestEndpoint.guide]);
+
+    const axisLimit = 7 / z;
+    const movingPoints = moving.flatMap(smartAlignKeyPoints).map(point => smartAlignTranslated(point, dx, dy));
+    const referencePoints = references.flatMap(smartAlignKeyPoints);
+    let bestX = null, bestY = null;
+    for (const movingPoint of movingPoints) {
+      for (const referencePoint of referencePoints) {
+        const deltaX = referencePoint.x - movingPoint.x;
+        const deltaY = referencePoint.y - movingPoint.y;
+        if (Math.abs(deltaX) <= axisLimit && (!bestX || Math.abs(deltaX) < Math.abs(bestX.delta))) {
+          bestX = { delta: deltaX, value: referencePoint.x };
+        }
+        if (Math.abs(deltaY) <= axisLimit && (!bestY || Math.abs(deltaY) < Math.abs(bestY.delta))) {
+          bestY = { delta: deltaY, value: referencePoint.y };
+        }
+      }
+    }
+    if (bestX || bestY) {
+      const guides = [];
+      if (bestX) guides.push({ type: 'vertical', value: bestX.value });
+      if (bestY) guides.push({ type: 'horizontal', value: bestY.value });
+      return smartAlignResult(dx + (bestX ? bestX.delta : 0), dy + (bestY ? bestY.delta : 0), guides);
+    }
+
+    // A move cannot rotate a path. Collinear snapping therefore applies only
+    // when two straight paths are already near-parallel and removes the small
+    // perpendicular gap between their infinite centerlines.
+    const collinearLimit = 8 / z;
+    const angleLimit = 5 * Math.PI / 180;
+    let bestLine = null;
+    for (const source of moving) {
+      if (source.type !== 'straight') continue;
+      const sourceMid = smartAlignTranslated({
+        x: (source.start.x + source.end.x) / 2,
+        y: (source.start.y + source.end.y) / 2,
+      }, dx, dy);
+      for (const reference of references) {
+        if (reference.type !== 'straight' || smartAlignAngleDelta(source, reference) > angleLimit) continue;
+        const vx = reference.end.x - reference.start.x;
+        const vy = reference.end.y - reference.start.y;
+        const length = Math.hypot(vx, vy);
+        if (length <= 0.0001) continue;
+        const nx = -vy / length, ny = vx / length;
+        const signed = (sourceMid.x - reference.start.x) * nx + (sourceMid.y - reference.start.y) * ny;
+        const magnitude = Math.abs(signed);
+        if (magnitude <= collinearLimit && (!bestLine || magnitude < bestLine.magnitude)) {
+          bestLine = {
+            magnitude,
+            dx: dx - nx * signed,
+            dy: dy - ny * signed,
+            guide: { type: 'line', start: clonePoint(reference.start), end: clonePoint(reference.end), referenceId: reference.id },
+          };
+        }
+      }
+    }
+    return bestLine
+      ? smartAlignResult(bestLine.dx, bestLine.dy, [bestLine.guide])
+      : smartAlignResult(dx, dy, []);
+  }
+
+  function restoreAnnotationMoveGeometry(ann, source) {
+    if (!ann || !source) return;
+    for (const key of ['start', 'end', 'label', 'midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
+      ann[key] = source[key] ? clonePoint(source[key]) : null;
+    }
+    ann.points = clone(source.points || []);
+  }
+
   // ---- src/manual/pointer-events.js ----
 // Manual-mode canvas pointer state machine: mouse down/move/up dispatch,
 // the drag-session starters, and the per-frame drag geometry.
@@ -20320,7 +20520,14 @@ function setSelection(kind, id) {
     }
 
     const interaction = state.interaction;
-    if (!interaction) return;
+    if (!interaction) {
+      updateAnnotationHover(world);
+      return;
+    }
+    if (state.hoverAnnotationId != null) {
+      state.hoverAnnotationId = null;
+      requestRender();
+    }
 
     if (interaction.type === 'draw-stamp') {
       interaction.currentWorld = clonePoint(world);
@@ -20368,19 +20575,22 @@ function setSelection(kind, id) {
     if (interaction.type === 'drag-annotation') {
       if (!dragArmed(interaction, world)) return;
       const ids = interaction.groupIds || [interaction.id];
-      const dx = world.x - interaction.prevWorld.x;
-      const dy = world.y - interaction.prevWorld.y;
-      if (dx || dy) {
-        for (const aid of ids) {
-          const a = getAnnotationById(aid);
-          if (!a) continue;
-          moveAnnotation(a, dx, dy);
-          if (isAutoDraft(a)) markDraftTouchedByTD(a);
-        }
-        interaction.changed = true;
-        interaction.prevWorld = world;
-        requestRender();
+      const rawDx = world.x - interaction.startWorld.x;
+      const rawDy = world.y - interaction.startWorld.y;
+      const aligned = computeSmartAlignment(
+        interaction.startAnnotations, ids, rawDx, rawDy, !!e.altKey
+      );
+      for (const source of interaction.startAnnotations || []) {
+        const a = getAnnotationById(source.id);
+        if (!a) continue;
+        restoreAnnotationMoveGeometry(a, source);
+        moveAnnotation(a, aligned.dx, aligned.dy);
+        if (isAutoDraft(a)) markDraftTouchedByTD(a);
       }
+      state.smartAlignGuides = aligned.guides;
+      interaction.smartAlignGuides = aligned.guides;
+      interaction.changed = Math.abs(aligned.dx) > 0.000001 || Math.abs(aligned.dy) > 0.000001;
+      requestRender();
       return;
     }
 
@@ -20552,6 +20762,7 @@ function setSelection(kind, id) {
     // Release the gesture-pinned rect (US-086) on EVERY path out of here,
     // including the early return below when no interaction was open.
     state.gestureCanvasRect = null;
+    state.smartAlignGuides = [];
     if (state.eraseSession) {
       commitEraseStroke();
     }
@@ -20724,8 +20935,24 @@ function startAnnotationDrag(id, world) {
   const groupIds = (selected.length > 1 && selected.includes(id)) ? selected.slice() : [id];
   beginTrackedInteraction('drag-annotation', {
     id, prevWorld: world, groupIds,
+    startAnnotations: groupIds.map(aid => getAnnotationById(aid)).filter(Boolean).map(clone),
     startWorld: { x: world.x, y: world.y }, armed: false,
   });
+}
+
+function updateAnnotationHover(world) {
+  const next = state.appMode !== 'auto' && state.tool === 'select'
+    ? hitTestAnnotations(world) : null;
+  const nextId = next ? next.id : null;
+  if (state.hoverAnnotationId === nextId) return;
+  state.hoverAnnotationId = nextId;
+  requestRender();
+}
+
+function clearAnnotationHover() {
+  if (state.hoverAnnotationId == null) return;
+  state.hoverAnnotationId = null;
+  requestRender();
 }
 
 // keepSelection (US-086): the marquee was started ON something already adopted
@@ -22259,6 +22486,11 @@ function onWheel(e) {
 
   function lineTreatmentPatterns() { return ['solid', 'dashed', 'zigzag']; }
 
+  function normalizeLineTreatmentScale(value) {
+    const n = Number(value);
+    return clamp(Number.isFinite(n) ? n : 1, 0.25, 4);
+  }
+
   function normalizeLineTreatmentLayer(raw) {
     if (!raw || typeof raw !== 'object') return null;
     const pattern = lineTreatmentPatterns().includes(raw.pattern) ? raw.pattern : 'solid';
@@ -22317,8 +22549,36 @@ function onWheel(e) {
     if (!layers.length) return null;
     return {
       name: String(source.name || (fallback && fallback.name) || 'Custom treatment').trim().slice(0, 60),
+      // US-099: an instance-level visual multiplier. It deliberately lives on
+      // the recipe rather than the annotation geometry: a 50% Binding changes
+      // rails/stitches, never the path it follows or the value that path may
+      // measure. Missing values from every pre-US-099 project read as 100%.
+      scale: normalizeLineTreatmentScale(source.scale),
       layers,
     };
+  }
+
+  function scaledLineTreatmentLayers(treatment) {
+    const recipe = normalizeLineTreatment(treatment);
+    if (!recipe) return [];
+    const scale = recipe.scale;
+    return recipe.layers.map(layer => ({
+      ...layer,
+      offset: layer.offset * scale,
+      width: layer.width * scale,
+      spacing: layer.spacing * scale,
+      amplitude: layer.amplitude * scale,
+    }));
+  }
+
+  function lineTreatmentVisualExtent(treatment) {
+    let extent = 0;
+    for (const layer of scaledLineTreatmentLayers(treatment)) {
+      if (layer.hidden) continue;
+      const motif = layer.pattern === 'zigzag' ? layer.amplitude : 0;
+      extent = Math.max(extent, Math.abs(layer.offset) + motif + layer.width / 2);
+    }
+    return extent;
   }
 
   function hasLineTreatment(ann) {
@@ -22334,7 +22594,7 @@ function onWheel(e) {
   // arrow choice, so each name says what it adds — otherwise the library reads
   // as a second copy of the Stitches list and a TD cannot tell the two apart.
   function builtinLinePresets() {
-    return [
+    return normalizeLinePresetList([
       { id: 'builtin-pom', name: 'POM line (red, arrows)', style: 'solid', color: 'red', lineWidth: 2.5, arrowType: 'double', builtin: true },
       { id: 'builtin-extension', name: 'Extension (dashed, one arrow)', style: 'dashed', color: 'red', lineWidth: 2.5, arrowType: 'single', builtin: true },
       { id: 'builtin-zigzag', name: 'Zigzag (blue, no arrow)', style: 'zigzag', color: 'blue', lineWidth: 2.5, arrowType: 'none', builtin: true, kind: 'treatment', treatment: { name: 'Zigzag', layers: legacyStyleTreatmentLayers('zigzag', 'blue', 2.5) } },
@@ -22345,7 +22605,7 @@ function onWheel(e) {
         normalizeLineTreatmentLayer({ pattern: 'solid', offset: 4, width: 1.8, color: 'black' }),
         normalizeLineTreatmentLayer({ pattern: 'dashed', offset: 0, width: 1.2, color: 'blue', spacing: 10 }),
       ] } },
-    ];
+    ]);
   }
 
   function normalizeLinePresetArrowType(value) {
@@ -23681,6 +23941,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     el.toolRectangle.classList.toggle('active', state.tool === 'rectangle');
     el.toolCircle.classList.toggle('active', state.tool === 'circle');
     el.toolHexagon.classList.toggle('active', state.tool === 'hexagon');
+    if (el.smartAlignToggleBtn) {
+      el.smartAlignToggleBtn.setAttribute('aria-checked', state.smartAlignEnabled ? 'true' : 'false');
+      el.smartAlignToggleBtn.textContent = (state.smartAlignEnabled ? '✓ ' : '') + 'Smart Align';
+    }
     el.lineStyleControl.hidden = state.tool === 'eraser';
     el.lineWidthChip.hidden = state.tool === 'eraser';
     el.brushSizeChip.hidden = state.tool !== 'eraser';
@@ -23758,7 +24022,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           ? 'Select – Drag the note or an arrow tip to move it, double-click a tip to remove that arrow, double-click the text to edit it, <span class="kbd">⌫</span> deletes the note.'
           : 'Select – Drag the note to move it, drag the <strong>+</strong> handle out to point an arrow at a detail, double-click to edit the text, <span class="kbd">⌫</span> deletes it.';
       } else if (selectedAnnotation) {
-        toolText = 'Select – Drag line, endpoints, curve shape handle, or label. <span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
+        toolText = 'Select – Drag line, endpoints, curve shape handle, or label. Smart Align is '
+          + (state.smartAlignEnabled ? 'on; hold <span class="kbd">Alt/Option</span> to bypass it. ' : 'off. ')
+          + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
       } else if (selectedGraphic) {
         toolText = state.graphicEdit
           ? 'Edit Path – Select and drag nodes, handles, or segments; Cut Path opens the active point.'
@@ -38741,6 +39007,23 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         return typeof applyTreatmentRecipeToAnnotations === 'function'
           ? applyTreatmentRecipeToAnnotations(recipe, anns) : 0;
       },
+      getLineTreatmentMetrics: (id) => {
+        const ann = getAnnotationById(id);
+        const treatment = ann && normalizeLineTreatment(ann.lineTreatment);
+        return treatment ? { scale: treatment.scale, layers: clone(scaledLineTreatmentLayers(treatment)) } : null;
+      },
+      setSmartAlignEnabled: (enabled) => setSmartAlignEnabled(enabled, false),
+      previewSmartAlignment: (ids, dx, dy, bypass) => {
+        const movingIds = Array.isArray(ids) ? ids : [];
+        const sources = movingIds.map(id => getAnnotationById(id)).filter(Boolean).map(clone);
+        return clone(computeSmartAlignment(sources, movingIds, dx, dy, !!bypass));
+      },
+      selectAnnotation: (id) => {
+        if (!getAnnotationById(id)) return false;
+        setSelection('annotation', id);
+        return true;
+      },
+      clearSelection: () => { clearSelection(); return true; },
       resetLinePresets: () => {
         if (typeof resetLinePresetsToBuiltins === 'function') resetLinePresetsToBuiltins();
       },
@@ -38938,6 +39221,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         selection: { kind: state.selection.kind, id: state.selection.id != null ? state.selection.id : null },
         selectedAnnotationIds: getSelectedAnnotationIds().slice(),
         templateGroupEditId: state.templateGroupEditId || null,
+        smartAlignEnabled: !!state.smartAlignEnabled,
+        smartAlignGuides: clone(state.smartAlignGuides || []),
+        hoverAnnotationId: state.hoverAnnotationId != null ? state.hoverAnnotationId : null,
         noteCount: (state.notes || []).length,
         autoStatus: state.autoMode.status,
         lastError: state.autoMode.lastError,
@@ -40971,23 +41257,27 @@ function makeExportFileName() {
   }
 
   function hitTestAnnotations(world) {
+    const tolerance = 8 / state.zoom;
+    let best = null;
     for (let i = state.annotations.length - 1; i >= 0; i -= 1) {
       const ann = state.annotations[i];
-      // Skip hidden annotations — the canvas draws nothing for them, so
-      // catching a click in an empty region would confuse the reviewer.
       if (isAnnHidden(ann.id)) continue;
-      // Same rule as hitTestSelectedHandles: an unpainted callout is not a
-      // target. This test runs BEFORE the body test and walks topmost-first, so
-      // an invisible box here shadows the real POM line underneath it.
+      // Keep each annotation's label/body stacking coupled. In particular, an
+      // exact topmost body hit must beat a lower annotation's label just as it
+      // did before Smart Hit began ranking broad catch zones.
       if (annotationShowsCallout(ann)
         && pointInLabelBounds(world, ann.label, getLabelText(ann), 8 / state.zoom)) {
         return { id: ann.id, part: 'label' };
       }
-      if (isPointNearAnnotation(world, ann, 8 / state.zoom)) {
-        return { id: ann.id, part: 'body' };
+      const score = annotationVisualHitDistance(world, ann);
+      if (score <= 0.000001) return { id: ann.id, part: 'body' };
+      // Strictly nearer replaces. Exact ties retain the first candidate from
+      // the reverse loop — the topmost visible annotation.
+      if (score <= tolerance && (!best || score < best.score)) {
+        best = { id: ann.id, part: 'body', score };
       }
     }
-    return null;
+    return best ? { id: best.id, part: best.part } : null;
   }
 
   // US-086 follow-up: is this press close enough to a line that it should read
@@ -41198,15 +41488,47 @@ function makeExportFileName() {
   }
 
   function isPointNearAnnotation(point, ann, tolerance) {
-    const hitTolerance = Math.max(tolerance, (getLineWidth(ann) / 2 + 6) / state.zoom);
-    if (ann.type === 'straight') {
-      return pointToSegmentDistance(point, ann.start, ann.end) <= hitTolerance;
+    const hitTolerance = Math.max(tolerance, 6 / state.zoom);
+    return annotationVisualHitDistance(point, ann) <= hitTolerance;
+  }
+
+  function pointToPolylineDistance(point, points) {
+    let best = Infinity;
+    for (let i = 1; i < points.length; i += 1) {
+      best = Math.min(best, pointToSegmentDistance(point, points[i - 1], points[i]));
     }
-    const pts = getAnnotationPolyline(ann, BEZIER_SAMPLES * 2);
-    for (let i = 1; i < pts.length; i += 1) {
-      if (pointToSegmentDistance(point, pts[i - 1], pts[i]) <= hitTolerance) return true;
+    if (points.length === 1) best = distance(point, points[0]);
+    return best;
+  }
+
+  function pointToOffsetPolylineDistance(point, points, offset) {
+    const shifted = points.map((p, index) => {
+      const normal = polylineVertexNormal(points, index);
+      return { x: p.x + normal.x * offset, y: p.y + normal.y * offset };
+    });
+    return pointToPolylineDistance(point, shifted);
+  }
+
+  // Distance from the pointer to what is visibly painted, in WORLD units.
+  // US-099 Smart Hit uses each scaled Treatment rail rather than the invisible
+  // host centerline; all rails still resolve to the one host annotation.
+  function annotationVisualHitDistance(point, ann) {
+    const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : BEZIER_SAMPLES * 2);
+    const z = Math.max(0.0001, state.zoom);
+    if (hasLineTreatment(ann)) {
+      // Keep the historical host-spine target as well as every visible rail.
+      // A Binding has empty space between its outside rails; losing the spine
+      // would make a click in that familiar middle gap stop selecting the line.
+      let best = pointToPolylineDistance(point, points);
+      for (const layer of scaledLineTreatmentLayers(ann.lineTreatment)) {
+        if (layer.hidden) continue;
+        const railDistance = pointToOffsetPolylineDistance(point, points, layer.offset / z);
+        const motifRadius = layer.pattern === 'zigzag' ? layer.amplitude / z : 0;
+        best = Math.min(best, Math.max(0, railDistance - motifRadius - layer.width / (2 * z)));
+      }
+      if (Number.isFinite(best)) return best;
     }
-    return false;
+    return Math.max(0, pointToPolylineDistance(point, points) - getLineWidth(ann) / (2 * z));
   }
 
   // ---- src/render/render-stitches.js ----
@@ -41224,7 +41546,9 @@ function makeExportFileName() {
     if (!recipe) return false;
     const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : 96);
     if (points.length < 2 || polylineLength(points) <= 0) return false;
-    for (const layer of recipe.layers) {
+    // US-099: scale the visual recipe only. The sampled `points` above are the
+    // host geometry and are intentionally never multiplied or replaced.
+    for (const layer of scaledLineTreatmentLayers(recipe)) {
       if (!layer.hidden) drawLineTreatmentLayer(points, layer);
     }
     return true;
@@ -41693,6 +42017,64 @@ function makeExportFileName() {
     ctx.save();
     drawHandle(ann.start, true, false);
     drawHandle(ann.end, true, false);
+    ctx.restore();
+  }
+
+  function drawAnnotationHoverOutline(ann) {
+    if (!ann || !ann.start || !ann.end) return;
+    const extent = hasLineTreatment(ann)
+      ? lineTreatmentVisualExtent(ann.lineTreatment)
+      : getLineWidth(ann) / 2;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(53,109,255,.22)';
+    ctx.lineWidth = Math.max(8, extent * 2 + 6) / Math.max(0.0001, state.zoom);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.setLineDash([]);
+    drawAnnotationPath(ann);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawSmartAlignGuides() {
+    const guides = Array.isArray(state.smartAlignGuides) ? state.smartAlignGuides : [];
+    if (!guides.length) return;
+    const z = Math.max(0.0001, state.zoom);
+    const rect = state.lastCanvasRect || el.canvas.getBoundingClientRect();
+    const min = screenToWorld(0, 0);
+    const max = screenToWorld(rect.width, rect.height);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(45,110,246,.9)';
+    ctx.fillStyle = 'rgba(45,110,246,.95)';
+    ctx.lineWidth = 1.2 / z;
+    ctx.setLineDash([6 / z, 5 / z]);
+    for (const guide of guides) {
+      if (guide.type === 'vertical') {
+        ctx.beginPath(); ctx.moveTo(guide.value, min.y); ctx.lineTo(guide.value, max.y); ctx.stroke();
+      } else if (guide.type === 'horizontal') {
+        ctx.beginPath(); ctx.moveTo(min.x, guide.value); ctx.lineTo(max.x, guide.value); ctx.stroke();
+      } else if (guide.type === 'line' && guide.start && guide.end) {
+        const vx = guide.end.x - guide.start.x, vy = guide.end.y - guide.start.y;
+        const length = Math.max(0.0001, Math.hypot(vx, vy));
+        const ux = vx / length, uy = vy / length;
+        const reach = Math.max(max.x - min.x, max.y - min.y) * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(guide.start.x - ux * reach, guide.start.y - uy * reach);
+        ctx.lineTo(guide.start.x + ux * reach, guide.start.y + uy * reach);
+        ctx.stroke();
+      } else if (guide.type === 'point' && guide.point) {
+        const radius = 7 / z;
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(guide.point.x, guide.point.y, radius, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(guide.point.x - radius * 1.5, guide.point.y);
+        ctx.lineTo(guide.point.x + radius * 1.5, guide.point.y);
+        ctx.moveTo(guide.point.x, guide.point.y - radius * 1.5);
+        ctx.lineTo(guide.point.x, guide.point.y + radius * 1.5);
+        ctx.stroke();
+        ctx.setLineDash([6 / z, 5 / z]);
+      }
+    }
     ctx.restore();
   }
 
@@ -43072,6 +43454,13 @@ function requestRender() {
       drawDetectionOverlay(state.autoMode.detection);
     }
 
+    const hoveredAnnotation = state.appMode !== 'auto' && state.hoverAnnotationId != null
+      ? getAnnotationById(state.hoverAnnotationId) : null;
+    if (hoveredAnnotation && !isAnnHidden(hoveredAnnotation.id)
+        && !isAnnInSelection(hoveredAnnotation.id)) {
+      drawAnnotationHoverOutline(hoveredAnnotation);
+    }
+
     for (const ann of state.annotations) {
       if (isAnnHidden(ann.id)) continue;
       drawAnnotation(ann, false); // line body only — numbers drawn in the label pass below
@@ -43213,6 +43602,7 @@ function requestRender() {
     if (state.interaction && state.interaction.type === 'marquee' && state.interaction.moved) {
       drawMarquee(state.interaction);
     }
+    drawSmartAlignGuides();
 
     ctx.restore();
     positionLabelEditor();

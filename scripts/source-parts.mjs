@@ -89,6 +89,7 @@ export const SOURCE_PARTS = [
   'src/manual/annotation-lifecycle.js',
   'src/manual/annotation-clipboard.js',
   'src/manual/selection.js',
+  'src/manual/smart-align.js',
   'src/manual/pointer-events.js',
   'src/manual/touch-input.js',
   'src/manual/canvas-tools.js',

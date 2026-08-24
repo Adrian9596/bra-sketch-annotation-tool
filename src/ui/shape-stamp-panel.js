@@ -103,7 +103,7 @@
     const kind = targets.length > 1 ? `${targets.length} selected paths` : (targets[0].type === 'curved' ? 'Curve' : 'Straight line');
     openLinePresetNameDialog({
       title: 'Save Template',
-      sub: `${kind}. Geometry, styles and Treatments are kept; POM identity and measurements are excluded.`,
+      sub: `${kind}, including Scratch Area paths outside the sketch. Geometry, styles and Treatments are kept; POM identity and measurements are excluded.`,
       value: '',
       confirmLabel: 'Save Template',
       onConfirm: (name) => {

@@ -193,23 +193,27 @@
   }
 
   function hitTestAnnotations(world) {
+    const tolerance = 8 / state.zoom;
+    let best = null;
     for (let i = state.annotations.length - 1; i >= 0; i -= 1) {
       const ann = state.annotations[i];
-      // Skip hidden annotations — the canvas draws nothing for them, so
-      // catching a click in an empty region would confuse the reviewer.
       if (isAnnHidden(ann.id)) continue;
-      // Same rule as hitTestSelectedHandles: an unpainted callout is not a
-      // target. This test runs BEFORE the body test and walks topmost-first, so
-      // an invisible box here shadows the real POM line underneath it.
+      // Keep each annotation's label/body stacking coupled. In particular, an
+      // exact topmost body hit must beat a lower annotation's label just as it
+      // did before Smart Hit began ranking broad catch zones.
       if (annotationShowsCallout(ann)
         && pointInLabelBounds(world, ann.label, getLabelText(ann), 8 / state.zoom)) {
         return { id: ann.id, part: 'label' };
       }
-      if (isPointNearAnnotation(world, ann, 8 / state.zoom)) {
-        return { id: ann.id, part: 'body' };
+      const score = annotationVisualHitDistance(world, ann);
+      if (score <= 0.000001) return { id: ann.id, part: 'body' };
+      // Strictly nearer replaces. Exact ties retain the first candidate from
+      // the reverse loop — the topmost visible annotation.
+      if (score <= tolerance && (!best || score < best.score)) {
+        best = { id: ann.id, part: 'body', score };
       }
     }
-    return null;
+    return best ? { id: best.id, part: best.part } : null;
   }
 
   // US-086 follow-up: is this press close enough to a line that it should read
@@ -420,13 +424,45 @@
   }
 
   function isPointNearAnnotation(point, ann, tolerance) {
-    const hitTolerance = Math.max(tolerance, (getLineWidth(ann) / 2 + 6) / state.zoom);
-    if (ann.type === 'straight') {
-      return pointToSegmentDistance(point, ann.start, ann.end) <= hitTolerance;
+    const hitTolerance = Math.max(tolerance, 6 / state.zoom);
+    return annotationVisualHitDistance(point, ann) <= hitTolerance;
+  }
+
+  function pointToPolylineDistance(point, points) {
+    let best = Infinity;
+    for (let i = 1; i < points.length; i += 1) {
+      best = Math.min(best, pointToSegmentDistance(point, points[i - 1], points[i]));
     }
-    const pts = getAnnotationPolyline(ann, BEZIER_SAMPLES * 2);
-    for (let i = 1; i < pts.length; i += 1) {
-      if (pointToSegmentDistance(point, pts[i - 1], pts[i]) <= hitTolerance) return true;
+    if (points.length === 1) best = distance(point, points[0]);
+    return best;
+  }
+
+  function pointToOffsetPolylineDistance(point, points, offset) {
+    const shifted = points.map((p, index) => {
+      const normal = polylineVertexNormal(points, index);
+      return { x: p.x + normal.x * offset, y: p.y + normal.y * offset };
+    });
+    return pointToPolylineDistance(point, shifted);
+  }
+
+  // Distance from the pointer to what is visibly painted, in WORLD units.
+  // US-099 Smart Hit uses each scaled Treatment rail rather than the invisible
+  // host centerline; all rails still resolve to the one host annotation.
+  function annotationVisualHitDistance(point, ann) {
+    const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : BEZIER_SAMPLES * 2);
+    const z = Math.max(0.0001, state.zoom);
+    if (hasLineTreatment(ann)) {
+      // Keep the historical host-spine target as well as every visible rail.
+      // A Binding has empty space between its outside rails; losing the spine
+      // would make a click in that familiar middle gap stop selecting the line.
+      let best = pointToPolylineDistance(point, points);
+      for (const layer of scaledLineTreatmentLayers(ann.lineTreatment)) {
+        if (layer.hidden) continue;
+        const railDistance = pointToOffsetPolylineDistance(point, points, layer.offset / z);
+        const motifRadius = layer.pattern === 'zigzag' ? layer.amplitude / z : 0;
+        best = Math.min(best, Math.max(0, railDistance - motifRadius - layer.width / (2 * z)));
+      }
+      if (Number.isFinite(best)) return best;
     }
-    return false;
+    return Math.max(0, pointToPolylineDistance(point, points) - getLineWidth(ann) / (2 * z));
   }

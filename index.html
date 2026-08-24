@@ -936,6 +936,12 @@
   }
   .treatment-editor{ display:flex; flex-direction:column; gap:12px; min-width:min(680px, 82vw); }
   .dialog-panel.treatment-dialog{ width:min(820px, 100%); }
+  .treatment-scale-controls{ display:grid; grid-template-columns:minmax(220px,1fr) 92px auto; gap:10px; align-items:end; padding:10px; border:1px solid var(--hairline); border-radius:8px; background:#fafafa; }
+  .treatment-scale-controls label{ display:flex; flex-direction:column; gap:5px; color:var(--muted); font-size:11px; font-weight:650; }
+  .treatment-scale-controls input[type="range"]{ width:100%; }
+  .treatment-scale-number{ position:relative; }
+  .treatment-scale-number input{ width:100%; padding:7px 24px 7px 8px; border:1px solid var(--hairline); border-radius:5px; background:#fff; }
+  .treatment-scale-number span{ position:absolute; right:8px; bottom:7px; color:var(--muted); pointer-events:none; }
   .treatment-preview{ height:74px; border:1px solid var(--hairline); border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
   .treatment-preview svg{ width:100%; height:100%; }
   .treatment-layers{ display:flex; flex-direction:column; gap:8px; max-height:46vh; overflow:auto; }
@@ -946,6 +952,8 @@
   @media (max-width:760px){
     .dialog-panel.treatment-dialog{ width:min(560px, 100%); }
     .treatment-editor{ min-width:min(92vw, 520px); }
+    .treatment-scale-controls{ grid-template-columns:1fr 88px; }
+    .treatment-scale-controls .picker-btn{ grid-column:1 / -1; justify-self:start; }
     .treatment-layer{ grid-template-columns:repeat(2,minmax(0,1fr)); }
     .treatment-layer .treatment-layer-delete{ grid-column:2; justify-self:end; }
   }
@@ -2956,6 +2964,7 @@
             <button id="toolRectangle" type="button" role="menuitem" title="Rectangle — drag a bounding box">Rectangle</button>
             <button id="toolCircle" type="button" role="menuitem" title="Circle — drag a bounding box">Circle</button>
             <button id="toolHexagon" type="button" role="menuitem" title="Regular hexagon — drag a bounding box">Hexagon</button>
+            <button id="smartAlignToggleBtn" type="button" role="menuitemcheckbox" aria-checked="true" title="Snap moving line and Template geometry to nearby path points and axes; hold Alt/Option to bypass for one drag">✓ Smart Align</button>
             <!-- US-097 / ADR 0056: the saved-shape library. It lives here
                  rather than in a toolbar unit of its own because choosing a
                  stamp IS choosing a tool, and US-082 caps the primary Board
@@ -2964,7 +2973,7 @@
             <div class="preset-divider" role="separator">Templates</div>
             <div id="shapeStampList" class="preset-list"></div>
             <div class="preset-menu-actions">
-              <button id="shapeStampSaveBtn" type="button" role="menuitem" title="Save the selected paths as one editable reusable Template">Save selection as Template…</button>
+              <button id="shapeStampSaveBtn" type="button" role="menuitem" title="Save selected paths—including Scratch Area paths outside the sketch—as one editable reusable Template">Save selection as Template…</button>
               <button id="shapeStampImportProjectBtn" type="button" role="menuitem" title="Add the shapes this project was drawn with to your library" hidden>Import from project</button>
               <button id="shapeStampExportBtn" type="button" role="menuitem" title="Write the Template library to a JSON file">Export Templates JSON</button>
               <button id="shapeStampImportBtn" type="button" role="menuitem" title="Merge a JSON file into the Template library">Import Templates JSON</button>
@@ -3407,6 +3416,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=f65131dfe5bb"></script>
+<script src="app.js?v=a5500d226e23"></script>
 </body>
 </html>

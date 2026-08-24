@@ -45,7 +45,11 @@ Manual Mode also includes a browser-local **Personal Sketch Library**. Save a
 multi-path detail such as a back wing as one reusable Template, or apply an
 editable layered Line Treatment such as Binding along any existing straight or
 curved path. Templates and Treatments remain sketch elements rather than POMs,
-and the library can be moved between browsers with JSON export/import.
+and the library can be moved between browsers with JSON export/import. An
+applied Treatment can be scaled from 25–400% without resizing its host path;
+Smart Hit catches any visible Treatment rail, while Smart Align helps move
+lines and Template groups onto nearby path points and axes. Paths may be
+prepared in the Scratch Area outside the sketch and saved from their selection.
 
 Press **Cmd/Ctrl+K** anywhere to search every stable command. Use
 **Cmd/Ctrl+1…5** to switch Board, Main Page, Construction, BOM, and Preview &
@@ -89,7 +93,7 @@ npm run bom-check          # BOM page
 npm run preview-check      # preview & export tab
 npm run line-presets-check # line looks, Treatments, and measurement isolation
 npm run shape-stamps-check # Templates: grouped reusable path geometry
-npm run personal-library-check # Templates + layered Treatments + local persistence
+npm run personal-library-check # Templates + Treatment scale + Smart Hit/Align + local persistence
 ```
 
 The suites that score detection accuracy against real sketches — `golden`,

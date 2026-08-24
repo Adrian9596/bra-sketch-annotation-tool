@@ -375,7 +375,14 @@
     }
 
     const interaction = state.interaction;
-    if (!interaction) return;
+    if (!interaction) {
+      updateAnnotationHover(world);
+      return;
+    }
+    if (state.hoverAnnotationId != null) {
+      state.hoverAnnotationId = null;
+      requestRender();
+    }
 
     if (interaction.type === 'draw-stamp') {
       interaction.currentWorld = clonePoint(world);
@@ -423,19 +430,22 @@
     if (interaction.type === 'drag-annotation') {
       if (!dragArmed(interaction, world)) return;
       const ids = interaction.groupIds || [interaction.id];
-      const dx = world.x - interaction.prevWorld.x;
-      const dy = world.y - interaction.prevWorld.y;
-      if (dx || dy) {
-        for (const aid of ids) {
-          const a = getAnnotationById(aid);
-          if (!a) continue;
-          moveAnnotation(a, dx, dy);
-          if (isAutoDraft(a)) markDraftTouchedByTD(a);
-        }
-        interaction.changed = true;
-        interaction.prevWorld = world;
-        requestRender();
+      const rawDx = world.x - interaction.startWorld.x;
+      const rawDy = world.y - interaction.startWorld.y;
+      const aligned = computeSmartAlignment(
+        interaction.startAnnotations, ids, rawDx, rawDy, !!e.altKey
+      );
+      for (const source of interaction.startAnnotations || []) {
+        const a = getAnnotationById(source.id);
+        if (!a) continue;
+        restoreAnnotationMoveGeometry(a, source);
+        moveAnnotation(a, aligned.dx, aligned.dy);
+        if (isAutoDraft(a)) markDraftTouchedByTD(a);
       }
+      state.smartAlignGuides = aligned.guides;
+      interaction.smartAlignGuides = aligned.guides;
+      interaction.changed = Math.abs(aligned.dx) > 0.000001 || Math.abs(aligned.dy) > 0.000001;
+      requestRender();
       return;
     }
 
@@ -607,6 +617,7 @@
     // Release the gesture-pinned rect (US-086) on EVERY path out of here,
     // including the early return below when no interaction was open.
     state.gestureCanvasRect = null;
+    state.smartAlignGuides = [];
     if (state.eraseSession) {
       commitEraseStroke();
     }
@@ -779,8 +790,24 @@ function startAnnotationDrag(id, world) {
   const groupIds = (selected.length > 1 && selected.includes(id)) ? selected.slice() : [id];
   beginTrackedInteraction('drag-annotation', {
     id, prevWorld: world, groupIds,
+    startAnnotations: groupIds.map(aid => getAnnotationById(aid)).filter(Boolean).map(clone),
     startWorld: { x: world.x, y: world.y }, armed: false,
   });
+}
+
+function updateAnnotationHover(world) {
+  const next = state.appMode !== 'auto' && state.tool === 'select'
+    ? hitTestAnnotations(world) : null;
+  const nextId = next ? next.id : null;
+  if (state.hoverAnnotationId === nextId) return;
+  state.hoverAnnotationId = nextId;
+  requestRender();
+}
+
+function clearAnnotationHover() {
+  if (state.hoverAnnotationId == null) return;
+  state.hoverAnnotationId = null;
+  requestRender();
 }
 
 // keepSelection (US-086): the marquee was started ON something already adopted

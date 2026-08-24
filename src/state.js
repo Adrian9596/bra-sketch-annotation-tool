@@ -102,6 +102,12 @@
     // includes the primary `selection` when it is an annotation. Widens what
     // group copy / reflect / delete / drag act on. Session-only.
     selectedAnnotationIds: [],
+    // US-099: pointer-assistance state is intentionally session-only. The
+    // geometry produced by a snapped drag enters ordinary history/project data;
+    // hover, guides and the current preference never do.
+    smartAlignEnabled: true,
+    smartAlignGuides: [],
+    hoverAnnotationId: null,
 
     zoom: 1,
     panX: 0,

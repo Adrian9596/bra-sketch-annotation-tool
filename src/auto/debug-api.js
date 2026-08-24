@@ -221,6 +221,23 @@
         return typeof applyTreatmentRecipeToAnnotations === 'function'
           ? applyTreatmentRecipeToAnnotations(recipe, anns) : 0;
       },
+      getLineTreatmentMetrics: (id) => {
+        const ann = getAnnotationById(id);
+        const treatment = ann && normalizeLineTreatment(ann.lineTreatment);
+        return treatment ? { scale: treatment.scale, layers: clone(scaledLineTreatmentLayers(treatment)) } : null;
+      },
+      setSmartAlignEnabled: (enabled) => setSmartAlignEnabled(enabled, false),
+      previewSmartAlignment: (ids, dx, dy, bypass) => {
+        const movingIds = Array.isArray(ids) ? ids : [];
+        const sources = movingIds.map(id => getAnnotationById(id)).filter(Boolean).map(clone);
+        return clone(computeSmartAlignment(sources, movingIds, dx, dy, !!bypass));
+      },
+      selectAnnotation: (id) => {
+        if (!getAnnotationById(id)) return false;
+        setSelection('annotation', id);
+        return true;
+      },
+      clearSelection: () => { clearSelection(); return true; },
       resetLinePresets: () => {
         if (typeof resetLinePresetsToBuiltins === 'function') resetLinePresetsToBuiltins();
       },
@@ -418,6 +435,9 @@
         selection: { kind: state.selection.kind, id: state.selection.id != null ? state.selection.id : null },
         selectedAnnotationIds: getSelectedAnnotationIds().slice(),
         templateGroupEditId: state.templateGroupEditId || null,
+        smartAlignEnabled: !!state.smartAlignEnabled,
+        smartAlignGuides: clone(state.smartAlignGuides || []),
+        hoverAnnotationId: state.hoverAnnotationId != null ? state.hoverAnnotationId : null,
         noteCount: (state.notes || []).length,
         autoStatus: state.autoMode.status,
         lastError: state.autoMode.lastError,

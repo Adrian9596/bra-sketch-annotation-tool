@@ -39,6 +39,10 @@
     el.toolRectangle.classList.toggle('active', state.tool === 'rectangle');
     el.toolCircle.classList.toggle('active', state.tool === 'circle');
     el.toolHexagon.classList.toggle('active', state.tool === 'hexagon');
+    if (el.smartAlignToggleBtn) {
+      el.smartAlignToggleBtn.setAttribute('aria-checked', state.smartAlignEnabled ? 'true' : 'false');
+      el.smartAlignToggleBtn.textContent = (state.smartAlignEnabled ? '✓ ' : '') + 'Smart Align';
+    }
     el.lineStyleControl.hidden = state.tool === 'eraser';
     el.lineWidthChip.hidden = state.tool === 'eraser';
     el.brushSizeChip.hidden = state.tool !== 'eraser';
@@ -116,7 +120,9 @@
           ? 'Select – Drag the note or an arrow tip to move it, double-click a tip to remove that arrow, double-click the text to edit it, <span class="kbd">⌫</span> deletes the note.'
           : 'Select – Drag the note to move it, drag the <strong>+</strong> handle out to point an arrow at a detail, double-click to edit the text, <span class="kbd">⌫</span> deletes it.';
       } else if (selectedAnnotation) {
-        toolText = 'Select – Drag line, endpoints, curve shape handle, or label. <span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
+        toolText = 'Select – Drag line, endpoints, curve shape handle, or label. Smart Align is '
+          + (state.smartAlignEnabled ? 'on; hold <span class="kbd">Alt/Option</span> to bypass it. ' : 'off. ')
+          + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
       } else if (selectedGraphic) {
         toolText = state.graphicEdit
           ? 'Edit Path – Select and drag nodes, handles, or segments; Cut Path opens the active point.'

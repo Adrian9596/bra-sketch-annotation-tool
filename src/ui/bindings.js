@@ -16,6 +16,7 @@
     el.toolRectangle.addEventListener('click', () => setTool('rectangle'));
     el.toolCircle.addEventListener('click', () => setTool('circle'));
     el.toolHexagon.addEventListener('click', () => setTool('hexagon'));
+    if (el.smartAlignToggleBtn) el.smartAlignToggleBtn.addEventListener('click', toggleSmartAlign);
     // US-093 / ADR 0053: only visible while a curved annotation is selected
     // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
     // no extra guard needed here.
@@ -204,6 +205,7 @@
     el.canvas.addEventListener('mousedown', onMouseDown);
     el.canvas.addEventListener('dblclick', onDoubleClick);
     el.canvas.addEventListener('mousemove', onMouseMove);
+    el.canvas.addEventListener('mouseleave', clearAnnotationHover);
     window.addEventListener('mouseup', onMouseUp);
     el.canvas.addEventListener('wheel', onWheel, { passive: false });
     // US-036: touch/pen layer — routes into the mouse handlers above; mouse

@@ -17,6 +17,7 @@
     toolRectangle: document.getElementById('toolRectangle'),
     toolCircle: document.getElementById('toolCircle'),
     toolHexagon: document.getElementById('toolHexagon'),
+    smartAlignToggleBtn: document.getElementById('smartAlignToggleBtn'),
     // US-093 / ADR 0053: Straight/Curved/Eraser/Text moved into one drop-down
     // to free this slot — see toolsMenuBtn below.
     toolAddPoint: document.getElementById('toolAddPoint'),

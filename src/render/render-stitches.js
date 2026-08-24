@@ -12,7 +12,9 @@
     if (!recipe) return false;
     const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : 96);
     if (points.length < 2 || polylineLength(points) <= 0) return false;
-    for (const layer of recipe.layers) {
+    // US-099: scale the visual recipe only. The sampled `points` above are the
+    // host geometry and are intentionally never multiplied or replaced.
+    for (const layer of scaledLineTreatmentLayers(recipe)) {
       if (!layer.hidden) drawLineTreatmentLayer(points, layer);
     }
     return true;

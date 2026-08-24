@@ -223,6 +223,9 @@
         const record = boardToolbarMenuRecords().find(r => r.list && r.list.id === 'toolsMenuList');
         if (record) openBoardToolbarMenu(record);
       } }),
+    appCommand({ id: 'board.smart-align.toggle', label: 'Toggle Smart Align', category: 'Board · Edit',
+      page: 'board', mode: 'manual', target: '#smartAlignToggleBtn',
+      action: () => toggleSmartAlign() }),
     appCommand({ id: 'board.copy.line', label: 'Copy Selected Line', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'c', meta: true }, target: '#copyLineBtn',
       when: appCommandSelectedAnnotationReason, action: () => copySelectedAnnotation() }),

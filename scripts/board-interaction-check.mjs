@@ -395,8 +395,8 @@ async function main() {
           return m ? m.slice(1).map(Number) : null;
         };
         const anyEp = inFn('hitTestAnyEndpoint', 400, 'const radius = ' + num + ' / state[.]zoom;');
-        const bodyTol = inFn('hitTestAnnotations', 900,
-          'isPointNearAnnotation[(]world, ann, ' + num + ' / state[.]zoom[)]');
+        const bodyTol = inFn('hitTestAnnotations', 1200,
+          'const tolerance = ' + num + ' / state[.]zoom;');
         const labelTol = inFn('hitTestAnnotations', 900,
           'pointInLabelBounds[(]world, ann[.]label, getLabelText[(]ann[)], ' + num + ' / state[.]zoom[)]');
         if (!ep || !ct || !tol || !sep || !anyEp || !bodyTol || !labelTol) return null;
@@ -898,6 +898,12 @@ async function main() {
   }
   console.log('board-interaction-check: the board holds still and stays 1:1 through a chrome reflow');
 
+  // US-099 owns Smart Align's movement corrections in personal-library-check.
+  // This older suite measures raw pointer deltas at many deliberately crowded
+  // POM locations, so disable the optional assistant here rather than letting a
+  // correct snap rewrite the baseline geometry each section is trying to probe.
+  await s.eval(`window.__braAutoModeDebug.setSmartAlignEnabled(false)`);
+
   // ---- 1. An endpoint is grabbable on the FIRST press ----
   // Before US-086 this was 0 correct out of 36: hitTestSelectedHandles only ever
   // looked at the selected line, so the first press dragged the whole line.
@@ -973,7 +979,8 @@ async function main() {
     `a press near a line must never move the sketch; it moved for ${imageStolen.map(r => `POM${r.seq}@${r.off}px`).join(', ')}`);
   const onLineHits = misses.filter(r => r.off === 0 && r.movedSomething).length;
   const onLineTotal = misses.filter(r => r.off === 0).length;
-  check(onLineHits === onLineTotal, `a press exactly on a line must grab it: ${onLineHits}/${onLineTotal}`);
+  const onLineMisses = misses.filter(r => r.off === 0 && !r.movedSomething).map(r => r.seq);
+  check(onLineHits === onLineTotal, `a press exactly on a line must grab it: ${onLineHits}/${onLineTotal}; missed ${onLineMisses.join(', ')}`);
   console.log(`board-interaction-check: ${misses.length} near-miss presses, photo never moved`);
 
   // ---- 3. The photo still moves — it just takes an explicit press first ----

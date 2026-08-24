@@ -24,7 +24,7 @@
     if (!preset || preset.kind !== 'treatment' || !preset.treatment) {
       return linePresetPreviewSvg(preset && preset.style);
     }
-    const layers = normalizeLineTreatmentLayers(preset.treatment.layers);
+    const layers = scaledLineTreatmentLayers(preset.treatment);
     const body = layers.map(layer => {
       const y = clamp(7 + layer.offset * 0.55, 1.5, 12.5);
       const color = LINE_COLORS[layer.color] || LINE_COLOR;
@@ -198,13 +198,20 @@
   }
 
   function openLineTreatmentEditor({ title, name, recipe, confirmLabel, onConfirm }) {
-    const dialog = buildDialog({ title, sub: 'Layers follow the selected path. Offset moves a layer to either side; geometry and anchors stay unchanged.' });
+    const dialog = buildDialog({ title, sub: 'Overall scale changes the visible treatment only. Layers follow the selected path; geometry, anchors and path length stay unchanged.' });
     dialog.panel.classList.add('treatment-dialog');
-    let layers = normalizeLineTreatmentLayers(recipe && recipe.layers);
+    const normalizedRecipe = normalizeLineTreatment(recipe) || { name: '', scale: 1, layers: [] };
+    let treatmentScale = normalizedRecipe.scale;
+    let layers = normalizeLineTreatmentLayers(normalizedRecipe.layers);
     if (!layers.length) layers = legacyStyleTreatmentLayers('solid', 'black', 2);
     const body = document.createElement('div');
     body.className = 'treatment-editor';
     body.innerHTML = '<label class="scale-field">Treatment name<input data-treatment-name type="text" maxlength="60" placeholder="e.g. Binding 12 mm"></label>'
+      + '<div class="treatment-scale-controls">'
+      + '<label>Overall scale<input data-treatment-scale-range type="range" min="25" max="400" step="5"></label>'
+      + '<label class="treatment-scale-number"><input data-treatment-scale-number type="number" min="25" max="400" step="5" aria-label="Treatment scale percent"><span>%</span></label>'
+      + '<button type="button" class="picker-btn" data-treatment-scale-reset>Reset 100%</button>'
+      + '</div>'
       + '<div class="treatment-preview" aria-label="Treatment preview"><svg data-treatment-preview viewBox="0 0 520 74" aria-hidden="true"></svg></div>'
       + '<div class="treatment-layers" data-treatment-layers></div>'
       + '<button type="button" class="picker-btn" data-add-treatment-layer>+ Add layer</button>';
@@ -212,7 +219,22 @@
     const nameInput = body.querySelector('[data-treatment-name]');
     const list = body.querySelector('[data-treatment-layers]');
     const preview = body.querySelector('[data-treatment-preview]');
+    const scaleRange = body.querySelector('[data-treatment-scale-range]');
+    const scaleNumber = body.querySelector('[data-treatment-scale-number]');
     nameInput.value = name || (recipe && recipe.name) || '';
+    scaleRange.value = String(Math.round(treatmentScale * 100));
+    scaleNumber.value = scaleRange.value;
+
+    function readScale() {
+      return normalizeLineTreatmentScale(Number(scaleNumber.value) / 100);
+    }
+
+    function writeScale(value) {
+      treatmentScale = normalizeLineTreatmentScale(value);
+      const percent = Math.round(treatmentScale * 100);
+      scaleRange.value = String(percent);
+      scaleNumber.value = String(percent);
+    }
 
     function readLayers() {
       return Array.from(list.querySelectorAll('[data-layer-index]')).map(row => {
@@ -227,7 +249,8 @@
 
     function paintPreview() {
       const rows = readLayers();
-      const svg = rows.map(layer => {
+      const effective = scaledLineTreatmentLayers({ name: nameInput.value || 'Preview', scale: readScale(), layers: rows });
+      const svg = effective.map(layer => {
         const y = clamp(37 + layer.offset * 1.7, 5, 69);
         const color = LINE_COLORS[layer.color] || LINE_COLOR;
         const width = clamp(layer.width, 0.5, 8);
@@ -264,6 +287,27 @@
       renderRows();
     });
 
+    scaleRange.addEventListener('input', () => {
+      writeScale(Number(scaleRange.value) / 100);
+      paintPreview();
+    });
+    scaleNumber.addEventListener('input', () => {
+      const percent = Number(scaleNumber.value);
+      if (!Number.isFinite(percent)) return;
+      treatmentScale = normalizeLineTreatmentScale(percent / 100);
+      scaleRange.value = String(Math.round(treatmentScale * 100));
+      paintPreview();
+    });
+    scaleNumber.addEventListener('change', () => {
+      writeScale(Number(scaleNumber.value) / 100);
+      paintPreview();
+    });
+    body.querySelector('[data-treatment-scale-reset]').addEventListener('click', () => {
+      writeScale(1);
+      paintPreview();
+      scaleRange.focus();
+    });
+
     const footer = document.createElement('div');
     footer.className = 'picker-footer';
     footer.innerHTML = '<span style="flex:1"></span>';
@@ -279,7 +323,7 @@
       if (!nextName) { nameInput.focus(); showToast('Give the Treatment a name first.'); return; }
       if (!nextLayers.length) { showToast('Add at least one Treatment layer.'); return; }
       dialog.close();
-      onConfirm({ name: nextName, layers: nextLayers });
+      onConfirm({ name: nextName, scale: readScale(), layers: nextLayers });
     });
     renderRows();
     dialog.open();
