@@ -710,14 +710,33 @@ async function main() {
     const isConstruction = !d.getMeasurementAnnIds().includes(mark.id);
 
     // Double-click its BODY (the label test is gated; the body test is not).
+    //
+    // Third code review, 2026-08-28: the single click that SELECTS the line
+    // below reveals selection-only toolbar controls, which can wrap the
+    // toolbar onto a second row and shift #boardCanvas's rect (the same
+    // reflow-mid-gesture class of bug ADR-0050 documents for drags). Computing
+    // one screen point ONCE and reusing it for both the selecting click and
+    // the double-click below it means the double-click can land on whatever
+    // now sits at that STALE pixel — a different, real measurement line one
+    // row up, in the one case this actually bit: got the wrong annotation's
+    // seq prefilled instead of failing this test's own assertion. Recomputing
+    // the point fresh for each dispatch, after the reflow has settled, is
+    // what every other multi-step canvas probe in this suite already does.
     const canvas = document.getElementById('boardCanvas');
-    const v = d.getView();
-    const r = canvas.getBoundingClientRect();
+    const screenPointFor = (world) => {
+      const v = d.getView();
+      const r = canvas.getBoundingClientRect();
+      return { x: world.x * v.zoom + v.panX + r.left, y: world.y * v.zoom + v.panY + r.top };
+    };
     const mid = { x: (mark.start.x + mark.end.x) / 2, y: mark.start.y };
-    const p = { x: mid.x * v.zoom + v.panX + r.left, y: mid.y * v.zoom + v.panY + r.top };
-    canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: p.x, clientY: p.y, bubbles: true, button: 0 }));
-    window.dispatchEvent(new MouseEvent('mouseup', { clientX: p.x, clientY: p.y, bubbles: true, button: 0 }));
-    canvas.dispatchEvent(new MouseEvent('dblclick', { clientX: p.x, clientY: p.y, bubbles: true, button: 0 }));
+    const p1 = screenPointFor(mid);
+    canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: p1.x, clientY: p1.y, bubbles: true, button: 0 }));
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: p1.x, clientY: p1.y, bubbles: true, button: 0 }));
+    await settle();
+    const p2 = screenPointFor(mid);
+    canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: p2.x, clientY: p2.y, bubbles: true, button: 0 }));
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: p2.x, clientY: p2.y, bubbles: true, button: 0 }));
+    canvas.dispatchEvent(new MouseEvent('dblclick', { clientX: p2.x, clientY: p2.y, bubbles: true, button: 0 }));
     await settle();
     const editor = document.getElementById('labelEditor');
     const opened = editor && editor.style.display === 'block';
@@ -730,6 +749,7 @@ async function main() {
       bornSeq, isConstruction, opened, prefilled,
       textAfter: after ? after.text : null,
       stillConstruction: !d.getMeasurementAnnIds().includes(mark.id),
+      selectedId: d.getState().selection.id,
     };
   })()`);
   check(labelEditor.isConstruction === true,

@@ -97,6 +97,7 @@ export const SOURCE_PARTS = [
   'src/manual/keyboard-shortcuts.js',
   'src/manual/format.js',
   'src/manual/style.js',
+  'src/manual/sketch-mode.js',
   'src/manual/library-store.js',
   'src/manual/line-presets.js',
   'src/manual/shape-stamps.js',

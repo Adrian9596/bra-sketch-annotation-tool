@@ -17,6 +17,7 @@
     el.toolCircle.addEventListener('click', () => setTool('circle'));
     el.toolHexagon.addEventListener('click', () => setTool('hexagon'));
     if (el.smartAlignToggleBtn) el.smartAlignToggleBtn.addEventListener('click', toggleSmartAlign);
+    if (el.sketchFocusBtn) el.sketchFocusBtn.addEventListener('click', () => toggleSketchMode());
     // US-093 / ADR 0053: only visible while a curved annotation is selected
     // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
     // no extra guard needed here.
@@ -349,6 +350,22 @@
   function setArrowType(arrowType) {
     state.arrowType = arrowType;
     applyToSelectedAnnotation({ arrowType });
+  }
+
+  // Shift+A (board.arrow.cycle in command-registry.js) — the only keyboard
+  // path to change arrow style; the three named arrow buttons stay
+  // click/palette-only, same as every other per-value style picker (line
+  // style, color). Cycles the SELECTED line's current arrow type when one is
+  // selected, otherwise the pending default for the next drawn line — same
+  // scope setArrowType already had.
+  const ARROW_TYPE_CYCLE = ['none', 'single', 'double'];
+  function cycleArrowType() {
+    const selected = getSelectedAnnotation();
+    const current = selected ? getArrowType(selected) : state.arrowType;
+    const idx = ARROW_TYPE_CYCLE.indexOf(current);
+    const next = ARROW_TYPE_CYCLE[idx >= 0 ? (idx + 1) % ARROW_TYPE_CYCLE.length : 0];
+    setArrowType(next);
+    showToast('Arrowheads: ' + (next === 'none' ? 'None' : next[0].toUpperCase() + next.slice(1)));
   }
 
   function setLineWidth(lineWidth) {

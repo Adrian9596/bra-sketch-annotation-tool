@@ -117,6 +117,20 @@
     smartAlignEnabled: true,
     smartAlignGuides: [],
     hoverAnnotationId: null,
+    // POM Focus / Sketch Focus (US-102): session-only, like smartAlignEnabled
+    // above — a display/tool-visibility toggle within Manual Mode, never
+    // saved to the project. `false` here is simply the fresh-load default; it
+    // is also explicitly reset to false by the `Sketch` toolbar toggle
+    // itself, by switching to Auto Mode, and by Open Project / autosave
+    // Restore, all three through src/manual/sketch-mode.js's
+    // applySketchModeVisual — the one function those three sites share.
+    sketchMode: false,
+    // US-103: the POM-side pending arrow preference (state.arrowType), saved
+    // by applySketchModeVisual the moment Sketch Focus turns on and restored
+    // the moment it turns off. Session-only, like sketchMode itself — never
+    // read by makeSnapshot/buildProjectSnapshot, so it cannot leak into the
+    // project file or undo history.
+    pomArrowType: null,
 
     zoom: 1,
     panX: 0,

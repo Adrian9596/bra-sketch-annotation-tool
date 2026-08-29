@@ -126,8 +126,13 @@
   // still applies — Stitch mode and the Hide Numbers toggle hide everything —
   // and on top of it a construction line never numbers itself even while the
   // board is in POM mode showing numbers for every real measurement.
+  // US-102: Sketch Focus also suppresses callouts, but ONLY here — this
+  // function's three callers (render-annotations.js live canvas,
+  // hit-testing.js live interaction, label-editor.js) are all live-canvas
+  // concerns; labelsVisible() itself stays untouched by Sketch Focus because
+  // it also gates exports (see the note on labelsVisible in style.js).
   function annotationShowsCallout(ann) {
-    return labelsVisible() && isMeasurementAnnotation(ann);
+    return labelsVisible() && isMeasurementAnnotation(ann) && !state.sketchMode;
   }
 
   // The MEASURED length, which is not the drawn length once the sketch has been

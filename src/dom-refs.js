@@ -110,6 +110,7 @@
     toast: document.getElementById('toast'),
     modeManualBtn: document.getElementById('modeManualBtn'),
     modeAutoBtn: document.getElementById('modeAutoBtn'),
+    sketchFocusBtn: document.getElementById('sketchFocusBtn'),
     autoModeBar: document.getElementById('autoModeBar'),
     autoDetectBtn: document.getElementById('autoDetectBtn'),
     autoResetAnchorsBtn: document.getElementById('autoResetAnchorsBtn'),

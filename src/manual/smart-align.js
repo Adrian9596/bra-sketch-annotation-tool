@@ -44,7 +44,11 @@
 
   function computeSmartAlignment(startAnnotations, movingIds, rawDx, rawDy, bypass) {
     const dx = Number(rawDx) || 0, dy = Number(rawDy) || 0;
-    if (!state.smartAlignEnabled || bypass) return smartAlignResult(dx, dy, []);
+    // US-102: Smart Align is Sketch-Focus-only — its own on/off preference
+    // (state.smartAlignEnabled) still governs whether it fires WITHIN Sketch
+    // Focus, but POM Focus must be a hard off regardless of that preference,
+    // so returning to Sketch Focus later restores exactly what the TD chose.
+    if (!state.smartAlignEnabled || !state.sketchMode || bypass) return smartAlignResult(dx, dy, []);
     const moving = (Array.isArray(startAnnotations) ? startAnnotations : []).filter(Boolean);
     if (!moving.length) return smartAlignResult(dx, dy, []);
     const movingSet = new Set(Array.isArray(movingIds) ? movingIds : []);

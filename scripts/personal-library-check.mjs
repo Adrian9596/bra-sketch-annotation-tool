@@ -115,22 +115,47 @@ async function main() {
     check(scaleClamp.low === 0.25 && scaleClamp.high === 4,
       'Treatment Scale must clamp to the approved 25–400% range');
 
+    // US-103: Smart Hit's expanded rail catch zone is Sketch-Focus-only now —
+    // POM Focus (the suite's default, unchanged since fresh load) hit-tests
+    // only the plain host centerline. One rail point, tested in both focuses,
+    // proves the gate; a second, on-centerline point proves POM Focus still
+    // hits the line at all (inert Smart Hit, not a broken hit test).
     const smartHit = await session.eval(`(async () => {
       const d=window.__braAutoModeDebug, canvas=document.getElementById('boardCanvas');
       d.applyLineTreatmentToIds([9101],{name:'Wide rails',scale:2,layers:[{pattern:'solid',offset:-9,width:2,color:'black',spacing:10,amplitude:4},{pattern:'solid',offset:9,width:2,color:'black',spacing:10,amplitude:4}]});
       d.clearSelection();
-      const view=d.getView(), rect=canvas.getBoundingClientRect(), world={x:280,y:212};
-      const x=world.x*view.zoom+view.panX+rect.left, y=world.y*view.zoom+view.panY+rect.top;
-      canvas.dispatchEvent(new MouseEvent('mousemove',{clientX:x,clientY:y,bubbles:true,button:0}));
-      await new Promise(r=>setTimeout(r,40));
-      const hovered=d.getState().hoverAnnotationId;
-      canvas.dispatchEvent(new MouseEvent('mousedown',{clientX:x,clientY:y,bubbles:true,button:0}));
-      window.dispatchEvent(new MouseEvent('mouseup',{clientX:x,clientY:y,bubbles:true,button:0}));
-      await new Promise(r=>setTimeout(r,80));
-      return {hovered,selection:d.getState().selection};
+      const view=d.getView(), rect=canvas.getBoundingClientRect();
+      const toClient=(w)=>({x:w.x*view.zoom+view.panX+rect.left,y:w.y*view.zoom+view.panY+rect.top});
+      const probe=async (world) => {
+        const p=toClient(world);
+        canvas.dispatchEvent(new MouseEvent('mousemove',{clientX:p.x,clientY:p.y,bubbles:true,button:0}));
+        await new Promise(r=>setTimeout(r,40));
+        const hovered=d.getState().hoverAnnotationId;
+        canvas.dispatchEvent(new MouseEvent('mousedown',{clientX:p.x,clientY:p.y,bubbles:true,button:0}));
+        window.dispatchEvent(new MouseEvent('mouseup',{clientX:p.x,clientY:p.y,bubbles:true,button:0}));
+        await new Promise(r=>setTimeout(r,80));
+        const selection=d.getState().selection;
+        d.clearSelection();
+        return {hovered,selection};
+      };
+      const railWorld={x:280,y:212}, centerWorld={x:280,y:230};
+      document.getElementById('sketchFocusBtn').click(); // POM Focus -> Sketch Focus
+      const sketchRail=await probe(railWorld);
+      document.getElementById('sketchFocusBtn').click(); // Sketch Focus -> POM Focus (net no-op on the suite's default)
+      const pomRail=await probe(railWorld);
+      const pomCenter=await probe(centerWorld);
+      return {sketchMode:d.getState().sketchMode,sketchRail,pomRail,pomCenter};
     })()`);
-    check(smartHit.hovered === 9101 && smartHit.selection.kind === 'annotation' && smartHit.selection.id === 9101,
-      'Smart Hit must hover and select the host path from its outer Treatment rail');
+    check(smartHit.sketchRail.hovered === 9101 && smartHit.sketchRail.selection.kind === 'annotation'
+      && smartHit.sketchRail.selection.id === 9101,
+      'Smart Hit must hover and select the host path from its outer Treatment rail in Sketch Focus');
+    check(smartHit.pomRail.hovered !== 9101
+      && !(smartHit.pomRail.selection.kind === 'annotation' && smartHit.pomRail.selection.id === 9101),
+      'Smart Hit must be inert in POM Focus — the same outer rail point must miss the host path');
+    check(smartHit.pomCenter.hovered === 9101 && smartHit.pomCenter.selection.kind === 'annotation'
+      && smartHit.pomCenter.selection.id === 9101,
+      'POM Focus must still hit the plain host centerline without Smart Hit');
+    check(smartHit.sketchMode === false, 'precondition: the rail/center round-trip must leave POM Focus as the suite default');
 
     const template = await session.eval(`(() => {
       const d=window.__braAutoModeDebug;
@@ -178,6 +203,24 @@ async function main() {
     check(entered.templateGroupEditId && entered.selectedAnnotationIds.length === 1,
       'double-click must enter a Template group and expose one member path');
 
+    // US-102: Smart Align is Sketch-Focus-only — POM Focus (the default) must
+    // be a hard off regardless of the TD's own on/off preference, so a line
+    // dragged in POM Focus never silently snaps.
+    const pomFocusInert = await session.eval(`(() => {
+      const d=window.__braAutoModeDebug;
+      const a={id:9501,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:900,y:900},end:{x:1000,y:900},control1:null,control2:null,points:[],label:{x:950,y:880},labelManual:false};
+      const b={id:9502,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:1000,y:900},end:{x:1000,y:1000},control1:null,control2:null,points:[],label:{x:1020,y:950},labelManual:false};
+      d.styleEvidence.pushAnnotation(a); d.styleEvidence.pushAnnotation(b);
+      d.setSmartAlignEnabled(true);
+      return { sketchMode: d.getState().sketchMode, result: d.previewSmartAlignment([9501], 0, 0.5, false) };
+    })()`);
+    check(pomFocusInert.sketchMode === false,
+      'precondition: personal-library-check starts in POM Focus');
+    check(Math.abs(pomFocusInert.result.dx) < 0.01 && Math.abs(pomFocusInert.result.dy - 0.5) < 0.01
+      && pomFocusInert.result.guides.length === 0,
+      'Smart Align must stay inert in POM Focus even with its own preference on');
+
+    await session.eval(`document.getElementById('sketchFocusBtn').click()`);
     const aligned = await session.eval(`(async () => {
       const d=window.__braAutoModeDebug, canvas=document.getElementById('boardCanvas');
       const moving={id:9201,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:90,y:610},end:{x:190,y:610},control1:null,control2:null,points:[],label:{x:140,y:590},labelManual:false,text:null,value:null};
@@ -236,6 +279,32 @@ async function main() {
       'Smart Align must make an already-parallel straight path collinear without rotating it');
     check(alignModes.before === 'true' && alignModes.off.state === false && alignModes.off.aria === 'false' && alignModes.after === true,
       'the Tools menu Smart Align setting must accurately toggle the assistant');
+
+    // US-102: POM Focus forces Smart Align off, but it must not CLEAR the
+    // TD's own preference — toggling Sketch Focus off then back on must
+    // restore exactly what they chose. Currently in Sketch Focus (from the
+    // sketchFocusBtn click before the `aligned` block above), so the first
+    // click here toggles it OFF (into POM Focus) and the second toggles it
+    // back ON.
+    const focusRoundTrip = await session.eval(`(() => {
+      const d=window.__braAutoModeDebug;
+      document.getElementById('smartAlignToggleBtn').click();
+      const offBeforeRoundTrip = d.getState().smartAlignEnabled;
+      document.getElementById('sketchFocusBtn').click();
+      const duringPomFocus = { sketchMode: d.getState().sketchMode, smartAlignEnabled: d.getState().smartAlignEnabled };
+      document.getElementById('sketchFocusBtn').click();
+      const afterRoundTrip = { sketchMode: d.getState().sketchMode, smartAlignEnabled: d.getState().smartAlignEnabled };
+      document.getElementById('smartAlignToggleBtn').click(); // restore true for a clean slate
+      return { offBeforeRoundTrip, duringPomFocus, afterRoundTrip };
+    })()`);
+    check(focusRoundTrip.offBeforeRoundTrip === false, 'precondition: Smart Align turned off inside Sketch Focus');
+    check(focusRoundTrip.duringPomFocus.sketchMode === false && focusRoundTrip.duringPomFocus.smartAlignEnabled === false,
+      'POM Focus must not silently flip the preserved Smart Align preference');
+    check(focusRoundTrip.afterRoundTrip.sketchMode === true && focusRoundTrip.afterRoundTrip.smartAlignEnabled === false,
+      'returning to Sketch Focus must restore the TD-chosen Smart Align preference (still off), not reset it to on');
+    // Restore the default (POM Focus) state for every section below — a
+    // second toggle-click, since Sketch Focus is active again after the block above.
+    await session.eval(`document.getElementById('sketchFocusBtn').click()`);
 
     const scaleHistory = await session.eval(`(async () => {
       const d=window.__braAutoModeDebug;

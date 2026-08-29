@@ -1781,6 +1781,27 @@
      reopening a saved project that contains applied lines. */
   body.app-auto .manual-only{ display:none !important; }
 
+  /* ===== Sketch Mode =====
+     A display/tool-visibility toggle WITHIN Manual Mode (not a new appMode,
+     not a new page). .sketch-mode-only elements (Templates, the Treatment/
+     Line-preset library, Smart Align, the zigzag/cover/bartack stitch
+     styles) surface only while it is on; .pom-mode-only elements (the "More"
+     menu: Grading, Set Scale, Size Run, Learning, ...) surface only while it
+     is off. POM callout numbers are handled separately by labelsVisible()
+     in src/manual/style.js, not by these classes. Session-only — see
+     src/manual/sketch-mode.js. */
+  body:not(.sketch-mode-on) .sketch-mode-only{ display:none !important; }
+  body.sketch-mode-on .pom-mode-only{ display:none !important; }
+  /* Green while Sketch Focus is on — same on/enabled palette as
+     .learning-toolbar-btn.active, so "green" reads consistently as "this
+     mode is active" across the toolbar. */
+  #sketchFocusBtn.active{
+    background:#ecfdf5;
+    border-color:#86efac;
+    color:#065f46;
+    font-weight:700;
+  }
+
   /* ===== MAIN PAGE sheet (US-068, ADR 0037; page-ified US-069, ADR 0038) =====
      A page of the tech pack, a peer of the Board — not a modal — so it gets a
      grid row of its own (see .toolbar's comment on row-3 occupants) and its
@@ -2885,6 +2906,11 @@
         <button id="modeAutoBtn" type="button" title="Auto Mode — detect the sketch, review generated POM drafts, then apply approved lines">Auto</button>
       </div>
     </div>
+    <div class="group manual-only group-sketch-mode">
+      <button id="sketchFocusBtn" type="button" aria-pressed="false"
+        aria-label="Sketch Focus — click again to return to POM Focus"
+        title="Sketch Focus — sketch, construction, Template, and Treatment work: Templates, Smart Align, and stitch styles become available; POM callout numbers and the More menu hide. Click again to return to POM Focus.">Sketch</button>
+    </div>
     <div id="autoModeBar" class="group group-auto workflow-empty">
       <button id="autoDetectBtn" data-key="1" type="button" title="Run local offline vision on the source sketch to estimate view, landmarks, and anchors">Detect</button>
       <button id="autoManageAnchorsBtn" type="button" title="Manage anchor visibility — hide all / show all, hide a group, or isolate one anchor">Anchors</button>
@@ -2948,7 +2974,7 @@
         <div id="toolsMenuWrap" class="toolbar-menu">
           <button id="toolsMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="toolsMenuList" title="Choose a drawing tool">Tools ▾</button>
           <div id="toolsMenuList" class="toolbar-menu-list menu-left" role="menu" hidden>
-            <button id="toolStraight" data-key="0" type="button" role="menuitem" title="Straight line — click the start point, then the end point (0)">
+            <button id="toolStraight" data-key="0" type="button" role="menuitem" title="Straight line — click start and end; hold Shift to lock to 45° steps (0)">
               <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.7" fill="currentColor" stroke="none"/></svg>
               Straight line
             </button>
@@ -2967,15 +2993,16 @@
             <button id="toolRectangle" type="button" role="menuitem" title="Rectangle — drag a bounding box">Rectangle</button>
             <button id="toolCircle" type="button" role="menuitem" title="Circle — drag a bounding box">Circle</button>
             <button id="toolHexagon" type="button" role="menuitem" title="Regular hexagon — drag a bounding box">Hexagon</button>
-            <button id="smartAlignToggleBtn" type="button" role="menuitemcheckbox" aria-checked="true" title="Snap moving line and Template geometry to nearby path points and axes; hold Alt/Option to bypass for one drag">✓ Smart Align</button>
+            <button id="smartAlignToggleBtn" class="sketch-mode-only" type="button" role="menuitemcheckbox" aria-checked="true" title="Snap moving line and Template geometry to nearby path points and axes; hold Alt/Option to bypass for one drag">✓ Smart Align</button>
             <!-- US-097 / ADR 0056: the saved-shape library. It lives here
                  rather than in a toolbar unit of its own because choosing a
                  stamp IS choosing a tool, and US-082 caps the primary Board
                  surface. Rows are rendered from stored data by
-                 src/ui/shape-stamp-panel.js. -->
-            <div class="preset-divider" role="separator">Templates</div>
-            <div id="shapeStampList" class="preset-list"></div>
-            <div class="preset-menu-actions">
+                 src/ui/shape-stamp-panel.js. Sketch-Mode-only, like the rest
+                 of the Template library. -->
+            <div class="preset-divider sketch-mode-only" role="separator">Templates</div>
+            <div id="shapeStampList" class="preset-list sketch-mode-only"></div>
+            <div class="preset-menu-actions sketch-mode-only">
               <button id="shapeStampSaveBtn" type="button" role="menuitem" title="Save selected paths—including Scratch Area paths outside the sketch—as one editable reusable Template">Save selection as Template…</button>
               <button id="shapeStampImportProjectBtn" type="button" role="menuitem" title="Add the shapes this project was drawn with to your library" hidden>Import from project</button>
               <button id="shapeStampExportBtn" type="button" role="menuitem" title="Write the Template library to a JSON file">Export Templates JSON</button>
@@ -3007,15 +3034,15 @@
             <svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="7" x2="33" y2="7" stroke-dasharray="6 4"/></svg>
             <span>Dashed line</span>
           </button>
-          <button class="style-option" data-style="zigzag" type="button" role="menuitem">
+          <button class="style-option sketch-mode-only" data-style="zigzag" type="button" role="menuitem">
             <svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3,7 7,3 11,11 15,3 19,11 23,3 27,11 31,3 33,7"/></svg>
             <span>Zigzag stitch</span>
           </button>
-          <button class="style-option" data-style="cover" type="button" role="menuitem">
+          <button class="style-option sketch-mode-only" data-style="cover" type="button" role="menuitem">
             <svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="5" x2="33" y2="5" stroke-dasharray="5 4"/><line x1="3" y1="9" x2="33" y2="9" stroke-dasharray="5 4"/></svg>
             <span>Cover stitch</span>
           </button>
-          <button class="style-option" data-style="bartack" type="button" role="menuitem">
+          <button class="style-option sketch-mode-only" data-style="bartack" type="button" role="menuitem">
             <svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="7" x2="33" y2="7" stroke-width="1.4" opacity="0.32"/><polyline points="8,4 11,10 14,4 17,10 20,4 23,10 26,4 28,10" stroke-width="1.5"/></svg>
             <span>Bartack</span>
           </button>
@@ -3024,16 +3051,19 @@
                units sit on the primary Board surface, and a preset IS a line
                look — the same thing the five rows above are — so this is where
                a TD already looks for one. Same consolidation US-093 did with
-               the drawing tools. -->
-          <div class="preset-divider" role="separator">Line Library</div>
-          <div id="linePresetList" class="preset-list"></div>
+               the drawing tools. Browsing/managing the library is Sketch-
+               Mode-only; the quick "Save as new treatment…" action stays
+               available in both (linePresetSaveBtn, below, is deliberately
+               NOT sketch-mode-only). -->
+          <div class="preset-divider sketch-mode-only" role="separator">Line Library</div>
+          <div id="linePresetList" class="preset-list sketch-mode-only"></div>
           <div class="preset-menu-actions">
-            <button id="lineTreatmentCustomizeBtn" type="button" role="menuitem" title="Edit the layered Treatment on the selected path without changing its geometry">Customize selected…</button>
+            <button id="lineTreatmentCustomizeBtn" class="sketch-mode-only" type="button" role="menuitem" title="Edit the layered Treatment on the selected path without changing its geometry">Customize selected…</button>
             <button id="linePresetSaveBtn" type="button" role="menuitem" title="Save the selected line's Treatment for later use">Save as new treatment…</button>
-            <button id="linePresetImportProjectBtn" type="button" role="menuitem" title="Add the presets this project was drawn with to your library" hidden>Import from project</button>
-            <button id="linePresetExportBtn" type="button" role="menuitem" title="Write the library to a JSON file">Export JSON</button>
-            <button id="linePresetImportBtn" type="button" role="menuitem" title="Merge a JSON file into the library">Import JSON</button>
-            <button id="linePresetResetBtn" type="button" role="menuitem" title="Discard every saved Treatment and restore the built-in set">Reset treatments</button>
+            <button id="linePresetImportProjectBtn" class="sketch-mode-only" type="button" role="menuitem" title="Add the presets this project was drawn with to your library" hidden>Import from project</button>
+            <button id="linePresetExportBtn" class="sketch-mode-only" type="button" role="menuitem" title="Write the library to a JSON file">Export JSON</button>
+            <button id="linePresetImportBtn" class="sketch-mode-only" type="button" role="menuitem" title="Merge a JSON file into the library">Import JSON</button>
+            <button id="linePresetResetBtn" class="sketch-mode-only" type="button" role="menuitem" title="Discard every saved Treatment and restore the built-in set">Reset treatments</button>
           </div>
           <input id="linePresetFileInput" type="file" accept="application/json,.json" hidden />
         </div>
@@ -3138,7 +3168,7 @@
         </div>
       </div>
 
-      <div id="moreMenuWrap" class="toolbar-menu">
+      <div id="moreMenuWrap" class="toolbar-menu pom-mode-only">
         <button id="moreMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="moreMenuList" aria-label="More Board actions">More ···</button>
         <div id="moreMenuList" class="toolbar-menu-list" role="menu" hidden>
           <div class="toolbar-menu-label">View</div>
@@ -3439,6 +3469,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=386c92850c22"></script>
+<script src="app.js?v=a2a13c084a01"></script>
 </body>
 </html>

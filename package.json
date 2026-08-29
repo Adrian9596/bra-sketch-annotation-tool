@@ -48,6 +48,7 @@
     "mainpage-check": "node scripts/mainpage-check.mjs",
     "board-toolbar-check": "node scripts/board-toolbar-check.mjs",
     "board-shape-check": "node scripts/board-shape-check.mjs",
+    "sketch-focus-check": "node scripts/sketch-focus-check.mjs",
     "keyboard-shortcuts-check": "node scripts/keyboard-shortcuts-check.mjs",
     "board-interaction-check": "node scripts/board-interaction-check.mjs",
     "anchor-resync-check": "node scripts/anchor-resync-check.mjs",
@@ -58,7 +59,8 @@
     "preview-check": "node scripts/preview-check.mjs",
     "line-presets-check": "node scripts/line-presets-check.mjs",
     "shape-stamps-check": "node scripts/shape-stamps-check.mjs",
-    "personal-library-check": "node scripts/personal-library-check.mjs"
+    "personal-library-check": "node scripts/personal-library-check.mjs",
+    "sketch-smart-hit-check": "node scripts/sketch-smart-hit-check.mjs"
   },
   "devDependencies": {
     "@slidev/cli": "^52.16.0",

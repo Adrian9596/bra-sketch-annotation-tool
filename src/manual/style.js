@@ -43,7 +43,13 @@
   }
 
   // Callout numbers are always hidden in Stitch mode; in POM mode they honor
-  // the manual Hide/Show Numbers toggle.
+  // the manual Hide/Show Numbers toggle. Deliberately NOT gated on
+  // state.sketchMode here: this function is also the export gate
+  // (export-pdf.js's drawBoardContentForExport, shared by Copy Image, the
+  // Excel embedded sketch, and the Preview board sheet) — Sketch Focus is a
+  // live-authoring aid and must never silently change what an export
+  // contains. The live-canvas-only Sketch Focus suppression lives in
+  // annotationShowsCallout (src/manual/annotation-lookup.js) instead.
   function labelsVisible() {
     return state.showLabels && !isStitchMode();
   }

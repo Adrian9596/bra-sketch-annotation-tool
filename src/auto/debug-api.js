@@ -242,6 +242,19 @@
         return true;
       },
       clearSelection: () => { clearSelection(); return true; },
+      // US-102: the two callout-visibility gates, exposed distinctly so a
+      // test can prove Sketch Focus reaches only the live-canvas one.
+      // annotationShowsCallout is what the Board canvas (render-annotations
+      // .js), hit-testing, and the label editor read; labelsVisible is what
+      // export-pdf.js's drawBoardContentForExport reads (shared by Copy
+      // Image, the Excel embedded sketch, and the Preview board sheet) — it
+      // must stay true/false based only on the Hide/Show Numbers toggle and
+      // Stitch mode, never on state.sketchMode.
+      annotationShowsCallout: (id) => {
+        const ann = getAnnotationById(id);
+        return ann ? annotationShowsCallout(ann) : null;
+      },
+      labelsVisible: () => labelsVisible(),
       resetLinePresets: () => {
         if (typeof resetLinePresetsToBuiltins === 'function') resetLinePresetsToBuiltins();
       },
@@ -331,6 +344,16 @@
       // which is the only way to exercise selection, drag and resize the way a TD
       // does. Without it a UI test has to guess pixel positions.
       getView: () => ({ zoom: state.zoom, panX: state.panX, panY: state.panY }),
+      // US-103: a direct zoom setter — proving Smart Hit's catch zone scales
+      // correctly at more than one zoom needs a real zoom CHANGE, and driving
+      // one through synthetic wheel events would test the wheel handler, not
+      // Smart Hit. requestRender() so the next getBoundingClientRect-based
+      // screen math in a test reads the already-repainted canvas.
+      setZoom: (zoom) => {
+        state.zoom = Math.max(0.05, Number(zoom) || state.zoom);
+        requestRender();
+        return state.zoom;
+      },
       // US-086: what the pointer is currently doing. board-interaction-check
       // needs to assert WHICH gesture a press opened — "the whole line moved"
       // alone cannot tell a line drag from a photo drag that carried its lines
@@ -436,10 +459,20 @@
         // active" and "what is selected" have to come through here — a click
         // that selected the wrong KIND of thing is otherwise invisible.
         tool: state.tool,
+        drawSession: clone(state.drawSession),
         selection: { kind: state.selection.kind, id: state.selection.id != null ? state.selection.id : null },
         selectedAnnotationIds: getSelectedAnnotationIds().slice(),
         templateGroupEditId: state.templateGroupEditId || null,
         smartAlignEnabled: !!state.smartAlignEnabled,
+        sketchMode: !!state.sketchMode,
+        activeStampId: state.activeStampId != null ? state.activeStampId : null,
+        interaction: state.interaction ? { type: state.interaction.type } : null,
+        drawStyle: state.drawStyle,
+        // US-103: the pending "next line" arrow default, and its POM-side
+        // backup while Sketch Focus is on (applySketchModeVisual,
+        // src/manual/sketch-mode.js) — both session-only, neither persisted.
+        arrowType: state.arrowType,
+        pomArrowType: state.pomArrowType != null ? state.pomArrowType : null,
         smartAlignGuides: clone(state.smartAlignGuides || []),
         hoverAnnotationId: state.hoverAnnotationId != null ? state.hoverAnnotationId : null,
         noteCount: (state.notes || []).length,

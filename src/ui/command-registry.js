@@ -34,6 +34,11 @@
     return state.selection.kind === 'annotation' ? true : 'Select one Board line first.';
   }
 
+  function appCommandSelectedAnnotationOrGraphicReason() {
+    return (state.selection.kind === 'annotation' || state.selection.kind === 'graphic')
+      ? true : 'Select one Board line or shape first.';
+  }
+
   function appCommandSelectedImageReason() {
     return state.selection.kind === 'image' ? true : 'Select one Board image first.';
   }
@@ -189,6 +194,14 @@
       category: 'Board · Style', page: 'board', mode: 'manual',
       target: '#arrow' + type[0].toUpperCase() + type.slice(1) + 'Btn', action: () => setArrowType(type),
     })),
+    // Shift+A cycles None -> Single -> Double -> None. The three commands
+    // above jump straight to a named value (palette / click only, same as
+    // every other per-value style picker — see ARCHITECTURE.md); this one
+    // is the sole keyboard entry point, added because there was previously
+    // no way to change arrow style without the mouse.
+    appCommand({ id: 'board.arrow.cycle', label: 'Arrowheads: Cycle', category: 'Board · Style',
+      page: 'board', mode: 'manual', shortcut: { key: 'a', shift: true },
+      action: () => cycleArrowType() }),
     ...['red', 'blue', 'black', 'white'].map(color => appCommand({
       id: 'board.color.' + color, label: 'Line Color: ' + color[0].toUpperCase() + color.slice(1),
       category: 'Board · Style', page: 'board', mode: 'manual', target: '#color' + color[0].toUpperCase() + color.slice(1) + 'Btn',
@@ -244,12 +257,20 @@
     appCommand({ id: 'board.smart-align.toggle', label: 'Toggle Smart Align', category: 'Board · Edit',
       page: 'board', mode: 'manual', target: '#smartAlignToggleBtn',
       action: () => toggleSmartAlign() }),
-    appCommand({ id: 'board.copy.line', label: 'Copy Selected Line', category: 'Board · Edit',
+    // US-102: POM Focus is the implicit default with no button of its own;
+    // this single command (and the single #sketchFocusBtn toolbar toggle it
+    // targets) is the only way to enter or leave the exceptional Sketch
+    // Focus. No dedicated single-key shortcut (avoids a new collision risk,
+    // matching board.smart-align.toggle's existing precedent).
+    appCommand({ id: 'board.focus.sketch.toggle', label: 'Toggle Sketch Focus', category: 'Board · View',
+      page: 'board', mode: 'manual', target: '#sketchFocusBtn',
+      action: () => toggleSketchMode() }),
+    appCommand({ id: 'board.copy.line', label: 'Copy Selected Line/Shape', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'c', meta: true }, target: '#copyLineBtn',
-      when: appCommandSelectedAnnotationReason, action: () => copySelectedAnnotation() }),
-    appCommand({ id: 'board.paste.line', label: 'Paste Copied Line', category: 'Board · Edit',
+      when: appCommandSelectedAnnotationOrGraphicReason, action: () => copySelectedLineOrGraphic() }),
+    appCommand({ id: 'board.paste.line', label: 'Paste Copied Line/Shape', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'v', meta: true }, target: '#pasteLineBtn',
-      action: () => pasteLineFromClipboard(), keyboardEvent: false }),
+      action: () => pasteFromClipboard(), keyboardEvent: false }),
     appCommand({ id: 'board.reflect.line', label: 'Reflect Selected Line', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'm' }, target: '#reflectLineBtn',
       when: appCommandSelectedAnnotationReason, action: () => reflectSelectedAnnotation() }),

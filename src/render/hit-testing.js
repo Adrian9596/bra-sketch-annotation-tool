@@ -451,10 +451,15 @@
   // Distance from the pointer to what is visibly painted, in WORLD units.
   // US-099 Smart Hit uses each scaled Treatment rail rather than the invisible
   // host centerline; all rails still resolve to the one host annotation.
+  //
+  // US-103: that expanded catch zone is a Sketch Focus authoring aid, not a
+  // general POM behavior — it is gated on state.sketchMode (false throughout
+  // POM Focus and Auto Mode, US-102), so reviewing/correcting POM lines keeps
+  // the plain host-centerline target it always had, treatment or not.
   function annotationVisualHitDistance(point, ann) {
     const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : BEZIER_SAMPLES * 2);
     const z = Math.max(0.0001, state.zoom);
-    if (hasLineTreatment(ann)) {
+    if (state.sketchMode && hasLineTreatment(ann)) {
       // Keep the historical host-spine target as well as every visible rail.
       // A Binding has empty space between its outside rails; losing the spine
       // would make a click in that familiar middle gap stop selecting the line.

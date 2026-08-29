@@ -189,6 +189,19 @@ async function main() {
     await d.addBoardImages([solidImage('#ffffff', 700, 460)]);
     document.getElementById('modeManualBtn').click();
     await settle();
+    // US-102: Templates (the Shape Stamp / Tools-menu library this whole
+    // suite exercises) are Sketch-Focus-only UI (.sketch-mode-only in
+    // index.html) — #shapeStampList sits display:none in the POM-Focus
+    // default. A synthetic .click() on a hidden row control still fires (it
+    // bypasses visibility), so every list mutation in this suite passed
+    // regardless, but a hidden element cannot receive real focus: the keyed
+    // reorder's own refocusLibraryRowControl call (shape-stamp-panel.js)
+    // silently failed and left focus on whatever tool button was clicked
+    // last. Entering Sketch Focus once, for the whole suite, makes the list
+    // actually visible so its focus-restoration behavior is exercised for
+    // real, not skipped.
+    document.getElementById('sketchFocusBtn').click();
+    await settle();
     const img = d.getImages()[0];
     // A curve, drawn the normal way: start, a middle point it must pass
     // through, end. The middle click is what gives it a bow to preserve.
@@ -1029,10 +1042,18 @@ async function main() {
   // if the trigger does not say what a press will do, nothing does.
   const armedUi = await s.eval(`(async () => {
     const { d, settle, click, openTools, stampRow, solidImage } = window.__SS;
-    // Section 11 reloaded three times, so the board is empty again.
+    // Section 11 reloaded three times, so the board is empty again. A reload
+    // is a fresh load — Sketch Focus (US-102) is session-only and resets to
+    // POM Focus on every one, same as sketchMode's own fresh-load default —
+    // so the Templates list (#shapeStampList, .sketch-mode-only) needs it
+    // re-entered here too, or it goes back to display:none and this
+    // section's own focus assertions (12/13 below) fail the same way the
+    // very first section would have without it.
     if (!d.getImages().length) {
       await d.addBoardImages([solidImage('#ffffff', 700, 460)]);
       document.getElementById('modeManualBtn').click();
+      await settle();
+      document.getElementById('sketchFocusBtn').click();
       await settle();
     }
     const img = d.getImages()[0];

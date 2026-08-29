@@ -31,7 +31,7 @@ function setSelection(kind, id) {
       if (ann) {
         adoptDrawStyleFrom(ann);
         state.drawColor = normalizeColorKey(ann.color);
-        state.arrowType = getArrowType(ann);
+        adoptArrowTypeFrom(ann);
       }
     }
     // US-100: selecting a note no longer mutates the line/graphic draw colour.
@@ -139,8 +139,21 @@ function setSelection(kind, id) {
     if (ann) {
       adoptDrawStyleFrom(ann);
       state.drawColor = normalizeColorKey(ann.color);
-      state.arrowType = getArrowType(ann);
+      adoptArrowTypeFrom(ann);
     }
+  }
+
+  // US-103: selecting a line still hands its arrow type to the pending "next
+  // line" default, EXCEPT in Sketch Focus. There, the pending default is the
+  // no-arrow start applySketchModeVisual set on entry (or whatever an
+  // explicit Arrow-menu click since made it — setArrowType always writes
+  // state.arrowType regardless of mode); merely tapping an arrowed POM line
+  // while sketching must not silently redirect the very next Binding/Template
+  // line's arrows. Mirrors adoptDrawStyleFrom's stitch-style guard above —
+  // one exception, named for what it protects.
+  function adoptArrowTypeFrom(ann) {
+    if (!ann || state.sketchMode) return;
+    state.arrowType = getArrowType(ann);
   }
 
   // US-096 / ADR 0055: selecting a line still hands its look to the draw

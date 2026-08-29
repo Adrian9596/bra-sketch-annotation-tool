@@ -90,7 +90,6 @@
       state.nextSequence = s.nextSequence || (state.annotations.length + 1);
       state.drawStyle = s.drawStyle || 'solid';
       state.drawColor = s.drawColor || 'red';
-      state.arrowType = s.arrowType || 'double';
       state.lineWidth = normalizeLineWidth(s.lineWidth);
       // US-096: never write the local preset library from a project file. Note
       // which of its presets are new and let the TD decide — a colleague's
@@ -104,6 +103,13 @@
       state.noteTextColor = normalizeColorKey(s.noteTextColor || 'black');
       state.noteLeaderColor = normalizeColorKey(s.noteLeaderColor || 'red');
       state.tool = 'select';
+      // An armed Template (activeStampId) from before Open/Restore must not
+      // survive into the reopened project — there is nothing on the new
+      // board for it to place, and no toolbar entry point would show it was
+      // ever armed. Not routed through setTool('select') here: that also
+      // calls requestRender(), which would paint mid-load against the OLD
+      // project's images/annotations before the new ones below are in place.
+      state.activeStampId = null;
       state.selection = { kind: null, id: null };
       state.drawSession = null;
       state.eraseSession = null;
@@ -117,6 +123,22 @@
       state.autoMode = makeInitialAutoModeState();
       state.hiddenAnnIds = [];
       state.hiddenDraftIds = [];
+      // US-102: every reopened project starts in POM Focus, regardless of
+      // which focus was active before Open/Restore — Sketch Focus is a
+      // live-authoring aid, never project data (autosave Restore goes
+      // through this same function, so this covers both entry points).
+      // applySketchModeVisual is the single state+body-class+button-sync
+      // path the toolbar button itself uses (src/manual/sketch-mode.js), so
+      // the button cannot stay showing "Sketch" active after a reopen.
+      //
+      // US-103: called BEFORE state.arrowType is restored from the file, not
+      // after. applySketchModeVisual's own Sketch-Focus-off branch restores
+      // state.arrowType from state.pomArrowType — the PREVIOUS project's
+      // pre-Sketch-Focus preference — so if the TD had Sketch Focus on when
+      // they opened a new project, running this after the line below would
+      // clobber the just-loaded file's own arrowType with that stale value.
+      applySketchModeVisual(false);
+      state.arrowType = s.arrowType || 'double';
       document.body.classList.toggle('app-auto', state.appMode === 'auto');
       document.body.classList.remove('tool-eraser');
       el.labelEditor.style.display = 'none';

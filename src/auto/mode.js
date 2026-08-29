@@ -26,11 +26,26 @@
 
     if (mode === 'auto') {
       // Force the user out of any creation-flavored tool so manual line
-      // creation cannot fire while project annotations are locked.
-      state.drawSession = null;
-      state.eraseSession = null;
-      state.tool = 'select';
-      document.body.classList.remove('tool-eraser');
+      // creation cannot fire while project annotations are locked. Route
+      // through setTool — not a raw state.tool assignment — so an armed
+      // Template's activeStampId (and any drawSession/eraseSession) is
+      // cleared the same way Escape or picking another tool clears it;
+      // a raw assignment here would leave activeStampId stale. setTool does
+      // NOT touch state.interaction (it is a per-gesture record, not tool
+      // state), so a Template placement drag caught mid-gesture — the
+      // gesture is state.interaction.type === 'draw-stamp', not drawSession —
+      // needs its own explicit clear here, same as sketch-mode.js's own
+      // toggle-off cleanup does.
+      setTool('select');
+      state.interaction = null;
+      // US-102: Sketch Focus is Manual-only and must never leak into Auto —
+      // its toggle control is itself manual-only (invisible here), so the
+      // body class, the button sync, and every focus-only effect (hidden
+      // More menu, hidden POM numbers) would otherwise silently survive the
+      // switch with no way for the TD to see or undo it from this mode.
+      // applySketchModeVisual is the single state+body-class+button-sync
+      // path the toolbar button itself uses (src/manual/sketch-mode.js).
+      applySketchModeVisual(false);
       // Clear any project selection so the user does not accidentally edit
       // locked annotations. US-092 adds 'note': notes are Manual-only to edit,
       // and a selection carried into Auto would keep painting its outline over

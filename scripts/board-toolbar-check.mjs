@@ -99,8 +99,16 @@ async function main() {
   // #toolsMenuList measures 0x0, so deleting toolCurved from index.html would
   // have left this whole suite green. The Tools-menu block further down opens
   // the drop-down and reads its contents, which is where that claim now lives.
+  // US-102: sketchFocusBtn joins the direct-child list here — the single
+  // Sketch Focus toggle is a manual-only control with no other gate (unlike
+  // the drawing tools it sits beside, which moved into toolsMenuBtn under
+  // US-093), so it is exactly as reachable on an empty board as the
+  // Manual/Auto switch itself. POM Focus is the implicit default and has no
+  // button of its own (2026-08-28 correction — see
+  // docs/archive/stories/E01-manual-mode/US-102-sketch-mode-handoff.md
+  // (archived 2026-08-29); the earlier two-button design is wrong).
   check(JSON.stringify(emptyManual.buttons) === JSON.stringify([
-    'modeManualBtn', 'modeAutoBtn', 'addImageBtn',
+    'modeManualBtn', 'modeAutoBtn', 'sketchFocusBtn', 'addImageBtn',
     'toolSelect', 'toolsMenuBtn',
     'stitchesBtn', 'fileMenuBtn', 'moreMenuBtn',
   ]), `empty Manual controls wrong: ${JSON.stringify(emptyManual.buttons)}`);
@@ -159,16 +167,38 @@ async function main() {
   check(toolsOpen.hasShapeLibrary === true,
     'US-097: the Tools menu carries the saved-shape library — no toolbar unit of its own');
   await s.eval(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key:'End', bubbles:true }))`);
-  // End goes to the end of the MENU, which since US-097 is the library's last
-  // action rather than the last tool. Named by id, not read back from the same
-  // query the implementation walks — comparing an implementation against itself
-  // proves only that it is self-consistent.
-  check(await s.eval(`document.activeElement.id`) === 'shapeStampImportBtn',
-    `End should focus the last item in the whole menu — the library's last action `
+  // US-102: in POM Focus (the default), the Template library and Smart Align
+  // are hidden (.sketch-mode-only), so End now lands on the last TOOL — this
+  // is the claim the old test made before the library existed, now true
+  // again in POM Focus specifically.
+  check(await s.eval(`document.activeElement.id`) === 'toolHexagon',
+    `POM Focus: End should focus the last TOOL, the library being hidden `
     + `(got ${await s.eval('document.activeElement.id')})`);
-  check(toolsOpen.allReachable.length > toolsOpen.reachable.length,
-    'precondition: the library section really does add reachable items, or the check above '
-    + 'is just the old tool-only claim in disguise');
+  check(toolsOpen.allReachable.length === toolsOpen.reachable.length,
+    'POM Focus: the hidden library must not contribute extra reachable menu items');
+
+  // Sketch Focus: the library (and Smart Align) become reachable, and End
+  // now walks all the way to the library's last action — the US-097 claim
+  // this test made before US-102 existed, now true only in this state.
+  await s.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }))`);
+  await s.eval(`document.getElementById('sketchFocusBtn').click()`);
+  await s.eval(`document.getElementById('toolsMenuBtn').click()`);
+  const toolsOpenSketch = await s.eval(`({
+    reachable: ${TOOL_MENU_ITEMS}
+      .filter(button => !button.hidden && !button.disabled && button.offsetParent !== null).map(button => button.id),
+    allReachable: Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]'))
+      .filter(button => !button.hidden && !button.disabled && button.offsetParent !== null).map(button => button.id),
+  })`);
+  await s.eval(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key:'End', bubbles:true }))`);
+  // Named by id, not read back from the same query the implementation walks —
+  // comparing an implementation against itself proves only that it is
+  // self-consistent.
+  check(await s.eval(`document.activeElement.id`) === 'shapeStampImportBtn',
+    `Sketch Focus: End should focus the last item in the whole menu — the library's last action `
+    + `(got ${await s.eval('document.activeElement.id')})`);
+  check(toolsOpenSketch.allReachable.length > toolsOpenSketch.reachable.length,
+    'Sketch Focus: precondition: the library section really does add reachable items, or the check '
+    + 'above is just the old tool-only claim in disguise');
 
   // With an EMPTY library the checks above only prove the library's ACTIONS are
   // reachable. The claim worth making is that a saved SHAPE is, so seed one and
@@ -206,6 +236,9 @@ async function main() {
     expanded:document.getElementById('toolsMenuBtn').getAttribute('aria-expanded'), focus:document.activeElement.id })`);
   check(toolsClosed.hidden && toolsClosed.expanded === 'false', 'Escape did not close Tools menu');
   check(toolsClosed.focus === 'toolsMenuBtn', `Escape should return focus to Tools trigger, got ${toolsClosed.focus}`);
+  // Restore the default (POM Focus) state for every section below — a
+  // second click of the same toggle, since Sketch Focus is still active here.
+  await s.eval(`document.getElementById('sketchFocusBtn').click()`);
   console.log('board-toolbar-check: Tools drop-down holds all seven drawing tools, keyboard ok');
 
   // Add an offline fixture without invoking detection: this isolates the Auto

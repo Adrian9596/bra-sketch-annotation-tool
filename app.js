@@ -324,6 +324,20 @@
     smartAlignEnabled: true,
     smartAlignGuides: [],
     hoverAnnotationId: null,
+    // POM Focus / Sketch Focus (US-102): session-only, like smartAlignEnabled
+    // above — a display/tool-visibility toggle within Manual Mode, never
+    // saved to the project. `false` here is simply the fresh-load default; it
+    // is also explicitly reset to false by the `Sketch` toolbar toggle
+    // itself, by switching to Auto Mode, and by Open Project / autosave
+    // Restore, all three through src/manual/sketch-mode.js's
+    // applySketchModeVisual — the one function those three sites share.
+    sketchMode: false,
+    // US-103: the POM-side pending arrow preference (state.arrowType), saved
+    // by applySketchModeVisual the moment Sketch Focus turns on and restored
+    // the moment it turns off. Session-only, like sketchMode itself — never
+    // read by makeSnapshot/buildProjectSnapshot, so it cannot leak into the
+    // project file or undo history.
+    pomArrowType: null,
 
     zoom: 1,
     panX: 0,
@@ -618,6 +632,7 @@
     toast: document.getElementById('toast'),
     modeManualBtn: document.getElementById('modeManualBtn'),
     modeAutoBtn: document.getElementById('modeAutoBtn'),
+    sketchFocusBtn: document.getElementById('sketchFocusBtn'),
     autoModeBar: document.getElementById('autoModeBar'),
     autoDetectBtn: document.getElementById('autoDetectBtn'),
     autoResetAnchorsBtn: document.getElementById('autoResetAnchorsBtn'),
@@ -15382,6 +15397,11 @@ const BOM_MATERIAL_LIBRARY = [
     return state.selection.kind === 'annotation' ? true : 'Select one Board line first.';
   }
 
+  function appCommandSelectedAnnotationOrGraphicReason() {
+    return (state.selection.kind === 'annotation' || state.selection.kind === 'graphic')
+      ? true : 'Select one Board line or shape first.';
+  }
+
   function appCommandSelectedImageReason() {
     return state.selection.kind === 'image' ? true : 'Select one Board image first.';
   }
@@ -15537,6 +15557,14 @@ const BOM_MATERIAL_LIBRARY = [
       category: 'Board · Style', page: 'board', mode: 'manual',
       target: '#arrow' + type[0].toUpperCase() + type.slice(1) + 'Btn', action: () => setArrowType(type),
     })),
+    // Shift+A cycles None -> Single -> Double -> None. The three commands
+    // above jump straight to a named value (palette / click only, same as
+    // every other per-value style picker — see ARCHITECTURE.md); this one
+    // is the sole keyboard entry point, added because there was previously
+    // no way to change arrow style without the mouse.
+    appCommand({ id: 'board.arrow.cycle', label: 'Arrowheads: Cycle', category: 'Board · Style',
+      page: 'board', mode: 'manual', shortcut: { key: 'a', shift: true },
+      action: () => cycleArrowType() }),
     ...['red', 'blue', 'black', 'white'].map(color => appCommand({
       id: 'board.color.' + color, label: 'Line Color: ' + color[0].toUpperCase() + color.slice(1),
       category: 'Board · Style', page: 'board', mode: 'manual', target: '#color' + color[0].toUpperCase() + color.slice(1) + 'Btn',
@@ -15592,12 +15620,20 @@ const BOM_MATERIAL_LIBRARY = [
     appCommand({ id: 'board.smart-align.toggle', label: 'Toggle Smart Align', category: 'Board · Edit',
       page: 'board', mode: 'manual', target: '#smartAlignToggleBtn',
       action: () => toggleSmartAlign() }),
-    appCommand({ id: 'board.copy.line', label: 'Copy Selected Line', category: 'Board · Edit',
+    // US-102: POM Focus is the implicit default with no button of its own;
+    // this single command (and the single #sketchFocusBtn toolbar toggle it
+    // targets) is the only way to enter or leave the exceptional Sketch
+    // Focus. No dedicated single-key shortcut (avoids a new collision risk,
+    // matching board.smart-align.toggle's existing precedent).
+    appCommand({ id: 'board.focus.sketch.toggle', label: 'Toggle Sketch Focus', category: 'Board · View',
+      page: 'board', mode: 'manual', target: '#sketchFocusBtn',
+      action: () => toggleSketchMode() }),
+    appCommand({ id: 'board.copy.line', label: 'Copy Selected Line/Shape', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'c', meta: true }, target: '#copyLineBtn',
-      when: appCommandSelectedAnnotationReason, action: () => copySelectedAnnotation() }),
-    appCommand({ id: 'board.paste.line', label: 'Paste Copied Line', category: 'Board · Edit',
+      when: appCommandSelectedAnnotationOrGraphicReason, action: () => copySelectedLineOrGraphic() }),
+    appCommand({ id: 'board.paste.line', label: 'Paste Copied Line/Shape', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'v', meta: true }, target: '#pasteLineBtn',
-      action: () => pasteLineFromClipboard(), keyboardEvent: false }),
+      action: () => pasteFromClipboard(), keyboardEvent: false }),
     appCommand({ id: 'board.reflect.line', label: 'Reflect Selected Line', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'm' }, target: '#reflectLineBtn',
       when: appCommandSelectedAnnotationReason, action: () => reflectSelectedAnnotation() }),
@@ -17148,6 +17184,7 @@ const BOM_MATERIAL_LIBRARY = [
     el.toolCircle.addEventListener('click', () => setTool('circle'));
     el.toolHexagon.addEventListener('click', () => setTool('hexagon'));
     if (el.smartAlignToggleBtn) el.smartAlignToggleBtn.addEventListener('click', toggleSmartAlign);
+    if (el.sketchFocusBtn) el.sketchFocusBtn.addEventListener('click', () => toggleSketchMode());
     // US-093 / ADR 0053: only visible while a curved annotation is selected
     // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
     // no extra guard needed here.
@@ -17480,6 +17517,22 @@ const BOM_MATERIAL_LIBRARY = [
   function setArrowType(arrowType) {
     state.arrowType = arrowType;
     applyToSelectedAnnotation({ arrowType });
+  }
+
+  // Shift+A (board.arrow.cycle in command-registry.js) — the only keyboard
+  // path to change arrow style; the three named arrow buttons stay
+  // click/palette-only, same as every other per-value style picker (line
+  // style, color). Cycles the SELECTED line's current arrow type when one is
+  // selected, otherwise the pending default for the next drawn line — same
+  // scope setArrowType already had.
+  const ARROW_TYPE_CYCLE = ['none', 'single', 'double'];
+  function cycleArrowType() {
+    const selected = getSelectedAnnotation();
+    const current = selected ? getArrowType(selected) : state.arrowType;
+    const idx = ARROW_TYPE_CYCLE.indexOf(current);
+    const next = ARROW_TYPE_CYCLE[idx >= 0 ? (idx + 1) % ARROW_TYPE_CYCLE.length : 0];
+    setArrowType(next);
+    showToast('Arrowheads: ' + (next === 'none' ? 'None' : next[0].toUpperCase() + next.slice(1)));
   }
 
   function setLineWidth(lineWidth) {
@@ -18083,7 +18136,6 @@ const BOM_MATERIAL_LIBRARY = [
       state.nextSequence = s.nextSequence || (state.annotations.length + 1);
       state.drawStyle = s.drawStyle || 'solid';
       state.drawColor = s.drawColor || 'red';
-      state.arrowType = s.arrowType || 'double';
       state.lineWidth = normalizeLineWidth(s.lineWidth);
       // US-096: never write the local preset library from a project file. Note
       // which of its presets are new and let the TD decide — a colleague's
@@ -18097,6 +18149,13 @@ const BOM_MATERIAL_LIBRARY = [
       state.noteTextColor = normalizeColorKey(s.noteTextColor || 'black');
       state.noteLeaderColor = normalizeColorKey(s.noteLeaderColor || 'red');
       state.tool = 'select';
+      // An armed Template (activeStampId) from before Open/Restore must not
+      // survive into the reopened project — there is nothing on the new
+      // board for it to place, and no toolbar entry point would show it was
+      // ever armed. Not routed through setTool('select') here: that also
+      // calls requestRender(), which would paint mid-load against the OLD
+      // project's images/annotations before the new ones below are in place.
+      state.activeStampId = null;
       state.selection = { kind: null, id: null };
       state.drawSession = null;
       state.eraseSession = null;
@@ -18110,6 +18169,22 @@ const BOM_MATERIAL_LIBRARY = [
       state.autoMode = makeInitialAutoModeState();
       state.hiddenAnnIds = [];
       state.hiddenDraftIds = [];
+      // US-102: every reopened project starts in POM Focus, regardless of
+      // which focus was active before Open/Restore — Sketch Focus is a
+      // live-authoring aid, never project data (autosave Restore goes
+      // through this same function, so this covers both entry points).
+      // applySketchModeVisual is the single state+body-class+button-sync
+      // path the toolbar button itself uses (src/manual/sketch-mode.js), so
+      // the button cannot stay showing "Sketch" active after a reopen.
+      //
+      // US-103: called BEFORE state.arrowType is restored from the file, not
+      // after. applySketchModeVisual's own Sketch-Focus-off branch restores
+      // state.arrowType from state.pomArrowType — the PREVIOUS project's
+      // pre-Sketch-Focus preference — so if the TD had Sketch Focus on when
+      // they opened a new project, running this after the line below would
+      // clobber the just-loaded file's own arrowType with that stale value.
+      applySketchModeVisual(false);
+      state.arrowType = s.arrowType || 'double';
       document.body.classList.toggle('app-auto', state.appMode === 'auto');
       document.body.classList.remove('tool-eraser');
       el.labelEditor.style.display = 'none';
@@ -19771,7 +19846,7 @@ function setSelection(kind, id) {
       if (ann) {
         adoptDrawStyleFrom(ann);
         state.drawColor = normalizeColorKey(ann.color);
-        state.arrowType = getArrowType(ann);
+        adoptArrowTypeFrom(ann);
       }
     }
     // US-100: selecting a note no longer mutates the line/graphic draw colour.
@@ -19879,8 +19954,21 @@ function setSelection(kind, id) {
     if (ann) {
       adoptDrawStyleFrom(ann);
       state.drawColor = normalizeColorKey(ann.color);
-      state.arrowType = getArrowType(ann);
+      adoptArrowTypeFrom(ann);
     }
+  }
+
+  // US-103: selecting a line still hands its arrow type to the pending "next
+  // line" default, EXCEPT in Sketch Focus. There, the pending default is the
+  // no-arrow start applySketchModeVisual set on entry (or whatever an
+  // explicit Arrow-menu click since made it — setArrowType always writes
+  // state.arrowType regardless of mode); merely tapping an arrowed POM line
+  // while sketching must not silently redirect the very next Binding/Template
+  // line's arrows. Mirrors adoptDrawStyleFrom's stitch-style guard above —
+  // one exception, named for what it protects.
+  function adoptArrowTypeFrom(ann) {
+    if (!ann || state.sketchMode) return;
+    state.arrowType = getArrowType(ann);
   }
 
   // US-096 / ADR 0055: selecting a line still hands its look to the draw
@@ -20130,7 +20218,11 @@ function setSelection(kind, id) {
 
   function computeSmartAlignment(startAnnotations, movingIds, rawDx, rawDy, bypass) {
     const dx = Number(rawDx) || 0, dy = Number(rawDy) || 0;
-    if (!state.smartAlignEnabled || bypass) return smartAlignResult(dx, dy, []);
+    // US-102: Smart Align is Sketch-Focus-only — its own on/off preference
+    // (state.smartAlignEnabled) still governs whether it fires WITHIN Sketch
+    // Focus, but POM Focus must be a hard off regardless of that preference,
+    // so returning to Sketch Focus later restores exactly what the TD chose.
+    if (!state.smartAlignEnabled || !state.sketchMode || bypass) return smartAlignResult(dx, dy, []);
     const moving = (Array.isArray(startAnnotations) ? startAnnotations : []).filter(Boolean);
     if (!moving.length) return smartAlignResult(dx, dy, []);
     const movingSet = new Set(Array.isArray(movingIds) ? movingIds : []);
@@ -22390,7 +22482,13 @@ function onWheel(e) {
   }
 
   // Callout numbers are always hidden in Stitch mode; in POM mode they honor
-  // the manual Hide/Show Numbers toggle.
+  // the manual Hide/Show Numbers toggle. Deliberately NOT gated on
+  // state.sketchMode here: this function is also the export gate
+  // (export-pdf.js's drawBoardContentForExport, shared by Copy Image, the
+  // Excel embedded sketch, and the Preview board sheet) — Sketch Focus is a
+  // live-authoring aid and must never silently change what an export
+  // contains. The live-canvas-only Sketch Focus suppression lives in
+  // annotationShowsCallout (src/manual/annotation-lookup.js) instead.
   function labelsVisible() {
     return state.showLabels && !isStitchMode();
   }
@@ -22444,6 +22542,122 @@ function onWheel(e) {
   function getActiveNoteFontSize() {
     const selectedNote = getSelectedNote();
     return selectedNote ? noteFontSizeOf(selectedNote) : normalizeNoteFontSize(state.noteFontSize);
+  }
+
+  // ---- src/manual/sketch-mode.js ----
+// US-102: POM Focus / Sketch Focus — a session-only display/tool-visibility
+// toggle WITHIN Manual Mode (not a new state.appMode value, not a new page).
+// POM Focus is the IMPLICIT default and has no button of its own; the one
+// visible control is a single Manual-only toggle, `#sketchFocusBtn`, that
+// enters or leaves the exceptional Sketch Focus (2026-08-28 correction — the
+// original two-button "POM Focus | Sketch Focus" segmented control is wrong;
+// see docs/archive/stories/E01-manual-mode/US-102-sketch-mode-handoff.md).
+// It never touches stored data (annotations/graphics/notes/stamps/presets
+// stay exactly where they are); it only changes what the toolbar and canvas
+// SHOW, and whether Smart Align is live:
+//   - `.sketch-mode-only` elements (index.html) — Templates (Shape Stamp),
+//     the Treatment/Line-preset library browsing UI, Smart Align's own
+//     control, and the zigzag/cover/bartack stitch styles — surface only in
+//     Sketch Focus.
+//   - `.pom-mode-only` elements — the "More" toolbar menu (Grading, Set
+//     Scale, Size Run, Learning, ...) — surface only in POM Focus.
+//   - Smart Align (computeSmartAlignment in smart-align.js) is a hard off in
+//     POM Focus regardless of its own on/off preference, and honors that
+//     preference again in Sketch Focus.
+//   - POM callout numbers on the LIVE canvas are hidden in Sketch Focus via
+//     annotationShowsCallout (annotation-lookup.js) — deliberately NOT via
+//     labelsVisible (style.js), which also gates PDF/Copy Image/Excel/
+//     Preview export and must never change because of this live-only toggle.
+//   - Straight/Curved/Eraser/Rectangle/Circle/Hexagon/Text and the
+//     Plain/Dashed line styles are UNAFFECTED either way.
+//   - US-103: Smart Hit's expanded Treatment-rail catch zone
+//     (annotationVisualHitDistance, hit-testing.js) is live only in Sketch
+//     Focus; POM Focus and Auto Mode hit-test the plain host centerline.
+//   - US-103: the pending arrow default (state.arrowType) resets to `none` on
+//     entry and restores the POM-side preference on exit; selecting a line
+//     while Sketch Focus is on does not steer it (adoptArrowTypeFrom,
+//     selection.js), so tapping an arrowed POM mid-sketch cannot poison the
+//     next drawn path's arrows.
+// Session-only: absent from project JSON, autosave payloads, and undo/redo
+// history — see project-load.js (every reopen/restore forces POM Focus) and
+// auto/mode.js (every switch to Auto forces POM Focus, since the control
+// itself is Manual-only and would otherwise leave no way to see or undo a
+// leaked Sketch Focus effect from Auto Mode). Both call applySketchModeVisual
+// directly — the SAME state+body-class+button-sync path the toolbar button
+// uses — so the button can never show "active"/aria-pressed=true while
+// runtime state has already left it; each site clears its own armed-Template
+// state alongside it (auto/mode.js via setTool('select'), project-load.js via
+// a direct activeStampId reset next to its other tool-state resets), not by
+// re-running setSketchModeEnabled's toggle-specific cleanup (which also
+// resets state.drawStyle off a stitch style — correct for a live toggle,
+// wrong for a reopened project, whose drawStyle is the file's own saved
+// value).
+// Source part for app.js. Run `npm run build` after editing.
+
+  // The one place that writes state.sketchMode, the body class, and the
+  // button's active class + aria-pressed. setAppMode('auto') and
+  // loadProject() call this directly (with no toast/tool cleanup — see
+  // setSketchModeEnabled) so a focus that was on when either fires cannot
+  // leave the button stuck showing active/aria-pressed=true while runtime
+  // state has already moved on.
+  //
+  // US-103: also the one place that swaps state.arrowType for the Sketch
+  // Focus "no arrows" default and restores it afterward, so all three exits
+  // (toggle-off, Auto, Open Project) hand the POM preference back the same
+  // way. Gated on an ACTUAL flip (comparing against the prior state.sketchMode)
+  // so a call that repeats the current value — every Auto/Open-Project call,
+  // since neither can ever be entering Sketch Focus — never stomps a POM
+  // arrow preference that was never touched.
+  function applySketchModeVisual(enabled) {
+    const next = !!enabled;
+    const wasOn = state.sketchMode;
+    if (next && !wasOn) {
+      state.pomArrowType = state.arrowType;
+      state.arrowType = 'none';
+    } else if (!next && wasOn) {
+      if (state.pomArrowType != null) state.arrowType = state.pomArrowType;
+      state.pomArrowType = null;
+    }
+    state.sketchMode = next;
+    document.body.classList.toggle('sketch-mode-on', state.sketchMode);
+    if (el.sketchFocusBtn) {
+      el.sketchFocusBtn.classList.toggle('active', state.sketchMode);
+      el.sketchFocusBtn.setAttribute('aria-pressed', String(state.sketchMode));
+    }
+  }
+
+  function setSketchModeEnabled(enabled, announce) {
+    applySketchModeVisual(enabled);
+    if (state.sketchMode) {
+      // Auto-close the Measurements panel on entry — it has nothing to show
+      // in Sketch Focus work. This reuses the SAME toggle the H key/button
+      // already drive (toggleSpecPanel), so a TD can still reopen it by
+      // hand; only the default on ENTRY changes.
+      if (el.workspace && !el.workspace.classList.contains('panel-hidden')) toggleSpecPanel();
+    } else {
+      // Whatever just lost its toolbar entry point must not stay silently
+      // active with no visible way to tell what is selected. Route through
+      // setTool('select') — not a hand-rolled state.tool assignment — so the
+      // SAME cleanup a TD gets from pressing Escape or picking another tool
+      // runs here too: it already clears activeStampId (US-097 code review),
+      // drawSession, eraseSession, and the eraser body class.
+      if (state.tool === 'stamp' && typeof setTool === 'function') setTool('select');
+      // Defensive: cancel an in-progress placement drag outright, in the
+      // (practically unreachable via mouse, but keyboard/Command-Palette
+      // dispatch makes it not impossible) case one was mid-gesture.
+      state.interaction = null;
+      if (isStitchStyle(state.drawStyle)) state.drawStyle = 'solid';
+    }
+    if (announce !== false) showToast(state.sketchMode
+      ? 'Sketch Focus — Templates, Smart Align, and stitch styles are available.'
+      : 'POM Focus — measurement review and correction.');
+    updateUI();
+    requestRender();
+    return state.sketchMode;
+  }
+
+  function toggleSketchMode() {
+    return setSketchModeEnabled(!state.sketchMode, true);
   }
 
   // ---- src/manual/library-store.js ----
@@ -24738,8 +24952,13 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // still applies — Stitch mode and the Hide Numbers toggle hide everything —
   // and on top of it a construction line never numbers itself even while the
   // board is in POM mode showing numbers for every real measurement.
+  // US-102: Sketch Focus also suppresses callouts, but ONLY here — this
+  // function's three callers (render-annotations.js live canvas,
+  // hit-testing.js live interaction, label-editor.js) are all live-canvas
+  // concerns; labelsVisible() itself stays untouched by Sketch Focus because
+  // it also gates exports (see the note on labelsVisible in style.js).
   function annotationShowsCallout(ann) {
-    return labelsVisible() && isMeasurementAnnotation(ann);
+    return labelsVisible() && isMeasurementAnnotation(ann) && !state.sketchMode;
   }
 
   // The MEASURED length, which is not the drawn length once the sketch has been
@@ -25164,11 +25383,26 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 
     if (mode === 'auto') {
       // Force the user out of any creation-flavored tool so manual line
-      // creation cannot fire while project annotations are locked.
-      state.drawSession = null;
-      state.eraseSession = null;
-      state.tool = 'select';
-      document.body.classList.remove('tool-eraser');
+      // creation cannot fire while project annotations are locked. Route
+      // through setTool — not a raw state.tool assignment — so an armed
+      // Template's activeStampId (and any drawSession/eraseSession) is
+      // cleared the same way Escape or picking another tool clears it;
+      // a raw assignment here would leave activeStampId stale. setTool does
+      // NOT touch state.interaction (it is a per-gesture record, not tool
+      // state), so a Template placement drag caught mid-gesture — the
+      // gesture is state.interaction.type === 'draw-stamp', not drawSession —
+      // needs its own explicit clear here, same as sketch-mode.js's own
+      // toggle-off cleanup does.
+      setTool('select');
+      state.interaction = null;
+      // US-102: Sketch Focus is Manual-only and must never leak into Auto —
+      // its toggle control is itself manual-only (invisible here), so the
+      // body class, the button sync, and every focus-only effect (hidden
+      // More menu, hidden POM numbers) would otherwise silently survive the
+      // switch with no way for the TD to see or undo it from this mode.
+      // applySketchModeVisual is the single state+body-class+button-sync
+      // path the toolbar button itself uses (src/manual/sketch-mode.js).
+      applySketchModeVisual(false);
       // Clear any project selection so the user does not accidentally edit
       // locked annotations. US-092 adds 'note': notes are Manual-only to edit,
       // and a selection carried into Auto would keep painting its outline over
@@ -39257,6 +39491,19 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         return true;
       },
       clearSelection: () => { clearSelection(); return true; },
+      // US-102: the two callout-visibility gates, exposed distinctly so a
+      // test can prove Sketch Focus reaches only the live-canvas one.
+      // annotationShowsCallout is what the Board canvas (render-annotations
+      // .js), hit-testing, and the label editor read; labelsVisible is what
+      // export-pdf.js's drawBoardContentForExport reads (shared by Copy
+      // Image, the Excel embedded sketch, and the Preview board sheet) — it
+      // must stay true/false based only on the Hide/Show Numbers toggle and
+      // Stitch mode, never on state.sketchMode.
+      annotationShowsCallout: (id) => {
+        const ann = getAnnotationById(id);
+        return ann ? annotationShowsCallout(ann) : null;
+      },
+      labelsVisible: () => labelsVisible(),
       resetLinePresets: () => {
         if (typeof resetLinePresetsToBuiltins === 'function') resetLinePresetsToBuiltins();
       },
@@ -39346,6 +39593,16 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // which is the only way to exercise selection, drag and resize the way a TD
       // does. Without it a UI test has to guess pixel positions.
       getView: () => ({ zoom: state.zoom, panX: state.panX, panY: state.panY }),
+      // US-103: a direct zoom setter — proving Smart Hit's catch zone scales
+      // correctly at more than one zoom needs a real zoom CHANGE, and driving
+      // one through synthetic wheel events would test the wheel handler, not
+      // Smart Hit. requestRender() so the next getBoundingClientRect-based
+      // screen math in a test reads the already-repainted canvas.
+      setZoom: (zoom) => {
+        state.zoom = Math.max(0.05, Number(zoom) || state.zoom);
+        requestRender();
+        return state.zoom;
+      },
       // US-086: what the pointer is currently doing. board-interaction-check
       // needs to assert WHICH gesture a press opened — "the whole line moved"
       // alone cannot tell a line drag from a photo drag that carried its lines
@@ -39451,10 +39708,20 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         // active" and "what is selected" have to come through here — a click
         // that selected the wrong KIND of thing is otherwise invisible.
         tool: state.tool,
+        drawSession: clone(state.drawSession),
         selection: { kind: state.selection.kind, id: state.selection.id != null ? state.selection.id : null },
         selectedAnnotationIds: getSelectedAnnotationIds().slice(),
         templateGroupEditId: state.templateGroupEditId || null,
         smartAlignEnabled: !!state.smartAlignEnabled,
+        sketchMode: !!state.sketchMode,
+        activeStampId: state.activeStampId != null ? state.activeStampId : null,
+        interaction: state.interaction ? { type: state.interaction.type } : null,
+        drawStyle: state.drawStyle,
+        // US-103: the pending "next line" arrow default, and its POM-side
+        // backup while Sketch Focus is on (applySketchModeVisual,
+        // src/manual/sketch-mode.js) — both session-only, neither persisted.
+        arrowType: state.arrowType,
+        pomArrowType: state.pomArrowType != null ? state.pomArrowType : null,
         smartAlignGuides: clone(state.smartAlignGuides || []),
         hoverAnnotationId: state.hoverAnnotationId != null ? state.hoverAnnotationId : null,
         noteCount: (state.notes || []).length,
@@ -41748,10 +42015,15 @@ function makeExportFileName() {
   // Distance from the pointer to what is visibly painted, in WORLD units.
   // US-099 Smart Hit uses each scaled Treatment rail rather than the invisible
   // host centerline; all rails still resolve to the one host annotation.
+  //
+  // US-103: that expanded catch zone is a Sketch Focus authoring aid, not a
+  // general POM behavior — it is gated on state.sketchMode (false throughout
+  // POM Focus and Auto Mode, US-102), so reviewing/correcting POM lines keeps
+  // the plain host-centerline target it always had, treatment or not.
   function annotationVisualHitDistance(point, ann) {
     const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : BEZIER_SAMPLES * 2);
     const z = Math.max(0.0001, state.zoom);
-    if (hasLineTreatment(ann)) {
+    if (state.sketchMode && hasLineTreatment(ann)) {
       // Keep the historical host-spine target as well as every visible rail.
       // A Binding has empty space between its outside rails; losing the spine
       // would make a click in that familiar middle gap stop selecting the line.
