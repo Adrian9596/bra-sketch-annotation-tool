@@ -42,6 +42,9 @@
     // US-104: the "Open DXF file" action, inside the Tools menu.
     dxfImportBtn: document.getElementById('dxfImportBtn'),
     dxfImportFileInput: document.getElementById('dxfImportFileInput'),
+    // US-105: the Pattern Measure tool entries, inside the Tools menu.
+    dxfMeasureAlongBtn: document.getElementById('dxfMeasureAlongBtn'),
+    dxfMeasureOutBtn: document.getElementById('dxfMeasureOutBtn'),
     lineWidthChip: document.getElementById('lineWidthChip'),
     lineWidthInput: document.getElementById('lineWidthInput'),
     fontSizeChip: document.getElementById('fontSizeChip'),

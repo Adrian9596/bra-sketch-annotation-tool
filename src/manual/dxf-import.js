@@ -12,8 +12,9 @@
 // Split deliberately into three layers so each is independently testable:
 //   1. parseDxfDocument(text)              — pure text -> pieces (local
 //      drawing space: DXF's own units, Y already flipped to screen-down).
-//   2. computeDxfPlacementTransform(...)    — pure bounds+viewport -> one
-//      shared scale/offset (reuses createImageRecord's own numbers).
+//   2. computeDxfPlacementTransform(...)    — pure bounds+viewport+zoom -> one
+//      shared scale/offset, DXF's own DXF_FIT_RATIO (round 11 — no longer
+//      createImageRecord's numbers; see the function's own comment).
 //   3. importDxfText(text, rect)            — orchestrates 1 + 2, builds real
 //      annotation objects, and performs the one board mutation.
 // Sibling file: the Tools-menu button / FileReader glue is
@@ -42,6 +43,12 @@
   // Board-performance backstop. The real file above totals 1252 segments
   // across 6 pieces with no cap — 3000 clears it with >2x headroom.
   const DXF_TOTAL_OUTPUT_CAP = 3000;
+  // Round 11 (user-reported): a technical pattern has no "sits beside other
+  // photos" reason to stay small, and shrinking it packs more of a
+  // tessellated curve's points into the same screen distance — the opposite
+  // of what round 10's crowding fix wants. See computeDxfPlacementTransform
+  // for the full formula this feeds.
+  const DXF_FIT_RATIO = 0.85;
 
   // BOM/CRLF/trailing-newline normalization has to happen BEFORE the
   // even/odd group-code pairing check below, or an ordinary, well-formed
@@ -241,9 +248,17 @@
   // case (h=0, center exactly on the midpoint) and against a theta=90° case
   // solved by hand (center reproduces both P1 and P2 exactly under a CCW
   // sweep of theta from the recovered start angle).
-  function dxfBulgeToBezierChunks(p1, p2, bulge) {
+  //
+  // US-105: split out of dxfBulgeToBezierChunks so the native-coordinate
+  // measurement kernel (src/manual/dxf-native-parser.js) can get the exact
+  // {center, radius, startAngle, sweep} an ARC entity would carry, without
+  // going through a Bézier-chunked approximation it does not need — arcs and
+  // bulges are already exactly circular, so the measurement kernel's arc
+  // length can stay analytic. Returns null for the same degenerate case
+  // dxfBulgeToBezierChunks used to return [] for.
+  function dxfBulgeToArcParams(p1, p2, bulge) {
     const d = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-    if (!(d > 1e-9)) return [];
+    if (!(d > 1e-9)) return null;
     const theta = 4 * Math.atan(bulge);
     const ux = (p2.x - p1.x) / d, uy = (p2.y - p1.y) / d;
     const vx = -uy, vy = ux;
@@ -253,7 +268,13 @@
     const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
     const cx = mx + vx * h, cy = my + vy * h;
     const a0 = Math.atan2(p1.y - cy, p1.x - cx);
-    return dxfArcToBezierChunks(cx, cy, r, a0, theta);
+    return { cx, cy, r, a0, sweep: theta };
+  }
+
+  function dxfBulgeToBezierChunks(p1, p2, bulge) {
+    const params = dxfBulgeToArcParams(p1, p2, bulge);
+    if (!params) return [];
+    return dxfArcToBezierChunks(params.cx, params.cy, params.r, params.a0, params.sweep);
   }
 
   // ---- Per-entity converters --------------------------------------------------
@@ -421,16 +442,43 @@
       : { kind: 'curve', p0: dxfFlipPointY(seg.p0), c1: dxfFlipPointY(seg.c1), c2: dxfFlipPointY(seg.c2), p3: dxfFlipPointY(seg.p3) };
   }
 
+  // US-105: a point at native arc parameter t in [0,1] — center + radius at
+  // (startAngle + sweep*t). Shared by the native measurement kernel and, here,
+  // by dxfSegmentEndpoints/dxfSegmentPoints below so an 'arc'-kind segment
+  // (the native, non-Bézier representation the measurement parser emits) can
+  // reuse the existing piece-detection primitives (dxfConnectedComponents,
+  // dxfMergeContainedComponents, dxfBoundsOfSegments) unchanged. Never called
+  // by parseDxfDocument's own pipeline, which only ever produces 'straight'/
+  // 'curve' segments — this is purely additive.
+  function dxfPointOnArcSegment(seg, t) {
+    const a = seg.startAngle + seg.sweep * t;
+    return { x: seg.center.x + seg.radius * Math.cos(a), y: seg.center.y + seg.radius * Math.sin(a) };
+  }
+
   function dxfSegmentEndpoints(seg) {
-    return seg.kind === 'straight' ? [seg.a, seg.b] : [seg.p0, seg.p3];
+    if (seg.kind === 'straight') return [seg.a, seg.b];
+    if (seg.kind === 'arc') return [dxfPointOnArcSegment(seg, 0), dxfPointOnArcSegment(seg, 1)];
+    return [seg.p0, seg.p3];
   }
 
   // Every point that defines the segment's painted extent, handles included
   // — mirrors shapeStampGeometryPoints's reasoning: a curve's bulge can sit
   // outside the a/b chord, so a bounds box built from endpoints alone can
-  // clip or under-fit it.
+  // clip or under-fit it. For 'arc' (US-105), the two corners of the full
+  // circle's own bounding box are a deliberate, always-safe over-approximation
+  // — cheaper than computing the arc's true axis-aligned extent and never
+  // under-fits it, which is all dxfConnectedComponents/dxfMergeContainedComponents
+  // need this for (an endpoint-touch tolerance and a containment test, neither
+  // of which requires a pixel-exact box).
   function dxfSegmentPoints(seg) {
-    return seg.kind === 'straight' ? [seg.a, seg.b] : [seg.p0, seg.c1, seg.c2, seg.p3];
+    if (seg.kind === 'straight') return [seg.a, seg.b];
+    if (seg.kind === 'arc') {
+      return [
+        { x: seg.center.x - seg.radius, y: seg.center.y - seg.radius },
+        { x: seg.center.x + seg.radius, y: seg.center.y + seg.radius },
+      ];
+    }
+    return [seg.p0, seg.c1, seg.c2, seg.p3];
   }
 
   function dxfBoundsOfPoints(points) {
@@ -536,25 +584,44 @@
 
   // ---- Placement transform ----------------------------------------------------
 
-  // Reuses createImageRecord's own first-image-on-empty-board numbers
-  // (src/manual/image-records.js) rather than inventing new ones: fit into
-  // 42% of the viewport with a 180px floor on maxW/maxH, centered the same
-  // way. Unlike a raster image, DXF vector data has no native pixel
-  // resolution to cap upscaling against, so — unlike the image case — there
-  // is no `Math.min(scale, 1)` "never upscale" clause, and no 60px floor on
-  // the OUTPUT box either: that second floor is the image case's own
-  // per-axis minimum-visible-size guard, applied AFTER its own upscale cap,
-  // and copying it here would independently distort a uniformly-scaled
-  // drawing's aspect ratio on a tiny/extreme fixture.
+  // Round 11 (user-reported, then a follow-up review caught a real bug in
+  // the first fix): this used to reuse createImageRecord's own
+  // first-image-on-empty-board numbers verbatim (42%/180px floor) — sized
+  // for a photo that might sit beside other photos, needlessly small for a
+  // technical pattern that has no such neighbor and benefits from filling
+  // most of the canvas (it also packs more of a tessellated curve's points
+  // into the same screen distance, working against round 10's crowding
+  // fix). DXF placement now has its own, larger DXF_FIT_RATIO and NO floor
+  // — a "fit" that can force overflow at a tiny viewport (the old 180px
+  // floor did exactly that) isn't a fit, and with an 85% ratio a floor is
+  // already nearly always moot for a real viewport.
+  //
+  // `rect` is SCREEN-space (`getViewportRect()`, CSS pixels) but this
+  // function's output (`outputWidth`/`outputHeight`/`originX`/`originY`) is
+  // WORLD-space — the coordinate system annotations are stored in, which the
+  // render loop then multiplies by `state.zoom` to get screen pixels. "Fit
+  // to N% of the viewport" is therefore only true at zoom 1 unless the
+  // current zoom is divided back out here: at zoom 2, an output sized for
+  // 85% of a 1000px-wide viewport (850 world-px) would render at 1700
+  // screen-px and overflow. Dividing the whole `rect * ratio` term by `zoom`
+  // keeps `outputWidth * zoom` constant across any zoom the board happens to
+  // be at when the import runs (verified in dxf-import-check.mjs at
+  // 0.5x/1x/2x) — `zoom` defaults to 1 so existing callers (and the pure
+  // debug-API test entry point) that don't pass it are unaffected.
+  //
+  // Unlike a raster image, DXF vector data has no native pixel resolution to
+  // cap upscaling against, so there is no `Math.min(scale, 1)` "never
+  // upscale" clause either — that remains an image-only concern.
   //
   // `centerWorld` is optional (tests pass one to get deterministic numbers
   // without a live pan/zoom); the real call site omits it and gets the
-  // exact `screenToWorld` result createImageRecord itself uses.
-  function computeDxfPlacementTransform(bounds, rect, centerWorld) {
+  // live `screenToWorld` result.
+  function computeDxfPlacementTransform(bounds, rect, centerWorld, zoom) {
     const w = Math.max(bounds.width, 1e-9);
     const h = Math.max(bounds.height, 1e-9);
-    const maxW = Math.max(180, rect.width * 0.42);
-    const maxH = Math.max(180, rect.height * 0.42);
+    const z = Math.max(0.0001, zoom || 1);
+    const maxW = (rect.width * DXF_FIT_RATIO) / z;
+    const maxH = (rect.height * DXF_FIT_RATIO) / z;
     const scale = Math.min(maxW / w, maxH / h);
     const outputWidth = w * scale;
     const outputHeight = h * scale;
@@ -572,6 +639,22 @@
     return {
       x: transform.originX + (p.x - bounds.x) * transform.scale,
       y: transform.originY + (p.y - bounds.y) * transform.scale,
+    };
+  }
+
+  // US-105: the missing inverse of applyDxfTransform — no board/world point
+  // has ever needed to map BACK to the local (already-Y-flipped) drawing
+  // space this transform's `bounds`/`transform` were computed against, until
+  // Pattern Measure needs to turn a pointer click into "which native DXF
+  // coordinate is under the cursor." Exact algebraic inverse of the affine
+  // fit above; `transform.scale` is always > 0 for a real drawing (computed
+  // from a non-degenerate bounds by computeDxfPlacementTransform), so no
+  // separate degenerate-scale guard is needed here beyond the caller already
+  // requiring a live measure session (which implies a successful prior parse).
+  function invertDxfPlacementTransform(p, bounds, transform) {
+    return {
+      x: bounds.x + (p.x - transform.originX) / transform.scale,
+      y: bounds.y + (p.y - transform.originY) / transform.scale,
     };
   }
 
@@ -701,12 +784,20 @@
     }
     const viewportRect = rect || getViewportRect();
     const bounds = dxfBoundsOfSegments(parsed.pieces.flat());
-    const transform = computeDxfPlacementTransform(bounds, viewportRect);
+    const transform = computeDxfPlacementTransform(bounds, viewportRect, undefined, state.zoom);
     const allNewIds = [];
     let firstId = null;
+    // US-105: one anchor annotation id per piece (its first segment's), so
+    // the measure session can detect a piece having been dragged since
+    // import (see dxfMeasureCurrentPieceOffset, dxf-measure-session.js) by
+    // comparing that annotation's CURRENT position against where import
+    // originally placed it — the board annotations are the only thing that
+    // actually tracks a later whole-piece move.
+    const pieceFirstAnnotationIds = [];
     for (const piece of parsed.pieces) {
       const groupId = 'dxf-' + state.idCounter++;
       const pieceAnns = piece.map(seg => dxfAnnotationFromSegment(seg, bounds, transform, groupId));
+      pieceFirstAnnotationIds.push(pieceAnns.length ? pieceAnns[0].id : null);
       // One sourceImageId per PIECE (not per segment), matching
       // createAnnotationFromTemplateMember's own convention: landing outside
       // every board image gives the piece no sourceImageId at all, which is
@@ -728,6 +819,13 @@
     state.selectedAnnotationIds = allNewIds;
     state.templateGroupEditId = null;
     pushHistoryIfChanged();
+    // US-105: (re)build the native-coordinate measure session from the SAME
+    // text and the SAME bounds/transform just used for the board
+    // annotations above, so Pattern Measure's overlay is pixel-aligned with
+    // what actually got drawn. Reset first — opening another DXF must never
+    // leave a prior session's measurements dangling over new geometry.
+    resetDxfMeasureSession();
+    startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds);
     if (typeof updateUI === 'function') updateUI();
     if (typeof requestRender === 'function') requestRender();
 

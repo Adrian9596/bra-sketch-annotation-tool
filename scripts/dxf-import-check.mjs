@@ -332,18 +332,46 @@ window.__DXF = (() => {
     `a UTF-8 BOM prefix must not corrupt the first group code, got ${JSON.stringify(withBom)}`);
 
   // ===========================================================================
-  // 2. Pure placement transform — the exact reused createImageRecord formula.
+  // 2. Pure placement transform — round 11: DXF's own 85% fit ratio, and
+  //    (a follow-up review's catch) the fit must be ZOOM-COMPENSATED. `rect`
+  //    is screen-space but the output is world-space, which the render loop
+  //    later multiplies by state.zoom — so "85% of the viewport" is only
+  //    true at zoom 1 unless the formula divides the current zoom back out.
+  //    Same 1000x500-bounds/1000x800-viewport fixture at zoom 0.5x/1x/2x:
+  //    the on-screen size (outputWidth/outputHeight * zoom) must stay
+  //    CONSTANT across all three, not just at the zoom the old test assumed.
   // ===========================================================================
 
-  const fit = await s.eval(`window.__braAutoModeDebug.dxf.computePlacement(
+  const fitZ1 = await s.eval(`window.__braAutoModeDebug.dxf.computePlacement(
+    { x: 0, y: 0, width: 1000, height: 500 }, { width: 1000, height: 800 }, { x: 0, y: 0 }, 1)`);
+  check(Math.abs(fitZ1.scale - 0.85) < 1e-9 && Math.abs(fitZ1.outputWidth - 850) < 1e-6 && Math.abs(fitZ1.outputHeight - 425) < 1e-6
+    && Math.abs(fitZ1.originX + 425) < 1e-6 && Math.abs(fitZ1.originY + 212.5) < 1e-6,
+    `at zoom 1x the 85%-viewport-fit auto-fit box must be exact, got ${JSON.stringify(fitZ1)}`);
+  const fitZ2 = await s.eval(`window.__braAutoModeDebug.dxf.computePlacement(
+    { x: 0, y: 0, width: 1000, height: 500 }, { width: 1000, height: 800 }, { x: 0, y: 0 }, 2)`);
+  check(Math.abs(fitZ2.outputWidth - 425) < 1e-6 && Math.abs(fitZ2.outputHeight - 212.5) < 1e-6,
+    `at zoom 2x the WORLD-space output must be HALF the zoom-1x size (so the on-screen size matches), got ${JSON.stringify(fitZ2)}`);
+  const fitZHalf = await s.eval(`window.__braAutoModeDebug.dxf.computePlacement(
+    { x: 0, y: 0, width: 1000, height: 500 }, { width: 1000, height: 800 }, { x: 0, y: 0 }, 0.5)`);
+  check(Math.abs(fitZHalf.outputWidth - 1700) < 1e-6 && Math.abs(fitZHalf.outputHeight - 850) < 1e-6,
+    `at zoom 0.5x the WORLD-space output must be DOUBLE the zoom-1x size, got ${JSON.stringify(fitZHalf)}`);
+  for (const [label, f, z] of [['0.5x', fitZHalf, 0.5], ['1x', fitZ1, 1], ['2x', fitZ2, 2]]) {
+    check(Math.abs(f.outputWidth * z - 850) < 1e-6 && Math.abs(f.outputHeight * z - 425) < 1e-6,
+      `on-screen size (outputWidth/outputHeight * zoom) must be the SAME 850x425 at every zoom, got ${label} -> ${JSON.stringify({ w: f.outputWidth * z, h: f.outputHeight * z })}`);
+  }
+  const zoomDefaultsTo1 = await s.eval(`window.__braAutoModeDebug.dxf.computePlacement(
     { x: 0, y: 0, width: 1000, height: 500 }, { width: 1000, height: 800 }, { x: 0, y: 0 })`);
-  check(Math.abs(fit.scale - 0.42) < 1e-9 && Math.abs(fit.outputWidth - 420) < 1e-6 && Math.abs(fit.outputHeight - 210) < 1e-6
-    && Math.abs(fit.originX + 210) < 1e-6 && Math.abs(fit.originY + 105) < 1e-6,
-    `the 42%-viewport-fit auto-fit box must match createImageRecord's own formula exactly, got ${JSON.stringify(fit)}`);
-  const floored = await s.eval(`window.__braAutoModeDebug.dxf.computePlacement(
-    { x: 0, y: 0, width: 10, height: 10 }, { width: 100, height: 100 }, { x: 0, y: 0 })`);
-  check(Math.abs(floored.scale - 18) < 1e-9,
-    `a tiny drawing in a small viewport must hit the 180px floor on maxW/maxH (scale 18), got ${JSON.stringify(floored)}`);
+  check(Math.abs(zoomDefaultsTo1.outputWidth - fitZ1.outputWidth) < 1e-9,
+    `omitting zoom must default to 1x (existing callers unaffected), got ${JSON.stringify(zoomDefaultsTo1)}`);
+
+  // No floor anymore (round 11 dropped the old 180px floor — a "fit" that
+  // forces overflow at a tiny viewport isn't a fit): a tiny drawing in a
+  // tiny viewport gets the SAME 0.85 ratio-derived scale as the large
+  // fixture above, not a floor-inflated one.
+  const tinyViewport = await s.eval(`window.__braAutoModeDebug.dxf.computePlacement(
+    { x: 0, y: 0, width: 10, height: 10 }, { width: 100, height: 100 }, { x: 0, y: 0 }, 1)`);
+  check(Math.abs(tinyViewport.scale - 8.5) < 1e-9 && Math.abs(tinyViewport.outputWidth - 85) < 1e-6,
+    `a tiny drawing in a tiny viewport must still use the plain 85% ratio (scale 8.5), no floor inflating it, got ${JSON.stringify(tinyViewport)}`);
 
   // ===========================================================================
   // 3. Piece detection: connectivity, containment merge, no over-merge.

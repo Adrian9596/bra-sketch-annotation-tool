@@ -46,6 +46,10 @@
       // applySketchModeVisual is the single state+body-class+button-sync
       // path the toolbar button itself uses (src/manual/sketch-mode.js).
       applySketchModeVisual(false);
+      // US-105: Pattern Measure is Manual + Sketch Focus only — a measure
+      // session (and every overlay it holds) must not survive a switch back
+      // to Auto Mode.
+      resetDxfMeasureSession();
       // Clear any project selection so the user does not accidentally edit
       // locked annotations. US-092 adds 'note': notes are Manual-only to edit,
       // and a selection carried into Auto would keep painting its outline over

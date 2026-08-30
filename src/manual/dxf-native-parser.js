@@ -1,0 +1,317 @@
+// US-105: DXF Pattern Measurement — the native-coordinate parser adapter.
+// Parses the SAME DXF text US-104's importDxfText already accepts, but into
+// exact native `{kind:'straight'|'arc', ...}` geometry (see
+// src/geometry/dxf-path-kernel.js's header comment for the shapes) instead of
+// the board-annotation-ready straight/Bézier segments parseDxfDocument
+// builds — arcs and bulges stay exactly circular here, never
+// Bézier-approximated, so the measurement kernel's arc length stays
+// analytic.
+//
+// Deliberately a SEPARATE parse over the same tokenized pairs, not a
+// modification of parseDxfDocument: that function (src/manual/dxf-import.js)
+// is a closed, 119-assertion-tested contract (dxf-import-check.mjs), and this
+// story's own "compatibility-preserving adapter" requirement is satisfied
+// most safely by never touching its observable output at all. This file
+// reuses that file's PURE, already-correct primitives by name
+// (dxfNormalizeText, dxfTokenizePairs, dxfScanSections, dxfNum, dxfOptNum,
+// dxfFirst, dxfExtrusion, dxfPlanarOk, dxfOk/dxfSkip/dxfMalformed/
+// dxfNonPlanar/dxfUnsupportedType/dxfUnsupportedFit, dxfParseLwpolylineVertices,
+// dxfBulgeToArcParams, dxfBuildPieces, and the DXF_*_CAP/DXF_BINARY_SENTINEL
+// constants) rather than duplicating them — only the "which shape do I build
+// from this entity" step differs from that file's own converters, and that
+// step is duplicated deliberately per the same reasoning.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // ---- $INSUNITS header read --------------------------------------------------
+
+  // dxfScanSections only tracks section boundaries (HEADER's own variables
+  // are never collected — US-104 deliberately never needed them). This scans
+  // the flat pair stream directly for the one header variable this story
+  // needs: a `9 / $INSUNITS` marker followed, within a few pairs, by its
+  // integer value at group 70. Safe to run over the WHOLE pair stream (not
+  // section-scoped) because `$INSUNITS` as a header-variable NAME can only
+  // legitimately appear in the HEADER section of a well-formed file; nothing
+  // else in a DXF's ENTITIES/BLOCKS/TABLES content uses group code 9 for
+  // this literal string.
+  function dxfReadInsunits(pairs) {
+    for (let i = 0; i < pairs.length; i += 1) {
+      if (pairs[i].code === 9 && String(pairs[i].value).trim() === '$INSUNITS') {
+        for (let j = i + 1; j < pairs.length && j < i + 6; j += 1) {
+          if (pairs[j].code === 70) {
+            const n = Number(String(pairs[j].value).trim());
+            return Number.isFinite(n) ? n : null;
+          }
+          if (pairs[j].code === 9 || pairs[j].code === 0) break;
+        }
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // ---- Per-entity native converters (mirrors dxf-import.js's converters —
+  // same validation/malformed/planarity rules, native line/arc output) ------
+
+  function dxfNativeConvertLineEntity(rec) {
+    const x1 = dxfNum(rec.pairs, 10), y1 = dxfNum(rec.pairs, 20);
+    const x2 = dxfNum(rec.pairs, 11), y2 = dxfNum(rec.pairs, 21);
+    if ([x1, y1, x2, y2].some(v => v === undefined)) return dxfMalformed('LINE missing 10/20 or 11/21');
+    if (![x1, y1, x2, y2].every(Number.isFinite)) return dxfMalformed('LINE has a non-finite coordinate');
+    // RB-4: a zero-length LINE (both endpoints exactly coincident) has no
+    // direction and no meaningful length — reject it outright rather than
+    // silently accepting a segment dxfSegmentLength would report as 0 (see
+    // that function's own "never a plausible 0" contract; a segment that
+    // SHOULD never have existed is a different failure than an invalid
+    // length calculation on a real one).
+    if (x1 === x2 && y1 === y2) return dxfMalformed('LINE has zero length (coincident endpoints)');
+    const z1 = dxfOptNum(rec.pairs, 30, 0), z2 = dxfOptNum(rec.pairs, 31, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(z1) || !Number.isFinite(z2) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('LINE has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([z1, z2], thickness, ext)) return dxfNonPlanar('LINE is not flat');
+    return dxfOk([{ kind: 'straight', a: { x: x1, y: y1 }, b: { x: x2, y: y2 } }]);
+  }
+
+  function dxfNativeConvertArcEntity(rec) {
+    const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
+    const r = dxfNum(rec.pairs, 40);
+    const a0Deg = dxfNum(rec.pairs, 50), a1Deg = dxfNum(rec.pairs, 51);
+    if ([cx, cy, r, a0Deg, a1Deg].some(v => v === undefined)) return dxfMalformed('ARC missing 10/20/40/50/51');
+    if (![cx, cy, r, a0Deg, a1Deg].every(Number.isFinite)) return dxfMalformed('ARC has a non-finite value');
+    if (!(r > 0)) return dxfMalformed('ARC radius <= 0');
+    const z = dxfOptNum(rec.pairs, 30, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(z) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('ARC has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('ARC is not flat');
+    // Same wraparound-safe sweep as convertDxfArcEntity: 350deg -> 10deg is a
+    // 20deg CCW sweep, never a naive -340deg.
+    const sweepDeg = ((a1Deg - a0Deg) % 360 + 360) % 360;
+    if (!(sweepDeg > 1e-9)) return dxfMalformed('ARC has zero sweep');
+    const sweepRad = sweepDeg * Math.PI / 180;
+    const startRad = a0Deg * Math.PI / 180;
+    return dxfOk([{ kind: 'arc', center: { x: cx, y: cy }, radius: r, startAngle: startRad, sweep: sweepRad }]);
+  }
+
+  // A CIRCLE is one full-circle arc (sweep = 2*PI). Unlike the board
+  // annotation model (which has no closed-loop annotation type and must
+  // split a circle into four quadrant curves — see convertDxfCircleEntity),
+  // the native measurement kernel has no such constraint: a single arc with
+  // a full sweep is the exact, natural representation, and the arbitrary
+  // start angle (0, matching the entity's own lack of one) does not affect
+  // any measurement made on it — length, projection, and route enumeration
+  // all work uniformly around the whole loop regardless of where t=0 sits.
+  function dxfNativeConvertCircleEntity(rec) {
+    const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
+    const r = dxfNum(rec.pairs, 40);
+    if ([cx, cy, r].some(v => v === undefined)) return dxfMalformed('CIRCLE missing 10/20/40');
+    if (![cx, cy, r].every(Number.isFinite)) return dxfMalformed('CIRCLE has a non-finite value');
+    if (!(r > 0)) return dxfMalformed('CIRCLE radius <= 0');
+    const z = dxfOptNum(rec.pairs, 30, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(z) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('CIRCLE has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('CIRCLE is not flat');
+    return dxfOk([{ kind: 'arc', center: { x: cx, y: cy }, radius: r, startAngle: 0, sweep: Math.PI * 2 }]);
+  }
+
+  // Shared by LWPOLYLINE and legacy POLYLINE, mirroring
+  // dxfPolylineVerticesToSegments but emitting a native arc (via
+  // dxfBulgeToArcParams) instead of Bézier chunks for a bulged segment. A
+  // A repeated vertex is malformed measurement geometry. US-104 may still
+  // display the other segments from that entity, but Pattern Measure must not
+  // silently erase one authored hop and then claim its shortened topology is
+  // the factory path.
+  function dxfNativeVerticesToSegments(vertices, closed) {
+    const segs = [];
+    let rejectedDegenerateSegments = 0;
+    const n = vertices.length;
+    const last = closed ? n : n - 1;
+    for (let i = 0; i < last; i += 1) {
+      const a = vertices[i];
+      const b = vertices[(i + 1) % n];
+      if (a.bulge) {
+        const params = dxfBulgeToArcParams({ x: a.x, y: a.y }, { x: b.x, y: b.y }, a.bulge);
+        if (!params) rejectedDegenerateSegments += 1;
+        else segs.push({ kind: 'arc', center: { x: params.cx, y: params.cy }, radius: params.r, startAngle: params.a0, sweep: params.sweep });
+      } else if (a.x !== b.x || a.y !== b.y) {
+        segs.push({ kind: 'straight', a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } });
+      } else {
+        rejectedDegenerateSegments += 1;
+      }
+    }
+    return { segments: segs, rejectedDegenerateSegments };
+  }
+
+  function dxfNativeConvertLwpolylineEntity(rec) {
+    const declaredRaw = dxfFirst(rec.pairs, 90);
+    if (declaredRaw === undefined) return dxfMalformed('LWPOLYLINE missing group 90 vertex count');
+    const declared = Number(String(declaredRaw).trim());
+    if (!Number.isFinite(declared)) return dxfMalformed('LWPOLYLINE group 90 is not a finite number');
+    const flags = dxfOptNum(rec.pairs, 70, 0);
+    if (!Number.isFinite(flags)) return dxfMalformed('LWPOLYLINE has a non-finite flag value');
+    const vertices = dxfParseLwpolylineVertices(rec.pairs);
+    if (declared !== vertices.length) return dxfMalformed('LWPOLYLINE group-90 count does not match its vertex pairs');
+    if (vertices.length < 2) return dxfMalformed('LWPOLYLINE has fewer than 2 vertices');
+    for (const v of vertices) {
+      if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.bulge)) {
+        return dxfMalformed('LWPOLYLINE has a non-finite vertex or bulge value');
+      }
+    }
+    const elevation = dxfOptNum(rec.pairs, 38, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(elevation) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('LWPOLYLINE has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([elevation], thickness, ext)) return dxfNonPlanar('LWPOLYLINE is not flat');
+    const closed = (Math.trunc(flags) & 1) === 1;
+    const converted = dxfNativeVerticesToSegments(vertices, closed);
+    if (!converted.segments.length) return dxfMalformed('LWPOLYLINE has no non-degenerate segment');
+    return { ok: true, segments: converted.segments, rejectedDegenerateSegments: converted.rejectedDegenerateSegments };
+  }
+
+  function dxfNativeConvertPolylineEntity(rec) {
+    const flagsRaw = dxfOptNum(rec.pairs, 70, 0);
+    if (!Number.isFinite(flagsRaw)) return dxfMalformed('POLYLINE has a non-finite flag value');
+    const flags = Math.trunc(flagsRaw);
+    if ((flags & 2) || (flags & 4)) return dxfUnsupportedFit('POLYLINE has the curve-fit or spline-fit flag set');
+    if ((flags & 8) || (flags & 16) || (flags & 64)) return dxfNonPlanar('POLYLINE is 3D/mesh (flag bit 3, 4, or 6)');
+    const closed = (flags & 1) === 1;
+    const headerZ = dxfOptNum(rec.pairs, 30, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(headerZ) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('POLYLINE has a non-finite planarity field');
+    }
+    const rawVertices = Array.isArray(rec.vertices) ? rec.vertices : [];
+    if (rawVertices.length < 2) return dxfMalformed('POLYLINE has fewer than 2 vertices');
+    const vertices = [];
+    for (const vPairs of rawVertices) {
+      const x = dxfNum(vPairs, 10), y = dxfNum(vPairs, 20);
+      if (x === undefined || y === undefined) return dxfMalformed('POLYLINE VERTEX missing 10/20');
+      const z = dxfOptNum(vPairs, 30, 0);
+      const bulge = dxfOptNum(vPairs, 42, 0);
+      if (![x, y, z, bulge].every(Number.isFinite)) return dxfMalformed('POLYLINE VERTEX has a non-finite value');
+      vertices.push({ x, y, z, bulge });
+    }
+    if (!dxfPlanarOk([headerZ, ...vertices.map(v => v.z)], thickness, ext)) return dxfNonPlanar('POLYLINE is not flat');
+    const converted = dxfNativeVerticesToSegments(vertices, closed);
+    if (!converted.segments.length) return dxfMalformed('POLYLINE has no non-degenerate segment');
+    return { ok: true, segments: converted.segments, rejectedDegenerateSegments: converted.rejectedDegenerateSegments };
+  }
+
+  // Dispatch, then stamp provenance (layer, handle when present, and the
+  // entity's own order in the file) onto every segment the entity produced —
+  // "original entity order and direction" per the checklist, kept on the
+  // segment itself rather than threaded separately through every later
+  // consumer.
+  function dxfNativeConvertEntity(rec, order) {
+    const result = (() => {
+      switch (rec.type) {
+        case 'LINE': return dxfNativeConvertLineEntity(rec);
+        case 'ARC': return dxfNativeConvertArcEntity(rec);
+        case 'CIRCLE': return dxfNativeConvertCircleEntity(rec);
+        case 'LWPOLYLINE': return dxfNativeConvertLwpolylineEntity(rec);
+        case 'POLYLINE': return dxfNativeConvertPolylineEntity(rec);
+        default: return dxfUnsupportedType('entity type "' + rec.type + '" is not supported');
+      }
+    })();
+    if (!result.ok) return result;
+    const layer = dxfFirst(rec.pairs, 8);
+    const handle = dxfFirst(rec.pairs, 5);
+    const segments = result.segments.map((seg, partIndex) => Object.assign({}, seg, {
+      layer: layer == null ? null : String(layer).trim(),
+      handle: handle == null ? null : String(handle).trim(),
+      entityOrder: order,
+      partIndex,
+    }));
+    return { ok: true, segments, rejectedDegenerateSegments: result.rejectedDegenerateSegments || 0 };
+  }
+
+  // ---- Document-level native parse (pure; no state/DOM) ----------------------
+
+  // text -> { ok, pieces: [{segments}], unit, unitSource, insunits, buckets,
+  // skippedOversizedPieces } | { ok:false, reason, message, buckets }. Reuses
+  // parseDxfDocument's own binary/corrupt-file/section-scan gates and its
+  // three output caps verbatim (same constants, same thresholds, same
+  // atomic-vs-partial behavior) so the two parses never disagree about
+  // whether a given file is acceptable — only about what SHAPE the accepted
+  // geometry takes.
+  function parseDxfNativeModel(text) {
+    const normalized = dxfNormalizeText(text);
+    if (normalized.slice(0, DXF_BINARY_SENTINEL.length) === DXF_BINARY_SENTINEL) {
+      return {
+        ok: false, atomic: true, reason: 'binary',
+        message: 'This looks like a binary DXF file. Re-export as ASCII DXF and try again.',
+      };
+    }
+    const pairs = dxfTokenizePairs(normalized);
+    if (!pairs) {
+      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file.' };
+    }
+    const scan = dxfScanSections(pairs);
+    if (scan.error) {
+      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file (' + scan.error + ').' };
+    }
+    const insunits = dxfReadInsunits(pairs);
+    const unitInfo = dxfResolveNativeToInch(insunits);
+    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, rejectedDegenerateSegments: 0 };
+    const acceptedSegments = [];
+    scan.entityRecords.forEach((rec, order) => {
+      const result = dxfNativeConvertEntity(rec, order);
+      if (!result.ok) { buckets[result.bucket] += 1; return; }
+      buckets.rejectedDegenerateSegments += result.rejectedDegenerateSegments || 0;
+      acceptedSegments.push(...result.segments);
+    });
+    if (!acceptedSegments.length) {
+      return { ok: false, atomic: true, reason: 'empty', message: 'No supported entities were found in this DXF file.', buckets };
+    }
+    // Reused verbatim from dxf-import.js: connected-component + containment-
+    // merge piece detection, which already works generically off
+    // dxfSegmentEndpoints/dxfSegmentPoints — both extended for the 'arc' kind
+    // this file emits. No Y-flip here: native space stays exactly as
+    // authored (see this file's header comment).
+    const allPieces = dxfBuildPieces(acceptedSegments);
+    if (allPieces.length > DXF_PIECE_COUNT_CAP) {
+      return {
+        ok: false, atomic: true, reason: 'piece-cap', buckets,
+        message: 'This DXF has ' + allPieces.length + ' pieces, over the ' + DXF_PIECE_COUNT_CAP + '-piece limit. Import rejected.',
+      };
+    }
+    const keptPieces = [];
+    let skippedOversizedPieces = 0;
+    for (const piece of allPieces) {
+      if (piece.length > DXF_PER_PIECE_CAP) { skippedOversizedPieces += 1; continue; }
+      keptPieces.push(piece);
+    }
+    if (!keptPieces.length) {
+      return {
+        ok: false, atomic: true, reason: 'empty-after-piece-cap', buckets,
+        message: 'Every piece in this DXF exceeded the ' + DXF_PER_PIECE_CAP + '-line per-piece limit. Import rejected.',
+      };
+    }
+    const totalOutputCount = keptPieces.reduce((sum, piece) => sum + piece.length, 0);
+    if (totalOutputCount > DXF_TOTAL_OUTPUT_CAP) {
+      return {
+        ok: false, atomic: true, reason: 'total-cap', buckets,
+        message: 'This DXF would place ' + totalOutputCount + ' lines, over the ' + DXF_TOTAL_OUTPUT_CAP + '-line combined limit. Import rejected.',
+      };
+    }
+    return {
+      ok: true,
+      pieces: keptPieces.map(segments => ({ segments })),
+      unit: unitInfo.factor,
+      unitSource: unitInfo.unitSource,
+      unitDiagnostic: unitInfo.diagnostic,
+      insunits,
+      buckets,
+      skippedOversizedPieces,
+    };
+  }

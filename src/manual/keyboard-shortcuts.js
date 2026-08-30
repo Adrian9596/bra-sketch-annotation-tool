@@ -35,18 +35,22 @@
     // Undo / redo work everywhere, INCLUDING while a spec-panel field
     // (Size L / TOL / 中文 / description) is focused. Blur first so any
     // pending edit commits to history, then it is undone as a single step.
+    //
+    // US-105: dxfMeasureOrGlobalUndo/Redo route to Pattern Measure's own
+    // mini undo stack while that tool is active (state.dxfMeasureSession is
+    // never in the global makeSnapshot(), so the global undo() literally
+    // cannot reach it) — same dispatcher the toolbar Undo/Redo buttons and
+    // the Command Palette use, so all three surfaces agree.
     if (isMeta && key === 'z' && !e.shiftKey) {
       e.preventDefault();
       if (inField && typeof target.blur === 'function') target.blur();
-      flushLineNudgeSession();
-      void undo();
+      dxfMeasureOrGlobalUndo();
       return;
     }
     if (isMeta && ((key === 'z' && e.shiftKey) || key === 'y')) {
       e.preventDefault();
       if (inField && typeof target.blur === 'function') target.blur();
-      flushLineNudgeSession();
-      void redo();
+      dxfMeasureOrGlobalRedo();
       return;
     }
 
@@ -298,6 +302,37 @@
       e.preventDefault(); bgEnterEdit(getSelectedBoardGraphic()); return;
     }
 
+    // US-105: while choosing among several Along Path route candidates
+    // ('choosing-route') OR several overlapping/near-duplicate native
+    // entities at an ambiguous click ('choosing-entity', RB-2), Tab/
+    // Shift+Tab cycles which one is highlighted and Enter commits it — see
+    // dxf-measure-interaction.js for why this replaced an earlier digit-key
+    // design (a real conflict with the Rectangle/Hexagon '4'/'6' shortcuts).
+    const dxfMeasureChoosing = dxfMeasureIsActiveTool() && state.dxfMeasureSession.interaction
+      && (state.dxfMeasureSession.interaction.type === 'choosing-route'
+        || state.dxfMeasureSession.interaction.type === 'choosing-entity');
+    if (!isMeta && e.key === 'Tab' && dxfMeasureChoosing) {
+      e.preventDefault();
+      dxfMeasureHandleTabKey(e.shiftKey);
+      return;
+    }
+    if (e.key === 'Enter' && dxfMeasureChoosing) {
+      e.preventDefault();
+      dxfMeasureHandleEnterKey();
+      return;
+    }
+
+    // US-105: Delete/Backspace removes only the selected measurement
+    // overlay, never DXF source geometry — session.selectedMeasurementId is
+    // a completely separate selection from state.selection, so the existing
+    // branch just below (gated on state.selection.kind) never fires for it.
+    if ((e.key === 'Delete' || e.key === 'Backspace') && dxfMeasureIsActiveTool()
+        && state.dxfMeasureSession.selectedMeasurementId != null) {
+      e.preventDefault();
+      dxfMeasureDeleteSelected();
+      return;
+    }
+
     if ((e.key === 'Delete' || e.key === 'Backspace') && state.selection.kind != null) {
       // In Auto Mode, project annotations/drafts are locked from Delete (use
       // Discard Drafts or Mark Review-Only). Deleting an added PHOTO is allowed
@@ -322,9 +357,15 @@
         showToast('Erase canceled.');
         updateUI();
         requestRender();
+      } else if (dxfMeasureIsActiveTool() && state.dxfMeasureSession.interaction) {
+        // US-105: cancels an in-progress placement/route-choice/drag WITHOUT
+        // deleting any already-completed measurement — same priority tier
+        // as drawSession/eraseSession above, since it is the same kind of
+        // "still deciding what to place" session.
+        dxfMeasureCancelInteraction();
       } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'add-point'
                  || state.tool === 'eraser' || state.tool === 'text'
-                 || state.tool === 'stamp'
+                 || state.tool === 'stamp' || state.tool === 'pattern-measure'
                  || ['rectangle','circle','hexagon'].includes(state.tool)) {
         // US-097: setTool('select') also disarms the chosen shape.
         setTool('select');

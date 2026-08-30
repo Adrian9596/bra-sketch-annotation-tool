@@ -262,6 +262,21 @@
     // reset working board (see project-io + mode.js + draft-actions).
     hiddenAnnIds: [],
     hiddenDraftIds: [],
+
+    // US-105 / ADR 0062: DXF Pattern Measure — native-coordinate source
+    // model (pieces of native line/arc segments, unit/unitSource), the
+    // board<->native placement mapping, and the TD's temporary A/B
+    // measurements for the currently-imported DXF. Session-only by design:
+    // absent from makeSnapshot/restoreSnapshot (src/project/history.js),
+    // buildProjectSnapshot/loadProject, and writeAutosave — never add a line
+    // for it in any of those four functions. Because the GLOBAL undo stack
+    // restores a snapshot that never contains this field, it structurally
+    // cannot undo a measurement edit; measurements use their OWN small
+    // fingerprint-diff undo stack instead (see
+    // src/manual/dxf-measure-session.js). null until a DXF import creates
+    // one; cleared to null on another DXF import, a fresh project load, or
+    // a mode/board reset (see the call sites listed in that file).
+    dxfMeasureSession: null,
   };
 
   // Auto Mode allowed statuses:

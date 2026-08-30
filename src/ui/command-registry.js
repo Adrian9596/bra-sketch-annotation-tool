@@ -87,12 +87,13 @@
       action: e => { appCommandBlurField(e); setActivePage('preview'); } }),
     appCommand({ id: 'project.undo', label: 'Undo', category: 'Project',
       shortcut: { key: 'z', meta: true }, allowInField: true, target: '#undoBtn',
-      action: e => { appCommandBlurField(e); flushLineNudgeSession(); void undo(); } }),
+      // US-105: routes to Pattern Measure's own mini undo stack while active.
+      action: e => { appCommandBlurField(e); dxfMeasureOrGlobalUndo(); } }),
     appCommand({ id: 'project.redo', label: 'Redo', category: 'Project',
       shortcut: { key: 'z', meta: true, shift: true },
       shortcuts: [{ key: 'z', meta: true, shift: true }, { key: 'y', meta: true }],
       allowInField: true, target: '#redoBtn',
-      action: e => { appCommandBlurField(e); flushLineNudgeSession(); void redo(); } }),
+      action: e => { appCommandBlurField(e); dxfMeasureOrGlobalRedo(); } }),
     appCommand({ id: 'project.save', label: 'Save Project', category: 'Project',
       keywords: 'download json', shortcut: { key: 's', meta: true }, allowInField: true,
       target: '#saveProjectBtn', action: e => { appCommandBlurField(e); appCommandClick('#saveProjectBtn'); } }),
@@ -260,6 +261,17 @@
     appCommand({ id: 'board.library.open', label: 'Library: Open…', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#libraryBtn',
       action: () => appCommandClick('#libraryBtn') }),
+    // US-105: Pattern Measure. Same when() shape as board.template.import-dxf
+    // above, plus a second check for an active measure session — importing a
+    // DXF is what creates one.
+    appCommand({ id: 'board.pattern-measure.along-path', label: 'Pattern Measure: Along Path', category: 'Board · Measurements',
+      page: 'board', mode: 'manual', target: '#dxfMeasureAlongBtn',
+      when: () => !state.sketchMode ? 'Available in Sketch Focus' : (state.dxfMeasureSession ? true : 'Import a DXF file first'),
+      action: () => appCommandClick('#dxfMeasureAlongBtn') }),
+    appCommand({ id: 'board.pattern-measure.out-of-path', label: 'Pattern Measure: Out of Path', category: 'Board · Measurements',
+      page: 'board', mode: 'manual', target: '#dxfMeasureOutBtn',
+      when: () => !state.sketchMode ? 'Available in Sketch Focus' : (state.dxfMeasureSession ? true : 'Import a DXF file first'),
+      action: () => appCommandClick('#dxfMeasureOutBtn') }),
     appCommand({ id: 'board.smart-align.toggle', label: 'Toggle Smart Align', category: 'Board · Edit',
       page: 'board', mode: 'manual', target: '#smartAlignToggleBtn',
       action: () => toggleSmartAlign() }),

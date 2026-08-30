@@ -246,11 +246,41 @@
       el.lockImageLabel.textContent = 'Lock';
       el.lockImageBtn.classList.remove('active');
     }
-    el.undoBtn.disabled = state.history.past.length <= 1;
-    el.redoBtn.disabled = state.history.future.length === 0;
+    // US-105: while Pattern Measure is active, Undo/Redo act on its own mini
+    // stack (dxfMeasureOrGlobalUndo/Redo) — the button's enabled state must
+    // agree, or a TD could see "Undo" greyed out while a measurement edit is
+    // genuinely undoable (or vice versa).
+    if (dxfMeasureIsActiveTool()) {
+      const measureHistory = state.dxfMeasureSession.history;
+      el.undoBtn.disabled = measureHistory.past.length <= 1;
+      el.redoBtn.disabled = measureHistory.future.length === 0;
+    } else {
+      el.undoBtn.disabled = state.history.past.length <= 1;
+      el.redoBtn.disabled = state.history.future.length === 0;
+    }
     el.setScaleBtn.disabled = !selectedAnnotation;
     el.setScaleBtn.classList.toggle('active', state.calibration.unitsPerPx != null);
     el.clearScaleBtn.disabled = state.calibration.unitsPerPx == null;
+    // US-105: both entries need an active measure session; the title
+    // explains why when there isn't one (matching the disabled-reason
+    // convention every other conditionally-available control here uses).
+    // .active reflects the CURRENTLY ARMED mode, not merely that the tool
+    // is selected — so the two buttons behave like a two-way toggle, not two
+    // independent switches.
+    if (el.dxfMeasureAlongBtn) {
+      const hasSession = !!state.dxfMeasureSession;
+      el.dxfMeasureAlongBtn.disabled = !hasSession;
+      el.dxfMeasureAlongBtn.title = hasSession ? 'Measure length along the imported pattern’s own path' : 'Import a DXF file first';
+      el.dxfMeasureAlongBtn.classList.toggle('active', state.tool === 'pattern-measure'
+        && hasSession && state.dxfMeasureSession.pendingMode === 'along-path');
+    }
+    if (el.dxfMeasureOutBtn) {
+      const hasSession = !!state.dxfMeasureSession;
+      el.dxfMeasureOutBtn.disabled = !hasSession;
+      el.dxfMeasureOutBtn.title = hasSession ? 'Measure the direct straight-line distance between two points' : 'Import a DXF file first';
+      el.dxfMeasureOutBtn.classList.toggle('active', state.tool === 'pattern-measure'
+        && hasSession && state.dxfMeasureSession.pendingMode === 'out-of-path');
+    }
     el.toggleLabelsBtn.textContent = state.showLabels ? 'Hide Numbers' : 'Show Numbers';
     el.toggleLabelsBtn.classList.toggle('active', !state.showLabels);
     // In Stitch mode numbers are hidden by the mode itself, so the manual

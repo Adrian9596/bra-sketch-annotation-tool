@@ -62,7 +62,9 @@
     "personal-library-check": "node scripts/personal-library-check.mjs",
     "library-manager-check": "node scripts/library-manager-check.mjs",
     "sketch-smart-hit-check": "node scripts/sketch-smart-hit-check.mjs",
-    "dxf-import-check": "node scripts/dxf-import-check.mjs"
+    "dxf-import-check": "node scripts/dxf-import-check.mjs",
+    "dxf-measurement-check": "node scripts/dxf-measurement-check.mjs --allow-blocked",
+    "dxf-measurement-release-check": "node scripts/dxf-measurement-check.mjs"
   },
   "devDependencies": {
     "@slidev/cli": "^52.16.0",

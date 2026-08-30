@@ -234,6 +234,10 @@ function requestRender() {
     }
     drawSmartAlignGuides();
 
+    // US-105: Pattern Measure overlays — drawn absolute-last (topmost) so a
+    // measurement is never obscured by anything else on the board.
+    if (state.appMode !== 'auto') drawDxfMeasurements();
+
     ctx.restore();
     positionLabelEditor();
     positionNoteEditor();

@@ -39,6 +39,15 @@
     const screen = getMousePos(e);
     const world = screenToWorld(screen.x, screen.y);
 
+    // US-105: Pattern Measure owns the whole gesture while active — it works
+    // against native (piece, segment, t) references, never against
+    // state.annotations, and "Source Geometry Immutability" requires that
+    // the normal endpoint/body hit-test chain below never run while it is.
+    if (dxfMeasureIsActiveTool()) {
+      dxfMeasureOnMouseDown(world);
+      return;
+    }
+
     // Auto Mode: only drafts + anchors are interactive. Project annotations
     // are locked, and tool creation / erasing is disabled (see updateUI).
     if (state.appMode === 'auto') {
@@ -367,6 +376,11 @@
     const screen = getMousePos(e);
     const world = screenToWorld(screen.x, screen.y);
 
+    if (dxfMeasureIsActiveTool()) {
+      dxfMeasureOnMouseMove(world);
+      return;
+    }
+
     if (state.drawSession) {
       state.drawSession.current = world;
       requestRender();
@@ -637,6 +651,11 @@
     state.smartAlignGuides = [];
     if (state.eraseSession) {
       commitEraseStroke();
+    }
+
+    if (dxfMeasureIsActiveTool()) {
+      dxfMeasureOnMouseUp();
+      return;
     }
 
     const interaction = state.interaction;

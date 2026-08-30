@@ -123,6 +123,10 @@
       state.autoMode = makeInitialAutoModeState();
       state.hiddenAnnIds = [];
       state.hiddenDraftIds = [];
+      // US-105: a reopened project never carries a measure session — it is
+      // session-only geometry describing whatever DXF was last imported into
+      // the PREVIOUS board.
+      resetDxfMeasureSession();
       // US-102: every reopened project starts in POM Focus, regardless of
       // which focus was active before Open/Restore — Sketch Focus is a
       // live-authoring aid, never project data (autosave Restore goes

@@ -3213,6 +3213,17 @@
               <button id="dxfImportBtn" type="button" role="menuitem" title="Import LINE/ARC/CIRCLE/LWPOLYLINE/POLYLINE geometry from an ASCII DXF file — each piece places as its own movable Sketch Element group, never a POM">Open DXF file…</button>
             </div>
             <input id="dxfImportFileInput" type="file" accept=".dxf" hidden />
+            <!-- US-105 / ADR 0062: Pattern Measure — temporary, session-only
+                 A/B length overlays read straight from the imported DXF's
+                 own native coordinates. Disabled (not hidden) with no
+                 measure session yet, so a TD who opens this menu before
+                 importing sees the entry and why it can't be used yet,
+                 matching this menu's Set Scale precedent above. -->
+            <div class="preset-divider sketch-mode-only" role="separator">Pattern Measure</div>
+            <div class="preset-menu-actions sketch-mode-only">
+              <button id="dxfMeasureAlongBtn" type="button" role="menuitem" title="Import a DXF file first">Along Path</button>
+              <button id="dxfMeasureOutBtn" type="button" role="menuitem" title="Import a DXF file first">Out of Path</button>
+            </div>
           </div>
         </div>
         <!-- US-093 / ADR 0053: only reachable while a curved annotation is
@@ -3671,6 +3682,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=eeb880873989"></script>
+<script src="app.js?v=2713c796e5bb"></script>
 </body>
 </html>

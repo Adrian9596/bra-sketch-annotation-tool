@@ -469,6 +469,21 @@
     // reset working board (see project-io + mode.js + draft-actions).
     hiddenAnnIds: [],
     hiddenDraftIds: [],
+
+    // US-105 / ADR 0062: DXF Pattern Measure — native-coordinate source
+    // model (pieces of native line/arc segments, unit/unitSource), the
+    // board<->native placement mapping, and the TD's temporary A/B
+    // measurements for the currently-imported DXF. Session-only by design:
+    // absent from makeSnapshot/restoreSnapshot (src/project/history.js),
+    // buildProjectSnapshot/loadProject, and writeAutosave — never add a line
+    // for it in any of those four functions. Because the GLOBAL undo stack
+    // restores a snapshot that never contains this field, it structurally
+    // cannot undo a measurement edit; measurements use their OWN small
+    // fingerprint-diff undo stack instead (see
+    // src/manual/dxf-measure-session.js). null until a DXF import creates
+    // one; cleared to null on another DXF import, a fresh project load, or
+    // a mode/board reset (see the call sites listed in that file).
+    dxfMeasureSession: null,
   };
 
   // Auto Mode allowed statuses:
@@ -564,6 +579,9 @@
     // US-104: the "Open DXF file" action, inside the Tools menu.
     dxfImportBtn: document.getElementById('dxfImportBtn'),
     dxfImportFileInput: document.getElementById('dxfImportFileInput'),
+    // US-105: the Pattern Measure tool entries, inside the Tools menu.
+    dxfMeasureAlongBtn: document.getElementById('dxfMeasureAlongBtn'),
+    dxfMeasureOutBtn: document.getElementById('dxfMeasureOutBtn'),
     lineWidthChip: document.getElementById('lineWidthChip'),
     lineWidthInput: document.getElementById('lineWidthInput'),
     fontSizeChip: document.getElementById('fontSizeChip'),
@@ -1467,6 +1485,588 @@
     t = clamp(t, 0, 1);
     const proj = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
     return distance(p, proj);
+  }
+
+  // ---- src/geometry/dxf-path-kernel.js ----
+// US-105: DXF Pattern Measurement — the deterministic, DOM-independent
+// measurement kernel. Pure functions only: no state, no DOM, no canvas. Every
+// function here operates on the NATIVE (as-authored, pre-Y-flip, unscaled)
+// DXF coordinate space produced by src/manual/dxf-native-parser.js — never on
+// board/world/screen coordinates. Board placement, zoom and pan are display
+// transforms applied only when rendering a result; they must never change a
+// value this file computes.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Segment shapes this kernel understands (the same 'straight'/'arc' shapes
+// src/manual/dxf-import.js's dxfSegmentEndpoints/dxfSegmentPoints were
+// extended to read for US-105 — see that file for dxfPointOnArcSegment,
+// which this file calls by name; function declarations hoist across the
+// whole bundle, so the load order between the two files does not matter):
+//   { kind: 'straight', a: {x,y}, b: {x,y} }
+//   { kind: 'arc', center: {x,y}, radius, startAngle, sweep }  (radians;
+//     sweep signed, CCW positive, |sweep| < 2*PI)
+//   { kind: 'curve', p0, p1, p2, p3 }  (cubic Bezier — not produced by any
+//     in-scope DXF entity today; supported here only because the checklist
+//     names adaptive Bezier length/projection as required kernel functions.)
+
+  // ---- Stable reason codes (checklist P2) ------------------------------------
+
+  const DXF_MEASURE_REASON = {
+    NO_DXF_SESSION: 'NO_DXF_SESSION',
+    NO_HIT: 'NO_HIT',
+    NO_CONNECTED_PATH: 'NO_CONNECTED_PATH',
+    AMBIGUOUS_ROUTE: 'AMBIGUOUS_ROUTE',
+    ROUTE_SEARCH_TRUNCATED: 'ROUTE_SEARCH_TRUNCATED',
+    UNSUPPORTED_GEOMETRY: 'UNSUPPORTED_GEOMETRY',
+    NON_FINITE_GEOMETRY: 'NON_FINITE_GEOMETRY',
+  };
+
+  // ---- Unit conversion --------------------------------------------------------
+
+  // Autodesk $INSUNITS codes -> multiplier to convert ONE native unit into ONE
+  // inch. Only the units a real factory DXF plausibly declares are mapped;
+  // every other code (including 0, "Unitless") returns null so the caller
+  // falls back to the locked default-inch convention with unitSource
+  // 'default-inch' rather than guessing a scale factor.
+  // RB-4: code 21 (US Survey Foot) is NOT one inch — the old table mapped it
+  // to a bare 1, i.e. silently treated a US Survey Foot as though it were an
+  // inch (a 12x error). A US Survey Foot is legally defined as exactly
+  // 1200/3937 metre (the pre-2023 US definition DXF's $INSUNITS convention
+  // still assumes); dividing by the international inch (0.0254m exactly)
+  // gives its correct inch-equivalent, computed here as an exact fraction
+  // (~= 12.0000240000048) rather than a rounded literal, so "every accepted
+  // $INSUNITS conversion is correct" holds to full float precision instead of
+  // accepting a 0.002%-off approximation.
+  const DXF_US_SURVEY_FOOT_IN_INCHES = (1200 / 3937) / 0.0254;
+
+  const DXF_INSUNITS_TO_INCH = {
+    1: 1,                              // Inches
+    2: 12,                             // Feet
+    4: 1 / 25.4,                       // Millimeters
+    5: 1 / 2.54,                       // Centimeters
+    6: 39.3700787402,                  // Meters
+    21: DXF_US_SURVEY_FOOT_IN_INCHES,  // US Survey Feet
+  };
+
+  function dxfUnitCodeToInchFactor(code) {
+    const n = Number(code);
+    return Object.prototype.hasOwnProperty.call(DXF_INSUNITS_TO_INCH, n) ? DXF_INSUNITS_TO_INCH[n] : null;
+  }
+
+  // Resolves the {factor, unitSource, diagnostic} triple the session model
+  // stamps onto every length it reports. `insunits` is whatever
+  // dxf-native-parser.js's header read returned (a numeric code, or
+  // null/undefined when no usable declaration exists).
+  //
+  // RB-4: "missing" (no $INSUNITS at all) and "present but not one of the
+  // codes this tool supports" are DIFFERENT situations and must not share a
+  // provenance label — the old code silently folded both into
+  // 'default-inch', which reads as "this file simply had no units," even for
+  // a file that explicitly declared, say, miles or kilometres. Both still
+  // fall back to the same locked default-inch factor (an unconfirmed guess is
+  // still the least-wrong default for this factory workflow), but an explicit
+  // unsupported code gets its own unitSource plus a diagnostic naming the
+  // code, so nothing downstream can mistake "we don't support this" for "the
+  // header conversion was applied correctly."
+  function dxfResolveNativeToInch(insunits) {
+    if (insunits == null) return { factor: 1, unitSource: 'default-inch', diagnostic: null };
+    const factor = dxfUnitCodeToInchFactor(insunits);
+    if (factor != null) return { factor, unitSource: 'dxf-header', diagnostic: null };
+    return {
+      factor: 1,
+      unitSource: 'unsupported-explicit-unit',
+      diagnostic: {
+        code: insunits,
+        message: 'DXF declares $INSUNITS=' + insunits + ', which this tool does not recognize. '
+          + 'Falling back to inches (unconfirmed) rather than guessing a conversion factor.',
+      },
+    };
+  }
+
+  // ---- Point-at-parameter / length, per segment kind -------------------------
+
+  function dxfPointOnSegment(seg, t) {
+    if (!seg) return null;
+    if (seg.kind === 'straight') {
+      return { x: seg.a.x + (seg.b.x - seg.a.x) * t, y: seg.a.y + (seg.b.y - seg.a.y) * t };
+    }
+    if (seg.kind === 'arc') return dxfPointOnArcSegment(seg, t);
+    if (seg.kind === 'curve') return bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t);
+    return null;
+  }
+
+  // Adaptive cubic Bézier length (Gravesen's method): a segment whose chord
+  // and control-polygon lengths already agree within `tolerance` is flat
+  // enough to report their average; otherwise split at t=0.5 (exact, via
+  // curves.js's subdivideCubicBezier) and recurse on each half. Depth-capped
+  // defensively — 24 halvings is already far past any tolerance this kernel's
+  // 0.01mm-equivalent native budget would ever demand — so a degenerate
+  // (self-intersecting or absurdly long) curve cannot spin forever.
+  function dxfBezierSegmentLength(p0, p1, p2, p3, tolerance, depth) {
+    const chord = distance(p0, p3);
+    const poly = distance(p0, p1) + distance(p1, p2) + distance(p2, p3);
+    if (poly - chord <= tolerance || (depth || 0) >= 24) return (chord + poly) / 2;
+    const split = subdivideCubicBezier(p0, p1, p2, p3, 0.5);
+    return dxfBezierSegmentLength(split.left[0], split.left[1], split.left[2], split.left[3], tolerance, (depth || 0) + 1)
+      + dxfBezierSegmentLength(split.right[0], split.right[1], split.right[2], split.right[3], tolerance, (depth || 0) + 1);
+  }
+
+  // Exact De Casteljau extraction of the [t0,t1] portion of one cubic —
+  // split at t1 first (keep the [0,t1] side), then re-split that side at the
+  // LOCAL parameter t0/t1 (keep the far side), which is exactly [t0,t1] in
+  // the curve's original parametrization.
+  function dxfBezierSubcurve(p0, p1, p2, p3, t0, t1) {
+    if (!(t1 > 1e-12)) return [p0, p0, p0, p0];
+    const outer = subdivideCubicBezier(p0, p1, p2, p3, clamp(t1, 0, 1));
+    const localT0 = clamp(t0 / t1, 0, 1);
+    const inner = subdivideCubicBezier(outer.left[0], outer.left[1], outer.left[2], outer.left[3], localT0);
+    return inner.right;
+  }
+
+  const DXF_BEZIER_DEFAULT_TOLERANCE = 1e-6;
+
+  function dxfSegmentFailureReason(seg) {
+    if (!seg || typeof seg !== 'object') return DXF_MEASURE_REASON.UNSUPPORTED_GEOMETRY;
+    const finitePoint = p => p && Number.isFinite(p.x) && Number.isFinite(p.y);
+    if (seg.kind === 'straight') {
+      if (!finitePoint(seg.a) || !finitePoint(seg.b)) return DXF_MEASURE_REASON.NON_FINITE_GEOMETRY;
+      if (!(distance(seg.a, seg.b) > 0)) return DXF_MEASURE_REASON.UNSUPPORTED_GEOMETRY;
+      return null;
+    }
+    if (seg.kind === 'arc') {
+      if (!finitePoint(seg.center) || !Number.isFinite(seg.radius)
+        || !Number.isFinite(seg.startAngle) || !Number.isFinite(seg.sweep)) {
+        return DXF_MEASURE_REASON.NON_FINITE_GEOMETRY;
+      }
+      if (!(seg.radius > 0) || !(Math.abs(seg.sweep) > 1e-12)
+        || Math.abs(seg.sweep) > Math.PI * 2 + 1e-9) {
+        return DXF_MEASURE_REASON.UNSUPPORTED_GEOMETRY;
+      }
+      return null;
+    }
+    if (seg.kind === 'curve') {
+      if (![seg.p0, seg.p1, seg.p2, seg.p3].every(finitePoint)) return DXF_MEASURE_REASON.NON_FINITE_GEOMETRY;
+      const controlLength = distance(seg.p0, seg.p1) + distance(seg.p1, seg.p2) + distance(seg.p2, seg.p3);
+      if (!(controlLength > 0)) return DXF_MEASURE_REASON.UNSUPPORTED_GEOMETRY;
+      return null;
+    }
+    return DXF_MEASURE_REASON.UNSUPPORTED_GEOMETRY;
+  }
+
+  // RB-4: an invalid/unrecognized segment reports NaN, never a plausible 0 —
+  // 0 is a legitimate-looking length that would silently under-count a route
+  // sum (dxfRouteLength's reduce below); NaN poisons that same sum instead
+  // (NaN + anything === NaN) and dxfMeasureValueInches's existing
+  // Number.isFinite guard already turns that into "no value" (rendered "—"),
+  // so the caller sees an honest failure, not a wrong number.
+  function dxfSegmentLength(seg, tolerance) {
+    if (dxfSegmentFailureReason(seg)) return NaN;
+    if (seg.kind === 'straight') return distance(seg.a, seg.b);
+    if (seg.kind === 'arc') return Math.abs(seg.sweep) * seg.radius;
+    if (seg.kind === 'curve') {
+      return dxfBezierSegmentLength(seg.p0, seg.p1, seg.p2, seg.p3, tolerance || DXF_BEZIER_DEFAULT_TOLERANCE, 0);
+    }
+    return NaN;
+  }
+
+  // Length of the portion of `seg` between parameters t0 and t1 (t0 may be
+  // greater than t1 — the caller decides direction; the returned length is
+  // always the unsigned length of that portion). Straight/arc are affinely
+  // parametrized (length is linear in t), so the partial length is exact and
+  // analytic; a curve is subdivided first via dxfBezierSubcurve, then
+  // measured with the same adaptive integrator as the full-curve case.
+  // RB-4: same NaN-not-0 contract as dxfSegmentLength, for the same reason.
+  function dxfPartialLength(seg, t0, t1, tolerance) {
+    if (dxfSegmentFailureReason(seg) || !Number.isFinite(t0) || !Number.isFinite(t1)
+      || t0 < -1e-9 || t0 > 1 + 1e-9 || t1 < -1e-9 || t1 > 1 + 1e-9) return NaN;
+    const lo = Math.min(t0, t1), hi = Math.max(t0, t1);
+    if (seg.kind === 'straight' || seg.kind === 'arc') {
+      return dxfSegmentLength(seg, tolerance) * (hi - lo);
+    }
+    if (seg.kind === 'curve') {
+      const sub = dxfBezierSubcurve(seg.p0, seg.p1, seg.p2, seg.p3, lo, hi);
+      return dxfBezierSegmentLength(sub[0], sub[1], sub[2], sub[3], tolerance || DXF_BEZIER_DEFAULT_TOLERANCE, 0);
+    }
+    return NaN;
+  }
+
+  // ---- Point projection (nearest parameter on one segment) -------------------
+
+  function dxfProjectPointOnStraight(point, seg) {
+    const dx = seg.b.x - seg.a.x, dy = seg.b.y - seg.a.y;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 === 0 ? 0 : clamp(((point.x - seg.a.x) * dx + (point.y - seg.a.y) * dy) / l2, 0, 1);
+    const p = { x: seg.a.x + t * dx, y: seg.a.y + t * dy };
+    return { t, point: p, distance: distance(point, p) };
+  }
+
+  // Signed parameter of `angle` along an arc's own sweep direction, BEFORE
+  // clamping to [0,1] — used to find where a point's angle (as seen from the
+  // arc's center) falls relative to the swept range, in whichever rotational
+  // sense (CW/CCW) the arc's own signed `sweep` runs.
+  //
+  // RB-4 fix: the mod-2*PI normalization first brings `delta` into [0, 2*PI),
+  // then (for a clockwise, sweep<0, arc) shifts the WHOLE range down by
+  // 2*PI to land in (-2*PI, 0]. That shift is correct for every angle
+  // strictly inside the swept range, but it is WRONG at the exact arc start
+  // (angle === startAngle, so raw delta === 0): normalizing 0 into [0,2*PI)
+  // leaves it at 0 (already the correct, in-range value — the arc's own
+  // valid delta range for sweep<0 is [sweep, 0], and 0 is its own upper
+  // bound), but the unconditional "-= twoPi" then drags it all the way to
+  // -2*PI, i.e. a param far outside [sweep,0] that dxfProjectPointOnArc's
+  // clamp(...,0,1) rounds up to t=1 — the OPPOSITE endpoint. A real DXF arc's
+  // sweep is always |sweep| < 2*PI (never a full loop back to its own
+  // start), so delta===0 after the mod-normalize can only mean "exactly at
+  // the start," never "one full lap later" — safe to special-case rather
+  // than shift it.
+  function dxfAngleParamOnSweep(angle, startAngle, sweep) {
+    if (!sweep) return 0;
+    const twoPi = Math.PI * 2;
+    let delta = angle - startAngle;
+    delta -= twoPi * Math.floor(delta / twoPi); // now in [0, 2*PI)
+    if (sweep < 0 && delta > 0) delta -= twoPi; // now in (-2*PI, 0]; delta===0 stays 0 (the arc's own start)
+    return delta / sweep;
+  }
+
+  function dxfProjectPointOnArc(point, seg) {
+    const rawAngle = Math.atan2(point.y - seg.center.y, point.x - seg.center.x);
+    const t = clamp(dxfAngleParamOnSweep(rawAngle, seg.startAngle, seg.sweep), 0, 1);
+    const p = dxfPointOnArcSegment(seg, t);
+    return { t, point: p, distance: distance(point, p) };
+  }
+
+  // First derivative of a cubic Bézier at t (a 2D vector, not a point).
+  function dxfBezierDerivative(p0, p1, p2, p3, t) {
+    const mt = 1 - t;
+    return {
+      x: 3 * mt * mt * (p1.x - p0.x) + 6 * mt * t * (p2.x - p1.x) + 3 * t * t * (p3.x - p2.x),
+      y: 3 * mt * mt * (p1.y - p0.y) + 6 * mt * t * (p2.y - p1.y) + 3 * t * t * (p3.y - p2.y),
+    };
+  }
+
+  // Second derivative of a cubic Bézier at t.
+  function dxfBezierSecondDerivative(p0, p1, p2, p3, t) {
+    const mt = 1 - t;
+    return {
+      x: 6 * mt * (p2.x - 2 * p1.x + p0.x) + 6 * t * (p3.x - 2 * p2.x + p1.x),
+      y: 6 * mt * (p2.y - 2 * p1.y + p0.y) + 6 * t * (p3.y - 2 * p2.y + p1.y),
+    };
+  }
+
+  // RB-4: chord sampling (below) only LOCALIZES a starting `t` — its sample
+  // count (curveChordSampleCount) is calibrated for on-screen WORLD-px hit
+  // testing (CURVE_CHORD_TOLERANCE, curves.js), which is nowhere near this
+  // kernel's own 0.01mm-equivalent native budget once native units are
+  // anything coarser than a small fraction of a px-in-world-units (e.g. one
+  // native unit = one inch or one metre). Refines the chord estimate with
+  // Newton's method on f(t) = |B(t) - point|^2 (root of f'(t) = 2(B(t)-point)
+  // . B'(t)), which for a smooth cubic converges to native machine precision
+  // in a handful of steps regardless of native unit scale — no in-scope DXF
+  // entity produces a 'curve' segment today (see file header), but the
+  // checklist names adaptive Bézier projection as a required kernel
+  // primitive, so this stays unit-agnostic rather than reusing a world-px
+  // tolerance as measurement authority (the same mistake RB-4 flags for the
+  // topology merge tolerance).
+  function dxfRefineBezierProjectionT(point, p0, p1, p2, p3, t0) {
+    let t = clamp(t0, 0, 1);
+    for (let i = 0; i < 8; i += 1) {
+      const b = bezierPoint(p0, p1, p2, p3, t);
+      const d1 = dxfBezierDerivative(p0, p1, p2, p3, t);
+      const d2 = dxfBezierSecondDerivative(p0, p1, p2, p3, t);
+      const ex = b.x - point.x, ey = b.y - point.y;
+      const fPrime = 2 * (ex * d1.x + ey * d1.y);
+      const fDoublePrime = 2 * (d1.x * d1.x + d1.y * d1.y + ex * d2.x + ey * d2.y);
+      if (!Number.isFinite(fPrime) || !Number.isFinite(fDoublePrime) || Math.abs(fDoublePrime) < 1e-12) break;
+      const next = clamp(t - fPrime / fDoublePrime, 0, 1);
+      if (Math.abs(next - t) < 1e-13) { t = next; break; }
+      t = next;
+    }
+    return t;
+  }
+
+  // Same sampled-chord technique as curves.js's nearestPointOnCurve for a
+  // starting estimate, but against a bare {p0,p1,p2,p3} tuple rather than a
+  // live board annotation, then refined by Newton's method
+  // (dxfRefineBezierProjectionT) so the reported distance is measured
+  // against the EXACT returned curve point, not the coarser sampled chord —
+  // a sampled chord distance is not sufficient CAD evidence (checklist RB-4).
+  function dxfProjectPointOnBezier(point, seg) {
+    const samples = curveChordSampleCount(seg);
+    let best = null;
+    let prev = seg.p0;
+    for (let i = 1; i <= samples; i += 1) {
+      const next = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, i / samples);
+      const d = pointToSegmentDistance(point, prev, next);
+      if (!best || d < best.distance) best = { a: prev, b: next, index: i, distance: d };
+      prev = next;
+    }
+    if (!best) return { t: 0, point: clonePoint(seg.p0), distance: distance(point, seg.p0) };
+    const dx = best.b.x - best.a.x, dy = best.b.y - best.a.y;
+    const l2 = dx * dx + dy * dy;
+    const u = l2 === 0 ? 0 : clamp(((point.x - best.a.x) * dx + (point.y - best.a.y) * dy) / l2, 0, 1);
+    const t0 = (best.index - 1 + u) / samples;
+    const t = dxfRefineBezierProjectionT(point, seg.p0, seg.p1, seg.p2, seg.p3, t0);
+    const exact = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t);
+    return { t, point: exact, distance: distance(point, exact) };
+  }
+
+  function dxfProjectPointOnSegment(point, seg) {
+    if (!point || dxfSegmentFailureReason(seg) || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+    if (seg.kind === 'straight') return dxfProjectPointOnStraight(point, seg);
+    if (seg.kind === 'arc') return dxfProjectPointOnArc(point, seg);
+    if (seg.kind === 'curve') return dxfProjectPointOnBezier(point, seg);
+    return null;
+  }
+
+  // ---- Direct (Out of Path) distance -----------------------------------------
+
+  // Deliberately symmetric and deliberately not "smart" — a straight ruler
+  // distance between two native points, independent of any path.
+  function dxfDirectDistance(a, b) {
+    if (!a || !b || !Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(b.x) || !Number.isFinite(b.y)) {
+      return null;
+    }
+    return distance(a, b);
+  }
+
+  // ---- Connected path graph + route enumeration (Along Path) ----------------
+
+  // Endpoints of a native segment, in AUTHORED (t=0 -> t=1) order. Reuses
+  // dxf-import.js's dxfSegmentEndpoints for 'straight'/'arc' (both already
+  // extended for US-105); handled directly here for 'curve' since dxf-import
+  // never produces that kind and has no case for it.
+  function dxfSegmentGraphEndpoints(seg) {
+    if (seg.kind === 'curve') return [seg.p0, seg.p3];
+    return dxfSegmentEndpoints(seg);
+  }
+
+  // RB-4: dxf-import.js's dxfConnectedComponents tolerance (0.0001 * the
+  // drawing's own bounding-box diagonal) is a VISUAL/piece-grouping
+  // tolerance — right for deciding "does this mark belong to that panel," but
+  // wrong as measurement-topology authority: for a large native drawing (say
+  // a 40-inch-diagonal pattern) it is nearly 0.004in wide, an order of
+  // magnitude looser than this kernel's own 0.01mm internal budget, so it
+  // could connect two endpoints a real factory pattern intends to keep
+  // separate. dxfEnumerateRoutes always passes an explicit, unit-aware
+  // `nodeTolerance` (derived from the session's own native-to-inch factor —
+  // see dxf-measure-session.js's dxfMeasureTopologyToleranceNative) computed
+  // so its worst-case conversion to mm stays inside that budget; the
+  // relative-diagonal fallback below only serves the standalone kernel
+  // self-test entry point and any caller that has no unit context at all.
+  function dxfDefaultTopologyTolerance(segments) {
+    const allPoints = segments.flatMap(dxfSegmentGraphEndpoints);
+    const bbox = dxfBoundsOfPoints(allPoints);
+    const diag = Math.hypot(bbox.width, bbox.height) || 1;
+    return 0.0001 * diag;
+  }
+
+  // Builds the node/edge graph for one set of native segments (typically one
+  // piece, or one connected component within a piece — the caller decides;
+  // this function does not assume or require connectivity, and a request
+  // that ultimately cannot connect A to B simply finds no route). `tolerance`
+  // is an ABSOLUTE native-unit distance (see dxfDefaultTopologyTolerance's
+  // comment for why this must not default to a visual/grouping tolerance).
+  function dxfBuildPathGraph(segments, tolerance) {
+    if (!Array.isArray(segments) || !segments.length) return null;
+    if (segments.some(dxfSegmentFailureReason)) return null;
+    const allPoints = segments.flatMap(dxfSegmentGraphEndpoints);
+    for (const p of allPoints) if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+    const tol = Number.isFinite(tolerance) && tolerance > 0 ? tolerance : dxfDefaultTopologyTolerance(segments);
+    const nodePoints = [];
+    function findOrCreateNode(pt) {
+      for (let i = 0; i < nodePoints.length; i += 1) {
+        if (distance(nodePoints[i], pt) <= tol) return i;
+      }
+      nodePoints.push(pt);
+      return nodePoints.length - 1;
+    }
+    const edges = segments.map((seg, segIndex) => {
+      const [p0, p1] = dxfSegmentGraphEndpoints(seg);
+      const nodeA = findOrCreateNode(p0);
+      const nodeB = findOrCreateNode(p1);
+      return { id: segIndex, segIndex, seg, t0: 0, t1: 1, nodeA, nodeB, length: dxfSegmentLength(seg) };
+    });
+    return {
+      nodes: nodePoints.map((point, id) => ({ id, point })),
+      edges,
+    };
+  }
+
+  // Splits whichever CURRENT work-edge covers native segment `segIndex` at
+  // parameter `t` into two, inserting a new node at that point — or, if `t`
+  // already sits at that edge's own t0/t1 (within epsilon), simply returns
+  // the existing node there rather than creating a zero-length edge. Mutates
+  // `work` in place. Returns the node id at that point, or null if `segIndex`
+  // is not covered by any current edge (should not happen for a validated
+  // in-range ref against the graph's own segment list).
+  function dxfInsertPointRefIntoGraph(work, ref) {
+    const eps = 1e-9;
+    const idx = work.edges.findIndex(e => e.segIndex === ref.segIndex && ref.t >= e.t0 - eps && ref.t <= e.t1 + eps);
+    if (idx === -1) return null;
+    const edge = work.edges[idx];
+    const t = clamp(ref.t, edge.t0, edge.t1);
+    if (t <= edge.t0 + eps) return edge.nodeA;
+    if (t >= edge.t1 - eps) return edge.nodeB;
+    const point = dxfPointOnSegment(edge.seg, t);
+    const newNodeId = work.nextNodeId;
+    work.nextNodeId += 1;
+    work.nodes.push({ id: newNodeId, point });
+    const lengthA = dxfPartialLength(edge.seg, edge.t0, t);
+    const lengthB = dxfPartialLength(edge.seg, t, edge.t1);
+    const edgeA = { id: work.nextEdgeId, segIndex: edge.segIndex, seg: edge.seg, t0: edge.t0, t1: t, nodeA: edge.nodeA, nodeB: newNodeId, length: lengthA };
+    work.nextEdgeId += 1;
+    const edgeB = { id: work.nextEdgeId, segIndex: edge.segIndex, seg: edge.seg, t0: t, t1: edge.t1, nodeA: newNodeId, nodeB: edge.nodeB, length: lengthB };
+    work.nextEdgeId += 1;
+    work.edges.splice(idx, 1, edgeA, edgeB);
+    return newNodeId;
+  }
+
+  // Every simple (no-repeated-node) path from startNode to endNode, as
+  // ordered {edge, forward} steps. Depth/route-count budgeted: real garment
+  // pattern graphs are sparse (a traced outline is degree <= 2 almost
+  // everywhere; even a genuine branch/junction touches only a handful of
+  // edges), so a plain DFS is safe here, but the caps are a defensive circuit
+  // breaker against a pathological graph rather than a claim about how large
+  // a real one gets. RB-4: returns `truncated: true` whenever either cap
+  // actually cut the search short, so a caller can tell "here are the only
+  // routes" from "here are the first N of possibly more" — presenting a
+  // capped candidate set as though it were the complete choice set is exactly
+  // the silent-guess failure mode this story must not ship.
+  function dxfEnumerateSimplePaths(adjacency, startNode, endNode, maxRoutes, maxVisits) {
+    const routes = [];
+    const visited = new Set();
+    const path = [];
+    let visits = 0;
+    let truncated = false;
+    function dfs(node) {
+      if (routes.length >= maxRoutes || visits > maxVisits) { truncated = true; return; }
+      visits += 1;
+      if (node === endNode) { routes.push(path.slice()); return; }
+      visited.add(node);
+      const edges = adjacency.get(node) || [];
+      for (const edge of edges) {
+        if (routes.length >= maxRoutes || visits > maxVisits) { truncated = true; break; }
+        const next = edge.nodeA === node ? edge.nodeB : edge.nodeA;
+        if (visited.has(next)) continue;
+        path.push({ edge, forward: edge.nodeA === node });
+        dfs(next);
+        path.pop();
+      }
+      visited.delete(node);
+    }
+    dfs(startNode);
+    return { routes, truncated };
+  }
+
+  const DXF_ROUTE_MAX_CANDIDATES = 8;
+  const DXF_ROUTE_MAX_VISITS = 20000;
+
+  // The Along Path oracle: given the full native segment list for a piece (or
+  // component) and two point-on-path references ({segIndex, t} into that same
+  // list), returns every distinct simple route connecting them. 0 candidates
+  // means A and B are not on the same connected path
+  // (DXF_MEASURE_REASON.NO_CONNECTED_PATH); 1 means an unambiguous open path
+  // (or a degenerate A===B); 2 is the common closed-contour case (the two
+  // ways around the loop); >2 means a genuine branch/junction, which the
+  // interaction layer must present as explicit candidates rather than
+  // silently resolving. `nodeTolerance` (optional, absolute native units) is
+  // the unit-aware topology tolerance — see dxfDefaultTopologyTolerance's
+  // comment; callers with real unit context (dxf-measure-session.js) always
+  // pass one.
+  function dxfEnumerateRoutes(segments, refA, refB, nodeTolerance) {
+    if (!Array.isArray(segments) || !segments.length) {
+      return { ok: false, reason: DXF_MEASURE_REASON.NO_CONNECTED_PATH, routes: [], truncated: false };
+    }
+    const validRef = (ref) => ref && Number.isInteger(ref.segIndex) && ref.segIndex >= 0
+      && ref.segIndex < segments.length && Number.isFinite(ref.t) && ref.t >= -1e-6 && ref.t <= 1 + 1e-6;
+    if (!validRef(refA) || !validRef(refB)) {
+      return { ok: false, reason: DXF_MEASURE_REASON.NON_FINITE_GEOMETRY, routes: [], truncated: false };
+    }
+    const graph = dxfBuildPathGraph(segments, nodeTolerance);
+    if (!graph) return { ok: false, reason: DXF_MEASURE_REASON.UNSUPPORTED_GEOMETRY, routes: [], truncated: false };
+    const work = {
+      nodes: graph.nodes.slice(),
+      edges: graph.edges.map(e => ({ id: e.id, segIndex: e.segIndex, seg: e.seg, t0: 0, t1: 1, nodeA: e.nodeA, nodeB: e.nodeB, length: e.length })),
+      nextNodeId: graph.nodes.length,
+      nextEdgeId: graph.edges.length,
+    };
+    const nodeA = dxfInsertPointRefIntoGraph(work, { segIndex: refA.segIndex, t: clamp(refA.t, 0, 1) });
+    const nodeB = dxfInsertPointRefIntoGraph(work, { segIndex: refB.segIndex, t: clamp(refB.t, 0, 1) });
+    if (nodeA == null || nodeB == null) {
+      return { ok: false, reason: DXF_MEASURE_REASON.NON_FINITE_GEOMETRY, routes: [], truncated: false };
+    }
+    const adjacency = new Map();
+    for (const e of work.edges) {
+      if (!adjacency.has(e.nodeA)) adjacency.set(e.nodeA, []);
+      if (!adjacency.has(e.nodeB)) adjacency.set(e.nodeB, []);
+      adjacency.get(e.nodeA).push(e);
+      adjacency.get(e.nodeB).push(e);
+    }
+    const { routes: rawRoutes, truncated } = dxfEnumerateSimplePaths(adjacency, nodeA, nodeB, DXF_ROUTE_MAX_CANDIDATES, DXF_ROUTE_MAX_VISITS);
+    if (!rawRoutes.length) return { ok: false, reason: DXF_MEASURE_REASON.NO_CONNECTED_PATH, routes: [], truncated: false };
+    const routes = rawRoutes.map(steps => ({
+      steps: steps.map(s => ({
+        segIndex: s.edge.segIndex,
+        t0: s.forward ? s.edge.t0 : s.edge.t1,
+        t1: s.forward ? s.edge.t1 : s.edge.t0,
+      })),
+      length: steps.reduce((sum, s) => sum + s.edge.length, 0),
+    })).filter(route => route.steps.length > 0 && Number.isFinite(route.length) && route.length > 0);
+    if (!routes.length) {
+      return { ok: false, reason: DXF_MEASURE_REASON.UNSUPPORTED_GEOMETRY, routes: [], truncated: false };
+    }
+    if (truncated) {
+      return { ok: false, reason: DXF_MEASURE_REASON.ROUTE_SEARCH_TRUNCATED, routes: [], truncated: true };
+    }
+    return { ok: true, reason: null, routes, truncated: false };
+  }
+
+  // Positive means the A->B traversal follows more authored entity length
+  // (each segment's t=0 -> t=1 direction); negative means it opposes more.
+  // This is deliberately independent of DFS candidate order.
+  function dxfRouteAuthoredDirectionScore(route, segments) {
+    if (!route || !Array.isArray(route.steps) || !Array.isArray(segments)) return NaN;
+    let score = 0;
+    for (const step of route.steps) {
+      const seg = segments[step.segIndex];
+      const length = dxfPartialLength(seg, step.t0, step.t1);
+      if (!Number.isFinite(length)) return NaN;
+      score += (step.t1 >= step.t0 ? 1 : -1) * length;
+    }
+    return score;
+  }
+
+  // The reverse of one route: same edges, opposite order, each step's t0/t1
+  // swapped so traversal runs the other way — same total length. This is the
+  // "Reverse" direction for the common case of exactly one route (an open
+  // path): the two closed-loop route CANDIDATES from dxfEnumerateRoutes are
+  // already a genuinely different edge set each, not reverses of one
+  // another, so this helper is not used to derive "the other" closed-loop
+  // direction — see the session layer for that distinction.
+  function dxfReverseRoute(route) {
+    if (!route) return null;
+    return {
+      steps: route.steps.slice().reverse().map(s => ({ segIndex: s.segIndex, t0: s.t1, t1: s.t0 })),
+      length: route.length,
+    };
+  }
+
+  // Sum of every step's own partial length, using each step's OWN t0/t1
+  // (already direction-signed by dxfEnumerateRoutes/dxfReverseRoute) against
+  // the same segment list the route's segIndex values address. This is the
+  // canonical way to get a route's length from its steps alone — used by
+  // both the numeric readout and, indirectly, by every test that must prove
+  // "the highlighted route is exactly the route measured" (draw exactly these
+  // steps; measure exactly these steps; same source).
+  // RB-4: same NaN-not-0 contract as dxfSegmentLength/dxfPartialLength — a
+  // missing segment reference (a stale step.segIndex after some upstream
+  // corruption) poisons the sum instead of silently under-counting it.
+  function dxfRouteLength(route, segments, tolerance) {
+    if (!route || !Array.isArray(route.steps) || !route.steps.length || !Array.isArray(segments)) return NaN;
+    return route.steps.reduce((sum, step) => {
+      const seg = segments[step.segIndex];
+      return sum + (seg ? dxfPartialLength(seg, step.t0, step.t1, tolerance) : NaN);
+    }, 0);
   }
 
   // ---- src/manual/board-graphics.js ----
@@ -16437,12 +17037,13 @@ const BOM_MATERIAL_LIBRARY = [
       action: e => { appCommandBlurField(e); setActivePage('preview'); } }),
     appCommand({ id: 'project.undo', label: 'Undo', category: 'Project',
       shortcut: { key: 'z', meta: true }, allowInField: true, target: '#undoBtn',
-      action: e => { appCommandBlurField(e); flushLineNudgeSession(); void undo(); } }),
+      // US-105: routes to Pattern Measure's own mini undo stack while active.
+      action: e => { appCommandBlurField(e); dxfMeasureOrGlobalUndo(); } }),
     appCommand({ id: 'project.redo', label: 'Redo', category: 'Project',
       shortcut: { key: 'z', meta: true, shift: true },
       shortcuts: [{ key: 'z', meta: true, shift: true }, { key: 'y', meta: true }],
       allowInField: true, target: '#redoBtn',
-      action: e => { appCommandBlurField(e); flushLineNudgeSession(); void redo(); } }),
+      action: e => { appCommandBlurField(e); dxfMeasureOrGlobalRedo(); } }),
     appCommand({ id: 'project.save', label: 'Save Project', category: 'Project',
       keywords: 'download json', shortcut: { key: 's', meta: true }, allowInField: true,
       target: '#saveProjectBtn', action: e => { appCommandBlurField(e); appCommandClick('#saveProjectBtn'); } }),
@@ -16610,6 +17211,17 @@ const BOM_MATERIAL_LIBRARY = [
     appCommand({ id: 'board.library.open', label: 'Library: Open…', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#libraryBtn',
       action: () => appCommandClick('#libraryBtn') }),
+    // US-105: Pattern Measure. Same when() shape as board.template.import-dxf
+    // above, plus a second check for an active measure session — importing a
+    // DXF is what creates one.
+    appCommand({ id: 'board.pattern-measure.along-path', label: 'Pattern Measure: Along Path', category: 'Board · Measurements',
+      page: 'board', mode: 'manual', target: '#dxfMeasureAlongBtn',
+      when: () => !state.sketchMode ? 'Available in Sketch Focus' : (state.dxfMeasureSession ? true : 'Import a DXF file first'),
+      action: () => appCommandClick('#dxfMeasureAlongBtn') }),
+    appCommand({ id: 'board.pattern-measure.out-of-path', label: 'Pattern Measure: Out of Path', category: 'Board · Measurements',
+      page: 'board', mode: 'manual', target: '#dxfMeasureOutBtn',
+      when: () => !state.sketchMode ? 'Available in Sketch Focus' : (state.dxfMeasureSession ? true : 'Import a DXF file first'),
+      action: () => appCommandClick('#dxfMeasureOutBtn') }),
     appCommand({ id: 'board.smart-align.toggle', label: 'Toggle Smart Align', category: 'Board · Edit',
       page: 'board', mode: 'manual', target: '#smartAlignToggleBtn',
       action: () => toggleSmartAlign() }),
@@ -17866,6 +18478,33 @@ const BOM_MATERIAL_LIBRARY = [
     el.dxfImportFileInput.addEventListener('change', onDxfImportFile);
   }
 
+  // ---- src/ui/dxf-measure-panel.js ----
+// US-105: DXF Pattern Measurement — Tools-menu entry wiring. Sibling to
+// src/ui/dxf-import-panel.js, same split: this file owns only the button
+// click -> tool-mode wiring; the actual interaction lives in
+// src/manual/dxf-measure-interaction.js, the session model in
+// src/manual/dxf-measure-session.js.
+// Source part for app.js. Run `npm run build` after editing.
+
+  function setDxfMeasureMode(mode) {
+    const session = state.dxfMeasureSession;
+    if (!session) {
+      showToast('Import a DXF file first (Tools → Open DXF file…).');
+      return;
+    }
+    session.pendingMode = mode;
+    session.placementArmed = true;
+    session.interaction = null;
+    setTool('pattern-measure');
+    updateUI();
+    requestRender();
+  }
+
+  function bindDxfMeasurePanel() {
+    if (el.dxfMeasureAlongBtn) el.dxfMeasureAlongBtn.addEventListener('click', () => setDxfMeasureMode('along-path'));
+    if (el.dxfMeasureOutBtn) el.dxfMeasureOutBtn.addEventListener('click', () => setDxfMeasureMode('out-of-path'));
+  }
+
   // ---- src/ui/bindings.js ----
 // Top-level UI bindings: bindUI() wires the toolbar, dropdowns, file
 // inputs, the canvas, the label editor, and keyboard shortcuts. Tool and
@@ -17897,6 +18536,7 @@ const BOM_MATERIAL_LIBRARY = [
     bindLinePresetPanel();
     bindShapeStampPanel();
     bindDxfImportPanel();
+    bindDxfMeasurePanel();
     el.styleOptionBtns.forEach((button) => {
       button.addEventListener('click', () => {
         setLineStyle(button.dataset.style);
@@ -17949,8 +18589,10 @@ const BOM_MATERIAL_LIBRARY = [
     el.colorBlackBtn.addEventListener('click', () => setDrawColor('black'));
     el.colorWhiteBtn.addEventListener('click', () => setDrawColor('white'));
 
-    el.undoBtn.addEventListener('click', () => void undo());
-    el.redoBtn.addEventListener('click', () => void redo());
+    // US-105: routes to Pattern Measure's own mini undo stack while that
+    // tool is active — see dxfMeasureOrGlobalUndo/Redo's own comment.
+    el.undoBtn.addEventListener('click', () => dxfMeasureOrGlobalUndo());
+    el.redoBtn.addEventListener('click', () => dxfMeasureOrGlobalRedo());
     el.copyLineBtn.addEventListener('click', copySelectedAnnotation);
     el.pasteLineBtn.addEventListener('click', pasteLineFromClipboard);
     el.reflectLineBtn.addEventListener('click', reflectSelectedAnnotation);
@@ -18872,6 +19514,10 @@ const BOM_MATERIAL_LIBRARY = [
       state.autoMode = makeInitialAutoModeState();
       state.hiddenAnnIds = [];
       state.hiddenDraftIds = [];
+      // US-105: a reopened project never carries a measure session — it is
+      // session-only geometry describing whatever DXF was last imported into
+      // the PREVIOUS board.
+      resetDxfMeasureSession();
       // US-102: every reopened project starts in POM Focus, regardless of
       // which focus was active before Open/Restore — Sketch Focus is a
       // live-authoring aid, never project data (autosave Restore goes
@@ -21064,6 +21710,15 @@ function setSelection(kind, id) {
     const screen = getMousePos(e);
     const world = screenToWorld(screen.x, screen.y);
 
+    // US-105: Pattern Measure owns the whole gesture while active — it works
+    // against native (piece, segment, t) references, never against
+    // state.annotations, and "Source Geometry Immutability" requires that
+    // the normal endpoint/body hit-test chain below never run while it is.
+    if (dxfMeasureIsActiveTool()) {
+      dxfMeasureOnMouseDown(world);
+      return;
+    }
+
     // Auto Mode: only drafts + anchors are interactive. Project annotations
     // are locked, and tool creation / erasing is disabled (see updateUI).
     if (state.appMode === 'auto') {
@@ -21392,6 +22047,11 @@ function setSelection(kind, id) {
     const screen = getMousePos(e);
     const world = screenToWorld(screen.x, screen.y);
 
+    if (dxfMeasureIsActiveTool()) {
+      dxfMeasureOnMouseMove(world);
+      return;
+    }
+
     if (state.drawSession) {
       state.drawSession.current = world;
       requestRender();
@@ -21662,6 +22322,11 @@ function setSelection(kind, id) {
     state.smartAlignGuides = [];
     if (state.eraseSession) {
       commitEraseStroke();
+    }
+
+    if (dxfMeasureIsActiveTool()) {
+      dxfMeasureOnMouseUp();
+      return;
     }
 
     const interaction = state.interaction;
@@ -22798,18 +23463,22 @@ function onWheel(e) {
     // Undo / redo work everywhere, INCLUDING while a spec-panel field
     // (Size L / TOL / 中文 / description) is focused. Blur first so any
     // pending edit commits to history, then it is undone as a single step.
+    //
+    // US-105: dxfMeasureOrGlobalUndo/Redo route to Pattern Measure's own
+    // mini undo stack while that tool is active (state.dxfMeasureSession is
+    // never in the global makeSnapshot(), so the global undo() literally
+    // cannot reach it) — same dispatcher the toolbar Undo/Redo buttons and
+    // the Command Palette use, so all three surfaces agree.
     if (isMeta && key === 'z' && !e.shiftKey) {
       e.preventDefault();
       if (inField && typeof target.blur === 'function') target.blur();
-      flushLineNudgeSession();
-      void undo();
+      dxfMeasureOrGlobalUndo();
       return;
     }
     if (isMeta && ((key === 'z' && e.shiftKey) || key === 'y')) {
       e.preventDefault();
       if (inField && typeof target.blur === 'function') target.blur();
-      flushLineNudgeSession();
-      void redo();
+      dxfMeasureOrGlobalRedo();
       return;
     }
 
@@ -23061,6 +23730,37 @@ function onWheel(e) {
       e.preventDefault(); bgEnterEdit(getSelectedBoardGraphic()); return;
     }
 
+    // US-105: while choosing among several Along Path route candidates
+    // ('choosing-route') OR several overlapping/near-duplicate native
+    // entities at an ambiguous click ('choosing-entity', RB-2), Tab/
+    // Shift+Tab cycles which one is highlighted and Enter commits it — see
+    // dxf-measure-interaction.js for why this replaced an earlier digit-key
+    // design (a real conflict with the Rectangle/Hexagon '4'/'6' shortcuts).
+    const dxfMeasureChoosing = dxfMeasureIsActiveTool() && state.dxfMeasureSession.interaction
+      && (state.dxfMeasureSession.interaction.type === 'choosing-route'
+        || state.dxfMeasureSession.interaction.type === 'choosing-entity');
+    if (!isMeta && e.key === 'Tab' && dxfMeasureChoosing) {
+      e.preventDefault();
+      dxfMeasureHandleTabKey(e.shiftKey);
+      return;
+    }
+    if (e.key === 'Enter' && dxfMeasureChoosing) {
+      e.preventDefault();
+      dxfMeasureHandleEnterKey();
+      return;
+    }
+
+    // US-105: Delete/Backspace removes only the selected measurement
+    // overlay, never DXF source geometry — session.selectedMeasurementId is
+    // a completely separate selection from state.selection, so the existing
+    // branch just below (gated on state.selection.kind) never fires for it.
+    if ((e.key === 'Delete' || e.key === 'Backspace') && dxfMeasureIsActiveTool()
+        && state.dxfMeasureSession.selectedMeasurementId != null) {
+      e.preventDefault();
+      dxfMeasureDeleteSelected();
+      return;
+    }
+
     if ((e.key === 'Delete' || e.key === 'Backspace') && state.selection.kind != null) {
       // In Auto Mode, project annotations/drafts are locked from Delete (use
       // Discard Drafts or Mark Review-Only). Deleting an added PHOTO is allowed
@@ -23085,9 +23785,15 @@ function onWheel(e) {
         showToast('Erase canceled.');
         updateUI();
         requestRender();
+      } else if (dxfMeasureIsActiveTool() && state.dxfMeasureSession.interaction) {
+        // US-105: cancels an in-progress placement/route-choice/drag WITHOUT
+        // deleting any already-completed measurement — same priority tier
+        // as drawSession/eraseSession above, since it is the same kind of
+        // "still deciding what to place" session.
+        dxfMeasureCancelInteraction();
       } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'add-point'
                  || state.tool === 'eraser' || state.tool === 'text'
-                 || state.tool === 'stamp'
+                 || state.tool === 'stamp' || state.tool === 'pattern-measure'
                  || ['rectangle','circle','hexagon'].includes(state.tool)) {
         // US-097: setTool('select') also disarms the chosen shape.
         setTool('select');
@@ -24781,8 +25487,9 @@ function onWheel(e) {
 // Split deliberately into three layers so each is independently testable:
 //   1. parseDxfDocument(text)              — pure text -> pieces (local
 //      drawing space: DXF's own units, Y already flipped to screen-down).
-//   2. computeDxfPlacementTransform(...)    — pure bounds+viewport -> one
-//      shared scale/offset (reuses createImageRecord's own numbers).
+//   2. computeDxfPlacementTransform(...)    — pure bounds+viewport+zoom -> one
+//      shared scale/offset, DXF's own DXF_FIT_RATIO (round 11 — no longer
+//      createImageRecord's numbers; see the function's own comment).
 //   3. importDxfText(text, rect)            — orchestrates 1 + 2, builds real
 //      annotation objects, and performs the one board mutation.
 // Sibling file: the Tools-menu button / FileReader glue is
@@ -24811,6 +25518,12 @@ function onWheel(e) {
   // Board-performance backstop. The real file above totals 1252 segments
   // across 6 pieces with no cap — 3000 clears it with >2x headroom.
   const DXF_TOTAL_OUTPUT_CAP = 3000;
+  // Round 11 (user-reported): a technical pattern has no "sits beside other
+  // photos" reason to stay small, and shrinking it packs more of a
+  // tessellated curve's points into the same screen distance — the opposite
+  // of what round 10's crowding fix wants. See computeDxfPlacementTransform
+  // for the full formula this feeds.
+  const DXF_FIT_RATIO = 0.85;
 
   // BOM/CRLF/trailing-newline normalization has to happen BEFORE the
   // even/odd group-code pairing check below, or an ordinary, well-formed
@@ -25010,9 +25723,17 @@ function onWheel(e) {
   // case (h=0, center exactly on the midpoint) and against a theta=90° case
   // solved by hand (center reproduces both P1 and P2 exactly under a CCW
   // sweep of theta from the recovered start angle).
-  function dxfBulgeToBezierChunks(p1, p2, bulge) {
+  //
+  // US-105: split out of dxfBulgeToBezierChunks so the native-coordinate
+  // measurement kernel (src/manual/dxf-native-parser.js) can get the exact
+  // {center, radius, startAngle, sweep} an ARC entity would carry, without
+  // going through a Bézier-chunked approximation it does not need — arcs and
+  // bulges are already exactly circular, so the measurement kernel's arc
+  // length can stay analytic. Returns null for the same degenerate case
+  // dxfBulgeToBezierChunks used to return [] for.
+  function dxfBulgeToArcParams(p1, p2, bulge) {
     const d = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-    if (!(d > 1e-9)) return [];
+    if (!(d > 1e-9)) return null;
     const theta = 4 * Math.atan(bulge);
     const ux = (p2.x - p1.x) / d, uy = (p2.y - p1.y) / d;
     const vx = -uy, vy = ux;
@@ -25022,7 +25743,13 @@ function onWheel(e) {
     const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
     const cx = mx + vx * h, cy = my + vy * h;
     const a0 = Math.atan2(p1.y - cy, p1.x - cx);
-    return dxfArcToBezierChunks(cx, cy, r, a0, theta);
+    return { cx, cy, r, a0, sweep: theta };
+  }
+
+  function dxfBulgeToBezierChunks(p1, p2, bulge) {
+    const params = dxfBulgeToArcParams(p1, p2, bulge);
+    if (!params) return [];
+    return dxfArcToBezierChunks(params.cx, params.cy, params.r, params.a0, params.sweep);
   }
 
   // ---- Per-entity converters --------------------------------------------------
@@ -25190,16 +25917,43 @@ function onWheel(e) {
       : { kind: 'curve', p0: dxfFlipPointY(seg.p0), c1: dxfFlipPointY(seg.c1), c2: dxfFlipPointY(seg.c2), p3: dxfFlipPointY(seg.p3) };
   }
 
+  // US-105: a point at native arc parameter t in [0,1] — center + radius at
+  // (startAngle + sweep*t). Shared by the native measurement kernel and, here,
+  // by dxfSegmentEndpoints/dxfSegmentPoints below so an 'arc'-kind segment
+  // (the native, non-Bézier representation the measurement parser emits) can
+  // reuse the existing piece-detection primitives (dxfConnectedComponents,
+  // dxfMergeContainedComponents, dxfBoundsOfSegments) unchanged. Never called
+  // by parseDxfDocument's own pipeline, which only ever produces 'straight'/
+  // 'curve' segments — this is purely additive.
+  function dxfPointOnArcSegment(seg, t) {
+    const a = seg.startAngle + seg.sweep * t;
+    return { x: seg.center.x + seg.radius * Math.cos(a), y: seg.center.y + seg.radius * Math.sin(a) };
+  }
+
   function dxfSegmentEndpoints(seg) {
-    return seg.kind === 'straight' ? [seg.a, seg.b] : [seg.p0, seg.p3];
+    if (seg.kind === 'straight') return [seg.a, seg.b];
+    if (seg.kind === 'arc') return [dxfPointOnArcSegment(seg, 0), dxfPointOnArcSegment(seg, 1)];
+    return [seg.p0, seg.p3];
   }
 
   // Every point that defines the segment's painted extent, handles included
   // — mirrors shapeStampGeometryPoints's reasoning: a curve's bulge can sit
   // outside the a/b chord, so a bounds box built from endpoints alone can
-  // clip or under-fit it.
+  // clip or under-fit it. For 'arc' (US-105), the two corners of the full
+  // circle's own bounding box are a deliberate, always-safe over-approximation
+  // — cheaper than computing the arc's true axis-aligned extent and never
+  // under-fits it, which is all dxfConnectedComponents/dxfMergeContainedComponents
+  // need this for (an endpoint-touch tolerance and a containment test, neither
+  // of which requires a pixel-exact box).
   function dxfSegmentPoints(seg) {
-    return seg.kind === 'straight' ? [seg.a, seg.b] : [seg.p0, seg.c1, seg.c2, seg.p3];
+    if (seg.kind === 'straight') return [seg.a, seg.b];
+    if (seg.kind === 'arc') {
+      return [
+        { x: seg.center.x - seg.radius, y: seg.center.y - seg.radius },
+        { x: seg.center.x + seg.radius, y: seg.center.y + seg.radius },
+      ];
+    }
+    return [seg.p0, seg.c1, seg.c2, seg.p3];
   }
 
   function dxfBoundsOfPoints(points) {
@@ -25305,25 +26059,44 @@ function onWheel(e) {
 
   // ---- Placement transform ----------------------------------------------------
 
-  // Reuses createImageRecord's own first-image-on-empty-board numbers
-  // (src/manual/image-records.js) rather than inventing new ones: fit into
-  // 42% of the viewport with a 180px floor on maxW/maxH, centered the same
-  // way. Unlike a raster image, DXF vector data has no native pixel
-  // resolution to cap upscaling against, so — unlike the image case — there
-  // is no `Math.min(scale, 1)` "never upscale" clause, and no 60px floor on
-  // the OUTPUT box either: that second floor is the image case's own
-  // per-axis minimum-visible-size guard, applied AFTER its own upscale cap,
-  // and copying it here would independently distort a uniformly-scaled
-  // drawing's aspect ratio on a tiny/extreme fixture.
+  // Round 11 (user-reported, then a follow-up review caught a real bug in
+  // the first fix): this used to reuse createImageRecord's own
+  // first-image-on-empty-board numbers verbatim (42%/180px floor) — sized
+  // for a photo that might sit beside other photos, needlessly small for a
+  // technical pattern that has no such neighbor and benefits from filling
+  // most of the canvas (it also packs more of a tessellated curve's points
+  // into the same screen distance, working against round 10's crowding
+  // fix). DXF placement now has its own, larger DXF_FIT_RATIO and NO floor
+  // — a "fit" that can force overflow at a tiny viewport (the old 180px
+  // floor did exactly that) isn't a fit, and with an 85% ratio a floor is
+  // already nearly always moot for a real viewport.
+  //
+  // `rect` is SCREEN-space (`getViewportRect()`, CSS pixels) but this
+  // function's output (`outputWidth`/`outputHeight`/`originX`/`originY`) is
+  // WORLD-space — the coordinate system annotations are stored in, which the
+  // render loop then multiplies by `state.zoom` to get screen pixels. "Fit
+  // to N% of the viewport" is therefore only true at zoom 1 unless the
+  // current zoom is divided back out here: at zoom 2, an output sized for
+  // 85% of a 1000px-wide viewport (850 world-px) would render at 1700
+  // screen-px and overflow. Dividing the whole `rect * ratio` term by `zoom`
+  // keeps `outputWidth * zoom` constant across any zoom the board happens to
+  // be at when the import runs (verified in dxf-import-check.mjs at
+  // 0.5x/1x/2x) — `zoom` defaults to 1 so existing callers (and the pure
+  // debug-API test entry point) that don't pass it are unaffected.
+  //
+  // Unlike a raster image, DXF vector data has no native pixel resolution to
+  // cap upscaling against, so there is no `Math.min(scale, 1)` "never
+  // upscale" clause either — that remains an image-only concern.
   //
   // `centerWorld` is optional (tests pass one to get deterministic numbers
   // without a live pan/zoom); the real call site omits it and gets the
-  // exact `screenToWorld` result createImageRecord itself uses.
-  function computeDxfPlacementTransform(bounds, rect, centerWorld) {
+  // live `screenToWorld` result.
+  function computeDxfPlacementTransform(bounds, rect, centerWorld, zoom) {
     const w = Math.max(bounds.width, 1e-9);
     const h = Math.max(bounds.height, 1e-9);
-    const maxW = Math.max(180, rect.width * 0.42);
-    const maxH = Math.max(180, rect.height * 0.42);
+    const z = Math.max(0.0001, zoom || 1);
+    const maxW = (rect.width * DXF_FIT_RATIO) / z;
+    const maxH = (rect.height * DXF_FIT_RATIO) / z;
     const scale = Math.min(maxW / w, maxH / h);
     const outputWidth = w * scale;
     const outputHeight = h * scale;
@@ -25341,6 +26114,22 @@ function onWheel(e) {
     return {
       x: transform.originX + (p.x - bounds.x) * transform.scale,
       y: transform.originY + (p.y - bounds.y) * transform.scale,
+    };
+  }
+
+  // US-105: the missing inverse of applyDxfTransform — no board/world point
+  // has ever needed to map BACK to the local (already-Y-flipped) drawing
+  // space this transform's `bounds`/`transform` were computed against, until
+  // Pattern Measure needs to turn a pointer click into "which native DXF
+  // coordinate is under the cursor." Exact algebraic inverse of the affine
+  // fit above; `transform.scale` is always > 0 for a real drawing (computed
+  // from a non-degenerate bounds by computeDxfPlacementTransform), so no
+  // separate degenerate-scale guard is needed here beyond the caller already
+  // requiring a live measure session (which implies a successful prior parse).
+  function invertDxfPlacementTransform(p, bounds, transform) {
+    return {
+      x: bounds.x + (p.x - transform.originX) / transform.scale,
+      y: bounds.y + (p.y - transform.originY) / transform.scale,
     };
   }
 
@@ -25470,12 +26259,20 @@ function onWheel(e) {
     }
     const viewportRect = rect || getViewportRect();
     const bounds = dxfBoundsOfSegments(parsed.pieces.flat());
-    const transform = computeDxfPlacementTransform(bounds, viewportRect);
+    const transform = computeDxfPlacementTransform(bounds, viewportRect, undefined, state.zoom);
     const allNewIds = [];
     let firstId = null;
+    // US-105: one anchor annotation id per piece (its first segment's), so
+    // the measure session can detect a piece having been dragged since
+    // import (see dxfMeasureCurrentPieceOffset, dxf-measure-session.js) by
+    // comparing that annotation's CURRENT position against where import
+    // originally placed it — the board annotations are the only thing that
+    // actually tracks a later whole-piece move.
+    const pieceFirstAnnotationIds = [];
     for (const piece of parsed.pieces) {
       const groupId = 'dxf-' + state.idCounter++;
       const pieceAnns = piece.map(seg => dxfAnnotationFromSegment(seg, bounds, transform, groupId));
+      pieceFirstAnnotationIds.push(pieceAnns.length ? pieceAnns[0].id : null);
       // One sourceImageId per PIECE (not per segment), matching
       // createAnnotationFromTemplateMember's own convention: landing outside
       // every board image gives the piece no sourceImageId at all, which is
@@ -25497,6 +26294,13 @@ function onWheel(e) {
     state.selectedAnnotationIds = allNewIds;
     state.templateGroupEditId = null;
     pushHistoryIfChanged();
+    // US-105: (re)build the native-coordinate measure session from the SAME
+    // text and the SAME bounds/transform just used for the board
+    // annotations above, so Pattern Measure's overlay is pixel-aligned with
+    // what actually got drawn. Reset first — opening another DXF must never
+    // leave a prior session's measurements dangling over new geometry.
+    resetDxfMeasureSession();
+    startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds);
     if (typeof updateUI === 'function') updateUI();
     if (typeof requestRender === 'function') requestRender();
 
@@ -25519,6 +26323,1541 @@ function onWheel(e) {
       buckets: parsed.buckets,
       skippedOversizedPieces: parsed.skippedOversizedPieces || 0,
     };
+  }
+
+  // ---- src/manual/dxf-native-parser.js ----
+// US-105: DXF Pattern Measurement — the native-coordinate parser adapter.
+// Parses the SAME DXF text US-104's importDxfText already accepts, but into
+// exact native `{kind:'straight'|'arc', ...}` geometry (see
+// src/geometry/dxf-path-kernel.js's header comment for the shapes) instead of
+// the board-annotation-ready straight/Bézier segments parseDxfDocument
+// builds — arcs and bulges stay exactly circular here, never
+// Bézier-approximated, so the measurement kernel's arc length stays
+// analytic.
+//
+// Deliberately a SEPARATE parse over the same tokenized pairs, not a
+// modification of parseDxfDocument: that function (src/manual/dxf-import.js)
+// is a closed, 119-assertion-tested contract (dxf-import-check.mjs), and this
+// story's own "compatibility-preserving adapter" requirement is satisfied
+// most safely by never touching its observable output at all. This file
+// reuses that file's PURE, already-correct primitives by name
+// (dxfNormalizeText, dxfTokenizePairs, dxfScanSections, dxfNum, dxfOptNum,
+// dxfFirst, dxfExtrusion, dxfPlanarOk, dxfOk/dxfSkip/dxfMalformed/
+// dxfNonPlanar/dxfUnsupportedType/dxfUnsupportedFit, dxfParseLwpolylineVertices,
+// dxfBulgeToArcParams, dxfBuildPieces, and the DXF_*_CAP/DXF_BINARY_SENTINEL
+// constants) rather than duplicating them — only the "which shape do I build
+// from this entity" step differs from that file's own converters, and that
+// step is duplicated deliberately per the same reasoning.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // ---- $INSUNITS header read --------------------------------------------------
+
+  // dxfScanSections only tracks section boundaries (HEADER's own variables
+  // are never collected — US-104 deliberately never needed them). This scans
+  // the flat pair stream directly for the one header variable this story
+  // needs: a `9 / $INSUNITS` marker followed, within a few pairs, by its
+  // integer value at group 70. Safe to run over the WHOLE pair stream (not
+  // section-scoped) because `$INSUNITS` as a header-variable NAME can only
+  // legitimately appear in the HEADER section of a well-formed file; nothing
+  // else in a DXF's ENTITIES/BLOCKS/TABLES content uses group code 9 for
+  // this literal string.
+  function dxfReadInsunits(pairs) {
+    for (let i = 0; i < pairs.length; i += 1) {
+      if (pairs[i].code === 9 && String(pairs[i].value).trim() === '$INSUNITS') {
+        for (let j = i + 1; j < pairs.length && j < i + 6; j += 1) {
+          if (pairs[j].code === 70) {
+            const n = Number(String(pairs[j].value).trim());
+            return Number.isFinite(n) ? n : null;
+          }
+          if (pairs[j].code === 9 || pairs[j].code === 0) break;
+        }
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // ---- Per-entity native converters (mirrors dxf-import.js's converters —
+  // same validation/malformed/planarity rules, native line/arc output) ------
+
+  function dxfNativeConvertLineEntity(rec) {
+    const x1 = dxfNum(rec.pairs, 10), y1 = dxfNum(rec.pairs, 20);
+    const x2 = dxfNum(rec.pairs, 11), y2 = dxfNum(rec.pairs, 21);
+    if ([x1, y1, x2, y2].some(v => v === undefined)) return dxfMalformed('LINE missing 10/20 or 11/21');
+    if (![x1, y1, x2, y2].every(Number.isFinite)) return dxfMalformed('LINE has a non-finite coordinate');
+    // RB-4: a zero-length LINE (both endpoints exactly coincident) has no
+    // direction and no meaningful length — reject it outright rather than
+    // silently accepting a segment dxfSegmentLength would report as 0 (see
+    // that function's own "never a plausible 0" contract; a segment that
+    // SHOULD never have existed is a different failure than an invalid
+    // length calculation on a real one).
+    if (x1 === x2 && y1 === y2) return dxfMalformed('LINE has zero length (coincident endpoints)');
+    const z1 = dxfOptNum(rec.pairs, 30, 0), z2 = dxfOptNum(rec.pairs, 31, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(z1) || !Number.isFinite(z2) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('LINE has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([z1, z2], thickness, ext)) return dxfNonPlanar('LINE is not flat');
+    return dxfOk([{ kind: 'straight', a: { x: x1, y: y1 }, b: { x: x2, y: y2 } }]);
+  }
+
+  function dxfNativeConvertArcEntity(rec) {
+    const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
+    const r = dxfNum(rec.pairs, 40);
+    const a0Deg = dxfNum(rec.pairs, 50), a1Deg = dxfNum(rec.pairs, 51);
+    if ([cx, cy, r, a0Deg, a1Deg].some(v => v === undefined)) return dxfMalformed('ARC missing 10/20/40/50/51');
+    if (![cx, cy, r, a0Deg, a1Deg].every(Number.isFinite)) return dxfMalformed('ARC has a non-finite value');
+    if (!(r > 0)) return dxfMalformed('ARC radius <= 0');
+    const z = dxfOptNum(rec.pairs, 30, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(z) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('ARC has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('ARC is not flat');
+    // Same wraparound-safe sweep as convertDxfArcEntity: 350deg -> 10deg is a
+    // 20deg CCW sweep, never a naive -340deg.
+    const sweepDeg = ((a1Deg - a0Deg) % 360 + 360) % 360;
+    if (!(sweepDeg > 1e-9)) return dxfMalformed('ARC has zero sweep');
+    const sweepRad = sweepDeg * Math.PI / 180;
+    const startRad = a0Deg * Math.PI / 180;
+    return dxfOk([{ kind: 'arc', center: { x: cx, y: cy }, radius: r, startAngle: startRad, sweep: sweepRad }]);
+  }
+
+  // A CIRCLE is one full-circle arc (sweep = 2*PI). Unlike the board
+  // annotation model (which has no closed-loop annotation type and must
+  // split a circle into four quadrant curves — see convertDxfCircleEntity),
+  // the native measurement kernel has no such constraint: a single arc with
+  // a full sweep is the exact, natural representation, and the arbitrary
+  // start angle (0, matching the entity's own lack of one) does not affect
+  // any measurement made on it — length, projection, and route enumeration
+  // all work uniformly around the whole loop regardless of where t=0 sits.
+  function dxfNativeConvertCircleEntity(rec) {
+    const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
+    const r = dxfNum(rec.pairs, 40);
+    if ([cx, cy, r].some(v => v === undefined)) return dxfMalformed('CIRCLE missing 10/20/40');
+    if (![cx, cy, r].every(Number.isFinite)) return dxfMalformed('CIRCLE has a non-finite value');
+    if (!(r > 0)) return dxfMalformed('CIRCLE radius <= 0');
+    const z = dxfOptNum(rec.pairs, 30, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(z) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('CIRCLE has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('CIRCLE is not flat');
+    return dxfOk([{ kind: 'arc', center: { x: cx, y: cy }, radius: r, startAngle: 0, sweep: Math.PI * 2 }]);
+  }
+
+  // Shared by LWPOLYLINE and legacy POLYLINE, mirroring
+  // dxfPolylineVerticesToSegments but emitting a native arc (via
+  // dxfBulgeToArcParams) instead of Bézier chunks for a bulged segment. A
+  // A repeated vertex is malformed measurement geometry. US-104 may still
+  // display the other segments from that entity, but Pattern Measure must not
+  // silently erase one authored hop and then claim its shortened topology is
+  // the factory path.
+  function dxfNativeVerticesToSegments(vertices, closed) {
+    const segs = [];
+    let rejectedDegenerateSegments = 0;
+    const n = vertices.length;
+    const last = closed ? n : n - 1;
+    for (let i = 0; i < last; i += 1) {
+      const a = vertices[i];
+      const b = vertices[(i + 1) % n];
+      if (a.bulge) {
+        const params = dxfBulgeToArcParams({ x: a.x, y: a.y }, { x: b.x, y: b.y }, a.bulge);
+        if (!params) rejectedDegenerateSegments += 1;
+        else segs.push({ kind: 'arc', center: { x: params.cx, y: params.cy }, radius: params.r, startAngle: params.a0, sweep: params.sweep });
+      } else if (a.x !== b.x || a.y !== b.y) {
+        segs.push({ kind: 'straight', a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } });
+      } else {
+        rejectedDegenerateSegments += 1;
+      }
+    }
+    return { segments: segs, rejectedDegenerateSegments };
+  }
+
+  function dxfNativeConvertLwpolylineEntity(rec) {
+    const declaredRaw = dxfFirst(rec.pairs, 90);
+    if (declaredRaw === undefined) return dxfMalformed('LWPOLYLINE missing group 90 vertex count');
+    const declared = Number(String(declaredRaw).trim());
+    if (!Number.isFinite(declared)) return dxfMalformed('LWPOLYLINE group 90 is not a finite number');
+    const flags = dxfOptNum(rec.pairs, 70, 0);
+    if (!Number.isFinite(flags)) return dxfMalformed('LWPOLYLINE has a non-finite flag value');
+    const vertices = dxfParseLwpolylineVertices(rec.pairs);
+    if (declared !== vertices.length) return dxfMalformed('LWPOLYLINE group-90 count does not match its vertex pairs');
+    if (vertices.length < 2) return dxfMalformed('LWPOLYLINE has fewer than 2 vertices');
+    for (const v of vertices) {
+      if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.bulge)) {
+        return dxfMalformed('LWPOLYLINE has a non-finite vertex or bulge value');
+      }
+    }
+    const elevation = dxfOptNum(rec.pairs, 38, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(elevation) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('LWPOLYLINE has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([elevation], thickness, ext)) return dxfNonPlanar('LWPOLYLINE is not flat');
+    const closed = (Math.trunc(flags) & 1) === 1;
+    const converted = dxfNativeVerticesToSegments(vertices, closed);
+    if (!converted.segments.length) return dxfMalformed('LWPOLYLINE has no non-degenerate segment');
+    return { ok: true, segments: converted.segments, rejectedDegenerateSegments: converted.rejectedDegenerateSegments };
+  }
+
+  function dxfNativeConvertPolylineEntity(rec) {
+    const flagsRaw = dxfOptNum(rec.pairs, 70, 0);
+    if (!Number.isFinite(flagsRaw)) return dxfMalformed('POLYLINE has a non-finite flag value');
+    const flags = Math.trunc(flagsRaw);
+    if ((flags & 2) || (flags & 4)) return dxfUnsupportedFit('POLYLINE has the curve-fit or spline-fit flag set');
+    if ((flags & 8) || (flags & 16) || (flags & 64)) return dxfNonPlanar('POLYLINE is 3D/mesh (flag bit 3, 4, or 6)');
+    const closed = (flags & 1) === 1;
+    const headerZ = dxfOptNum(rec.pairs, 30, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(headerZ) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('POLYLINE has a non-finite planarity field');
+    }
+    const rawVertices = Array.isArray(rec.vertices) ? rec.vertices : [];
+    if (rawVertices.length < 2) return dxfMalformed('POLYLINE has fewer than 2 vertices');
+    const vertices = [];
+    for (const vPairs of rawVertices) {
+      const x = dxfNum(vPairs, 10), y = dxfNum(vPairs, 20);
+      if (x === undefined || y === undefined) return dxfMalformed('POLYLINE VERTEX missing 10/20');
+      const z = dxfOptNum(vPairs, 30, 0);
+      const bulge = dxfOptNum(vPairs, 42, 0);
+      if (![x, y, z, bulge].every(Number.isFinite)) return dxfMalformed('POLYLINE VERTEX has a non-finite value');
+      vertices.push({ x, y, z, bulge });
+    }
+    if (!dxfPlanarOk([headerZ, ...vertices.map(v => v.z)], thickness, ext)) return dxfNonPlanar('POLYLINE is not flat');
+    const converted = dxfNativeVerticesToSegments(vertices, closed);
+    if (!converted.segments.length) return dxfMalformed('POLYLINE has no non-degenerate segment');
+    return { ok: true, segments: converted.segments, rejectedDegenerateSegments: converted.rejectedDegenerateSegments };
+  }
+
+  // Dispatch, then stamp provenance (layer, handle when present, and the
+  // entity's own order in the file) onto every segment the entity produced —
+  // "original entity order and direction" per the checklist, kept on the
+  // segment itself rather than threaded separately through every later
+  // consumer.
+  function dxfNativeConvertEntity(rec, order) {
+    const result = (() => {
+      switch (rec.type) {
+        case 'LINE': return dxfNativeConvertLineEntity(rec);
+        case 'ARC': return dxfNativeConvertArcEntity(rec);
+        case 'CIRCLE': return dxfNativeConvertCircleEntity(rec);
+        case 'LWPOLYLINE': return dxfNativeConvertLwpolylineEntity(rec);
+        case 'POLYLINE': return dxfNativeConvertPolylineEntity(rec);
+        default: return dxfUnsupportedType('entity type "' + rec.type + '" is not supported');
+      }
+    })();
+    if (!result.ok) return result;
+    const layer = dxfFirst(rec.pairs, 8);
+    const handle = dxfFirst(rec.pairs, 5);
+    const segments = result.segments.map((seg, partIndex) => Object.assign({}, seg, {
+      layer: layer == null ? null : String(layer).trim(),
+      handle: handle == null ? null : String(handle).trim(),
+      entityOrder: order,
+      partIndex,
+    }));
+    return { ok: true, segments, rejectedDegenerateSegments: result.rejectedDegenerateSegments || 0 };
+  }
+
+  // ---- Document-level native parse (pure; no state/DOM) ----------------------
+
+  // text -> { ok, pieces: [{segments}], unit, unitSource, insunits, buckets,
+  // skippedOversizedPieces } | { ok:false, reason, message, buckets }. Reuses
+  // parseDxfDocument's own binary/corrupt-file/section-scan gates and its
+  // three output caps verbatim (same constants, same thresholds, same
+  // atomic-vs-partial behavior) so the two parses never disagree about
+  // whether a given file is acceptable — only about what SHAPE the accepted
+  // geometry takes.
+  function parseDxfNativeModel(text) {
+    const normalized = dxfNormalizeText(text);
+    if (normalized.slice(0, DXF_BINARY_SENTINEL.length) === DXF_BINARY_SENTINEL) {
+      return {
+        ok: false, atomic: true, reason: 'binary',
+        message: 'This looks like a binary DXF file. Re-export as ASCII DXF and try again.',
+      };
+    }
+    const pairs = dxfTokenizePairs(normalized);
+    if (!pairs) {
+      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file.' };
+    }
+    const scan = dxfScanSections(pairs);
+    if (scan.error) {
+      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file (' + scan.error + ').' };
+    }
+    const insunits = dxfReadInsunits(pairs);
+    const unitInfo = dxfResolveNativeToInch(insunits);
+    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, rejectedDegenerateSegments: 0 };
+    const acceptedSegments = [];
+    scan.entityRecords.forEach((rec, order) => {
+      const result = dxfNativeConvertEntity(rec, order);
+      if (!result.ok) { buckets[result.bucket] += 1; return; }
+      buckets.rejectedDegenerateSegments += result.rejectedDegenerateSegments || 0;
+      acceptedSegments.push(...result.segments);
+    });
+    if (!acceptedSegments.length) {
+      return { ok: false, atomic: true, reason: 'empty', message: 'No supported entities were found in this DXF file.', buckets };
+    }
+    // Reused verbatim from dxf-import.js: connected-component + containment-
+    // merge piece detection, which already works generically off
+    // dxfSegmentEndpoints/dxfSegmentPoints — both extended for the 'arc' kind
+    // this file emits. No Y-flip here: native space stays exactly as
+    // authored (see this file's header comment).
+    const allPieces = dxfBuildPieces(acceptedSegments);
+    if (allPieces.length > DXF_PIECE_COUNT_CAP) {
+      return {
+        ok: false, atomic: true, reason: 'piece-cap', buckets,
+        message: 'This DXF has ' + allPieces.length + ' pieces, over the ' + DXF_PIECE_COUNT_CAP + '-piece limit. Import rejected.',
+      };
+    }
+    const keptPieces = [];
+    let skippedOversizedPieces = 0;
+    for (const piece of allPieces) {
+      if (piece.length > DXF_PER_PIECE_CAP) { skippedOversizedPieces += 1; continue; }
+      keptPieces.push(piece);
+    }
+    if (!keptPieces.length) {
+      return {
+        ok: false, atomic: true, reason: 'empty-after-piece-cap', buckets,
+        message: 'Every piece in this DXF exceeded the ' + DXF_PER_PIECE_CAP + '-line per-piece limit. Import rejected.',
+      };
+    }
+    const totalOutputCount = keptPieces.reduce((sum, piece) => sum + piece.length, 0);
+    if (totalOutputCount > DXF_TOTAL_OUTPUT_CAP) {
+      return {
+        ok: false, atomic: true, reason: 'total-cap', buckets,
+        message: 'This DXF would place ' + totalOutputCount + ' lines, over the ' + DXF_TOTAL_OUTPUT_CAP + '-line combined limit. Import rejected.',
+      };
+    }
+    return {
+      ok: true,
+      pieces: keptPieces.map(segments => ({ segments })),
+      unit: unitInfo.factor,
+      unitSource: unitInfo.unitSource,
+      unitDiagnostic: unitInfo.diagnostic,
+      insunits,
+      buckets,
+      skippedOversizedPieces,
+    };
+  }
+
+  // ---- src/manual/dxf-measure-session.js ----
+// US-105 / ADR 0062: DXF Pattern Measure — session lifecycle
+// (state.dxfMeasureSession), the board<->native coordinate mapping, the
+// pure "create/delete a measurement" builders, and the session's own mini
+// undo stack. See state.js's dxfMeasureSession comment for why a separate
+// stack is required (the global one restores whole snapshots that never
+// contain this field, so it structurally cannot reach it).
+// Source part for app.js. Run `npm run build` after editing.
+
+  // ---- Board <-> native coordinate mapping -----------------------------------
+
+  // The session stores the EXACT bounds/transform importDxfText already
+  // computed for the visible sketch-element annotations (passed in at
+  // startDxfMeasureSession, not recomputed here) so a measurement overlay is
+  // guaranteed pixel-aligned with the DXF lines actually drawn on the board —
+  // recomputing an independent bounds from the native (non-Bézier) model
+  // would very slightly disagree with the Bézier-approximated bounds
+  // importDxfText's own pipeline used for any piece containing an arc/bulge/
+  // circle (the Bézier chunk's control points overshoot the true arc by a
+  // fraction of a percent), which would show up as the highlighted route not
+  // quite lining up with the black DXF geometry underneath it.
+  //
+  // That stored bounds/transform were computed over Y-FLIPPED coordinates
+  // (dxf-import.js flips Y before placement, matching board/screen's Y-down
+  // convention) while this session's native segments stay in the DXF's own
+  // Y-up authored space (see dxf-native-parser.js's header comment) — so the
+  // forward map flips first, the inverse map un-flips last. dxfFlipPointY is
+  // its own inverse (pure negation), so no separate "unflip" function exists.
+  function dxfMeasureNativeToBoard(nativePoint, session) {
+    if (!session || !nativePoint) return null;
+    return applyDxfTransform(dxfFlipPointY(nativePoint), session.transforms.bounds, session.transforms.placement);
+  }
+
+  function dxfMeasureBoardToNative(boardPoint, session) {
+    if (!session || !boardPoint) return null;
+    return dxfFlipPointY(invertDxfPlacementTransform(boardPoint, session.transforms.bounds, session.transforms.placement));
+  }
+
+  // ---- Per-piece "has this moved since import" tracking ---------------------
+  //
+  // US-104 lets a TD drag a whole placed piece (or the group any of its
+  // segments belongs to) independently after import — a plain, expected
+  // gesture, not an edit the "Source Geometry Immutability" rule needs to
+  // block. But this session's transforms.bounds/placement are frozen at
+  // import time, so a moved piece's LIVE board position is import position
+  // + however far the TD dragged it. Rather than track every drag itself
+  // (duplicating pointer-events.js's own move code), this compares one
+  // anchor annotation's CURRENT position against where import originally
+  // placed that same native point — the delta is the piece's whole-move
+  // offset, whatever gesture produced it (drag, arrow-key nudge, undo/redo).
+  // `pieceAnchors[i]` is null (offset always {0,0}) when dxf-import.js could
+  // not pair native piece i with a board annotation id — see startDxfMeasureSession.
+  function dxfMeasureCurrentPieceOffset(session, pieceIndex) {
+    const anchor = session && session.pieceAnchors && session.pieceAnchors[pieceIndex];
+    if (!anchor) return { x: 0, y: 0 };
+    const ann = getAnnotationById(anchor.annotationId);
+    if (!ann || !ann.start) return { x: 0, y: 0 };
+    const importBoardPoint = dxfMeasureNativeToBoard(anchor.nativeStart, session);
+    if (!importBoardPoint) return { x: 0, y: 0 };
+    return { x: ann.start.x - importBoardPoint.x, y: ann.start.y - importBoardPoint.y };
+  }
+
+  function dxfMeasureNativeToBoardLive(nativePoint, session, pieceIndex) {
+    const base = dxfMeasureNativeToBoard(nativePoint, session);
+    if (!base) return null;
+    const offset = dxfMeasureCurrentPieceOffset(session, pieceIndex);
+    return { x: base.x + offset.x, y: base.y + offset.y };
+  }
+
+  function dxfMeasureBoardToNativeLive(boardPoint, session, pieceIndex) {
+    if (!boardPoint) return null;
+    const offset = dxfMeasureCurrentPieceOffset(session, pieceIndex);
+    return dxfMeasureBoardToNative({ x: boardPoint.x - offset.x, y: boardPoint.y - offset.y }, session);
+  }
+
+  // Resolve a direct-distance endpoint to native coordinates and, when the
+  // click belongs unambiguously to one imported piece, retain that piece
+  // attachment. This lets the overlay travel with a whole-piece display move
+  // without ever changing the native coordinate used for the value.
+  function dxfMeasureOutOfPathEndpointFromBoard(session, boardPoint) {
+    if (!session || !boardPoint) return null;
+    const nearHits = dxfMeasureHitTestNativeSegments(session, boardPoint, dxfMeasureToleranceWorld());
+    const nearPieces = Array.from(new Set(nearHits.map(hit => hit.pieceIndex)));
+    if (nearPieces.length === 1) {
+      const pieceIndex = nearPieces[0];
+      return { pieceIndex, native: dxfMeasureBoardToNativeLive(boardPoint, session, pieceIndex) };
+    }
+    const containing = [];
+    session.pieceBounds.forEach((bounds, pieceIndex) => {
+      const native = dxfMeasureBoardToNativeLive(boardPoint, session, pieceIndex);
+      if (native && native.x >= bounds.x && native.x <= bounds.x + bounds.width
+        && native.y >= bounds.y && native.y <= bounds.y + bounds.height) {
+        containing.push({ pieceIndex, native, area: Math.max(1e-12, bounds.width * bounds.height) });
+      }
+    });
+    if (containing.length === 1) return { pieceIndex: containing[0].pieceIndex, native: containing[0].native };
+    if (containing.length > 1) {
+      containing.sort((a, b) => a.area - b.area || a.pieceIndex - b.pieceIndex);
+      if (containing[0].area < containing[1].area * 0.999999) {
+        return { pieceIndex: containing[0].pieceIndex, native: containing[0].native };
+      }
+    }
+    const native = dxfMeasureBoardToNative(boardPoint, session);
+    return native ? { pieceIndex: null, native } : null;
+  }
+
+  // ---- Session construction / lifecycle --------------------------------------
+
+  function makeDxfMeasureSession(nativeModel, bounds, transform, pieceFirstAnnotationIds) {
+    // Pairs native piece i with the board annotation id dxf-import.js built
+    // for that same piece's first segment, PROVIDED the two parses agree on
+    // piece count — true whenever the file has no ARC/CIRCLE/bulge entity
+    // (an arc is one native segment but N>=1 Bézier chunks in the board
+    // model, which cannot shift which entities end up grouped into which
+    // piece, but its slightly looser native bounding box, see
+    // dxf-import.js's dxfSegmentPoints 'arc' case, could in principle change
+    // a containment-merge decision at the margin — accepted for v1, flagged
+    // here rather than silently assumed exact). A mismatch leaves every
+    // pieceAnchors entry null, which dxfMeasureCurrentPieceOffset already
+    // treats as "assume unmoved" (offset {0,0}) rather than throwing.
+    const ids = Array.isArray(pieceFirstAnnotationIds) ? pieceFirstAnnotationIds : [];
+    const pieceAnchors = nativeModel.pieces.length === ids.length
+      ? nativeModel.pieces.map((piece, i) => (ids[i] == null || !piece.segments.length ? null : {
+        annotationId: ids[i],
+        nativeStart: dxfPointOnSegment(piece.segments[0], 0),
+      }))
+      : nativeModel.pieces.map(() => null);
+    return {
+      source: {
+        unit: nativeModel.unit,
+        unitSource: nativeModel.unitSource,
+        unitDiagnostic: nativeModel.unitDiagnostic || null,
+        insunits: nativeModel.insunits != null ? nativeModel.insunits : null,
+        rejectedGeometry: clone(nativeModel.buckets || {}),
+      },
+      // RB-4: the topology merge tolerance used to build the Along Path
+      // graph must be an ABSOLUTE native-unit distance whose worst-case
+      // conversion to mm stays inside the kernel's own 0.01mm internal
+      // budget — see dxfDefaultTopologyTolerance's comment in
+      // dxf-path-kernel.js for why the old relative-diagonal tolerance
+      // (borrowed from dxf-import.js's visual piece-grouping) was not
+      // measurement-topology authority. 0.01mm expressed in native units:
+      // native units per inch is 1/nativeModel.unit, and inches per mm is
+      // 1/25.4, so native units per mm is 1/(25.4*nativeModel.unit).
+      topologyToleranceNative: 0.01 / (25.4 * (nativeModel.unit || 1)),
+      pieces: nativeModel.pieces,
+      pieceBounds: nativeModel.pieces.map(piece => dxfBoundsOfSegments(piece.segments)),
+      pieceAnchors,
+      transforms: { bounds: clone(bounds), placement: clone(transform) },
+      measurements: [],
+      interaction: null,
+      selectedMeasurementId: null,
+      pendingMode: 'along-path',
+      placementArmed: false,
+      nextMeasurementId: 1,
+      history: { past: [], future: [] },
+      diagnostics: { dragPreviewRecomputes: 0 },
+    };
+  }
+
+  // Called from importDxfText right after a successful import, with the
+  // SAME bounds/transform it just computed for the board annotations (see
+  // the mapping comment above for why) and the id of each piece's first
+  // annotation (for later move-tracking, see dxfMeasureCurrentPieceOffset).
+  // Parses the same text a second time, through the native-coordinate
+  // adapter — a corrupt/rejected file here would already have been rejected
+  // by parseDxfDocument first, so this is not expected to fail in practice,
+  // but a failure here leaves the session null rather than half-built.
+  function startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds) {
+    const parseStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    const nativeModel = parseDxfNativeModel(text);
+    const parseFinishedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    if (!nativeModel.ok) {
+      // RB-5: the board-annotation import (importDxfText, US-104) already
+      // succeeded by the time this runs — that atomic behavior must not be
+      // disturbed — but a TD who just imported a DXF and reaches for Pattern
+      // Measure deserves an explicit reason it is not available, rather than
+      // a silently-missing Tools-menu feature.
+      showToast('DXF imported, but Pattern Measure could not build a native measurement '
+        + 'model for this file' + (nativeModel.message ? ' (' + nativeModel.message + ')' : '') + '.');
+      state.dxfMeasureSession = null;
+      return null;
+    }
+    state.dxfMeasureSession = makeDxfMeasureSession(nativeModel, bounds, transform, pieceFirstAnnotationIds);
+    state.dxfMeasureSession.source.nativeParseDurationMs = Math.max(0, parseFinishedAt - parseStartedAt);
+    state.dxfMeasureSession.source.nativeParserExecution = 'main-thread-measured';
+    dxfMeasureSeedHistory();
+    return state.dxfMeasureSession;
+  }
+
+  // Opening another DXF, loading a project, or resetting the board all call
+  // this so no measurement overlay can outlive the geometry it describes.
+  function resetDxfMeasureSession() {
+    state.dxfMeasureSession = null;
+  }
+
+  // ---- Hit-testing a board click against native geometry --------------------
+
+  // Finds the nearest native segment, across every piece, to a board-space
+  // click — the "Along Path" endpoint-placement hit test. `toleranceWorld`
+  // is in WORLD units (i.e. already divided by state.zoom by the caller, the
+  // same convention every other board hit-test in this codebase uses).
+  // Converts the tolerance into each piece's OWN native scale (dividing by
+  // the placement transform's scale, since flip+scale is uniform) rather
+  // than converting the click point once globally, so a per-piece live
+  // offset (see dxfMeasureCurrentPieceOffset) is applied before projecting.
+  // Returns null when nothing is within tolerance — never "the closest
+  // thing regardless of distance," matching "do not silently select the
+  // closest entity" for the multi-candidate case (candidate cycling is the
+  // interaction layer's job; this returns every candidate within tolerance,
+  // nearest first).
+  function dxfMeasureHitTestNativeSegments(session, boardPoint, toleranceWorld) {
+    if (!session || !boardPoint) return [];
+    const scale = session.transforms.placement.scale || 1;
+    const nativeTolerance = toleranceWorld / Math.max(1e-9, scale);
+    const hits = [];
+    session.pieces.forEach((piece, pieceIndex) => {
+      const nativePoint = dxfMeasureBoardToNativeLive(boardPoint, session, pieceIndex);
+      if (!nativePoint) return;
+      piece.segments.forEach((seg, segIndexInPiece) => {
+        const proj = dxfProjectPointOnSegment(nativePoint, seg);
+        if (proj && proj.distance <= nativeTolerance) {
+          hits.push({ pieceIndex, segIndexInPiece, t: proj.t, distance: proj.distance * scale });
+        }
+      });
+    });
+    hits.sort((a, b) => a.distance - b.distance);
+    return hits;
+  }
+
+  // ---- Route lookup (piece-scoped — see file header of dxf-path-kernel.js) --
+
+  // A point-on-path reference is {pieceIndex, segIndexInPiece, t}. Along Path
+  // requires A and B to resolve to the SAME connected path graph; enforcing
+  // "same piece" here, before ever calling the kernel, is what makes that
+  // check meaningful — the kernel's own segIndex addressing is only valid
+  // relative to one shared segments array, so two refs naming different
+  // pieces cannot be compared by index at all. A shared piece that is
+  // ITSELF a containment-merged union of disconnected sub-parts (e.g. an
+  // outline plus a disjoint internal grainline) still correctly resolves to
+  // NO_CONNECTED_PATH — the kernel's own graph search finds that on its own.
+  function dxfMeasureEnumerateRoutes(session, refA, refB) {
+    if (!session || !refA || !refB || refA.pieceIndex !== refB.pieceIndex) {
+      return { ok: false, reason: DXF_MEASURE_REASON.NO_CONNECTED_PATH, routes: [], truncated: false };
+    }
+    const piece = session.pieces[refA.pieceIndex];
+    if (!piece) return { ok: false, reason: DXF_MEASURE_REASON.NO_CONNECTED_PATH, routes: [], truncated: false };
+    return dxfEnumerateRoutes(piece.segments,
+      { segIndex: refA.segIndexInPiece, t: refA.t },
+      { segIndex: refB.segIndexInPiece, t: refB.t },
+      session.topologyToleranceNative);
+  }
+
+  // ---- Pure measurement builders ---------------------------------------------
+
+  // RB-1: `route` is stored EXACTLY as dxfMeasureEnumerateRoutes returned it
+  // — a canonical A-to-B traversal — regardless of `direction`. Direction is
+  // a pure ARROW/rendering flag (see render-dxf-measurements.js), never
+  // baked into which end of the stored route is "first"; that decoupling is
+  // what makes "A/B pixel locations remain unchanged when direction
+  // changes" and "no route direction depends on DFS array order" hold by
+  // construction rather than by convention. `routeCandidateIndex` is the
+  // TD's actual chosen candidate (0-based, into the SAME canonical
+  // enumeration a fresh dxfMeasureEnumerateRoutes(session,a,b) call would
+  // return) — stored verbatim, never re-derived from `direction` or from any
+  // "index === 1 means reverse" assumption.
+  function dxfMeasureCreateAlongPathMeasurement(session, refA, refB, route, direction, routeCandidateIndex, routeCandidateCount) {
+    if (!session || !route || !Array.isArray(route.steps) || !route.steps.length || !(route.length > 0)) return null;
+    const pieceA = session.pieces[refA.pieceIndex];
+    const pieceB = session.pieces[refB.pieceIndex];
+    const segA = pieceA && pieceA.segments[refA.segIndexInPiece];
+    const segB = pieceB && pieceB.segments[refB.segIndexInPiece];
+    if (!segA || !segB) return null;
+    const id = session.nextMeasurementId;
+    session.nextMeasurementId += 1;
+    const measurement = {
+      id,
+      mode: 'along-path',
+      direction: direction === 'reverse' ? 'reverse' : 'forward',
+      a: { pieceIndex: refA.pieceIndex, segIndexInPiece: refA.segIndexInPiece, t: refA.t, native: dxfPointOnSegment(segA, refA.t) },
+      b: { pieceIndex: refB.pieceIndex, segIndexInPiece: refB.segIndexInPiece, t: refB.t, native: dxfPointOnSegment(segB, refB.t) },
+      route,
+      routeCandidateIndex: routeCandidateIndex || 0,
+      routeCandidateCount: routeCandidateCount || 1,
+      labelOffset: null,
+    };
+    session.measurements.push(measurement);
+    dxfMeasurePushHistoryIfChanged();
+    return measurement;
+  }
+
+  function dxfMeasureCreateOutOfPathMeasurement(session, endpointA, endpointB) {
+    if (!session || !endpointA || !endpointB) return null;
+    const normalizedA = endpointA.native ? endpointA : { pieceIndex: null, native: endpointA };
+    const normalizedB = endpointB.native ? endpointB : { pieceIndex: null, native: endpointB };
+    if (!normalizedA.native || !normalizedB.native) return null;
+    const id = session.nextMeasurementId;
+    session.nextMeasurementId += 1;
+    const measurement = {
+      id,
+      mode: 'out-of-path',
+      direction: 'forward',
+      a: { pieceIndex: normalizedA.pieceIndex == null ? null : normalizedA.pieceIndex, segIndexInPiece: null, t: null, native: clonePoint(normalizedA.native) },
+      b: { pieceIndex: normalizedB.pieceIndex == null ? null : normalizedB.pieceIndex, segIndexInPiece: null, t: null, native: clonePoint(normalizedB.native) },
+      route: null,
+      labelOffset: null,
+    };
+    session.measurements.push(measurement);
+    dxfMeasurePushHistoryIfChanged();
+    return measurement;
+  }
+
+  function dxfMeasureGetMeasurement(session, id) {
+    if (!session) return null;
+    return session.measurements.find(m => m.id === id) || null;
+  }
+
+  function dxfMeasureDeleteMeasurement(session, id) {
+    if (!session) return false;
+    const idx = session.measurements.findIndex(m => m.id === id);
+    if (idx === -1) return false;
+    session.measurements.splice(idx, 1);
+    if (session.selectedMeasurementId === id) session.selectedMeasurementId = null;
+    dxfMeasurePushHistoryIfChanged();
+    return true;
+  }
+
+  // RB-3: COMMITS a fully-resolved endpoint move in one shot — never called
+  // with a still-ambiguous or still-invalid candidate. The interaction layer
+  // (dxf-measure-interaction.js) owns projecting the pointer, hit-testing
+  // entities, and enumerating routes against a SCRATCH copy while the drag is
+  // in progress (session.interaction.preview); this function only ever
+  // mutates the real `measurement` once that scratch work has resolved to
+  // exactly one entity and exactly one route (or the TD has explicitly
+  // confirmed one from an ambiguous set) — matching "endpoint drag is
+  // transactional... commit exactly once on pointer-up/confirmation." `route`
+  // is the canonical A-to-B route already returned by
+  // dxfMeasureEnumerateRoutes for the NEW (refA/refB) pair — this function
+  // does no enumeration of its own, so it cannot itself introduce a stale or
+  // re-derived candidate.
+  function dxfMeasureCommitEndpoint(session, measurement, which, ref, route, routeCandidateIndex, routeCandidateCount) {
+    if (!session || !measurement) return false;
+    const key = which === 'a' ? 'a' : 'b';
+    if (measurement.mode === 'out-of-path') {
+      measurement[key] = {
+        pieceIndex: ref.pieceIndex == null ? null : ref.pieceIndex,
+        segIndexInPiece: null,
+        t: null,
+        native: clonePoint(ref.native),
+      };
+      return true;
+    }
+    const piece = session.pieces[ref.pieceIndex];
+    const seg = piece && piece.segments[ref.segIndexInPiece];
+    if (!seg) return false;
+    measurement[key] = { pieceIndex: ref.pieceIndex, segIndexInPiece: ref.segIndexInPiece, t: ref.t, native: dxfPointOnSegment(seg, ref.t) };
+    measurement.route = route;
+    measurement.routeCandidateIndex = routeCandidateIndex || 0;
+    measurement.routeCandidateCount = routeCandidateCount || 1;
+    return true;
+  }
+
+  // ---- Value / formatting -----------------------------------------------------
+
+  function dxfMeasureValueInches(session, measurement) {
+    if (!session || !measurement) return null;
+    const factor = session.source.unit;
+    let nativeLength = null;
+    if (measurement.mode === 'out-of-path') {
+      nativeLength = dxfDirectDistance(measurement.a.native, measurement.b.native);
+    } else if (measurement.route) {
+      const piece = session.pieces[measurement.a.pieceIndex];
+      nativeLength = piece ? dxfRouteLength(measurement.route, piece.segments) : null;
+    }
+    return Number.isFinite(nativeLength) && Number.isFinite(factor) ? nativeLength * factor : null;
+  }
+
+  // Up to 3 decimals, trailing zeroes trimmed, inch quote suffix — matches
+  // 2.25", 2.257", 10" exactly, while retaining the precision the 0.1mm CLO
+  // acceptance gate needs.
+  function dxfMeasureFormatInches(value) {
+    if (!Number.isFinite(value)) return null;
+    let s = value.toFixed(3);
+    if (s.indexOf('.') !== -1) s = s.replace(/0+$/, '').replace(/\.$/, '');
+    return s + '"';
+  }
+
+  // ---- Mini undo stack (fingerprint-diff, mirrors src/project/history.js) ---
+
+  function dxfMeasureSnapshot(session) {
+    if (!session) return null;
+    return {
+      measurements: clone(session.measurements),
+      nextMeasurementId: session.nextMeasurementId,
+    };
+  }
+
+  function dxfMeasureFingerprint(snapshot) {
+    return JSON.stringify(snapshot);
+  }
+
+  function dxfMeasurePushHistoryIfChanged() {
+    const session = state.dxfMeasureSession;
+    if (!session) return;
+    const snap = dxfMeasureSnapshot(session);
+    const fingerprint = dxfMeasureFingerprint(snap);
+    const last = session.history.past[session.history.past.length - 1];
+    if (last && last.fingerprint === fingerprint) return;
+    session.history.past.push({ snapshot: snap, fingerprint });
+    if (session.history.past.length > HISTORY_LIMIT) session.history.past.shift();
+    session.history.future = [];
+  }
+
+  function dxfMeasureSeedHistory() {
+    const session = state.dxfMeasureSession;
+    if (!session) return;
+    const snap = dxfMeasureSnapshot(session);
+    session.history.past = [{ snapshot: snap, fingerprint: dxfMeasureFingerprint(snap) }];
+    session.history.future = [];
+  }
+
+  function dxfMeasureRestoreSnapshot(session, snapshot) {
+    if (!session || !snapshot) return;
+    session.measurements = clone(snapshot.measurements);
+    session.nextMeasurementId = snapshot.nextMeasurementId;
+    session.selectedMeasurementId = null;
+    session.interaction = null;
+  }
+
+  function dxfMeasureIsSessionActive() {
+    return !!state.dxfMeasureSession;
+  }
+
+  function dxfMeasureUndo() {
+    const session = state.dxfMeasureSession;
+    if (!session || session.history.past.length <= 1) return false;
+    const current = session.history.past.pop();
+    session.history.future.push(current);
+    const target = session.history.past[session.history.past.length - 1];
+    dxfMeasureRestoreSnapshot(session, target.snapshot);
+    return true;
+  }
+
+  function dxfMeasureRedo() {
+    const session = state.dxfMeasureSession;
+    if (!session || !session.history.future.length) return false;
+    const next = session.history.future.pop();
+    session.history.past.push(next);
+    dxfMeasureRestoreSnapshot(session, next.snapshot);
+    return true;
+  }
+
+  // ---- src/manual/dxf-measure-interaction.js ----
+// US-105: DXF Pattern Measurement — the "Pattern Measure" tool's pointer +
+// keyboard interaction. Owns session.interaction (a session-scoped gesture
+// record, deliberately separate from state.interaction — Pattern Measure
+// works against native (pieceIndex, segIndexInPiece, t) references, not
+// board annotations, and must never touch state.annotations while active).
+// Entry points are called from pointer-events.js/keyboard-shortcuts.js only
+// while state.tool === 'pattern-measure'.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// CLAUDE_REWORK_CHECKLIST.md RB-1/RB-2/RB-3 rewrote this file's placement
+// and drag flows around three decoupled ideas:
+//  - A/B are IDENTITIES (measurement.a / measurement.b), never re-derived
+//    from route-point array order — `direction` is a pure arrow-rendering
+//    flag, `routeCandidateIndex` is the TD's actual chosen candidate (into a
+//    canonical A-to-B enumeration), and the two never encode each other.
+//  - Any point where more than one native entity is a valid click target
+//    (RB-2) or more than one route connects A to B (RB-1) is an explicit,
+//    keyboard-driven choice — never `hits[0]` / `routes[0]`.
+//  - Endpoint drag is transactional (RB-3): mousemove only ever updates a
+//    SCRATCH preview (session.interaction.preview); the real measurement is
+//    mutated exactly once, at the moment a drag or a candidate choice
+//    resolves unambiguously.
+
+  const DXF_MEASURE_HIT_TOLERANCE_PX = 10; // screen px, matches the existing endpoint/handle catch radius convention
+
+  function dxfMeasureToleranceWorld() {
+    return DXF_MEASURE_HIT_TOLERANCE_PX / Math.max(0.0001, state.zoom);
+  }
+
+  // ---- Where a measurement's handles/label/route currently render ----------
+  //
+  // Every one of these consults a live drag preview FIRST (dxfMeasureDragPreviewFor)
+  // so a completed measurement's own committed a/b/route is never mutated
+  // mid-gesture (RB-3) while the on-canvas feedback still tracks the cursor.
+
+  // The in-progress drag preview for `measurementId`, or null if no drag is
+  // active for it. See dxfMeasureRecomputeDragPreview for `preview`'s shape.
+  function dxfMeasureDragPreviewFor(session, measurementId) {
+    const interaction = session && session.interaction;
+    if (!interaction || interaction.type !== 'drag-endpoint' || interaction.measurementId !== measurementId) return null;
+    return interaction.preview || null;
+  }
+
+  // True while a drag is in progress but the CURRENT hover position does not
+  // resolve to a valid endpoint/route — used by the renderer to tint the
+  // route red instead of silently keeping the last géometry on screen.
+  function dxfMeasureDragInvalidFor(session, measurementId) {
+    const preview = dxfMeasureDragPreviewFor(session, measurementId);
+    return !!(preview && preview.status !== 'ok');
+  }
+
+  function dxfMeasureNativePointForRef(session, ref) {
+    if (!session || !ref) return null;
+    const piece = session.pieces[ref.pieceIndex];
+    const seg = piece && piece.segments[ref.segIndexInPiece];
+    return seg ? dxfPointOnSegment(seg, ref.t) : null;
+  }
+
+  function dxfMeasureHandleWorldPos(session, measurement, which) {
+    const preview = dxfMeasureDragPreviewFor(session, measurement.id);
+    if (preview && preview.status === 'ok') {
+      if (measurement.mode === 'out-of-path') {
+        const isDraggedEnd = session.interaction.which === which;
+        const endpoint = isDraggedEnd ? preview.endpoint : measurement[which];
+        return endpoint.pieceIndex == null
+          ? dxfMeasureNativeToBoard(endpoint.native, session)
+          : dxfMeasureNativeToBoardLive(endpoint.native, session, endpoint.pieceIndex);
+      }
+      const ref = which === 'a' ? preview.refA : preview.refB;
+      const native = dxfMeasureNativePointForRef(session, ref);
+      return native ? dxfMeasureNativeToBoardLive(native, session, ref.pieceIndex) : null;
+    }
+    const endpoint = measurement[which];
+    if (!endpoint) return null;
+    if (measurement.mode === 'out-of-path') {
+      return endpoint.pieceIndex == null
+        ? dxfMeasureNativeToBoard(endpoint.native, session)
+        : dxfMeasureNativeToBoardLive(endpoint.native, session, endpoint.pieceIndex);
+    }
+    return dxfMeasureNativeToBoardLive(endpoint.native, session, endpoint.pieceIndex);
+  }
+
+  // Ordered board-space points tracing exactly the route a completed
+  // measurement's value was computed from — the render layer draws this
+  // same list, so "the highlighted route is exactly the route measured"
+  // holds by construction (one shared function, not two independently
+  // written paths). Always in canonical A-to-B order (see file header) —
+  // `direction` never reorders this array; the renderer picks which END gets
+  // the arrowhead instead (drawDxfMeasureDirectionArrow).
+  function dxfMeasureRouteWorldPoints(session, measurement, samplesPerStep) {
+    if (!session || !measurement) return [];
+    if (measurement.mode === 'out-of-path') {
+      const a = dxfMeasureHandleWorldPos(session, measurement, 'a');
+      const b = dxfMeasureHandleWorldPos(session, measurement, 'b');
+      return a && b ? [a, b] : [];
+    }
+    const preview = dxfMeasureDragPreviewFor(session, measurement.id);
+    const live = preview && preview.status === 'ok';
+    const route = live ? preview.route : measurement.route;
+    const pieceIndex = live ? preview.refA.pieceIndex : (measurement.a && measurement.a.pieceIndex);
+    if (!route) return [];
+    const piece = session.pieces[pieceIndex];
+    if (!piece) return [];
+    const n = samplesPerStep || 12;
+    const points = [];
+    for (const step of route.steps) {
+      const seg = piece.segments[step.segIndex];
+      if (!seg) continue;
+      for (let i = 0; i <= n; i += 1) {
+        const t = step.t0 + (step.t1 - step.t0) * (i / n);
+        const board = dxfMeasureNativeToBoardLive(dxfPointOnSegment(seg, t), session, pieceIndex);
+        if (board) points.push(board);
+      }
+    }
+    return points;
+  }
+
+  // Default label anchor: the midpoint (by point count along the sampled
+  // route — adequate for a compact value pill, not a measurement itself) for
+  // Along Path, or the straight midpoint for Out of Path. A manually-dragged
+  // label stores labelOffset as a board-space delta FROM this anchor, so the
+  // label stays correctly positioned even if the piece itself later moves
+  // (the anchor moves with dxfMeasureNativeToBoardLive; the delta is applied
+  // on top of wherever that lands).
+  function dxfMeasureLabelAnchorWorldPos(session, measurement) {
+    const pts = dxfMeasureRouteWorldPoints(session, measurement, 12);
+    if (!pts.length) return null;
+    return pts[Math.floor(pts.length / 2)];
+  }
+
+  function dxfMeasureLabelWorldPos(session, measurement) {
+    const anchor = dxfMeasureLabelAnchorWorldPos(session, measurement);
+    if (!anchor) return null;
+    if (!measurement.labelOffset) return { x: anchor.x + 14 / state.zoom, y: anchor.y - 20 / state.zoom };
+    return { x: anchor.x + measurement.labelOffset.x, y: anchor.y + measurement.labelOffset.y };
+  }
+
+  // The numeric value to DISPLAY right now — the committed value, unless a
+  // live, currently-valid drag preview exists for this measurement, in which
+  // case the preview's own candidate geometry is measured instead. Never
+  // mutates `measurement` (RB-3) — this is read-only, display-time math.
+  function dxfMeasureDisplayValueInches(session, measurement) {
+    const preview = dxfMeasureDragPreviewFor(session, measurement.id);
+    if (preview && preview.status === 'ok') {
+      const factor = session.source.unit;
+      let nativeLength = null;
+      if (measurement.mode === 'out-of-path') {
+        const which = session.interaction.which;
+        const otherNative = which === 'a' ? measurement.b.native : measurement.a.native;
+        nativeLength = dxfDirectDistance(preview.endpoint.native, otherNative);
+      } else {
+        const piece = session.pieces[preview.refA.pieceIndex];
+        nativeLength = piece ? dxfRouteLength(preview.route, piece.segments) : null;
+      }
+      return Number.isFinite(nativeLength) && Number.isFinite(factor) ? nativeLength * factor : null;
+    }
+    return dxfMeasureValueInches(session, measurement);
+  }
+
+  // ---- Hit-testing (handle > label > route body > new placement) -----------
+
+  function dxfMeasureHitTestHandle(session, world, tol) {
+    // Only the active measurement renders A/B handles. Hidden handles from
+    // inactive measurements must not remain invisible hit targets underneath
+    // the visible one (two measurements may deliberately share A/B).
+    const m = dxfMeasureGetMeasurement(session, session.selectedMeasurementId);
+    if (!m) return null;
+    let best = null;
+    for (const which of ['a', 'b']) {
+      const p = dxfMeasureHandleWorldPos(session, m, which);
+      const d = p ? distance(world, p) : Infinity;
+      if (d <= tol && (!best || d < best.distance)) best = { measurementId: m.id, which, distance: d };
+    }
+    return best ? { measurementId: best.measurementId, which: best.which } : null;
+  }
+
+  function dxfMeasureHitTestLabel(session, world, tol) {
+    for (const m of session.measurements) {
+      const p = dxfMeasureLabelWorldPos(session, m);
+      if (p && distance(world, p) <= tol) return { measurementId: m.id };
+    }
+    return null;
+  }
+
+  function dxfMeasureHitTestRouteBody(session, world, tol) {
+    for (const m of session.measurements) {
+      const pts = dxfMeasureRouteWorldPoints(session, m, 12);
+      for (let i = 0; i < pts.length - 1; i += 1) {
+        if (pointToSegmentDistance(world, pts[i], pts[i + 1]) <= tol) return { measurementId: m.id };
+      }
+    }
+    return null;
+  }
+
+  // ---- Entity hit-testing: every in-tolerance candidate, never hits[0] -----
+
+  // RB-2: the raw, unfiltered candidate set for a click — 0, 1, or several
+  // native segments within tolerance. Returning ALL of them (not just the
+  // nearest) is what lets the caller tell "unambiguous" from "needs a human
+  // choice" apart; picking hits[0] here would be exactly the silent-guess
+  // behavior the checklist forbids.
+  function dxfMeasureEntityHitsForClick(session, world) {
+    return dxfMeasureHitTestNativeSegments(session, world, dxfMeasureToleranceWorld());
+  }
+
+  function dxfMeasureRefFromHit(hit) {
+    return { pieceIndex: hit.pieceIndex, segIndexInPiece: hit.segIndexInPiece, t: hit.t };
+  }
+
+  // ---- Route/direction candidate construction (RB-1) -------------------------
+  //
+  // Unifies "choose which of several routes" and "choose forward vs reverse
+  // on a single-route open path" into ONE candidate list the same Tab/Enter
+  // machinery already built for route-choosing drives — see the checklist's
+  // "add a small transient direction/route chooser for a one-route open
+  // path": rather than a second UI construct, a 1-route result gets two
+  // VIRTUAL candidates (same route, opposite arrow) instead of silently
+  // auto-committing as 'forward'. `direction` here is a pure arrow flag —
+  // never "index === 1 means reverse" (the exact assumption RB-1 forbids).
+  function dxfMeasureBuildDirectionCandidates(routes, segments) {
+    if (routes.length === 1) {
+      return [{ routeIndex: 0, direction: 'forward' }, { routeIndex: 0, direction: 'reverse' }];
+    }
+    const ranked = routes.map((route, routeIndex) => ({
+      routeIndex,
+      score: dxfRouteAuthoredDirectionScore(route, segments),
+      identity: dxfMeasureRouteIdentity(route),
+    })).sort((a, b) => a.score - b.score || a.identity.localeCompare(b.identity));
+    const midpoint = (ranked[0].score + ranked[ranked.length - 1].score) / 2;
+    const directions = new Map(ranked.map((item, rank) => [item.routeIndex,
+      rank === 0 ? 'reverse' : rank === ranked.length - 1 ? 'forward' : (item.score < midpoint ? 'reverse' : 'forward')]));
+    return routes.map((_, routeIndex) => ({ routeIndex, direction: directions.get(routeIndex) }));
+  }
+
+  function dxfMeasureRouteIdentity(route) {
+    return route && Array.isArray(route.steps) ? route.steps.map(step => step.segIndex).join('>') : '';
+  }
+
+  function dxfMeasurePreferredCandidateIndex(measurement, routes, candidates) {
+    if (!measurement || !measurement.route) return 0;
+    const identity = dxfMeasureRouteIdentity(measurement.route);
+    const candidateIndex = candidates.findIndex(candidate => dxfMeasureRouteIdentity(routes[candidate.routeIndex]) === identity
+      && candidate.direction === measurement.direction);
+    return candidateIndex >= 0 ? candidateIndex : 0;
+  }
+
+  function dxfMeasureRouteChoiceToast(routeCount, truncated) {
+    if (truncated) {
+      return routeCount + '+ routes found (route search capped — not the complete set) — Tab to cycle, Enter to choose, Escape to cancel.';
+    }
+    if (routeCount === 1) return 'Choose a direction — Tab to cycle Forward/Reverse, Enter to choose, Escape to cancel.';
+    if (routeCount === 2) return '2 routes found (complementary directions) — Tab to cycle, Enter to choose, Escape to cancel.';
+    return routeCount + ' routes found — Tab to cycle, Enter to choose, Escape to cancel.';
+  }
+
+  // ---- Placement (Along Path / Out of Path) ----------------------------------
+
+  function dxfMeasureFinishAlongPath(session, refA, refB, route, direction, routeCandidateIndex, routeCandidateCount) {
+    const measurement = dxfMeasureCreateAlongPathMeasurement(session, refA, refB, route, direction, routeCandidateIndex, routeCandidateCount);
+    if (!measurement) return;
+    session.selectedMeasurementId = measurement.id;
+    session.interaction = null;
+    updateUI();
+    requestRender();
+  }
+
+  // Runs route enumeration for a (refA, refB) pair the TD has already picked
+  // (both entity-unambiguous) and either fails with a toast (leaving
+  // `session.interaction` as whatever it already was, so the TD can retry B
+  // without re-placing A) or enters the unified direction/route chooser —
+  // ALWAYS, even for a single route, so "an open path with one route is
+  // committed as forward immediately" (RB-1's defect #1) cannot recur.
+  function dxfMeasureResolveAlongPathPair(session, refA, refB) {
+    const result = dxfMeasureEnumerateRoutes(session, refA, refB);
+    if (!result.ok || !result.routes.length) {
+      showToast(result.reason === DXF_MEASURE_REASON.NO_CONNECTED_PATH
+        ? 'Point B is not on the same connected path as point A.'
+        : result.reason === DXF_MEASURE_REASON.ROUTE_SEARCH_TRUNCATED
+          ? 'This A–B pair has too many routes to prove completely. Measurement canceled; choose different endpoints.'
+          : 'Could not measure between those two points.');
+      return;
+    }
+    const piece = session.pieces[refA.pieceIndex];
+    const candidates = dxfMeasureBuildDirectionCandidates(result.routes, piece && piece.segments);
+    session.interaction = {
+      type: 'choosing-route', mode: 'along-path', a: refA, b: refB,
+      routes: result.routes, truncated: result.truncated, candidates, chosenIndex: 0,
+    };
+    showToast(dxfMeasureRouteChoiceToast(result.routes.length, result.truncated));
+    updateUI();
+    requestRender();
+  }
+
+  // Resolves one endpoint click into a single unambiguous ref, entering
+  // `choosing-entity` (RB-2) instead of guessing whenever more than one
+  // native entity is within tolerance. `onResolved(ref)` runs only once the
+  // TD's intended entity is unambiguous — either immediately (0 or 1 hit) or
+  // after an explicit Tab/Enter choice. `forWhich`/`resume` let Escape during
+  // the entity choice restore exactly the interaction state that existed
+  // before this click, per "Escape cancels only the pending candidate
+  // choice."
+  function dxfMeasureResolveEntityClick(session, world, forWhich, resume, onResolved) {
+    const hits = dxfMeasureEntityHitsForClick(session, world);
+    if (!hits.length) {
+      showToast(forWhich === 'a'
+        ? 'Click on the imported DXF pattern to place point A.'
+        : 'Click on the same pattern piece to place point B.');
+      return;
+    }
+    if (hits.length === 1) { onResolved(dxfMeasureRefFromHit(hits[0])); return; }
+    session.interaction = { type: 'choosing-entity', forWhich, hits, chosenIndex: 0, resume, onResolved };
+    showToast(hits.length + ' overlapping entities near that point — Tab to cycle, Enter to choose, Escape to cancel.');
+    updateUI();
+    requestRender();
+  }
+
+  function dxfMeasureBeginPlacement(session, world) {
+    if (session.pendingMode === 'out-of-path') {
+      const endpoint = dxfMeasureOutOfPathEndpointFromBoard(session, world);
+      if (!endpoint) { showToast('Click anywhere to place point A.'); return; }
+      session.interaction = { type: 'awaiting-b', mode: 'out-of-path', a: endpoint };
+      session.placementArmed = false;
+      session.selectedMeasurementId = null;
+      updateUI();
+      requestRender();
+      return;
+    }
+    dxfMeasureResolveEntityClick(session, world, 'a', null, (ref) => {
+      session.interaction = { type: 'awaiting-b', mode: 'along-path', a: ref };
+      session.placementArmed = false;
+      session.selectedMeasurementId = null;
+      updateUI();
+      requestRender();
+    });
+  }
+
+  function dxfMeasureCompletePlacement(session, world) {
+    const pending = session.interaction;
+    if (!pending || pending.type !== 'awaiting-b') return;
+    if (pending.mode === 'out-of-path') {
+      const endpointB = dxfMeasureOutOfPathEndpointFromBoard(session, world);
+      const measurement = dxfMeasureCreateOutOfPathMeasurement(session, pending.a, endpointB);
+      session.selectedMeasurementId = measurement ? measurement.id : null;
+      session.interaction = null;
+      updateUI();
+      requestRender();
+      return;
+    }
+    dxfMeasureResolveEntityClick(session, world, 'b', pending, (refB) => {
+      dxfMeasureResolveAlongPathPair(session, pending.a, refB);
+    });
+  }
+
+  // ---- Unified Tab/Shift+Tab cycle + Enter confirm ---------------------------
+  // (drives BOTH 'choosing-entity' and 'choosing-route' — same keys, same
+  // affordance, whichever interaction is currently pending.)
+
+  function dxfMeasureCycleRouteCandidate(session, delta) {
+    const pending = session.interaction;
+    if (!pending || (pending.type !== 'choosing-route' && pending.type !== 'choosing-entity')) return false;
+    const list = pending.type === 'choosing-route' ? pending.candidates : pending.hits;
+    const n = list.length;
+    pending.chosenIndex = ((pending.chosenIndex + delta) % n + n) % n;
+    requestRender();
+    return true;
+  }
+
+  function dxfMeasureConfirmRouteCandidate(session) {
+    const pending = session.interaction;
+    if (!pending) return false;
+    if (pending.type === 'choosing-entity') {
+      const hit = pending.hits[pending.chosenIndex];
+      pending.onResolved(dxfMeasureRefFromHit(hit));
+      return true;
+    }
+    if (pending.type === 'choosing-route') {
+      if (pending.truncated) {
+        showToast('Route search was incomplete. No measurement was committed.');
+        session.interaction = null;
+        requestRender();
+        return true;
+      }
+      const chosen = pending.candidates[pending.chosenIndex];
+      dxfMeasureFinishAlongPath(session, pending.a, pending.b, pending.routes[chosen.routeIndex],
+        chosen.direction, chosen.routeIndex, pending.routes.length);
+      return true;
+    }
+    return false;
+  }
+
+  // ---- Endpoint / label drag --------------------------------------------------
+
+  function dxfMeasureStartHandleDrag(session, hit, world) {
+    session.interaction = {
+      type: 'drag-endpoint', measurementId: hit.measurementId, which: hit.which, armed: false,
+      startWorld: { x: world.x, y: world.y }, beforeFingerprint: dxfMeasureFingerprint(dxfMeasureSnapshot(session)),
+      pendingWorld: null, preview: null,
+    };
+    session.selectedMeasurementId = hit.measurementId;
+  }
+
+  function dxfMeasureStartLabelDrag(session, hit, world) {
+    const measurement = dxfMeasureGetMeasurement(session, hit.measurementId);
+    if (!measurement) return;
+    const anchor = dxfMeasureLabelAnchorWorldPos(session, measurement);
+    const current = dxfMeasureLabelWorldPos(session, measurement);
+    session.interaction = {
+      type: 'drag-label', measurementId: hit.measurementId, armed: false,
+      startWorld: { x: world.x, y: world.y },
+      anchorAtStart: anchor, offsetAtStart: current && anchor ? { x: current.x - anchor.x, y: current.y - anchor.y } : { x: 0, y: 0 },
+      labelOffsetAtStart: measurement.labelOffset ? clone(measurement.labelOffset) : null,
+      beforeFingerprint: dxfMeasureFingerprint(dxfMeasureSnapshot(session)),
+    };
+    session.selectedMeasurementId = hit.measurementId;
+  }
+
+  function dxfMeasureDragArmed(interaction, world) {
+    if (interaction.armed) return true;
+    if (Math.hypot((world.x - interaction.startWorld.x) * state.zoom, (world.y - interaction.startWorld.y) * state.zoom) <= 3) return false;
+    interaction.armed = true;
+    return true;
+  }
+
+  // RB-3: mousemove NEVER mutates `measurement` and never re-projects/re-
+  // enumerates synchronously — it only records the latest raw pointer
+  // position (`pendingWorld`) and asks for a redraw. The actual (expensive)
+  // projection + route enumeration happens in dxfMeasureRecomputeDragPreview,
+  // called from the render layer at most once per animation frame (however
+  // many raw mousemove events arrived since the last frame collapse into
+  // that one recompute) — see render-dxf-measurements.js's drawDxfMeasurements.
+  function dxfMeasureOnDragEndpointMove(session, world) {
+    const interaction = session.interaction;
+    if (!dxfMeasureDragArmed(interaction, world)) return;
+    interaction.pendingWorld = { x: world.x, y: world.y };
+    requestRender();
+  }
+
+  // Projects `interaction.pendingWorld` into a candidate new endpoint WITHOUT
+  // touching the real measurement (RB-3's "project to a candidate endpoint
+  // without mutating the measurement"), applying the SAME entity-ambiguity
+  // rule as placement (RB-2) — a drag that hovers over more than one entity
+  // does not silently pick one, it reports `ambiguous-entity` and keeps
+  // showing the last COMMITTED geometry (via dxfMeasureDragInvalidFor) until
+  // the TD moves to an unambiguous spot or releases to choose explicitly.
+  function dxfMeasureRecomputeDragPreview(session, interaction) {
+    if (!interaction.pendingWorld) return;
+    if (session.diagnostics) session.diagnostics.dragPreviewRecomputes += 1;
+    const world = interaction.pendingWorld;
+    interaction.pendingWorld = null;
+    const measurement = dxfMeasureGetMeasurement(session, interaction.measurementId);
+    if (!measurement) { interaction.preview = { status: 'invalid' }; return; }
+    if (measurement.mode === 'out-of-path') {
+      const endpoint = dxfMeasureOutOfPathEndpointFromBoard(session, world);
+      interaction.preview = endpoint ? { status: 'ok', endpoint } : { status: 'invalid' };
+      return;
+    }
+    const hits = dxfMeasureHitTestNativeSegments(session, world, dxfMeasureToleranceWorld() * 4);
+    const otherRef = interaction.which === 'a' ? measurement.b : measurement.a;
+    const samePiece = hits.filter(h => h.pieceIndex === otherRef.pieceIndex);
+    if (!samePiece.length) { interaction.preview = { status: 'invalid' }; return; }
+    if (samePiece.length > 1) {
+      interaction.preview = { status: 'ambiguous-entity', hits: samePiece };
+      return;
+    }
+    const ref = dxfMeasureRefFromHit(samePiece[0]);
+    const refA = interaction.which === 'a' ? ref : otherRef;
+    const refB = interaction.which === 'a' ? otherRef : ref;
+    const result = dxfMeasureEnumerateRoutes(session, refA, refB);
+    if (result.reason === DXF_MEASURE_REASON.ROUTE_SEARCH_TRUNCATED || result.truncated) {
+      interaction.preview = { status: 'truncated-route' };
+      return;
+    }
+    if (!result.ok || !result.routes.length) { interaction.preview = { status: 'invalid' }; return; }
+    if (result.routes.length > 1) {
+      interaction.preview = { status: 'ambiguous-route', refA, refB, routes: result.routes, truncated: result.truncated };
+      return;
+    }
+    interaction.preview = {
+      status: 'ok', refA, refB, route: result.routes[0], routeCandidateIndex: 0, routeCandidateCount: 1, truncated: result.truncated,
+    };
+  }
+
+  function dxfMeasureOnDragLabelMove(session, world) {
+    const interaction = session.interaction;
+    if (!dxfMeasureDragArmed(interaction, world)) return;
+    const measurement = dxfMeasureGetMeasurement(session, interaction.measurementId);
+    if (!measurement || !interaction.anchorAtStart) return;
+    const dx = world.x - interaction.startWorld.x;
+    const dy = world.y - interaction.startWorld.y;
+    measurement.labelOffset = { x: interaction.offsetAtStart.x + dx, y: interaction.offsetAtStart.y + dy };
+    requestRender();
+  }
+
+  // The single place an endpoint drag (or a drag's follow-up entity/route
+  // choice) ever writes into the real measurement — everything upstream of
+  // this only ever produced a fully-resolved (ref, route, direction) triple.
+  // `direction` is optional/null: a plain unambiguous drag never changes it
+  // (only the endpoint/route move); it is set only when the TD explicitly
+  // picked a Forward/Reverse candidate out of a post-drag ambiguous-route
+  // choice, so choosing "reverse" there actually flips the arrow.
+  function dxfMeasureCommitDragEndpointFinal(session, measurementId, which, ref, route, routeCandidateIndex, routeCandidateCount, direction, beforeFingerprint) {
+    const measurement = dxfMeasureGetMeasurement(session, measurementId);
+    if (!measurement) { session.interaction = null; requestRender(); return; }
+    dxfMeasureCommitEndpoint(session, measurement, which, ref, route, routeCandidateIndex, routeCandidateCount);
+    if (direction) measurement.direction = direction;
+    session.interaction = null;
+    const after = dxfMeasureFingerprint(dxfMeasureSnapshot(session));
+    if (beforeFingerprint !== after) dxfMeasurePushHistoryIfChanged();
+    updateUI();
+    requestRender();
+  }
+
+  // Re-enumerates routes for a (refA, refB) pair produced by resolving a
+  // mid-drag entity ambiguity (RB-2 applied to RB-3): if the now-explicit
+  // entity still leaves several routes, this chains into the SAME
+  // choosing-route machinery placement uses (via `commitInto`) rather than
+  // silently taking routes[0] — a second layer of ambiguity does not get to
+  // skip the same rule the first layer just enforced.
+  // Only ever reached for an along-path measurement — an out-of-path drag's
+  // preview never resolves to 'ambiguous-entity' in the first place (see
+  // dxfMeasureRecomputeDragPreview: Out of Path has no entity concept at
+  // all), so there is no out-of-path branch to write here.
+  function dxfMeasureResolveDragEntityChoice(session, measurementId, which, ref, beforeFingerprint) {
+    const measurement = dxfMeasureGetMeasurement(session, measurementId);
+    if (!measurement) { session.interaction = null; requestRender(); return; }
+    const otherRef = which === 'a' ? measurement.b : measurement.a;
+    const refA = which === 'a' ? ref : otherRef;
+    const refB = which === 'a' ? otherRef : ref;
+    const result = dxfMeasureEnumerateRoutes(session, refA, refB);
+    if (result.reason === DXF_MEASURE_REASON.ROUTE_SEARCH_TRUNCATED || result.truncated) {
+      showToast('That endpoint creates too many routes to prove completely — drag canceled, the measurement is unchanged.');
+      session.interaction = null;
+      requestRender();
+      return;
+    }
+    if (!result.ok || !result.routes.length) {
+      showToast('That entity does not connect to point ' + (which === 'a' ? 'B' : 'A') + ' — drag canceled, the measurement is unchanged.');
+      session.interaction = null;
+      requestRender();
+      return;
+    }
+    if (result.routes.length === 1) {
+      dxfMeasureCommitDragEndpointFinal(session, measurementId, which, ref, result.routes[0], 0, 1, null, beforeFingerprint);
+      return;
+    }
+    const piece = session.pieces[refA.pieceIndex];
+    const candidates = dxfMeasureBuildDirectionCandidates(result.routes, piece && piece.segments);
+    session.interaction = {
+      type: 'choosing-route', mode: 'along-path', a: refA, b: refB,
+      routes: result.routes, truncated: result.truncated, candidates,
+      chosenIndex: dxfMeasurePreferredCandidateIndex(measurement, result.routes, candidates),
+      commitInto: { measurementId, which, beforeFingerprint },
+    };
+    showToast(dxfMeasureRouteChoiceToast(result.routes.length, result.truncated));
+    updateUI();
+    requestRender();
+  }
+
+  // RB-3: the ONLY entry point where an endpoint drag can commit into the
+  // real measurement (directly, or by handing off to the entity/route
+  // chooser above). An armed-but-never-moved-to-anything-valid drag
+  // (preview null/invalid) ends with NOTHING written — the measurement is
+  // exactly as it was before the gesture started, satisfying "retain the
+  // last valid committed endpoint, route, and numeric value." An ambiguous
+  // release (entity or route) hands off to the SAME choosing-entity/
+  // choosing-route machinery placement uses, with `resume: null` (there is
+  // no earlier interaction to fall back to — Escape there simply abandons
+  // the drag, leaving the pre-drag measurement untouched) and pushes
+  // exactly one history entry once the TD confirms.
+  function dxfMeasureFinishDrag(session) {
+    const interaction = session.interaction;
+    if (!interaction) return;
+    dxfMeasureRecomputeDragPreview(session, interaction); // flush any move since the last render tick
+    const preview = interaction.preview;
+    if (!preview || preview.status === 'invalid') {
+      session.interaction = null;
+      requestRender();
+      return;
+    }
+    if (preview.status === 'ambiguous-entity') {
+      session.interaction = {
+        type: 'choosing-entity', forWhich: interaction.which, hits: preview.hits, chosenIndex: 0, resume: null,
+        onResolved: (ref) => dxfMeasureResolveDragEntityChoice(session, interaction.measurementId, interaction.which, ref, interaction.beforeFingerprint),
+      };
+      showToast(preview.hits.length + ' overlapping entities near that point — Tab to cycle, Enter to choose, Escape to cancel.');
+      updateUI();
+      requestRender();
+      return;
+    }
+    if (preview.status === 'ambiguous-route') {
+      const measurement = dxfMeasureGetMeasurement(session, interaction.measurementId);
+      const piece = session.pieces[preview.refA.pieceIndex];
+      const candidates = dxfMeasureBuildDirectionCandidates(preview.routes, piece && piece.segments);
+      session.interaction = {
+        type: 'choosing-route', mode: 'along-path', a: preview.refA, b: preview.refB,
+        routes: preview.routes, truncated: preview.truncated, candidates,
+        chosenIndex: dxfMeasurePreferredCandidateIndex(measurement, preview.routes, candidates),
+        // Route confirm normally calls dxfMeasureFinishAlongPath (creates a
+        // NEW measurement); a drag-originated route choice must instead
+        // commit into the EXISTING measurement being dragged.
+        commitInto: { measurementId: interaction.measurementId, which: interaction.which, beforeFingerprint: interaction.beforeFingerprint },
+      };
+      showToast(dxfMeasureRouteChoiceToast(preview.routes.length, preview.truncated));
+      updateUI();
+      requestRender();
+      return;
+    }
+    // Unambiguous — commit immediately, exactly once, direction unchanged.
+    const measurement = dxfMeasureGetMeasurement(session, interaction.measurementId);
+    if (!measurement) { session.interaction = null; requestRender(); return; }
+    const ref = measurement.mode === 'out-of-path'
+      ? preview.endpoint
+      : (interaction.which === 'a' ? preview.refA : preview.refB);
+    dxfMeasureCommitDragEndpointFinal(session, interaction.measurementId, interaction.which, ref,
+      preview.route || null, preview.routeCandidateIndex || 0, preview.routeCandidateCount || 1, null, interaction.beforeFingerprint);
+  }
+
+  function dxfMeasureFinishLabelDrag(session) {
+    const interaction = session.interaction;
+    session.interaction = null;
+    if (!interaction) return;
+    const after = dxfMeasureFingerprint(dxfMeasureSnapshot(session));
+    if (interaction.beforeFingerprint !== after) dxfMeasurePushHistoryIfChanged();
+    requestRender();
+  }
+
+  // ---- Public entry points (called from pointer-events.js) -------------------
+
+  function dxfMeasureIsActiveTool() {
+    return state.tool === 'pattern-measure' && dxfMeasureIsSessionActive();
+  }
+
+  function dxfMeasureOnMouseDown(world) {
+    const session = state.dxfMeasureSession;
+    if (!session) return;
+    const tol = dxfMeasureToleranceWorld();
+    if (session.interaction && (session.interaction.type === 'drag-endpoint' || session.interaction.type === 'drag-label')) {
+      return; // stray press mid-drag; mouseup/next-down cannot happen without a mouseup first in practice
+    }
+    if (session.interaction && (session.interaction.type === 'choosing-route' || session.interaction.type === 'choosing-entity')) {
+      return; // resolved by Tab/Enter/Escape only, per the toast shown when it opened
+    }
+    if (session.interaction && session.interaction.type === 'awaiting-b') {
+      dxfMeasureCompletePlacement(session, world);
+      return;
+    }
+    if (!session.interaction && session.placementArmed) {
+      dxfMeasureBeginPlacement(session, world);
+      return;
+    }
+    const handleHit = dxfMeasureHitTestHandle(session, world, tol);
+    if (handleHit) { dxfMeasureStartHandleDrag(session, handleHit, world); return; }
+    const labelHit = dxfMeasureHitTestLabel(session, world, tol);
+    if (labelHit) { dxfMeasureStartLabelDrag(session, labelHit, world); return; }
+    if (!session.interaction) {
+      const routeHit = dxfMeasureHitTestRouteBody(session, world, tol);
+      if (routeHit) {
+        session.selectedMeasurementId = routeHit.measurementId;
+        updateUI();
+        requestRender();
+        return;
+      }
+      dxfMeasureBeginPlacement(session, world);
+      return;
+    }
+  }
+
+  function dxfMeasureOnMouseMove(world) {
+    const session = state.dxfMeasureSession;
+    if (!session || !session.interaction) return;
+    if (session.interaction.type === 'drag-endpoint') dxfMeasureOnDragEndpointMove(session, world);
+    else if (session.interaction.type === 'drag-label') dxfMeasureOnDragLabelMove(session, world);
+  }
+
+  function dxfMeasureOnMouseUp() {
+    const session = state.dxfMeasureSession;
+    if (!session || !session.interaction) return;
+    if (session.interaction.type === 'drag-endpoint') dxfMeasureFinishDrag(session);
+    else if (session.interaction.type === 'drag-label') dxfMeasureFinishLabelDrag(session);
+  }
+
+  // Escape cancels an in-progress placement/route-choice/entity-choice/drag
+  // WITHOUT deleting any completed measurement. For 'choosing-entity' this
+  // restores `resume` (whatever interaction existed before the ambiguous
+  // click — null if it was for point A, the awaiting-b state if it was for
+  // point B) rather than clearing everything, per "Escape cancels only the
+  // pending candidate choice." A drag has nothing to revert (RB-3: nothing
+  // was ever mutated), so it simply clears.
+  function dxfMeasureCancelInteraction() {
+    const session = state.dxfMeasureSession;
+    if (!session || !session.interaction) return false;
+    const interaction = session.interaction;
+    if (interaction.type === 'drag-label') {
+      const measurement = dxfMeasureGetMeasurement(session, interaction.measurementId);
+      if (measurement) measurement.labelOffset = interaction.labelOffsetAtStart ? clone(interaction.labelOffsetAtStart) : null;
+    }
+    session.interaction = interaction.type === 'choosing-entity' ? (interaction.resume || null) : null;
+    showToast('Measurement canceled.');
+    updateUI();
+    requestRender();
+    return true;
+  }
+
+  function dxfMeasureDeleteSelected() {
+    const session = state.dxfMeasureSession;
+    if (!session || session.selectedMeasurementId == null) return false;
+    const ok = dxfMeasureDeleteMeasurement(session, session.selectedMeasurementId);
+    if (ok) { updateUI(); requestRender(); }
+    return ok;
+  }
+
+  function dxfMeasureHandleTabKey(shiftHeld) {
+    const session = state.dxfMeasureSession;
+    if (!session) return false;
+    const ok = dxfMeasureCycleRouteCandidate(session, shiftHeld ? -1 : 1);
+    return ok;
+  }
+
+  // Shared by the Cmd+Z/Cmd+Shift+Z keyboard shortcut, the toolbar Undo/Redo
+  // buttons (src/ui/bindings.js), and the Command Palette (board.template.
+  // import-dxf's siblings, project.undo/project.redo in command-registry.js)
+  // — every one of those three surfaces must route to the session's own mini
+  // stack while Pattern Measure is active, or the visible Undo button would
+  // silently undo board annotation state instead while a TD's actual last
+  // action was a measurement edit the global stack cannot see at all.
+  function dxfMeasureOrGlobalUndo() {
+    if (dxfMeasureIsActiveTool()) {
+      dxfMeasureUndo();
+      updateUI();
+      requestRender();
+      return;
+    }
+    flushLineNudgeSession();
+    void undo();
+  }
+
+  function dxfMeasureOrGlobalRedo() {
+    if (dxfMeasureIsActiveTool()) {
+      dxfMeasureRedo();
+      updateUI();
+      requestRender();
+      return;
+    }
+    flushLineNudgeSession();
+    void redo();
+  }
+
+  function dxfMeasureHandleEnterKey() {
+    const session = state.dxfMeasureSession;
+    if (!session) return false;
+    const pending = session.interaction;
+    if (pending && pending.type === 'choosing-route' && pending.commitInto) {
+      const chosen = pending.candidates[pending.chosenIndex];
+      const ref = pending.commitInto.which === 'a' ? pending.a : pending.b;
+      dxfMeasureCommitDragEndpointFinal(session, pending.commitInto.measurementId, pending.commitInto.which, ref,
+        pending.routes[chosen.routeIndex], chosen.routeIndex, pending.routes.length, chosen.direction, pending.commitInto.beforeFingerprint);
+      return true;
+    }
+    const ok = dxfMeasureConfirmRouteCandidate(session);
+    if (ok) updateUI();
+    return ok;
   }
 
   // ---- src/manual/viewport.js ----
@@ -26161,11 +28500,41 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       el.lockImageLabel.textContent = 'Lock';
       el.lockImageBtn.classList.remove('active');
     }
-    el.undoBtn.disabled = state.history.past.length <= 1;
-    el.redoBtn.disabled = state.history.future.length === 0;
+    // US-105: while Pattern Measure is active, Undo/Redo act on its own mini
+    // stack (dxfMeasureOrGlobalUndo/Redo) — the button's enabled state must
+    // agree, or a TD could see "Undo" greyed out while a measurement edit is
+    // genuinely undoable (or vice versa).
+    if (dxfMeasureIsActiveTool()) {
+      const measureHistory = state.dxfMeasureSession.history;
+      el.undoBtn.disabled = measureHistory.past.length <= 1;
+      el.redoBtn.disabled = measureHistory.future.length === 0;
+    } else {
+      el.undoBtn.disabled = state.history.past.length <= 1;
+      el.redoBtn.disabled = state.history.future.length === 0;
+    }
     el.setScaleBtn.disabled = !selectedAnnotation;
     el.setScaleBtn.classList.toggle('active', state.calibration.unitsPerPx != null);
     el.clearScaleBtn.disabled = state.calibration.unitsPerPx == null;
+    // US-105: both entries need an active measure session; the title
+    // explains why when there isn't one (matching the disabled-reason
+    // convention every other conditionally-available control here uses).
+    // .active reflects the CURRENTLY ARMED mode, not merely that the tool
+    // is selected — so the two buttons behave like a two-way toggle, not two
+    // independent switches.
+    if (el.dxfMeasureAlongBtn) {
+      const hasSession = !!state.dxfMeasureSession;
+      el.dxfMeasureAlongBtn.disabled = !hasSession;
+      el.dxfMeasureAlongBtn.title = hasSession ? 'Measure length along the imported pattern’s own path' : 'Import a DXF file first';
+      el.dxfMeasureAlongBtn.classList.toggle('active', state.tool === 'pattern-measure'
+        && hasSession && state.dxfMeasureSession.pendingMode === 'along-path');
+    }
+    if (el.dxfMeasureOutBtn) {
+      const hasSession = !!state.dxfMeasureSession;
+      el.dxfMeasureOutBtn.disabled = !hasSession;
+      el.dxfMeasureOutBtn.title = hasSession ? 'Measure the direct straight-line distance between two points' : 'Import a DXF file first';
+      el.dxfMeasureOutBtn.classList.toggle('active', state.tool === 'pattern-measure'
+        && hasSession && state.dxfMeasureSession.pendingMode === 'out-of-path');
+    }
     el.toggleLabelsBtn.textContent = state.showLabels ? 'Hide Numbers' : 'Show Numbers';
     el.toggleLabelsBtn.classList.toggle('active', !state.showLabels);
     // In Stitch mode numbers are hidden by the mode itself, so the manual
@@ -27111,6 +29480,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // applySketchModeVisual is the single state+body-class+button-sync
       // path the toolbar button itself uses (src/manual/sketch-mode.js).
       applySketchModeVisual(false);
+      // US-105: Pattern Measure is Manual + Sketch Focus only — a measure
+      // session (and every overlay it holds) must not survive a switch back
+      // to Auto Mode.
+      resetDxfMeasureSession();
       // Clear any project selection so the user does not accidentally edit
       // locked annotations. US-092 adds 'note': notes are Manual-only to edit,
       // and a selection carried into Auto would keep painting its outline over
@@ -41296,9 +43669,139 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // the Tools-menu button itself calls.
       dxf: {
         parse: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text)) : null),
-        computePlacement: (bounds, rect, centerWorld) => (typeof computeDxfPlacementTransform === 'function'
-          ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld)) : null),
+        computePlacement: (bounds, rect, centerWorld, zoom) => (typeof computeDxfPlacementTransform === 'function'
+          ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld, zoom)) : null),
         importText: (text, rect) => (typeof importDxfText === 'function' ? clone(importDxfText(text, rect)) : null),
+        // US-105: Pattern Measure. `measure.*` exposes the pure native
+        // parser + geometry kernel independently of any board/UI state (unit
+        // tests), plus read-only session getters an E2E suite can compare
+        // against real pointer-driven results. Every mutating action
+        // (create/delete/undo/redo) also has a real UI path — see
+        // src/manual/dxf-measure-interaction.js / dxf-measure-panel.js — this
+        // namespace never substitutes for driving that path in an
+        // integration-level test, only for isolating the pure math.
+        measure: {
+          parseNative: (text) => (typeof parseDxfNativeModel === 'function' ? clone(parseDxfNativeModel(text)) : null),
+          // Pure kernel primitives (src/geometry/dxf-path-kernel.js), exposed
+          // independently of any session/board state so a unit test can
+          // drive exact synthetic segments (bulge signs, wraparound sweeps,
+          // adaptive Bézier tolerance, degenerate input) without importing a
+          // file at all.
+          reasonCodes: () => clone(DXF_MEASURE_REASON),
+          segmentLength: (seg) => (typeof dxfSegmentLength === 'function' ? dxfSegmentLength(seg) : null),
+          segmentFailureReason: (seg) => (typeof dxfSegmentFailureReason === 'function' ? dxfSegmentFailureReason(seg) : null),
+          partialLength: (seg, t0, t1) => (typeof dxfPartialLength === 'function' ? dxfPartialLength(seg, t0, t1) : null),
+          projectPointOnSegment: (point, seg) => (typeof dxfProjectPointOnSegment === 'function' ? clone(dxfProjectPointOnSegment(point, seg)) : null),
+          directDistance: (a, b) => (typeof dxfDirectDistance === 'function' ? dxfDirectDistance(a, b) : null),
+          enumerateRoutesRaw: (segments, refA, refB, tolerance) => (typeof dxfEnumerateRoutes === 'function'
+            ? clone(dxfEnumerateRoutes(segments, refA, refB, tolerance)) : null),
+          reverseRoute: (route) => (typeof dxfReverseRoute === 'function' ? clone(dxfReverseRoute(route)) : null),
+          routeLength: (route, segments) => (typeof dxfRouteLength === 'function' ? dxfRouteLength(route, segments) : null),
+          routeAuthoredDirectionScore: (route, segments) => (typeof dxfRouteAuthoredDirectionScore === 'function'
+            ? dxfRouteAuthoredDirectionScore(route, segments) : null),
+          resolveNativeToInch: (insunits) => (typeof dxfResolveNativeToInch === 'function' ? clone(dxfResolveNativeToInch(insunits)) : null),
+          getSession: () => {
+            const session = state.dxfMeasureSession;
+            if (!session) return null;
+            return {
+              pieceCount: session.pieces.length,
+              pieceSegmentCounts: session.pieces.map(p => p.segments.length),
+              source: clone(session.source),
+              topologyToleranceNative: session.topologyToleranceNative,
+              measurementCount: session.measurements.length,
+              measurements: clone(session.measurements),
+              selectedMeasurementId: session.selectedMeasurementId,
+              // RB-1/RB-2/RB-3: the full interaction object (minus function
+              // fields like onResolved, which structuredClone-style `clone()`
+              // cannot carry across anyway) — a test needs candidates/hits/
+              // chosenIndex/truncated/preview to assert on, not just `type`.
+              interaction: session.interaction ? clone(session.interaction) : null,
+              historyPast: session.history.past.length,
+              historyFuture: session.history.future.length,
+              diagnostics: clone(session.diagnostics || {}),
+              pieceAnchorAnnotationIds: (session.pieceAnchors || []).map(anchor => anchor ? anchor.annotationId : null),
+              pieceBounds: clone(session.pieceBounds || []),
+            };
+          },
+          pieceSegments: (pieceIndex) => {
+            const session = state.dxfMeasureSession;
+            const piece = session && session.pieces[pieceIndex];
+            return piece ? clone(piece.segments) : null;
+          },
+          enumerateRoutes: (refA, refB) => (typeof dxfMeasureEnumerateRoutes === 'function'
+            ? clone(dxfMeasureEnumerateRoutes(state.dxfMeasureSession, refA, refB)) : null),
+          nativeToBoard: (point) => (typeof dxfMeasureNativeToBoard === 'function'
+            ? clone(dxfMeasureNativeToBoard(point, state.dxfMeasureSession)) : null),
+          nativeToBoardLive: (point, pieceIndex) => (typeof dxfMeasureNativeToBoardLive === 'function'
+            ? clone(dxfMeasureNativeToBoardLive(point, state.dxfMeasureSession, pieceIndex)) : null),
+          boardToNative: (point) => (typeof dxfMeasureBoardToNative === 'function'
+            ? clone(dxfMeasureBoardToNative(point, state.dxfMeasureSession)) : null),
+          valueInches: (measurementId) => {
+            const session = state.dxfMeasureSession;
+            const measurement = session && dxfMeasureGetMeasurement(session, measurementId);
+            return measurement ? dxfMeasureValueInches(session, measurement) : null;
+          },
+          handleWorldPosition: (measurementId, which) => {
+            const session = state.dxfMeasureSession;
+            const measurement = session && dxfMeasureGetMeasurement(session, measurementId);
+            return measurement ? clone(dxfMeasureHandleWorldPos(session, measurement, which)) : null;
+          },
+          labelWorldPosition: (measurementId) => {
+            const session = state.dxfMeasureSession;
+            const measurement = session && dxfMeasureGetMeasurement(session, measurementId);
+            return measurement ? clone(dxfMeasureLabelWorldPos(session, measurement)) : null;
+          },
+          routeWorldPoints: (measurementId) => {
+            const session = state.dxfMeasureSession;
+            const measurement = session && dxfMeasureGetMeasurement(session, measurementId);
+            return measurement ? clone(dxfMeasureRouteWorldPoints(session, measurement, 16)) : [];
+          },
+          cycleChoice: (delta) => dxfMeasureCycleRouteCandidate(state.dxfMeasureSession, delta),
+          confirmChoice: () => dxfMeasureConfirmRouteCandidate(state.dxfMeasureSession),
+          confirmPendingChoice: () => dxfMeasureHandleEnterKey(),
+          selectMeasurement: (measurementId) => {
+            const session = state.dxfMeasureSession;
+            if (!session || !dxfMeasureGetMeasurement(session, measurementId)) return false;
+            session.selectedMeasurementId = measurementId;
+            requestRender();
+            return true;
+          },
+          activateMeasurementForEdit: (measurementId) => {
+            const session = state.dxfMeasureSession;
+            if (!session || !dxfMeasureGetMeasurement(session, measurementId)) return false;
+            session.placementArmed = false;
+            session.interaction = null;
+            session.selectedMeasurementId = measurementId;
+            setTool('pattern-measure');
+            requestRender();
+            return true;
+          },
+          pieceAnchorGeometry: (pieceIndex) => {
+            const session = state.dxfMeasureSession;
+            const anchor = session && session.pieceAnchors && session.pieceAnchors[pieceIndex];
+            const ann = anchor && getAnnotationById(anchor.annotationId);
+            return ann ? clone({ id: ann.id, start: ann.start, end: ann.end }) : null;
+          },
+          beginPieceMove: (pieceIndex, world) => {
+            const session = state.dxfMeasureSession;
+            const anchor = session && session.pieceAnchors && session.pieceAnchors[pieceIndex];
+            const ann = anchor && getAnnotationById(anchor.annotationId);
+            if (!ann || !world) return false;
+            setSelection('annotation', ann.id);
+            startAnnotationDrag(ann.id, world);
+            return true;
+          },
+          formatInches: (value) => (typeof dxfMeasureFormatInches === 'function' ? dxfMeasureFormatInches(value) : null),
+          valueInches: (measurementId) => {
+            const session = state.dxfMeasureSession;
+            const m = session && typeof dxfMeasureGetMeasurement === 'function' ? dxfMeasureGetMeasurement(session, measurementId) : null;
+            return m && typeof dxfMeasureValueInches === 'function' ? dxfMeasureValueInches(session, m) : null;
+          },
+          deleteMeasurement: (id) => (typeof dxfMeasureDeleteMeasurement === 'function'
+            ? dxfMeasureDeleteMeasurement(state.dxfMeasureSession, id) : false),
+          undo: () => (typeof dxfMeasureUndo === 'function' ? dxfMeasureUndo() : false),
+          redo: () => (typeof dxfMeasureRedo === 'function' ? dxfMeasureRedo() : false),
+        },
       },
       sampleAnnotationShape: (annotationId, samples) => {
         const ann = state.annotations.find(a => a && a.id === annotationId);
@@ -41357,6 +43860,13 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         state.zoom = Math.max(0.05, Number(zoom) || state.zoom);
         requestRender();
         return state.zoom;
+      },
+      setView: (view) => {
+        if (view && Number.isFinite(view.zoom)) state.zoom = Math.max(0.05, view.zoom);
+        if (view && Number.isFinite(view.panX)) state.panX = view.panX;
+        if (view && Number.isFinite(view.panY)) state.panY = view.panY;
+        requestRender();
+        return { zoom: state.zoom, panX: state.panX, panY: state.panY };
       },
       // US-086: what the pointer is currently doing. board-interaction-check
       // needs to assert WHICH gesture a press opened — "the whole line moved"
@@ -44644,6 +47154,255 @@ function makeExportFileName() {
     ctx.restore();
   }
 
+  // ---- src/render/render-dxf-measurements.js ----
+// US-105: DXF Pattern Measurement — the overlay renderer. Drawn as its own
+// layer, last (topmost), inside the same world-space ctx.save()/translate/
+// scale block every other board layer uses (see render-loop.js), so
+// measurements share pan/zoom automatically and are never obscured by
+// annotations/labels/handles.
+// Source part for app.js. Run `npm run build` after editing.
+
+  const DXF_MEASURE_COLOR = '#ff8a00'; // distinct from red/blue POM lines and black DXF geometry
+  const DXF_MEASURE_INVALID_COLOR = '#ef4444';
+  const DXF_MEASURE_CANDIDATE_COLORS = ['#22c55e', '#3b82f6', '#a855f7', '#f59e0b', '#14b8a6', '#ec4899', '#84cc16', '#0ea5e9'];
+
+  function drawDxfMeasurements() {
+    const session = state.dxfMeasureSession;
+    if (!session) return;
+    // RB-3: the ONE place per frame a live endpoint-drag preview gets
+    // (re)computed — see dxfMeasureRecomputeDragPreview's own comment for why
+    // this collapses however many raw mousemove events arrived since the
+    // last frame into a single projection + route enumeration.
+    if (session.interaction && session.interaction.type === 'drag-endpoint') {
+      dxfMeasureRecomputeDragPreview(session, session.interaction);
+    }
+    const activeId = session.selectedMeasurementId;
+    for (const measurement of session.measurements) {
+      drawOneDxfMeasurement(session, measurement, measurement.id === activeId);
+    }
+    if (session.interaction) drawDxfMeasureInteractionPreview(session, session.interaction);
+  }
+
+  function drawDxfMeasureRoutePolyline(pts, color, weight, alpha, dashed) {
+    if (pts.length < 2) return;
+    const z = Math.max(0.0001, state.zoom);
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = weight / z;
+    ctx.setLineDash(dashed ? [6 / z, 4 / z] : []);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawDxfMeasureHandle(point) {
+    const z = Math.max(0.0001, state.zoom);
+    const r = 6 / z;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = 2 / z;
+    ctx.strokeStyle = DXF_MEASURE_COLOR;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawDxfMeasureHandleLabeled(point, text) {
+    drawDxfMeasureHandle(point);
+    const z = Math.max(0.0001, state.zoom);
+    ctx.save();
+    ctx.font = '700 ' + (11 / z).toFixed(1) + 'px system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3 / z;
+    ctx.strokeStyle = '#ffffff';
+    ctx.strokeText(text, point.x, point.y - 14 / z);
+    ctx.fillStyle = DXF_MEASURE_COLOR;
+    ctx.fillText(text, point.x, point.y - 14 / z);
+    ctx.restore();
+  }
+
+  // RB-1: `pts` is always in canonical A(first)-to-B(last) order — `reverse`
+  // is the only thing that decides which end gets the arrowhead (arrow at B
+  // for 'forward', at A for 'reverse'), so the arrow can flip without ever
+  // reordering the underlying route-point array A/B labels are drawn from.
+  function drawDxfMeasureDirectionArrow(pts, color, reverse) {
+    if (pts.length < 2) return;
+    const b = reverse ? pts[0] : pts[pts.length - 1];
+    const a = reverse ? pts[1] : pts[pts.length - 2];
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    const z = Math.max(0.0001, state.zoom);
+    drawArrowhead(b, angle, 12 / z, color || DXF_MEASURE_COLOR);
+  }
+
+  // Compact value pill — up to three decimals, trailing zeroes trimmed, inch
+  // suffix (dxfMeasureFormatInches). A manually-dragged label gets a dashed
+  // leader back to its route anchor so it stays visibly associated with the
+  // route it describes even parked well away from it.
+  function drawDxfMeasureLabel(session, measurement, active) {
+    const pos = dxfMeasureLabelWorldPos(session, measurement);
+    if (!pos) return;
+    const valueIn = dxfMeasureDisplayValueInches(session, measurement);
+    const text = dxfMeasureFormatInches(valueIn) || '—';
+    const z = Math.max(0.0001, state.zoom);
+    const fontSize = 12 / z, padX = 6 / z, padY = 4 / z;
+    ctx.save();
+    ctx.font = (active ? '700 ' : '600 ') + fontSize.toFixed(1) + 'px system-ui, -apple-system, sans-serif';
+    const textWidth = ctx.measureText(text).width;
+    const boxW = textWidth + padX * 2, boxH = fontSize + padY * 2;
+    if (measurement.labelOffset) {
+      const anchor = dxfMeasureLabelAnchorWorldPos(session, measurement);
+      if (anchor) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,138,0,0.55)';
+        ctx.lineWidth = 1 / z;
+        ctx.setLineDash([3 / z, 3 / z]);
+        ctx.beginPath();
+        ctx.moveTo(anchor.x, anchor.y);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    ctx.beginPath();
+    const r = 4 / z;
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(pos.x - boxW / 2, pos.y - boxH / 2, boxW, boxH, r);
+    else ctx.rect(pos.x - boxW / 2, pos.y - boxH / 2, boxW, boxH);
+    ctx.fillStyle = active ? 'rgba(230,110,0,0.95)' : 'rgba(17,24,39,0.82)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 1 / z;
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, pos.x, pos.y);
+    ctx.restore();
+  }
+
+  function drawOneDxfMeasurement(session, measurement, active) {
+    const pts = dxfMeasureRouteWorldPoints(session, measurement, 16);
+    if (pts.length < 2) { drawDxfMeasureLabel(session, measurement, active); return; }
+    const invalid = dxfMeasureDragInvalidFor(session, measurement.id);
+    const color = invalid ? DXF_MEASURE_INVALID_COLOR : DXF_MEASURE_COLOR;
+    drawDxfMeasureRoutePolyline(pts, color, active ? 4.5 : 2, active ? 0.95 : 0.55, false);
+    if (active) {
+      // RB-1: A/B are drawn from the measurement's own IDENTITY
+      // (dxfMeasureHandleWorldPos reads measurement.a/measurement.b, live-
+      // aware of an in-progress drag preview), never from pts[0]/pts[last] —
+      // so their pixel position cannot depend on which way `route.steps`
+      // happens to be ordered, and never swaps when direction changes.
+      const aPos = dxfMeasureHandleWorldPos(session, measurement, 'a');
+      const bPos = dxfMeasureHandleWorldPos(session, measurement, 'b');
+      if (aPos) drawDxfMeasureHandleLabeled(aPos, 'A');
+      if (bPos) drawDxfMeasureHandleLabeled(bPos, 'B');
+      drawDxfMeasureDirectionArrow(pts, color, measurement.direction === 'reverse');
+    }
+    drawDxfMeasureLabel(session, measurement, active);
+  }
+
+  // ---- Choosing-route preview (RB-1: unified route/direction candidates) ----
+
+  function dxfMeasureCandidateRoutePoints(session, pieceIndex, route) {
+    const piece = session.pieces[pieceIndex];
+    if (!piece || !route) return [];
+    const points = [];
+    for (const step of route.steps) {
+      const seg = piece.segments[step.segIndex];
+      if (!seg) continue;
+      for (let i = 0; i <= 10; i += 1) {
+        const t = step.t0 + (step.t1 - step.t0) * (i / 10);
+        const p = dxfMeasureNativeToBoardLive(dxfPointOnSegment(seg, t), session, pieceIndex);
+        if (p) points.push(p);
+      }
+    }
+    return points;
+  }
+
+  // Draws every candidate the TD is currently choosing between (Tab
+  // cycles, Enter confirms `chosenIndex`) — each in its own color so an
+  // overlapping/near-duplicate set (RB-2/RB-4's "genuine duplicate LINE
+  // entities" case) stays visually distinguishable, chosen one heaviest.
+  // For a single-route open path, `candidates` holds two VIRTUAL entries
+  // (same points, opposite arrow) rather than a second UI construct — see
+  // dxfMeasureBuildDirectionCandidates.
+  function drawDxfMeasureRouteCandidates(session, interaction) {
+    const pieceIndex = interaction.a.pieceIndex;
+    interaction.candidates.forEach((candidate, idx) => {
+      const chosen = idx === interaction.chosenIndex;
+      const route = interaction.routes[candidate.routeIndex];
+      const points = dxfMeasureCandidateRoutePoints(session, pieceIndex, route);
+      const color = DXF_MEASURE_CANDIDATE_COLORS[candidate.routeIndex % DXF_MEASURE_CANDIDATE_COLORS.length];
+      drawDxfMeasureRoutePolyline(points, color, chosen ? 5 : 2.5, chosen ? 0.95 : 0.4, !chosen);
+      if (chosen && points.length >= 2) drawDxfMeasureDirectionArrow(points, color, candidate.direction === 'reverse');
+    });
+  }
+
+  // ---- Choosing-entity preview (RB-2) -----------------------------------------
+
+  // Highlights every candidate native entity within tolerance at an
+  // ambiguous click — the currently Tab-cycled one drawn larger/opaque, the
+  // rest small and dim, so "which entity is this choice about" never has to
+  // be guessed from a toast alone.
+  function drawDxfMeasureEntityCandidates(session, interaction) {
+    const z = Math.max(0.0001, state.zoom);
+    interaction.hits.forEach((hit, idx) => {
+      const chosen = idx === interaction.chosenIndex;
+      const piece = session.pieces[hit.pieceIndex];
+      const seg = piece && piece.segments[hit.segIndexInPiece];
+      if (!seg) return;
+      const native = dxfPointOnSegment(seg, hit.t);
+      const board = dxfMeasureNativeToBoardLive(native, session, hit.pieceIndex);
+      if (!board) return;
+      const color = DXF_MEASURE_CANDIDATE_COLORS[idx % DXF_MEASURE_CANDIDATE_COLORS.length];
+      ctx.save();
+      ctx.globalAlpha = chosen ? 0.95 : 0.5;
+      ctx.beginPath();
+      ctx.arc(board.x, board.y, (chosen ? 9 : 5) / z, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.lineWidth = (chosen ? 2.5 : 1.5) / z;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
+
+  function drawDxfMeasureInteractionPreview(session, interaction) {
+    if (interaction.type === 'awaiting-b') {
+      const nativeA = interaction.mode === 'out-of-path'
+        ? interaction.a.native
+        : dxfMeasureNativePointForRef(session, interaction.a);
+      const boardA = interaction.mode === 'out-of-path'
+        ? (interaction.a.pieceIndex == null
+          ? dxfMeasureNativeToBoard(nativeA, session)
+          : dxfMeasureNativeToBoardLive(nativeA, session, interaction.a.pieceIndex))
+        : dxfMeasureNativeToBoardLive(nativeA, session, interaction.a.pieceIndex);
+      if (boardA) drawDxfMeasureHandleLabeled(boardA, 'A');
+      return;
+    }
+    if (interaction.type === 'choosing-route') {
+      drawDxfMeasureRouteCandidates(session, interaction);
+      const nativeA = dxfMeasureNativePointForRef(session, interaction.a);
+      const nativeB = dxfMeasureNativePointForRef(session, interaction.b);
+      const boardA = nativeA ? dxfMeasureNativeToBoardLive(nativeA, session, interaction.a.pieceIndex) : null;
+      const boardB = nativeB ? dxfMeasureNativeToBoardLive(nativeB, session, interaction.a.pieceIndex) : null;
+      if (boardA) drawDxfMeasureHandleLabeled(boardA, 'A');
+      if (boardB) drawDxfMeasureHandleLabeled(boardB, 'B');
+      return;
+    }
+    if (interaction.type === 'choosing-entity') {
+      drawDxfMeasureEntityCandidates(session, interaction);
+    }
+  }
+
   // ---- src/render/detection-overlay.js ----
 // Auto Mode detection overlay: the read-only diagnostic layer showing the
 // detector's bbox, axis, band, chest, cradle, side seams, apex points,
@@ -45885,6 +48644,10 @@ function requestRender() {
       drawMarquee(state.interaction);
     }
     drawSmartAlignGuides();
+
+    // US-105: Pattern Measure overlays — drawn absolute-last (topmost) so a
+    // measurement is never obscured by anything else on the board.
+    if (state.appMode !== 'auto') drawDxfMeasurements();
 
     ctx.restore();
     positionLabelEditor();

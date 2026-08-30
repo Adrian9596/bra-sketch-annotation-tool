@@ -28,6 +28,7 @@
     bindLinePresetPanel();
     bindShapeStampPanel();
     bindDxfImportPanel();
+    bindDxfMeasurePanel();
     el.styleOptionBtns.forEach((button) => {
       button.addEventListener('click', () => {
         setLineStyle(button.dataset.style);
@@ -80,8 +81,10 @@
     el.colorBlackBtn.addEventListener('click', () => setDrawColor('black'));
     el.colorWhiteBtn.addEventListener('click', () => setDrawColor('white'));
 
-    el.undoBtn.addEventListener('click', () => void undo());
-    el.redoBtn.addEventListener('click', () => void redo());
+    // US-105: routes to Pattern Measure's own mini undo stack while that
+    // tool is active — see dxfMeasureOrGlobalUndo/Redo's own comment.
+    el.undoBtn.addEventListener('click', () => dxfMeasureOrGlobalUndo());
+    el.redoBtn.addEventListener('click', () => dxfMeasureOrGlobalRedo());
     el.copyLineBtn.addEventListener('click', copySelectedAnnotation);
     el.pasteLineBtn.addEventListener('click', pasteLineFromClipboard);
     el.reflectLineBtn.addEventListener('click', reflectSelectedAnnotation);

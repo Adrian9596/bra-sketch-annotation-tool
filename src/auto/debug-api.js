@@ -339,9 +339,139 @@
       // the Tools-menu button itself calls.
       dxf: {
         parse: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text)) : null),
-        computePlacement: (bounds, rect, centerWorld) => (typeof computeDxfPlacementTransform === 'function'
-          ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld)) : null),
+        computePlacement: (bounds, rect, centerWorld, zoom) => (typeof computeDxfPlacementTransform === 'function'
+          ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld, zoom)) : null),
         importText: (text, rect) => (typeof importDxfText === 'function' ? clone(importDxfText(text, rect)) : null),
+        // US-105: Pattern Measure. `measure.*` exposes the pure native
+        // parser + geometry kernel independently of any board/UI state (unit
+        // tests), plus read-only session getters an E2E suite can compare
+        // against real pointer-driven results. Every mutating action
+        // (create/delete/undo/redo) also has a real UI path — see
+        // src/manual/dxf-measure-interaction.js / dxf-measure-panel.js — this
+        // namespace never substitutes for driving that path in an
+        // integration-level test, only for isolating the pure math.
+        measure: {
+          parseNative: (text) => (typeof parseDxfNativeModel === 'function' ? clone(parseDxfNativeModel(text)) : null),
+          // Pure kernel primitives (src/geometry/dxf-path-kernel.js), exposed
+          // independently of any session/board state so a unit test can
+          // drive exact synthetic segments (bulge signs, wraparound sweeps,
+          // adaptive Bézier tolerance, degenerate input) without importing a
+          // file at all.
+          reasonCodes: () => clone(DXF_MEASURE_REASON),
+          segmentLength: (seg) => (typeof dxfSegmentLength === 'function' ? dxfSegmentLength(seg) : null),
+          segmentFailureReason: (seg) => (typeof dxfSegmentFailureReason === 'function' ? dxfSegmentFailureReason(seg) : null),
+          partialLength: (seg, t0, t1) => (typeof dxfPartialLength === 'function' ? dxfPartialLength(seg, t0, t1) : null),
+          projectPointOnSegment: (point, seg) => (typeof dxfProjectPointOnSegment === 'function' ? clone(dxfProjectPointOnSegment(point, seg)) : null),
+          directDistance: (a, b) => (typeof dxfDirectDistance === 'function' ? dxfDirectDistance(a, b) : null),
+          enumerateRoutesRaw: (segments, refA, refB, tolerance) => (typeof dxfEnumerateRoutes === 'function'
+            ? clone(dxfEnumerateRoutes(segments, refA, refB, tolerance)) : null),
+          reverseRoute: (route) => (typeof dxfReverseRoute === 'function' ? clone(dxfReverseRoute(route)) : null),
+          routeLength: (route, segments) => (typeof dxfRouteLength === 'function' ? dxfRouteLength(route, segments) : null),
+          routeAuthoredDirectionScore: (route, segments) => (typeof dxfRouteAuthoredDirectionScore === 'function'
+            ? dxfRouteAuthoredDirectionScore(route, segments) : null),
+          resolveNativeToInch: (insunits) => (typeof dxfResolveNativeToInch === 'function' ? clone(dxfResolveNativeToInch(insunits)) : null),
+          getSession: () => {
+            const session = state.dxfMeasureSession;
+            if (!session) return null;
+            return {
+              pieceCount: session.pieces.length,
+              pieceSegmentCounts: session.pieces.map(p => p.segments.length),
+              source: clone(session.source),
+              topologyToleranceNative: session.topologyToleranceNative,
+              measurementCount: session.measurements.length,
+              measurements: clone(session.measurements),
+              selectedMeasurementId: session.selectedMeasurementId,
+              // RB-1/RB-2/RB-3: the full interaction object (minus function
+              // fields like onResolved, which structuredClone-style `clone()`
+              // cannot carry across anyway) — a test needs candidates/hits/
+              // chosenIndex/truncated/preview to assert on, not just `type`.
+              interaction: session.interaction ? clone(session.interaction) : null,
+              historyPast: session.history.past.length,
+              historyFuture: session.history.future.length,
+              diagnostics: clone(session.diagnostics || {}),
+              pieceAnchorAnnotationIds: (session.pieceAnchors || []).map(anchor => anchor ? anchor.annotationId : null),
+              pieceBounds: clone(session.pieceBounds || []),
+            };
+          },
+          pieceSegments: (pieceIndex) => {
+            const session = state.dxfMeasureSession;
+            const piece = session && session.pieces[pieceIndex];
+            return piece ? clone(piece.segments) : null;
+          },
+          enumerateRoutes: (refA, refB) => (typeof dxfMeasureEnumerateRoutes === 'function'
+            ? clone(dxfMeasureEnumerateRoutes(state.dxfMeasureSession, refA, refB)) : null),
+          nativeToBoard: (point) => (typeof dxfMeasureNativeToBoard === 'function'
+            ? clone(dxfMeasureNativeToBoard(point, state.dxfMeasureSession)) : null),
+          nativeToBoardLive: (point, pieceIndex) => (typeof dxfMeasureNativeToBoardLive === 'function'
+            ? clone(dxfMeasureNativeToBoardLive(point, state.dxfMeasureSession, pieceIndex)) : null),
+          boardToNative: (point) => (typeof dxfMeasureBoardToNative === 'function'
+            ? clone(dxfMeasureBoardToNative(point, state.dxfMeasureSession)) : null),
+          valueInches: (measurementId) => {
+            const session = state.dxfMeasureSession;
+            const measurement = session && dxfMeasureGetMeasurement(session, measurementId);
+            return measurement ? dxfMeasureValueInches(session, measurement) : null;
+          },
+          handleWorldPosition: (measurementId, which) => {
+            const session = state.dxfMeasureSession;
+            const measurement = session && dxfMeasureGetMeasurement(session, measurementId);
+            return measurement ? clone(dxfMeasureHandleWorldPos(session, measurement, which)) : null;
+          },
+          labelWorldPosition: (measurementId) => {
+            const session = state.dxfMeasureSession;
+            const measurement = session && dxfMeasureGetMeasurement(session, measurementId);
+            return measurement ? clone(dxfMeasureLabelWorldPos(session, measurement)) : null;
+          },
+          routeWorldPoints: (measurementId) => {
+            const session = state.dxfMeasureSession;
+            const measurement = session && dxfMeasureGetMeasurement(session, measurementId);
+            return measurement ? clone(dxfMeasureRouteWorldPoints(session, measurement, 16)) : [];
+          },
+          cycleChoice: (delta) => dxfMeasureCycleRouteCandidate(state.dxfMeasureSession, delta),
+          confirmChoice: () => dxfMeasureConfirmRouteCandidate(state.dxfMeasureSession),
+          confirmPendingChoice: () => dxfMeasureHandleEnterKey(),
+          selectMeasurement: (measurementId) => {
+            const session = state.dxfMeasureSession;
+            if (!session || !dxfMeasureGetMeasurement(session, measurementId)) return false;
+            session.selectedMeasurementId = measurementId;
+            requestRender();
+            return true;
+          },
+          activateMeasurementForEdit: (measurementId) => {
+            const session = state.dxfMeasureSession;
+            if (!session || !dxfMeasureGetMeasurement(session, measurementId)) return false;
+            session.placementArmed = false;
+            session.interaction = null;
+            session.selectedMeasurementId = measurementId;
+            setTool('pattern-measure');
+            requestRender();
+            return true;
+          },
+          pieceAnchorGeometry: (pieceIndex) => {
+            const session = state.dxfMeasureSession;
+            const anchor = session && session.pieceAnchors && session.pieceAnchors[pieceIndex];
+            const ann = anchor && getAnnotationById(anchor.annotationId);
+            return ann ? clone({ id: ann.id, start: ann.start, end: ann.end }) : null;
+          },
+          beginPieceMove: (pieceIndex, world) => {
+            const session = state.dxfMeasureSession;
+            const anchor = session && session.pieceAnchors && session.pieceAnchors[pieceIndex];
+            const ann = anchor && getAnnotationById(anchor.annotationId);
+            if (!ann || !world) return false;
+            setSelection('annotation', ann.id);
+            startAnnotationDrag(ann.id, world);
+            return true;
+          },
+          formatInches: (value) => (typeof dxfMeasureFormatInches === 'function' ? dxfMeasureFormatInches(value) : null),
+          valueInches: (measurementId) => {
+            const session = state.dxfMeasureSession;
+            const m = session && typeof dxfMeasureGetMeasurement === 'function' ? dxfMeasureGetMeasurement(session, measurementId) : null;
+            return m && typeof dxfMeasureValueInches === 'function' ? dxfMeasureValueInches(session, m) : null;
+          },
+          deleteMeasurement: (id) => (typeof dxfMeasureDeleteMeasurement === 'function'
+            ? dxfMeasureDeleteMeasurement(state.dxfMeasureSession, id) : false),
+          undo: () => (typeof dxfMeasureUndo === 'function' ? dxfMeasureUndo() : false),
+          redo: () => (typeof dxfMeasureRedo === 'function' ? dxfMeasureRedo() : false),
+        },
       },
       sampleAnnotationShape: (annotationId, samples) => {
         const ann = state.annotations.find(a => a && a.id === annotationId);
@@ -400,6 +530,13 @@
         state.zoom = Math.max(0.05, Number(zoom) || state.zoom);
         requestRender();
         return state.zoom;
+      },
+      setView: (view) => {
+        if (view && Number.isFinite(view.zoom)) state.zoom = Math.max(0.05, view.zoom);
+        if (view && Number.isFinite(view.panX)) state.panX = view.panX;
+        if (view && Number.isFinite(view.panY)) state.panY = view.panY;
+        requestRender();
+        return { zoom: state.zoom, panX: state.panX, panY: state.panY };
       },
       // US-086: what the pointer is currently doing. board-interaction-check
       // needs to assert WHICH gesture a press opened — "the whole line moved"
