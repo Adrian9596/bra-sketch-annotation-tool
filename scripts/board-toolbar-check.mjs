@@ -110,7 +110,7 @@ async function main() {
   check(JSON.stringify(emptyManual.buttons) === JSON.stringify([
     'modeManualBtn', 'modeAutoBtn', 'sketchFocusBtn', 'addImageBtn',
     'toolSelect', 'toolsMenuBtn',
-    'stitchesBtn', 'fileMenuBtn', 'moreMenuBtn',
+    'stitchesBtn', 'libraryBtn', 'fileMenuBtn', 'moreMenuBtn',
   ]), `empty Manual controls wrong: ${JSON.stringify(emptyManual.buttons)}`);
   check(emptyManual.contextHidden, 'selection actions should be hidden with no selection/history');
   check(emptyManual.lineSettingsHidden, 'line settings should be hidden on an empty Manual Board');
@@ -152,6 +152,7 @@ async function main() {
     allReachable: Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]'))
       .filter(button => !button.hidden && !button.disabled && button.offsetParent !== null).map(button => button.id),
     hasShapeLibrary: !!document.querySelector('#toolsMenuList #shapeStampList'),
+    hasSaveTemplate: !!document.querySelector('#toolsMenuList #shapeStampSaveBtn'),
     focus: document.activeElement.id,
   })`);
   check(toolsOpen.open && toolsOpen.expanded === 'true', 'Tools menu did not open with aria-expanded=true');
@@ -164,8 +165,15 @@ async function main() {
     'toolStraight', 'toolCurved', 'toolText', 'toolRectangle', 'toolCircle', 'toolHexagon',
   ]), `empty Manual should offer Straight/Curved/Text and withhold Eraser, got ${JSON.stringify(toolsOpen.reachable)}`);
   check(toolsOpen.focus === 'toolStraight', `Tools menu should focus first enabled item, got ${toolsOpen.focus}`);
-  check(toolsOpen.hasShapeLibrary === true,
-    'US-097: the Tools menu carries the saved-shape library — no toolbar unit of its own');
+  // US-107: browsing/picking Templates moved out of the Tools menu entirely,
+  // into the unified Library dialog (#libraryBtn) — board-toolbar-check owns
+  // proving it is NOT back here; library-manager-check.mjs owns the dialog
+  // itself. "Save selection as Template…" stays, since it reads the board's
+  // live selection rather than browsing what is already saved.
+  check(toolsOpen.hasShapeLibrary === false,
+    'the Templates browse list must not be back in the Tools menu');
+  check(toolsOpen.hasSaveTemplate === true,
+    '"Save selection as Template…" stays in the Tools menu (a board-selection action, not browsing)');
   await s.eval(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key:'End', bubbles:true }))`);
   // US-102: in POM Focus (the default), the Template library and Smart Align
   // are hidden (.sketch-mode-only), so End now lands on the last TOOL — this
@@ -178,8 +186,10 @@ async function main() {
     'POM Focus: the hidden library must not contribute extra reachable menu items');
 
   // Sketch Focus: the library (and Smart Align) become reachable, and End
-  // now walks all the way to the library's last action — the US-097 claim
-  // this test made before US-102 existed, now true only in this state.
+  // now walks all the way to the last action in the menu — the US-097 claim
+  // this test made before US-102 existed, now true only in this state. US-104
+  // added "Open DXF file…" after the Template library's own actions, so it
+  // is now the last item, not shapeStampImportBtn.
   await s.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }))`);
   await s.eval(`document.getElementById('sketchFocusBtn').click()`);
   await s.eval(`document.getElementById('toolsMenuBtn').click()`);
@@ -193,8 +203,8 @@ async function main() {
   // Named by id, not read back from the same query the implementation walks —
   // comparing an implementation against itself proves only that it is
   // self-consistent.
-  check(await s.eval(`document.activeElement.id`) === 'shapeStampImportBtn',
-    `Sketch Focus: End should focus the last item in the whole menu — the library's last action `
+  check(await s.eval(`document.activeElement.id`) === 'dxfImportBtn',
+    `Sketch Focus: End should focus the last item in the whole menu — "Open DXF file…" `
     + `(got ${await s.eval('document.activeElement.id')})`);
   check(toolsOpenSketch.allReachable.length > toolsOpenSketch.reachable.length,
     'Sketch Focus: precondition: the library section really does add reachable items, or the check '
@@ -202,8 +212,10 @@ async function main() {
 
   // With an EMPTY library the checks above only prove the library's ACTIONS are
   // reachable. The claim worth making is that a saved SHAPE is, so seed one and
-  // walk to it. Code review, 2026-08-23: the first version of this block was
-  // written against the empty state and overstated what it proved.
+  // reach it. US-107: that path is the unified Library dialog now (#libraryBtn),
+  // not a Tools-menu row — library-manager-check.mjs owns the dialog's full
+  // rail/search/card contract; this is a lighter smoke check that the seeded
+  // shape actually surfaces there and arms placement from a real click.
   await s.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }))`);
   const seededRow = await s.eval(`(() => {
     const d = window.__braAutoModeDebug;
@@ -213,22 +225,19 @@ async function main() {
       start: { x: 0, y: 0 }, end: { x: 1, y: 1 }, aspect: 1,
       style: 'solid', color: 'red', lineWidth: 2.5, arrowType: 'none',
     }] }));
-    document.getElementById('toolsMenuBtn').click();
-    const rows = Array.from(document.querySelectorAll('#shapeStampList .preset-row'));
-    const menuItems = Array.from(document.querySelectorAll('#toolsMenuList [role="menuitem"]'))
-      .filter(b => !b.hidden && !b.disabled && b.offsetParent !== null).map(b => b.id || b.dataset.stampAction);
-    return {
-      skipped: false,
-      rowCount: rows.length,
-      // The row's own controls have no ids, so identify them by action.
-      rowActionsReachable: menuItems.filter(x => ['use', 'up', 'down', 'rename', 'delete'].includes(x)),
-    };
+    document.getElementById('libraryBtn').click();
+    const cards = Array.from(document.querySelectorAll('[data-stamp-id]'));
+    const card = cards.find(c => c.textContent.indexOf('Toolbar fixture') !== -1);
+    if (card) card.querySelector('[data-card-action="place"]').click();
+    const armed = document.getElementById('toolsMenuBtn').textContent;
+    return { skipped: false, cardCount: cards.length, armed, dialogClosed: !document.querySelector('.picker-overlay') };
   })()`);
   check(seededRow.skipped !== true, 'the shape-stamp debug hook is available to seed a fixture');
-  check(seededRow.rowCount === 1, `precondition: one saved shape is in the list (got ${seededRow.rowCount})`);
-  check(seededRow.rowActionsReachable.includes('use'),
-    `a saved SHAPE is reachable by keyboard menu navigation, not just the library's action `
-    + `buttons (reachable row controls: ${JSON.stringify(seededRow.rowActionsReachable)})`);
+  check(seededRow.cardCount === 1, `precondition: one saved shape reached the Library dialog (got ${seededRow.cardCount})`);
+  check(seededRow.armed === 'Tools: Toolbar fixture',
+    `a saved SHAPE is reachable from the Library dialog, and clicking its card arms it — not just `
+    + `the dialog's own action buttons (toolbar read ${JSON.stringify(seededRow.armed)})`);
+  check(seededRow.dialogClosed === true, 'placing from the dialog closes it, returning focus to the board');
   await s.eval(`window.__braAutoModeDebug.resetShapeStamps()`);
   await s.eval(`document.getElementById('toolsMenuBtn').click()`);
   await s.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }))`);

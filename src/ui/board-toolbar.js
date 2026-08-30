@@ -35,10 +35,6 @@
   }
 
   function openBoardToolbarMenu(record) {
-    // US-097: the Tools menu carries the saved-shape library, whose rows are
-    // stored data rather than markup, so they are rendered each time it opens.
-    if (record.list && record.list.id === 'toolsMenuList'
-      && typeof renderShapeStampList === 'function') renderShapeStampList();
     closeLineStyleMenu();
     closeBoardToolbarMenus(record.list, false);
     record.list.hidden = false;

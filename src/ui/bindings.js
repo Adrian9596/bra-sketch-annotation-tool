@@ -27,6 +27,7 @@
     // US-096: the preset dropdown owns its own rows and handlers.
     bindLinePresetPanel();
     bindShapeStampPanel();
+    bindDxfImportPanel();
     el.styleOptionBtns.forEach((button) => {
       button.addEventListener('click', () => {
         setLineStyle(button.dataset.style);
@@ -202,7 +203,10 @@
     el.openProjectBtn.addEventListener('click', () => el.projectFileInput.click());
     el.projectFileInput.addEventListener('change', onProjectFileChosen);
     if (el.libraryBtn) {
-      el.libraryBtn.addEventListener('click', openLibraryDialog);
+      el.libraryBtn.addEventListener('click', () => {
+        closeBoardToolbarMenus(null, false);
+        openLibraryManagerDialog();
+      });
     }
 
     el.labelEditor.addEventListener('keydown', onLabelEditorKeyDown);
@@ -317,9 +321,6 @@
 
   function openLineStyleMenu() {
     if (el.stitchesBtn.disabled) return;
-    // US-096: the preset rows are stored data, so they are rendered each time
-    // the menu opens rather than written into index.html.
-    renderLinePresetList();
     el.stitchesMenu.hidden = false;
     el.stitchesBtn.setAttribute('aria-expanded', 'true');
   }

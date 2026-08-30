@@ -8,6 +8,28 @@
 // src/manual/annotation-lookup.js.
 // Source part for app.js. Run `npm run build` after editing.
 
+  // US-104 "Quick length readout": a read-only, non-persisted length for the
+  // current selection, shown whenever every selected annotation is a Sketch
+  // Element (a DXF import, a placed Template, or any hand-drawn Scratch Area
+  // line) — never for ordinary POM lines, which already have their own
+  // measured-value display in the spec panel. Sums lineLength() over the
+  // WHOLE selection rather than requiring exactly one: a normal click on a
+  // multi-line piece auto-expands to its whole templateGroupId, so gating on
+  // "exactly one" could never fire from a normal click. Not gated by Sketch
+  // Focus vs POM Focus — the geometry is already on the board regardless of
+  // focus state, and this is read-only, not an authoring tool.
+  function sketchSelectionLengthReadout() {
+    const anns = getSelectedAnnotations();
+    if (!anns.length || !anns.every(ann => ann.purpose === 'sketch-element')) return '';
+    const totalPx = anns.reduce((sum, ann) => sum + lineLength(ann), 0);
+    if (!(totalPx > 0)) return '';
+    const label = anns.length > 1 ? 'Total length' : 'Length';
+    const value = state.calibration.unitsPerPx != null
+      ? formatMeasure(totalPx * state.calibration.unitsPerPx) + ' ' + state.calibration.unit
+      : Math.round(totalPx) + ' px (uncalibrated)';
+    return ' <span class="muted">' + label + ': ' + value + '</span>';
+  }
+
   function updateUI() {
     // US-093 / ADR 0053 code review, 2026-08-21: the Add-point fallback has to
     // run before the tool buttons below read state.tool. It used to sit past
@@ -145,7 +167,8 @@
       } else if (selectedAnnotation) {
         toolText = 'Select – Drag line, endpoints, curve shape handle, or label. Smart Align is '
           + (state.smartAlignEnabled ? 'on; hold <span class="kbd">Alt/Option</span> to bypass it. ' : 'off. ')
-          + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
+          + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).'
+          + sketchSelectionLengthReadout();
       } else if (selectedGraphic) {
         toolText = state.graphicEdit
           ? 'Edit Path – Select and drag nodes, handles, or segments; Cut Path opens the active point.'

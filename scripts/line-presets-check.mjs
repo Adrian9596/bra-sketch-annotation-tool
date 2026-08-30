@@ -239,24 +239,31 @@ async function main() {
       pluralApply: txt.includes('function applyToSelectedAnnotations'),
       defaultStyle: txt.includes('function setDefaultLineStyle'),
       presetModel: txt.includes('function applyLinePreset'),
-      presetPanel: txt.includes('function renderLinePresetList'),
+      // US-107: browsing/picking moved from the Stitches-menu list to the
+      // unified Library dialog — buildTreatmentsTab is that dialog's
+      // Treatments tab, the freshness marker's new home.
+      presetPanel: txt.includes('function buildTreatmentsTab'),
       getMeasurementAnnIds: typeof d.getMeasurementAnnIds === 'function',
       getLinePresets: typeof d.getLinePresets === 'function',
       applyLinePreset: typeof d.applyLinePreset === 'function',
       importJson: typeof d.importLinePresetsJson === 'function',
-      // The library lives INSIDE the Stitches menu (US-096 / US-082): no toolbar
-      // unit of its own. Asserting the container relationship, not just the
-      // element's existence, is what keeps a future refactor from quietly
-      // spending a primary-surface slot again.
-      presetListInStitchesMenu: !!document.querySelector('#stitchesMenu #linePresetList'),
+      // Save as new treatment… and Customize selected… stay INSIDE the
+      // Stitches menu (US-096 / US-082, US-107): board-selection-dependent
+      // quick actions, not library browsing. Asserting the container
+      // relationship, not just the element's existence, is what keeps a
+      // future refactor from quietly spending a primary-surface slot again.
       presetSaveInStitchesMenu: !!document.querySelector('#stitchesMenu #linePresetSaveBtn'),
       noStandalonePresetButton: !document.getElementById('linePresetBtn'),
+      presetListInStitchesMenu: !!document.querySelector('#stitchesMenu #linePresetList'),
     };
   })()`);
   for (const key of Object.keys(served)) {
-    if (key === 'src') continue;
-    check(served[key] === true, `the served bundle (${served.src}) predates US-096 — no ${key}. Run npm run build.`);
+    if (key === 'src' || key === 'presetListInStitchesMenu') continue;
+    check(served[key] === true, `the served bundle (${served.src}) predates US-107 — no ${key}. Run npm run build.`);
   }
+  check(served.presetListInStitchesMenu === false,
+    'US-107: the Treatments browse list must NOT be back in the Stitches menu — '
+    + 'browsing/picking lives exclusively in the unified Library dialog now');
 
   check(await s.eval(HARNESS) === 'ready', 'harness did not install');
 
@@ -1015,49 +1022,64 @@ async function main() {
   check(embed.namesAfter.join('|') === embed.namesBefore.join('|'),
     `opening a project must not rewrite the local library (${JSON.stringify(embed.namesBefore)} -> ${JSON.stringify(embed.namesAfter)})`);
 
-  // ---- 8b. "Import from project", driven through its button ---------------
+  // ---- 8b. "Import from project", driven through its menu action ----------
   //
   // The model half above proves a project cannot overwrite the local library.
   // This is the other half: the TD's actual route to the presets the project
-  // WAS drawn with, including the row's own visibility rule (it must not offer
-  // itself when the file adds nothing new).
+  // WAS drawn with, including the action's own visibility rule (it must not
+  // offer itself when the file adds nothing new). US-107: the row moved from
+  // the Stitches menu to a conditional item in the Library dialog's
+  // Treatments tab "Import / Export" menu — conditional on rendering, not on
+  // a `.hidden` property, so "not offered" now means "not in the DOM".
   const projectImport = await s.eval(`(async () => {
     const d = window.__braAutoModeDebug;
     // Section 8 reloads the page twice, which wipes window.__LP — everything
     // from here on talks to the debug API directly and settles on a plain timer.
     const settle = () => new Promise(r => setTimeout(r, 140));
+    const openTreatmentsMenu = async () => {
+      if (!document.querySelector('.picker-overlay')) {
+        document.getElementById('libraryBtn').click(); await settle();
+      }
+      const treatmentsTab = Array.from(document.querySelectorAll('.lm-tabs .lm-tab-btn'))
+        .find(b => b.textContent.trim() === 'Treatments');
+      if (treatmentsTab) { treatmentsTab.click(); await settle(); }
+      // Scoped to the VISIBLE tab panel: both tabs' markup stays in the DOM
+      // at once ([hidden] on the inactive one), so an unscoped query would
+      // silently match Templates' own "Import / Export" button instead
+      // whenever it happens to sit first in DOM order.
+      const moreBtn = Array.from(document.querySelectorAll('.lm-content-body:not([hidden]) .lm-top-row .picker-btn'))
+        .find(b => b.textContent.indexOf('Import / Export') !== -1);
+      moreBtn.click(); await settle();
+    };
     d.resetLinePresets();
     const project = d.exportProject();
     const before = { ...project, state: { ...project.state, linePresets: [
       ...project.state.linePresets,
       { id: 'lp-from-file', name: 'Only in the file', style: 'bartack', color: 'blue', lineWidth: 4, arrowType: 'none' },
     ] } };
-    document.getElementById('stitchesBtn').click();
-    await settle();
-    const rowHiddenBefore = document.getElementById('linePresetImportProjectBtn').hidden;
-    document.getElementById('stitchesBtn').click();
+    await openTreatmentsMenu();
+    const rowHiddenBefore = !document.querySelector('[data-menu-action="import-project"]');
+    document.querySelector('.dialog-close').click();
     await settle();
 
     await d.loadProject(before);
     await settle();
     const localAfterLoad = d.getLinePresets().map(p => p.name);
-    document.getElementById('stitchesBtn').click();
-    await settle();
-    const row = document.getElementById('linePresetImportProjectBtn');
-    const offered = { hidden: row.hidden, label: row.textContent };
-    row.click();
+    await openTreatmentsMenu();
+    const row = document.querySelector('[data-menu-action="import-project"]');
+    const offered = { hidden: !row, label: row ? row.textContent : '' };
+    if (row) row.click();
     await settle();
     const afterImport = d.getLinePresets().map(p => p.name);
-    document.getElementById('stitchesBtn').click();
+    await openTreatmentsMenu();
+    const rowHiddenAfter = !document.querySelector('[data-menu-action="import-project"]');
+    document.querySelector('.dialog-close').click();
     await settle();
-    document.getElementById('stitchesBtn').click();
-    await settle();
-    const rowHiddenAfter = document.getElementById('linePresetImportProjectBtn').hidden;
     return { rowHiddenBefore, localAfterLoad, offered, afterImport, rowHiddenAfter,
       imported: d.getLinePresets().find(p => p.id === 'lp-from-file') };
   })()`);
   check(projectImport.rowHiddenBefore === true,
-    'the project-import row stays hidden until a project actually offers something new');
+    'the project-import action stays absent until a project actually offers something new');
   check(!projectImport.localAfterLoad.includes('Only in the file'),
     `opening the project must NOT silently add its presets to the local library `
     + `(got ${JSON.stringify(projectImport.localAfterLoad)})`);
@@ -1085,6 +1107,25 @@ async function main() {
     d.resetLinePresets();
     d.addLinePreset('Travels by file');
 
+    // US-107: Export moved into the unified Library dialog's Treatments tab
+    // "Import / Export" menu (no id of its own — a plain picker-btn, found by
+    // its label like every other name-prefilled dialog control this suite
+    // already reads).
+    const openTreatmentsMenu = async () => {
+      if (!document.querySelector('.picker-overlay')) {
+        document.getElementById('libraryBtn').click(); await settle();
+      }
+      const treatmentsTab = Array.from(document.querySelectorAll('.lm-tabs .lm-tab-btn'))
+        .find(b => b.textContent.trim() === 'Treatments');
+      if (treatmentsTab) { treatmentsTab.click(); await settle(); }
+      // Scoped to the VISIBLE tab panel: both tabs' markup stays in the DOM
+      // at once ([hidden] on the inactive one), so an unscoped query would
+      // silently match Templates' own "Import / Export" button instead
+      // whenever it happens to sit first in DOM order.
+      const moreBtn = Array.from(document.querySelectorAll('.lm-content-body:not([hidden]) .lm-top-row .picker-btn'))
+        .find(b => b.textContent.indexOf('Import / Export') !== -1);
+      moreBtn.click(); await settle();
+    };
     // --- Export: intercept the real download rather than stub the function ---
     const realCreate = URL.createObjectURL;
     let captured = null;
@@ -1093,9 +1134,8 @@ async function main() {
     HTMLAnchorElement.prototype.click = function () { filename = this.download; };
     URL.createObjectURL = function (blob) { captured = blob; return 'blob:captured'; };
     try {
-      document.getElementById('stitchesBtn').click();
-      await settle();
-      document.getElementById('linePresetExportBtn').click();
+      await openTreatmentsMenu();
+      document.querySelector('[data-menu-action="export-all"]').click();
       await settle();
     } finally {
       URL.createObjectURL = realCreate;
@@ -1104,6 +1144,12 @@ async function main() {
     const text = captured ? await captured.text() : null;
 
     // --- Import: drive the real file input with a real File ------------------
+    // US-107: #linePresetFileInput's change listener is now bound only WHILE
+    // the Library dialog is open (added/removed per open/close, so repeated
+    // opens cannot accumulate duplicate listeners) — the dialog from the
+    // export step above is left open on purpose, matching how a real file
+    // picker round-trip actually happens (the dialog stays open underneath
+    // it throughout, not just up to the moment the picker opens).
     d.resetLinePresets();
     const beforeImport = d.getLinePresets().map(p => p.name);
     const input = document.getElementById('linePresetFileInput');
@@ -1115,6 +1161,8 @@ async function main() {
     for (let i = 0; i < 25 && !d.getLinePresets().some(p => p.name === 'Travels by file'); i += 1) {
       await settle();
     }
+    document.querySelector('.dialog-close').click();
+    await settle();
     return {
       filename,
       blobType: captured && captured.type,
@@ -1148,14 +1196,29 @@ async function main() {
     const d = window.__braAutoModeDebug;
     d.resetLinePresets();
     const seeded = d.getLinePresets().length;
-    // Emptied through the row × buttons, not a model shortcut: a TD can only
-    // reach this state one delete at a time, and driving the real control also
-    // proves the button reaches the persisting commit path.
-    document.getElementById('stitchesBtn').click();
+    // US-107: emptied through the real card menu's Delete, not a model
+    // shortcut — a TD can only reach this state one delete at a time, and
+    // driving the real control also proves it reaches the persisting commit
+    // path. window.confirm is stubbed because the dialog's delete now
+    // confirms (the old row button did not).
+    document.getElementById('libraryBtn').click();
+    const treatmentsTab = Array.from(document.querySelectorAll('.lm-tabs .lm-tab-btn'))
+      .find(b => b.textContent.trim() === 'Treatments');
+    if (treatmentsTab) treatmentsTab.click();
+    const originalConfirm = window.confirm;
+    window.confirm = () => true;
     let guard = 0;
-    while (document.querySelector('#linePresetList [data-preset-action="delete"]') && guard++ < 20) {
-      document.querySelector('#linePresetList [data-preset-action="delete"]').click();
+    try {
+      let menuBtn;
+      while ((menuBtn = document.querySelector('[data-preset-id] [data-card-action="menu"]')) && guard++ < 20) {
+        menuBtn.click();
+        const deleteBtn = document.querySelector('[data-menu-action="delete"]');
+        if (deleteBtn) deleteBtn.click();
+      }
+    } finally {
+      window.confirm = originalConfirm;
     }
+    document.querySelector('.dialog-close').click();
     return { seeded, remaining: d.getLinePresets().length, guard };
   })()`);
   check(emptied.seeded === 6, `precondition: the built-in set was there to delete (got ${emptied.seeded})`);
@@ -1200,12 +1263,30 @@ async function main() {
       // Read the toast AFTER everything the click chain queues has landed.
       await settle(); await settle();
       toasts.push((document.getElementById('toast') || {}).textContent || '');
-      // A delete must not claim to be a save.
-      document.getElementById('stitchesBtn').click();
+      // A delete must not claim to be a save. US-107: delete moved to the
+      // unified Library dialog's Treatments-tab card menu, behind a
+      // window.confirm the old row button never had.
+      document.getElementById('libraryBtn').click();
       await settle();
-      document.querySelector('#linePresetList [data-preset-action="delete"]').click();
+      const treatmentsTab = Array.from(document.querySelectorAll('.lm-tabs .lm-tab-btn'))
+        .find(b => b.textContent.trim() === 'Treatments');
+      treatmentsTab.click();
+      await settle();
+      const card = Array.from(document.querySelectorAll('[data-preset-id]'))
+        .find(c => c.textContent.indexOf('Will not persist') !== -1);
+      const originalConfirm = window.confirm;
+      window.confirm = () => true;
+      try {
+        card.querySelector('[data-card-action="menu"]').click();
+        await settle();
+        document.querySelector('[data-menu-action="delete"]').click();
+        await settle();
+      } finally {
+        window.confirm = originalConfirm;
+      }
       await settle(); await settle();
       deleteToast = (document.getElementById('toast') || {}).textContent || '';
+      document.querySelector('.dialog-close').click();
     } finally {
       Storage.prototype.setItem = original;
     }

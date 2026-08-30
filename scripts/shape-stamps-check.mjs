@@ -77,8 +77,18 @@ window.__SS = (() => {
     if (list.hidden) document.getElementById('toolsMenuBtn').click();
     await settle();
   };
-  const stampRow = (name) => Array.from(document.querySelectorAll('#shapeStampList .preset-row'))
-    .find(r => r.textContent.indexOf(name.slice(0, 12)) !== -1);
+  // US-107: arming a saved Template moved from a Tools-menu row click to a
+  // card click in the unified Library dialog. d.library.armForPlacement is
+  // the same seam that card's click handler calls (src/ui/dialogs/library-
+  // manager-dialog.js) — it also switches to the stamp tool now (US-107
+  // folded that into armShapeStampForPlacement itself, src/manual/shape-
+  // stamps.js), matching exactly what the real dialog does.
+  const arm = (name) => {
+    const stamp = d.getShapeStamps().find(x => x.name.indexOf(name.slice(0, 12)) !== -1);
+    if (!stamp) return false;
+    d.library.armForPlacement(stamp.id);
+    return true;
+  };
   // Largest normalized distance between two sampled shapes. 0 = identical.
   const shapeDeviation = (a, b) => {
     if (!a || !b || a.points.length !== b.points.length) return Infinity;
@@ -115,7 +125,7 @@ window.__SS = (() => {
     g.fillStyle = cssColor; g.fillRect(0, 0, w, h);
     return c.toDataURL('image/png');
   };
-  return { d, settle, click, drag, openTools, stampRow, shapeDeviation, solidImage, toClient, mouse, redCount };
+  return { d, settle, click, drag, openTools, arm, shapeDeviation, solidImage, toClient, mouse, redCount };
 })();
 'ready'`;
 
@@ -168,17 +178,24 @@ async function main() {
       denorm: txt.includes('function denormalizeStampPoint'),
       preview: txt.includes('function drawShapeStampPreview'),
       sharedStore: txt.includes('function readLibraryStore'),
-      panel: txt.includes('function renderShapeStampList'),
+      // US-107: browsing/picking moved from the Tools-menu list to the
+      // unified Library dialog — buildTemplatesTab is that dialog's Templates
+      // tab, the freshness marker's new home.
+      panel: txt.includes('function buildTemplatesTab'),
       getShapeStamps: typeof d.getShapeStamps === 'function',
       sampleShape: typeof d.sampleAnnotationShape === 'function',
-      listInToolsMenu: !!document.querySelector('#toolsMenuList #shapeStampList'),
+      armForPlacement: typeof (d.library && d.library.armForPlacement) === 'function',
       saveInToolsMenu: !!document.querySelector('#toolsMenuList #shapeStampSaveBtn'),
+      listInToolsMenu: !!document.querySelector('#toolsMenuList #shapeStampList'),
     };
   })()`);
   for (const key of Object.keys(served)) {
-    if (key === 'src') continue;
-    check(served[key] === true, `the served bundle (${served.src}) predates US-097 — no ${key}. Run npm run build.`);
+    if (key === 'src' || key === 'listInToolsMenu') continue;
+    check(served[key] === true, `the served bundle (${served.src}) predates US-107 — no ${key}. Run npm run build.`);
   }
+  check(served.listInToolsMenu === false,
+    'US-107: the Templates browse list must NOT be back in the Tools menu — '
+    + 'browsing/picking lives exclusively in the unified Library dialog now');
   check(await s.eval(HARNESS) === 'ready', 'harness did not install');
   await s.eval(`window.__braAutoModeDebug.learning.setEnabled(false)`);
   await s.eval(`window.__braAutoModeDebug.resetShapeStamps()`);
@@ -189,17 +206,12 @@ async function main() {
     await d.addBoardImages([solidImage('#ffffff', 700, 460)]);
     document.getElementById('modeManualBtn').click();
     await settle();
-    // US-102: Templates (the Shape Stamp / Tools-menu library this whole
-    // suite exercises) are Sketch-Focus-only UI (.sketch-mode-only in
-    // index.html) — #shapeStampList sits display:none in the POM-Focus
-    // default. A synthetic .click() on a hidden row control still fires (it
-    // bypasses visibility), so every list mutation in this suite passed
-    // regardless, but a hidden element cannot receive real focus: the keyed
-    // reorder's own refocusLibraryRowControl call (shape-stamp-panel.js)
-    // silently failed and left focus on whatever tool button was clicked
-    // last. Entering Sketch Focus once, for the whole suite, makes the list
-    // actually visible so its focus-restoration behavior is exercised for
-    // real, not skipped.
+    // US-102 / US-107: Templates (the Shape Stamp library this whole suite
+    // exercises) are Sketch-Focus-only UI — "Save selection as Template…"
+    // (#shapeStampSaveBtn, .sketch-mode-only in index.html) sits display:none
+    // in the POM-Focus default. Entering Sketch Focus once, for the whole
+    // suite, makes it clickable for real rather than relying on a synthetic
+    // .click() bypassing visibility.
     document.getElementById('sketchFocusBtn').click();
     await settle();
     const img = d.getImages()[0];
@@ -307,12 +319,9 @@ async function main() {
 
   // ---- 2. The shape survives placement at very different sizes -------------
   const placed = await s.eval(`(async () => {
-    const { d, settle, drag, openTools, stampRow, shapeDeviation } = window.__SS;
+    const { d, settle, drag, arm, shapeDeviation } = window.__SS;
     const img = d.getImages()[0];
-    await openTools();
-    const row = stampRow('Cup bottom curve');
-    const armedFromRow = !!row;
-    if (row) row.querySelector('[data-stamp-action="use"]').click();
+    const armed = arm('Cup bottom curve');
     await settle();
     const statusNamesStamp = document.getElementById('toolStatus').textContent.indexOf('Cup bottom curve') !== -1;
 
@@ -329,7 +338,7 @@ async function main() {
     const a = d.sampleAnnotationShape(small.id, 48);
     const b = d.sampleAnnotationShape(big.id, 48);
     return {
-      armedFromRow, statusNamesStamp,
+      armed, statusNamesStamp,
       smallId: small.id, bigId: big.id,
       srcSize: [src.width, src.height], smallSize: [a.width, a.height], bigSize: [b.width, b.height],
       devSmall: shapeDeviation(src, a), devBig: shapeDeviation(src, b),
@@ -344,8 +353,14 @@ async function main() {
       anchors: [(small.points || []).length, (big.points || []).length],
     };
   })()`);
-  check(placed.armedFromRow === true && placed.statusNamesStamp === true,
-    'picking a stamp from the Tools menu arms it and the status bar names it');
+  // US-107: picking a Template from the Tools menu is gone — a saved
+  // Template now arms exclusively from a card click in the unified Library
+  // dialog, which library-manager-check.mjs already proves. What this suite
+  // still owns is what happens NEXT: the status bar reflecting the armed
+  // stamp (checked here via the same armForPlacement seam the dialog's own
+  // card click calls) and everything the placement geometry does afterward.
+  check(placed.armed === true && placed.statusNamesStamp === true,
+    'arming a Template names it in the status bar');
   check(placed.bigSize[0] / placed.smallSize[0] > 2,
     `precondition: the two placements really are different sizes `
     + `(${Math.round(placed.smallSize[0])} vs ${Math.round(placed.bigSize[0])} wide) — `
@@ -379,11 +394,10 @@ async function main() {
   // above pass shiftKey, where the floor is a no-op by construction — which is
   // exactly why the gap existed.
   const freeDrag = await s.eval(`(async () => {
-    const { d, settle, drag, openTools, stampRow } = window.__SS;
+    const { d, settle, drag, arm } = window.__SS;
     const img = d.getImages()[0];
     const stamp = d.getShapeStamps().find(x => x.name === 'Cup bottom curve');
-    await openTools();
-    stampRow('Cup bottom curve').querySelector('[data-stamp-action="use"]').click();
+    arm('Cup bottom curve');
     await settle();
     // Deliberately FLATTER than the saved aspect, and with no Shift.
     const w = img.width * 0.5;
@@ -445,10 +459,9 @@ async function main() {
   // rather than its origin. Every other drag in this suite is tens of world
   // units tall, so both `if` bodies were dead across the whole run.
   const flatDrag = await s.eval(`(async () => {
-    const { d, settle, drag, openTools, stampRow } = window.__SS;
+    const { d, settle, drag, arm } = window.__SS;
     const img = d.getImages()[0];
-    await openTools();
-    stampRow('Cup bottom curve').querySelector('[data-stamp-action="use"]').click();
+    arm('Cup bottom curve');
     await settle();
     const y = img.y + img.height * 0.44;
     const x1 = img.x + img.width * 0.05;
@@ -496,11 +509,10 @@ async function main() {
   // through to the click path — a default-size stamp at the press point, which
   // is not what a 400px drag asked for.
   const verticalShift = await s.eval(`(async () => {
-    const { d, settle, drag, openTools, stampRow } = window.__SS;
+    const { d, settle, drag, arm } = window.__SS;
     const img = d.getImages()[0];
     const stamp = d.getShapeStamps().find(x => x.name === 'Cup bottom curve');
-    await openTools();
-    stampRow('Cup bottom curve').querySelector('[data-stamp-action="use"]').click();
+    arm('Cup bottom curve');
     await settle();
     const x1 = img.x + img.width * 0.60, y1 = img.y + img.height * 0.05;
     const dyWanted = img.height * 0.55;
@@ -530,24 +542,46 @@ async function main() {
     + `${verticalShift.got.aspect.toFixed(3)})`);
 
   // ---- 3. A click places the default size, not nothing ---------------------
+  //
+  // US-106: a Template saved through the real flow now carries `savedSize`
+  // (the WORLD-unit control-point box it was captured from — the same box
+  // shapeTemplateBounds/normalizeStampPoint use), and defaultStampBoxAt
+  // reproduces THAT exact box on a bare click — a strictly better default
+  // than the old generic "30% of whatever image it lands on" guess. The
+  // PRECISE claim is checked against the pure defaultStampBoxAt seam
+  // (d.library.defaultBoxAt) rather than the placed curve's own DRAWN/
+  // sampled extent: this suite's own section 2c note above already
+  // establishes that a curve's drawn aspect and its control-point BOX aspect
+  // differ by a constant factor whenever the controls sit inside the box, so
+  // comparing the drawn shape's width to savedSize.width directly would be
+  // asserting a coincidence, not this behavior.
+  const boxAtClick = await s.eval(`(() => {
+    const { d } = window.__SS;
+    const img = d.getImages()[0];
+    const stamp = d.getShapeStamps().find(x => x.name === 'Cup bottom curve');
+    const world = { x: img.x + img.width * 0.5, y: img.y + img.height * 0.5 };
+    return { savedSize: stamp.savedSize, box: d.library.defaultBoxAt(stamp.id, world) };
+  })()`);
+  check(!!boxAtClick.savedSize, 'a Template saved through the real Save flow carries a savedSize (US-106)');
+  check(!!boxAtClick.box
+    && Math.abs(boxAtClick.box.width - boxAtClick.savedSize.width) < 1e-6
+    && Math.abs(boxAtClick.box.height - boxAtClick.savedSize.height) < 1e-6,
+    `...and the bare-click default box reproduces that saved WORLD size exactly `
+    + `(saved ${JSON.stringify(boxAtClick.savedSize)}, default box ${JSON.stringify(boxAtClick.box)})`);
+
   const clicked = await s.eval(`(async () => {
-    const { d, settle, click, openTools, stampRow } = window.__SS;
+    const { d, settle, click, arm } = window.__SS;
     const img = d.getImages()[0];
     // Sections 2b/2c end with Escape, which disarms. Re-arm explicitly rather
     // than relying on what an earlier section happened to leave behind.
-    await openTools();
-    stampRow('Cup bottom curve').querySelector('[data-stamp-action="use"]').click();
+    arm('Cup bottom curve');
     await settle();
     const before = d.getAnnotations().length;
     await click(img.x + img.width * 0.5, img.y + img.height * 0.5);
     const after = d.getAnnotations();
     if (after.length === before) return { created: false };
-    const placed = after[after.length - 1];
-    const shape = d.sampleAnnotationShape(placed.id, 32);
     return {
       created: true,
-      widthFraction: shape.width / img.width,
-      owner: placed.sourceImageId, imgId: img.id,
       stillArmed: document.getElementById('toolStatus').textContent.indexOf('Cup bottom curve') !== -1,
     };
   })()`);
@@ -555,11 +589,41 @@ async function main() {
     'a press below the drag threshold places the stamp at a default size rather than '
     + 'creating nothing — the TD has already chosen the shape, so a click that produces '
     + 'nothing reads as a broken tool (deliberate divergence from ADR 0054)');
-  check(Math.abs(clicked.widthFraction - 0.3) < 0.06,
-    `...sized to 30% of the sketch it lands on (got ${(clicked.widthFraction * 100).toFixed(1)}%)`);
   check(clicked.stillArmed === true,
     'the tool stays armed after a placement — stamping the same curve on front and back '
     + 'is the common case');
+
+  // A stamp with NO savedSize (a v2 payload from before US-106, or one
+  // imported from a colleague's older export) must still fall back to the
+  // original 30%-of-target-image heuristic — the new default must not
+  // require a field older data does not have.
+  const clickedLegacy = await s.eval(`(async () => {
+    const { d, settle, click } = window.__SS;
+    const img = d.getImages()[0];
+    const legacy = {
+      format: 'bra-shape-stamps', version: 2,
+      stamps: [{ id: 'st-legacy-v2', name: 'Legacy no-size', type: 'straight',
+        start: { x: 0, y: 0.5 }, end: { x: 1, y: 0.5 }, style: 'solid', color: 'black',
+        lineWidth: 2, arrowType: 'none', aspect: 0 }],
+    };
+    d.importShapeStampsJson(JSON.stringify(legacy));
+    // The stamp tool is already armed from the previous section (arming never
+    // disarms itself across a placement) — this only needs to swap WHICH
+    // stamp id is active, the lower-level half of armForPlacement.
+    d.setActiveShapeStamp('st-legacy-v2');
+    await settle();
+    const before = d.getAnnotations().length;
+    await click(img.x + img.width * 0.5, img.y + img.height * 0.8);
+    const after = d.getAnnotations();
+    if (after.length === before) return { created: false };
+    const placed = after[after.length - 1];
+    const shape = d.sampleAnnotationShape(placed.id, 8);
+    return { created: true, widthFraction: shape.width / img.width };
+  })()`);
+  check(clickedLegacy.created === true, 'a legacy (no savedSize) stamp still places on a bare click');
+  check(Math.abs(clickedLegacy.widthFraction - 0.3) < 0.06,
+    `...and falls back to the original 30%-of-image default when savedSize is absent `
+    + `(got ${(clickedLegacy.widthFraction * 100).toFixed(1)}%)`);
 
   // ---- 4. Escape disarms ---------------------------------------------------
   const escaped = await s.eval(`(async () => {
@@ -580,7 +644,7 @@ async function main() {
 
   // ---- 5. The look travels, and with it the measurement role ---------------
   const roles = await s.eval(`(async () => {
-    const { d, settle, click, drag, openTools, stampRow } = window.__SS;
+    const { d, settle, click, drag, openTools, arm } = window.__SS;
     const img = d.getImages()[0];
     // Draw a zigzag line and save its shape. Deselect FIRST: US-096 made the
     // Stitches menu restyle the SELECTION when there is one and set the default
@@ -607,8 +671,7 @@ async function main() {
     await settle();
 
     // Place it and check the role.
-    await openTools();
-    stampRow('Topstitch path').querySelector('[data-stamp-action="use"]').click();
+    arm('Topstitch path');
     await settle();
     await drag(img.x + 300, img.y + 40, img.x + 400, img.y + 90);
     const placedStitch = d.getAnnotations()[d.getAnnotations().length - 1];
@@ -666,41 +729,25 @@ async function main() {
     + `${roles.nextPlainSeq})`);
 
   // ---- 6. Undo, and the library's own lifecycle ----------------------------
+  //
+  // US-107: reorder (up/down) retired along with the Tools-menu row controls
+  // — the gallery replaces manual ordering with rail/search filtering, so
+  // there is nothing left to reorder. Rename and delete moved to the unified
+  // Library dialog, which library-manager-check.mjs already proves through
+  // the real dialog (open, find the card, rename it, delete it). What
+  // remains this suite's own claim: Undo removes a placed stamp, and the
+  // library's seeded-marker persistence survives.
   const lifecycle = await s.eval(`(async () => {
     const { d, settle } = window.__SS;
     const before = d.getAnnotations().length;
     document.getElementById('undoBtn').click();
     await settle();
     const afterUndo = d.getAnnotations().length;
-    // Rename / reorder / delete through the real row controls.
-    document.getElementById('toolsMenuBtn').click(); await settle();
-    const rows = () => Array.from(document.querySelectorAll('#shapeStampList .preset-row'));
-    const namesBefore = d.getShapeStamps().map(x => x.name);
-    rows()[1].querySelector('[data-stamp-action="up"]').click(); await settle();
-    const afterMove = d.getShapeStamps().map(x => x.name);
-    const firstUpDisabled = rows()[0].querySelector('[data-stamp-action="up"]').disabled;
-    rows()[0].querySelector('[data-stamp-action="rename"]').click(); await settle();
-    const input = document.querySelector('.picker-overlay input[type="text"]');
-    const prefilled = input.value;
-    input.value = 'Topstitch';
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    await settle();
-    const afterRename = d.getShapeStamps().map(x => x.name);
-    document.getElementById('toolsMenuBtn').click(); await settle();
-    rows()[0].querySelector('[data-stamp-action="delete"]').click(); await settle();
-    return { before, afterUndo, namesBefore, afterMove, firstUpDisabled, prefilled,
-      afterRename, afterDelete: d.getShapeStamps().map(x => x.name),
+    return { before, afterUndo,
       persisted: JSON.parse(localStorage.getItem('bra-shape-stamps-v1')) };
   })()`);
   check(lifecycle.afterUndo === lifecycle.before - 1,
     `one Undo removes a placed stamp (${lifecycle.before} -> ${lifecycle.afterUndo})`);
-  check(lifecycle.afterMove.join('|') !== lifecycle.namesBefore.join('|'),
-    `reorder moves a row (${JSON.stringify(lifecycle.namesBefore)} -> ${JSON.stringify(lifecycle.afterMove)})`);
-  check(lifecycle.firstUpDisabled === true, 'the first row cannot move up');
-  check(lifecycle.prefilled === lifecycle.afterMove[0],
-    `rename opens pre-filled with the current name (got ${JSON.stringify(lifecycle.prefilled)})`);
-  check(lifecycle.afterRename.includes('Topstitch'), 'rename takes effect');
-  check(lifecycle.afterDelete.length === lifecycle.afterRename.length - 1, 'delete removes one');
   check(lifecycle.persisted && lifecycle.persisted.seeded === true,
     `the library is written with the one-shot seeded marker, or an emptied library `
     + `resurrects its contents on reload (got ${JSON.stringify(lifecycle.persisted && lifecycle.persisted.seeded)})`);
@@ -715,9 +762,25 @@ async function main() {
     let captured = null, filename = null;
     HTMLAnchorElement.prototype.click = function () { filename = this.download; };
     URL.createObjectURL = function (blob) { captured = blob; return 'blob:captured'; };
+    // US-107: Export moved into the unified Library dialog's "Import /
+    // Export" menu (no id of its own — it is a plain picker-btn, found by its
+    // label like every other name-prefilled dialog control this suite reads).
+    const openMoreMenu = async () => {
+      // Idempotent: only open a fresh dialog if one is not already up, or
+      // this would stack a second .picker-overlay on the first.
+      if (!document.querySelector('.picker-overlay')) {
+        document.getElementById('libraryBtn').click(); await settle();
+      }
+      // Scoped to the VISIBLE tab panel: both tabs' markup stays in the DOM
+      // at once ([hidden] on the inactive one), so an unscoped query risks
+      // matching the OTHER tab's own "Import / Export" button.
+      const moreBtn = Array.from(document.querySelectorAll('.lm-content-body:not([hidden]) .lm-top-row .picker-btn'))
+        .find(b => b.textContent.indexOf('Import / Export') !== -1);
+      moreBtn.click(); await settle();
+    };
     try {
-      document.getElementById('toolsMenuBtn').click(); await settle();
-      document.getElementById('shapeStampExportBtn').click(); await settle();
+      await openMoreMenu();
+      document.querySelector('[data-menu-action="export-all"]').click(); await settle();
     } finally {
       URL.createObjectURL = realCreate;
       HTMLAnchorElement.prototype.click = realClick;
@@ -746,10 +809,11 @@ async function main() {
     await d.loadProject(withExtra);
     await settle();
     const localAfterLoad = d.getShapeStamps().map(x => x.name);
-    document.getElementById('toolsMenuBtn').click(); await settle();
-    const offerRow = document.getElementById('shapeStampImportProjectBtn');
-    const offered = { hidden: offerRow.hidden, label: offerRow.textContent };
-    offerRow.click(); await settle();
+    await openMoreMenu();
+    const importProjectBtn = document.querySelector('[data-menu-action="import-project"]');
+    const offered = { hidden: !importProjectBtn, label: importProjectBtn ? importProjectBtn.textContent : '' };
+    if (importProjectBtn) importProjectBtn.click();
+    await settle();
     return { filename, blobType: captured && captured.type, exportedHasStamp: /Cup bottom/.test(text || ''),
       namesBefore, afterImport, embedded: (project.state.shapeStamps || []).length,
       localAfterLoad, offered, afterOffer: d.getShapeStamps().map(x => x.name) };
@@ -771,7 +835,7 @@ async function main() {
 
   // ---- 8. Degenerate geometry ----------------------------------------------
   const degenerate = await s.eval(`(async () => {
-    const { d, settle, click, drag, openTools, stampRow, shapeDeviation } = window.__SS;
+    const { d, settle, click, drag, openTools, arm } = window.__SS;
     const img = d.getImages()[0];
     const results = {};
     for (const [name, x2, y2] of [['Flat horizontal', 160, 0], ['Flat vertical', 0, 120]]) {
@@ -798,17 +862,15 @@ async function main() {
       // rather than crashing on a missing row — a harness crash is a much
       // weaker signal than a named assertion.
       if (!stamp) { results[name] = { saved: false, aspect: null, rejected: true }; continue; }
-      await openTools();
-      const row = stampRow(name);
-      if (!row) { results[name] = { saved: true, aspect: stamp.aspect, noRow: true }; continue; }
-      row.querySelector('[data-stamp-action="use"]').click(); await settle();
+      const armed = arm(name);
+      await settle();
       await drag(img.x + 380, img.y + 300, img.x + 500, img.y + 360);
       const placedLine = d.getAnnotations()[d.getAnnotations().length - 1];
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       await settle();
       const shape = d.sampleAnnotationShape(placedLine.id, 24);
       results[name] = {
-        saved: !!stamp, aspect: stamp ? stamp.aspect : null,
+        saved: !!stamp, armed, aspect: stamp ? stamp.aspect : null,
         placedWidth: shape.width, placedHeight: shape.height,
         finite: Number.isFinite(placedLine.start.x) && Number.isFinite(placedLine.start.y)
           && Number.isFinite(placedLine.end.x) && Number.isFinite(placedLine.end.y),
@@ -822,7 +884,7 @@ async function main() {
       `${name}: a line with no extent on one axis is still saveable — dividing by the `
       + `collapsed axis puts NaN in the geometry, and the normalizer then rejects the whole `
       + `stamp${r && r.rejected ? ' (which is what happened)' : ''}`);
-    check(r.noRow !== true, `${name}: the saved stamp reached the Tools-menu list`);
+    check(r.armed === true, `${name}: the saved stamp can be armed for placement`);
     check(r.aspect === 0,
       `${name}: a collapsed axis stores aspect 0 rather than 0 or Infinity from a divide `
       + `(got ${r.aspect})`);
@@ -851,7 +913,7 @@ async function main() {
   // by an adversarial audit; the capture existed and was asserted only as a
   // count of zero.
   const anchors = await s.eval(`(async () => {
-    const { d, settle, click, drag, openTools, stampRow, shapeDeviation } = window.__SS;
+    const { d, settle, click, drag, openTools, arm, shapeDeviation } = window.__SS;
     const img = d.getImages()[0];
     await click(img.x + 2, img.y + 2);
     document.getElementById('toolsMenuBtn').click(); await settle();
@@ -893,8 +955,7 @@ async function main() {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await settle();
     const stamp = d.getShapeStamps().find(x => x.name === 'Anchored curve');
-    await openTools();
-    stampRow('Anchored curve').querySelector('[data-stamp-action="use"]').click(); await settle();
+    arm('Anchored curve'); await settle();
     // Deliberately much smaller than the source, so "the shape survived" is a
     // claim about similarity across scale, not about copying at 1:1.
     await drag(img.x + img.width * 0.70, img.y + img.height * 0.05,
@@ -941,10 +1002,9 @@ async function main() {
   // of it. Sampling the painted canvas along the placed curve's own path is
   // the only assertion that closes that gap.
   const pixels = await s.eval(`(async () => {
-    const { d, settle, redCount, drag, openTools, stampRow } = window.__SS;
+    const { d, settle, redCount, drag, arm } = window.__SS;
     const img = d.getImages()[0];
-    await openTools();
-    stampRow('Cup bottom curve').querySelector('[data-stamp-action="use"]').click();
+    arm('Cup bottom curve');
     await settle();
     await drag(img.x + img.width * 0.08, img.y + img.height * 0.10,
       img.x + img.width * 0.48, img.y + img.height * 0.34, { shiftKey: true });
@@ -1041,14 +1101,13 @@ async function main() {
   // board is in a modal creation mode with the context-actions group hidden, so
   // if the trigger does not say what a press will do, nothing does.
   const armedUi = await s.eval(`(async () => {
-    const { d, settle, click, openTools, stampRow, solidImage } = window.__SS;
+    const { d, settle, click, openTools, arm, solidImage } = window.__SS;
     // Section 11 reloaded three times, so the board is empty again. A reload
     // is a fresh load — Sketch Focus (US-102) is session-only and resets to
     // POM Focus on every one, same as sketchMode's own fresh-load default —
-    // so the Templates list (#shapeStampList, .sketch-mode-only) needs it
-    // re-entered here too, or it goes back to display:none and this
-    // section's own focus assertions (12/13 below) fail the same way the
-    // very first section would have without it.
+    // so "Save selection as Template…" (#shapeStampSaveBtn, .sketch-mode-only)
+    // needs it re-entered here too, or it goes back to display:none and this
+    // section cannot save the two fixtures it needs.
     if (!d.getImages().length) {
       await d.addBoardImages([solidImage('#ffffff', 700, 460)]);
       document.getElementById('modeManualBtn').click();
@@ -1079,19 +1138,19 @@ async function main() {
     const trigger = document.getElementById('toolsMenuBtn');
     const labelIdle = trigger.textContent;
 
-    await openTools();
-    stampRow('Cup bottom curve').querySelector('[data-stamp-action="use"]').click();
+    arm('Cup bottom curve');
     await settle();
     const labelShort = trigger.textContent;
 
-    await openTools();
-    stampRow('An extremely long').querySelector('[data-stamp-action="use"]').click();
+    arm('An extremely long saved shape name');
     await settle();
     const labelLong = trigger.textContent;
+    const armedId = d.getShapeStamps().find(x => x.name.indexOf('An extremely long') !== -1).id;
 
-    // Delete the ARMED shape.
-    await openTools();
-    stampRow('An extremely long').querySelector('[data-stamp-action="delete"]').click();
+    // Delete the ARMED shape (the model seam, not the dialog's confirm-gated
+    // card menu — library-manager-check.mjs already drives that for real;
+    // this isolates deleteShapeStamp's own recovery behavior).
+    d.library.deleteStamp(armedId);
     await settle();
     const labelAfterDelete = trigger.textContent;
     const statusAfterDelete = document.getElementById('toolStatus').textContent;
@@ -1126,87 +1185,15 @@ async function main() {
 
   // ---- 13. Reordering with the keyboard stays possible ---------------------
   //
-  // The row controls are menu items, and the list is rebuilt wholesale after
-  // every reorder. Without restoring focus, it lands on <body>, and because
-  // moveBoardMenuFocus is bound on the menu element the keydown no longer
-  // passes through it — arrow navigation of the whole Tools menu dies after
-  // one press, and a repeated reorder needs the mouse.
-  const keyboardReorder = await s.eval(`(async () => {
-    const { d, settle, click, openTools } = window.__SS;
-    const img = d.getImages()[0];
-    // Need at least three entries to move one twice.
-    while (d.getShapeStamps().length < 3) {
-      await click(img.x + 2, img.y + 2);
-      document.getElementById('toolsMenuBtn').click(); await settle();
-      document.getElementById('toolStraight').click(); await settle();
-      const n = d.getShapeStamps().length;
-      await click(img.x + img.width * 0.10, img.y + img.height * (0.3 + n * 0.1));
-      await click(img.x + img.width * 0.35, img.y + img.height * (0.3 + n * 0.1));
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      document.getElementById('toolSelect').click(); await settle();
-      const line = d.getAnnotations()[d.getAnnotations().length - 1];
-      await click((line.start.x + line.end.x) / 2, line.start.y);
-      await openTools();
-      document.getElementById('shapeStampSaveBtn').click(); await settle();
-      const input = document.querySelector('.picker-overlay input[type="text"]');
-      input.value = 'Shape ' + (n + 1);
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      await settle();
-    }
-    await openTools();
-    const rows = () => Array.from(document.querySelectorAll('#shapeStampList .preset-row'));
-    const namesBefore = d.getShapeStamps().map(x => x.name);
-    const lastId = rows()[rows().length - 1].dataset.stampId;
-    const controlsAreMenuItems = rows()[0]
-      .querySelector('[data-stamp-action="up"]').getAttribute('role') === 'menuitem';
-    // Press Up on the LAST row, twice, without touching the mouse in between.
-    rows()[rows().length - 1].querySelector('[data-stamp-action="up"]').click();
-    await settle();
-    const focusAfterFirst = document.activeElement;
-    const focusedRowId = focusAfterFirst && focusAfterFirst.closest('[data-stamp-id]')
-      ? focusAfterFirst.closest('[data-stamp-id]').dataset.stampId : null;
-    const focusedAction = focusAfterFirst && focusAfterFirst.dataset
-      ? focusAfterFirst.dataset.stampAction : null;
-    // The second press goes to whatever now has focus — the keyboard path.
-    if (focusAfterFirst && focusAfterFirst.click) focusAfterFirst.click();
-    await settle();
-    const namesAfter = d.getShapeStamps().map(x => x.name);
-    // Focus AFTER the press that put the entry at index 0 — the press that
-    // disables its own Up and therefore exercises the fallback. The first
-    // version of this section stopped one press short of it.
-    const focusAtTop = document.activeElement;
-    return { controlsAreMenuItems, namesBefore, namesAfter, lastId, focusedRowId, focusedAction,
-      focusedActionAtTop: focusAtTop && focusAtTop.dataset ? focusAtTop.dataset.stampAction : null,
-      movedTo: namesAfter.indexOf(namesBefore[namesBefore.length - 1]) };
-  })()`);
-  check(keyboardReorder.controlsAreMenuItems === true,
-    'the row controls are menu items, so arrow-key navigation inside a role=menu reaches them');
-  check(keyboardReorder.focusedRowId === keyboardReorder.lastId
-    && keyboardReorder.focusedAction === 'up',
-    `after the list is re-rendered, focus returns to the SAME control on the SAME entry — `
-    + `otherwise it falls to <body>, the menu's own keydown handler is no longer in the `
-    + `propagation path, and arrow navigation of the whole Tools menu dies `
-    + `(focus landed on ${JSON.stringify(keyboardReorder.focusedAction)} of row `
-    + `${JSON.stringify(keyboardReorder.focusedRowId)})`);
-  check(keyboardReorder.movedTo === 0,
-    `...so pressing Up twice without re-grabbing walks the entry two places `
-    + `(${JSON.stringify(keyboardReorder.namesBefore)} -> ${JSON.stringify(keyboardReorder.namesAfter)})`);
-  // The press that lands the entry at index 0 disables its own Up, so the
-  // fallback fires. Code review, 2026-08-23: the first fallback took "the first
-  // non-disabled control in the row", which is the wide Apply/Use button — the
-  // one control that CHANGES something. Parking focus there mid-reorder means
-  // the TD's next Space applies a preset (a stitch preset silently turns the
-  // selected measurement line into a construction mark) or arms the stamp tool
-  // and closes the menu. A fallback must never land on a state-changing
-  // command.
-  check(keyboardReorder.focusedActionAtTop !== 'use'
-    && keyboardReorder.focusedActionAtTop !== 'apply',
-    `after the entry reaches the top its own Up is disabled, and the fallback must NOT land `
-    + `on the row's state-changing Apply/Use button — the next keypress would fire it `
-    + `(focus went to ${JSON.stringify(keyboardReorder.focusedActionAtTop)})`);
-  check(keyboardReorder.focusedActionAtTop === 'down',
-    `...it lands on the opposite arrow, which is both safe and where a TD who over-shot `
-    + `wants to be (got ${JSON.stringify(keyboardReorder.focusedActionAtTop)})`);
+  // RETIRED under US-107: manual up/down reorder was a Tools-menu row-list
+  // affordance (arrow-key navigation inside a role=menu, with explicit focus
+  // restoration after each re-render). The unified Library dialog replaces
+  // manual ordering with rail/search filtering — there is no reorder control
+  // left to hold this claim, and the dialog's card grid is a different
+  // interaction paradigm (a modal gallery, Tab-ordered, matching the existing
+  // Project Library card grid) rather than an arrow-key-navigated menu, so
+  // the old claim does not translate onto it. See library-manager-check.mjs
+  // for the new dialog's own keyboard/focus contract.
 
   const errors = [...pageErrors, ...(await s.eval(`window.__ssErrors || []`))];
   check(errors.length === 0, `page errors during the run: ${JSON.stringify(errors)}`);

@@ -280,6 +280,48 @@ async function main() {
     check(alignModes.before === 'true' && alignModes.off.state === false && alignModes.off.aria === 'false' && alignModes.after === true,
       'the Tools menu Smart Align setting must accurately toggle the assistant');
 
+    const alignIntersection = await session.eval(`(() => {
+      const d=window.__braAutoModeDebug;
+      const refA={id:9403,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:500,y:0},end:{x:500,y:200},control1:null,control2:null,points:[],label:{x:520,y:100},labelManual:false};
+      const refB={id:9404,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:400,y:100},end:{x:600,y:100},control1:null,control2:null,points:[],label:{x:500,y:120},labelManual:false};
+      const moving={id:9405,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:500,y:-100},end:{x:500,y:50},control1:null,control2:null,points:[],label:{x:520,y:-25},labelManual:false};
+      d.styleEvidence.pushAnnotation(refA); d.styleEvidence.pushAnnotation(refB); d.styleEvidence.pushAnnotation(moving);
+      d.setSmartAlignEnabled(true);
+      const snapped=d.previewSmartAlignment([9405],0,45,false);
+      const bypass=d.previewSmartAlignment([9405],0,45,true);
+      return {snapped,bypass};
+    })()`);
+    check(Math.abs(alignIntersection.snapped.dx)<0.01 && Math.abs(alignIntersection.snapped.dy-50)<0.01,
+      'Smart Align must snap a moving endpoint onto the crossing point of two other lines, not just their own endpoints');
+    check(alignIntersection.snapped.guides.some(g=>g.type==='intersection'
+      && Math.abs(g.point.x-500)<0.01 && Math.abs(g.point.y-100)<0.01),
+      'the intersection guide must report the actual crossing point of the two reference lines');
+    check(Math.abs(alignIntersection.bypass.dy-45)<0.01 && alignIntersection.bypass.guides.length===0,
+      'Alt/Option must bypass intersection snapping the same as every other Smart Align tier');
+
+    const handleSnap = await session.eval(`(async () => {
+      const d=window.__braAutoModeDebug, canvas=document.getElementById('boardCanvas');
+      const refA={id:9406,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:800,y:0},end:{x:800,y:200},control1:null,control2:null,points:[],label:{x:820,y:100},labelManual:false};
+      const refB={id:9407,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:700,y:100},end:{x:900,y:100},control1:null,control2:null,points:[],label:{x:800,y:120},labelManual:false};
+      const draggable={id:9408,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:950,y:300},end:{x:1050,y:300},control1:null,control2:null,points:[],label:{x:1000,y:280},labelManual:false};
+      d.styleEvidence.pushAnnotation(refA); d.styleEvidence.pushAnnotation(refB); d.styleEvidence.pushAnnotation(draggable);
+      d.setSmartAlignEnabled(true); d.selectAnnotation(9408);
+      const view=d.getView(), rect=canvas.getBoundingClientRect();
+      const client=p=>({x:p.x*view.zoom+view.panX+rect.left,y:p.y*view.zoom+view.panY+rect.top});
+      const send=(type,p,target=canvas,altKey=false)=>{const q=client(p);target.dispatchEvent(new MouseEvent(type,{clientX:q.x,clientY:q.y,bubbles:true,button:0,altKey}));};
+      send('mousedown',{x:1050,y:300});
+      send('mousemove',{x:805,y:95});
+      await new Promise(r=>setTimeout(r,40));
+      const live=d.getState(), during=d.getAnnotations().find(a=>a.id===9408);
+      send('mouseup',{x:805,y:95},window);
+      await new Promise(r=>setTimeout(r,60));
+      return {during,guides:live.smartAlignGuides||[]};
+    })()`);
+    check(Math.abs(handleSnap.during.end.x-800)<0.01 && Math.abs(handleSnap.during.end.y-100)<0.01,
+      'dragging a straight line endpoint must snap it onto the crossing point of two other lines');
+    check(handleSnap.guides.some(g=>g.type==='intersection'),
+      'dragging an endpoint onto an intersection must show the intersection guide, not just move silently');
+
     // US-102: POM Focus forces Smart Align off, but it must not CLEAR the
     // TD's own preference — toggling Sketch Focus off then back on must
     // restore exactly what they chose. Currently in Sketch Focus (from the

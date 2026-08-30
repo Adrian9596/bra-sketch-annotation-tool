@@ -54,56 +54,6 @@
       : base + '. A measurement line.';
   }
 
-  function renderLinePresetList() {
-    if (!el.linePresetList) return;
-    // Only offered while an opened project actually holds presets this browser
-    // lacks — otherwise it is a row that does nothing.
-    if (el.linePresetImportProjectBtn) {
-      const pending = getPendingProjectLinePresets().length;
-      el.linePresetImportProjectBtn.hidden = pending === 0;
-      el.linePresetImportProjectBtn.textContent = pending
-        ? `Import ${pending} preset${pending > 1 ? 's' : ''} from project`
-        : 'Import from project';
-    }
-    const presets = getLinePresets();
-    const swatch = (color) => LINE_COLORS[color] || LINE_COLOR;
-    const rowHtml = (preset) => {
-      const kind = preset.kind === 'treatment' ? 'treatment' : 'look';
-      const siblings = presets.filter(item => (item.kind === 'treatment' ? 'treatment' : 'look') === kind);
-      const index = siblings.findIndex(item => item.id === preset.id);
-      const first = index === 0 ? ' disabled' : '';
-      const last = index === siblings.length - 1 ? ' disabled' : '';
-      return '<div class="preset-row" data-preset-id="' + escapeHtml(preset.id) + '">'
-        + '<button type="button" role="menuitem" class="preset-apply" data-preset-action="apply"'
-        + ' style="color:' + escapeHtml(swatch(preset.color)) + '"'
-        + ' title="' + escapeHtml(linePresetRowTitle(preset)) + '">'
-        + lineTreatmentPreviewSvg(preset)
-        + '<span>' + escapeHtml(preset.name) + '</span>'
-        + '</button>'
-        + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="up" aria-label="Move up" title="Move up"' + first + '>&#9650;</button>'
-        + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="down" aria-label="Move down" title="Move down"' + last + '>&#9660;</button>'
-        + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="rename" aria-label="Rename" title="Rename">&#9998;</button>'
-        + (preset.kind === 'treatment' ? '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="edit" aria-label="Edit treatment" title="Edit layers">&#9881;</button>' : '')
-        + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="delete" aria-label="Delete" title="Delete">&times;</button>'
-        + '</div>';
-    };
-    const treatments = presets.filter(preset => preset.kind === 'treatment');
-    const looks = presets.filter(preset => preset.kind !== 'treatment');
-    el.linePresetList.innerHTML = (treatments.length
-      ? '<div class="preset-subgroup">Construction treatments</div>' + treatments.map(rowHtml).join('') : '')
-      + (looks.length
-        ? '<div class="preset-subgroup">Saved line looks</div>' + looks.map(rowHtml).join('') : '');
-  }
-
-  // The library has no dropdown of its own: it lives in the Stitches menu, whose
-  // openLineStyleMenu calls this. US-082 caps how many units may sit on the
-  // primary Board surface, and a preset IS a line look — the same thing the five
-  // built-in rows above it are — so a second trigger would have spent a slot to
-  // split one idea across two menus.
-  function openLinePresetMenu() {
-    openLineStyleMenu();
-  }
-
   // Every library action ends in exactly one toast, worded for that action and
   // truthful about whether it will survive a reload. saveLinePresets is silent
   // precisely so this is the only message the TD sees.
@@ -175,7 +125,6 @@
       onConfirm: (name) => {
         const preset = addLinePreset(name);
         if (!preset) { showToast('Could not save that preset.'); return; }
-        renderLinePresetList();
         linePresetToast(`Saved "${preset.name}" to the line presets.`);
       },
     });
@@ -344,7 +293,6 @@
       recipe, confirmLabel: 'Save treatment',
       onConfirm: next => {
         const saved = addLineTreatment(next.name, next);
-        renderLinePresetList();
         linePresetToast(saved ? `Saved "${saved.name}" to Line Treatments.` : 'Could not save that Treatment.');
       },
     });
@@ -363,90 +311,19 @@
     });
   }
 
-  function onLinePresetListClick(event) {
-    const button = event.target.closest('[data-preset-action]');
-    if (!button || button.disabled) return;
-    const row = button.closest('[data-preset-id]');
-    if (!row) return;
-    event.stopPropagation();
-    const id = row.dataset.presetId;
-    const action = button.dataset.presetAction;
-    const preset = getLinePresetById(id);
-    if (!preset) return;
-
-    if (action === 'apply') {
-      applyLinePreset(id);
-      closeLineStyleMenu();
-      return;
-    }
-    if (action === 'up' || action === 'down') {
-      moveLinePresetWithinKind(id, action === 'up' ? -1 : 1);
-      renderLinePresetList();
-      refocusLibraryRowControl('linePresetList', id, { kind: 'preset', name: action });
-      return;
-    }
-    if (action === 'rename') {
-      openLinePresetNameDialog({
-        title: 'Rename preset',
-        sub: preset.name,
-        value: preset.name,
-        confirmLabel: 'Rename',
-        onConfirm: (name) => {
-          renameLinePreset(id, name);
-          renderLinePresetList();
-          refocusLibraryRowControl('linePresetList', id, { kind: 'preset', name: 'rename' });
-        },
-      });
-      return;
-    }
-    if (action === 'edit' && preset.treatment) {
-      closeLineStyleMenu();
-      openLineTreatmentEditor({
-        title: 'Update Library Treatment', name: preset.name, recipe: preset.treatment,
-        confirmLabel: 'Update treatment',
-        onConfirm: next => {
-          updateLineTreatment(id, next, next.name);
-          renderLinePresetList();
-          linePresetToast(`Updated "${next.name}". Existing drawings were not changed.`);
-        },
-      });
-      return;
-    }
-    if (action === 'delete') {
-      const order = getLinePresets().map(p => p.id);
-      const index = order.indexOf(id);
-      deleteLinePreset(id);
-      renderLinePresetList();
-      const after = getLinePresets();
-      const neighbour = after[Math.min(index, after.length - 1)];
-      if (neighbour) refocusLibraryRowControl('linePresetList', neighbour.id, { kind: 'preset', name: 'delete' });
-      linePresetToast(`Deleted "${preset.name}".`);
-    }
-  }
-
-  function onLinePresetImportFile(event) {
-    const file = event.target.files && event.target.files[0];
-    event.target.value = '';
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const added = importLinePresetsFromJson(String(reader.result || ''));
-      renderLinePresetList();
-      if (!added) { showToast('That file held no line presets.'); return; }
-      linePresetToast(`Imported ${added} preset${added > 1 ? 's' : ''}.`);
-    };
-    reader.onerror = () => showToast('Could not read that file.');
-    reader.readAsText(file);
-  }
-
+  // US-107: browsing/picking/managing a saved preset moved to the unified
+  // Library dialog (src/ui/dialogs/library-manager-dialog.js). What stays
+  // here reads the board's LIVE selection (Save as new treatment…, Customize
+  // selected…) — a board-context action, not a library-browsing one — so it
+  // belongs in the Stitches menu the TD is already looking at.
   function bindLinePresetPanel() {
-    if (!el.linePresetList) return;
-    el.linePresetList.addEventListener('click', onLinePresetListClick);
-    el.linePresetSaveBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      closeLineStyleMenu();
-      saveSelectedTreatmentToLibrary();
-    });
+    if (el.linePresetSaveBtn) {
+      el.linePresetSaveBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        closeLineStyleMenu();
+        saveSelectedTreatmentToLibrary();
+      });
+    }
     if (el.lineTreatmentCustomizeBtn) {
       el.lineTreatmentCustomizeBtn.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -454,32 +331,6 @@
         customizeSelectedTreatment();
       });
     }
-    el.linePresetExportBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      exportLinePresetsFile();
-      closeLineStyleMenu();
-    });
-    el.linePresetImportBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      el.linePresetFileInput.click();
-    });
-    el.linePresetFileInput.addEventListener('change', onLinePresetImportFile);
-    if (el.linePresetImportProjectBtn) {
-      el.linePresetImportProjectBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        const added = importPendingProjectLinePresets();
-        el.linePresetImportProjectBtn.hidden = true;
-        renderLinePresetList();
-        if (!added) { showToast('Nothing to import.'); return; }
-        linePresetToast(`Imported ${added} preset${added > 1 ? 's' : ''} from the project.`);
-      });
-    }
-    el.linePresetResetBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      resetLinePresetsToBuiltins();
-      renderLinePresetList();
-      linePresetToast('Line Treatments reset to the built-in set.');
-    });
     // Dismissal is the Stitches menu's: the document click handler and Escape
     // in bindings.js / keyboard-shortcuts.js already own it, and every control
     // here stops propagation so operating the library does not close the menu

@@ -26,26 +26,22 @@
     stitchesBtnLabel: document.getElementById('stitchesBtnLabel'),
     stitchesMenu: document.getElementById('stitchesMenu'),
     styleOptionBtns: Array.from(document.querySelectorAll('.style-option')),
-    // US-096 / ADR 0055: the line-preset library, which lives INSIDE the
-    // Stitches menu above rather than in a toolbar unit of its own (US-082
-    // caps the primary surface). The rows inside #linePresetList are rendered
-    // from stored data, so they are looked up on demand in
-    // src/ui/line-preset-panel.js rather than captured here.
-    linePresetList: document.getElementById('linePresetList'),
+    // US-096 / ADR 0055, US-107: Save as new treatment… and Customize
+    // selected… stay in the Stitches menu (board-selection-dependent quick
+    // actions) — browsing/picking/managing saved Treatments is the unified
+    // Library dialog now (src/ui/dialogs/library-manager-dialog.js), which
+    // looks up #linePresetFileInput on demand rather than caching it here.
     linePresetSaveBtn: document.getElementById('linePresetSaveBtn'),
     lineTreatmentCustomizeBtn: document.getElementById('lineTreatmentCustomizeBtn'),
-    linePresetExportBtn: document.getElementById('linePresetExportBtn'),
-    linePresetImportBtn: document.getElementById('linePresetImportBtn'),
-    linePresetImportProjectBtn: document.getElementById('linePresetImportProjectBtn'),
-    linePresetResetBtn: document.getElementById('linePresetResetBtn'),
     linePresetFileInput: document.getElementById('linePresetFileInput'),
-    // US-097 / ADR 0056: the saved-shape library, inside the Tools menu.
-    shapeStampList: document.getElementById('shapeStampList'),
+    // US-097 / ADR 0056, US-107: Save selection as Template… stays in the
+    // Tools menu for the same reason. Browsing/picking/managing saved
+    // Templates is the unified Library dialog now.
     shapeStampSaveBtn: document.getElementById('shapeStampSaveBtn'),
-    shapeStampImportProjectBtn: document.getElementById('shapeStampImportProjectBtn'),
-    shapeStampExportBtn: document.getElementById('shapeStampExportBtn'),
-    shapeStampImportBtn: document.getElementById('shapeStampImportBtn'),
     shapeStampFileInput: document.getElementById('shapeStampFileInput'),
+    // US-104: the "Open DXF file" action, inside the Tools menu.
+    dxfImportBtn: document.getElementById('dxfImportBtn'),
+    dxfImportFileInput: document.getElementById('dxfImportFileInput'),
     lineWidthChip: document.getElementById('lineWidthChip'),
     lineWidthInput: document.getElementById('lineWidthInput'),
     fontSizeChip: document.getElementById('fontSizeChip'),

@@ -1461,6 +1461,205 @@
   }
   .note-editor:focus{ outline:none; }
 
+  /* US-106: Template Library Manager */
+  .dialog-panel.lm-wide{ width:min(1040px, 100%); }
+  .lm-body{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    padding:14px 20px 0;
+    overflow:hidden;
+    min-height:60vh;
+  }
+  .lm-top-row{ display:flex; gap:10px; align-items:center; }
+  .lm-search{
+    flex:1;
+    padding:7px 10px;
+    border:1px solid #d4d4d8;
+    border-radius:6px;
+    font-size:13px;
+  }
+  .lm-content{ display:flex; gap:14px; flex:1; min-height:0; }
+  .lm-rail{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    width:180px;
+    flex:0 0 auto;
+    overflow-y:auto;
+    border-right:1px solid var(--hairline);
+    padding-right:10px;
+  }
+  .lm-rail-btn{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:6px;
+    padding:6px 8px;
+    border:0;
+    border-radius:6px;
+    background:transparent;
+    text-align:left;
+    font-size:13px;
+    color:var(--text);
+    cursor:pointer;
+  }
+  .lm-rail-btn:hover{ background:#f2f2f5; }
+  .lm-rail-btn.lm-rail-active{ background:#eef0f4; font-weight:700; }
+  .lm-rail-count{ font-size:11px; color:#8b8b93; font-weight:400; }
+  .lm-grid{ flex:1; overflow-y:auto; align-content:start; padding:2px 2px 12px; }
+  .lm-empty{ padding:32px 12px; text-align:center; color:#8b8b93; font-size:13px; grid-column:1/-1; }
+  .lm-card{ position:relative; padding:8px 8px 10px; cursor:default; }
+  .lm-card:hover{ box-shadow:0 2px 10px rgba(17,24,39,.10); }
+  .lm-place-hit{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    width:100%;
+    padding:0;
+    border:0;
+    background:transparent;
+    cursor:pointer;
+    text-align:left;
+  }
+  .lm-thumb.picker-thumb{ height:96px; display:flex; align-items:center; justify-content:center; }
+  .lm-card-preview{ width:100%; height:100%; color:var(--accent); }
+  .lm-fav{
+    position:absolute;
+    top:4px;
+    right:4px;
+    z-index:1;
+    border:0;
+    background:rgba(255,255,255,.85);
+    border-radius:50%;
+    width:26px;
+    height:26px;
+    font-size:15px;
+    line-height:1;
+    color:#c4c4cc;
+    cursor:pointer;
+  }
+  .lm-fav.lm-fav-on{ color:#eab308; }
+  .lm-fav:hover{ background:#fff; }
+  .lm-card-meta{ display:flex; flex-wrap:wrap; gap:4px; margin-top:2px; }
+  .lm-category-chip{
+    font-size:10.5px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.02em;
+    color:#4b5563;
+    background:#f2f2f5;
+    border-radius:4px;
+    padding:2px 6px;
+  }
+  .lm-tag{
+    font-size:11px;
+    color:#6b7280;
+    background:#f8f8fa;
+    border:1px solid var(--hairline);
+    border-radius:10px;
+    padding:1px 7px;
+  }
+  .lm-more{
+    position:absolute;
+    bottom:6px;
+    right:6px;
+    border:0;
+    background:transparent;
+    color:#8b8b93;
+    font-size:16px;
+    line-height:1;
+    padding:4px 6px;
+    cursor:pointer;
+    border-radius:4px;
+  }
+  .lm-more:hover{ background:#f2f2f5; color:var(--text); }
+  .lm-card-menu{
+    /* US-106: appended to document.body and positioned in JS (openCardMenu)
+       from the trigger button's own viewport rect — position:fixed with NO
+       top/bottom/left/right pair set here (JS sets top+left inline only),
+       or top+bottom together would stretch this to fill the viewport. */
+    position:fixed;
+    z-index:1100;
+    display:flex;
+    flex-direction:column;
+    background:#fff;
+    border:1px solid var(--hairline);
+    border-radius:8px;
+    box-shadow:0 8px 24px rgba(17,24,39,.18);
+    width:max-content;
+    max-width:240px;
+    overflow:hidden;
+  }
+  .lm-card-menu button{
+    border:0;
+    background:transparent;
+    text-align:left;
+    padding:8px 12px;
+    font-size:12.5px;
+    color:var(--text);
+    cursor:pointer;
+  }
+  .lm-card-menu button:hover{ background:#f2f2f5; }
+  .lm-details-body{ display:flex; flex-direction:column; gap:12px; }
+  .lm-details-body .scale-field{ flex-direction:column; align-items:stretch; gap:4px; }
+  .lm-details-body label{ font-size:12px; font-weight:600; color:#4b5563; }
+  .lm-details-body input[type=text], .lm-details-body textarea{
+    padding:7px 10px;
+    border:1px solid #d4d4d8;
+    border-radius:6px;
+    font-size:13px;
+    font-family:inherit;
+  }
+
+  /* US-107: the unified Library dialog's top-level tab strip (Templates /
+     Treatments / Projects), replacing the single-purpose "Template Library"
+     dialog title. */
+  .lm-tabs{ display:flex; gap:4px; border-bottom:1px solid var(--hairline); flex:0 0 auto; }
+  .lm-tab-btn{
+    padding:8px 14px;
+    background:transparent;
+    border:0;
+    border-bottom:2px solid transparent;
+    font-size:13px;
+    font-weight:600;
+    color:var(--muted);
+    cursor:pointer;
+    margin-bottom:-1px;
+  }
+  .lm-tab-btn:hover{ color:var(--text); }
+  .lm-tab-btn.lm-tab-active{ color:var(--text); border-bottom-color:var(--accent); }
+  .lm-panels{ display:flex; flex-direction:column; flex:1; min-height:0; }
+  /* :not([hidden]) so an inactive tab panel still falls through to the
+     browser's default [hidden]{display:none} instead of this flex rule
+     fighting it at equal specificity. */
+  .lm-content-body:not([hidden]){ display:flex; flex-direction:column; gap:10px; flex:1; min-height:0; }
+  .lm-thumb .style-preview{ width:100%; height:100%; }
+
+  /* Codex audit LIB-03, 2026-08-30: below this, the fixed 180px rail plus an
+     un-wrapped top row squeezed the gallery to ~196px and forced button text
+     to wrap mid-word (the Import/Export arrow landing on its own line). 480
+     CSS px is the audit's own real-world proxy for large desktop zoom, not a
+     mobile-layout claim — this breakpoint just stops those controls from
+     shrinking past a readable size. */
+  @media (max-width: 640px){
+    .lm-top-row{ flex-wrap:wrap; }
+    .lm-top-row .lm-search{ flex:1 1 100%; }
+    .lm-top-row .picker-btn{ flex:0 0 auto; white-space:nowrap; }
+    .lm-content{ flex-direction:column; }
+    .lm-rail{
+      flex-direction:row;
+      width:auto;
+      overflow-x:auto;
+      overflow-y:hidden;
+      border-right:0;
+      border-bottom:1px solid var(--hairline);
+      padding-right:0;
+      padding-bottom:8px;
+    }
+    .lm-rail-btn{ flex:0 0 auto; white-space:nowrap; }
+  }
+
   /* Learning data dialog (Transparent Learning) */
   .dialog-panel.ld-wide{ width:min(820px, 100%); }
   .dialog-body.learning-data-body{
@@ -2994,21 +3193,26 @@
             <button id="toolCircle" type="button" role="menuitem" title="Circle — drag a bounding box">Circle</button>
             <button id="toolHexagon" type="button" role="menuitem" title="Regular hexagon — drag a bounding box">Hexagon</button>
             <button id="smartAlignToggleBtn" class="sketch-mode-only" type="button" role="menuitemcheckbox" aria-checked="true" title="Snap moving line and Template geometry to nearby path points and axes; hold Alt/Option to bypass for one drag">✓ Smart Align</button>
-            <!-- US-097 / ADR 0056: the saved-shape library. It lives here
-                 rather than in a toolbar unit of its own because choosing a
-                 stamp IS choosing a tool, and US-082 caps the primary Board
-                 surface. Rows are rendered from stored data by
-                 src/ui/shape-stamp-panel.js. Sketch-Mode-only, like the rest
-                 of the Template library. -->
-            <div class="preset-divider sketch-mode-only" role="separator">Templates</div>
-            <div id="shapeStampList" class="preset-list sketch-mode-only"></div>
+            <!-- US-107: browsing/picking/managing saved Templates moved to the
+                 unified Library dialog (#libraryBtn, in the main toolbar) — see
+                 src/ui/dialogs/library-manager-dialog.js. Save selection as
+                 Template… stays here because it reads the board's LIVE
+                 selection, a board-context action rather than a
+                 library-browsing one. Sketch-Mode-only, like the rest of the
+                 Template concept. -->
             <div class="preset-menu-actions sketch-mode-only">
               <button id="shapeStampSaveBtn" type="button" role="menuitem" title="Save selected paths—including Scratch Area paths outside the sketch—as one editable reusable Template">Save selection as Template…</button>
-              <button id="shapeStampImportProjectBtn" type="button" role="menuitem" title="Add the shapes this project was drawn with to your library" hidden>Import from project</button>
-              <button id="shapeStampExportBtn" type="button" role="menuitem" title="Write the Template library to a JSON file">Export Templates JSON</button>
-              <button id="shapeStampImportBtn" type="button" role="menuitem" title="Merge a JSON file into the Template library">Import Templates JSON</button>
             </div>
             <input id="shapeStampFileInput" type="file" accept="application/json,.json" hidden />
+            <!-- US-104: DXF import. Placed right after the Template library
+                 actions, per the story's own placement rule ("next to the
+                 existing Template Export/Import JSON actions"). Sketch-Focus
+                 only, like the rest of this group. -->
+            <div class="preset-divider sketch-mode-only" role="separator">Import</div>
+            <div class="preset-menu-actions sketch-mode-only">
+              <button id="dxfImportBtn" type="button" role="menuitem" title="Import LINE/ARC/CIRCLE/LWPOLYLINE/POLYLINE geometry from an ASCII DXF file — each piece places as its own movable Sketch Element group, never a POM">Open DXF file…</button>
+            </div>
+            <input id="dxfImportFileInput" type="file" accept=".dxf" hidden />
           </div>
         </div>
         <!-- US-093 / ADR 0053: only reachable while a curved annotation is
@@ -3046,24 +3250,16 @@
             <svg class="style-preview" viewBox="0 0 36 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="7" x2="33" y2="7" stroke-width="1.4" opacity="0.32"/><polyline points="8,4 11,10 14,4 17,10 20,4 23,10 26,4 28,10" stroke-width="1.5"/></svg>
             <span>Bartack</span>
           </button>
-          <!-- US-096 / ADR 0055: the line-preset library lives in this menu
-               rather than in a toolbar button of its own. US-082 caps how many
-               units sit on the primary Board surface, and a preset IS a line
-               look — the same thing the five rows above are — so this is where
-               a TD already looks for one. Same consolidation US-093 did with
-               the drawing tools. Browsing/managing the library is Sketch-
-               Mode-only; the quick "Save as new treatment…" action stays
-               available in both (linePresetSaveBtn, below, is deliberately
-               NOT sketch-mode-only). -->
-          <div class="preset-divider sketch-mode-only" role="separator">Line Library</div>
-          <div id="linePresetList" class="preset-list sketch-mode-only"></div>
+          <!-- US-107: browsing/picking/managing saved Line Treatments moved to
+               the unified Library dialog (#libraryBtn, in the main toolbar) —
+               see src/ui/dialogs/library-manager-dialog.js. Customize
+               selected… and Save as new treatment… stay here because they
+               read the board's LIVE selection, a board-context action rather
+               than a library-browsing one (linePresetSaveBtn is deliberately
+               NOT sketch-mode-only, matching its pre-existing behavior). -->
           <div class="preset-menu-actions">
             <button id="lineTreatmentCustomizeBtn" class="sketch-mode-only" type="button" role="menuitem" title="Edit the layered Treatment on the selected path without changing its geometry">Customize selected…</button>
             <button id="linePresetSaveBtn" type="button" role="menuitem" title="Save the selected line's Treatment for later use">Save as new treatment…</button>
-            <button id="linePresetImportProjectBtn" class="sketch-mode-only" type="button" role="menuitem" title="Add the presets this project was drawn with to your library" hidden>Import from project</button>
-            <button id="linePresetExportBtn" class="sketch-mode-only" type="button" role="menuitem" title="Write the library to a JSON file">Export JSON</button>
-            <button id="linePresetImportBtn" class="sketch-mode-only" type="button" role="menuitem" title="Merge a JSON file into the library">Import JSON</button>
-            <button id="linePresetResetBtn" class="sketch-mode-only" type="button" role="menuitem" title="Discard every saved Treatment and restore the built-in set">Reset treatments</button>
           </div>
           <input id="linePresetFileInput" type="file" accept="application/json,.json" hidden />
         </div>
@@ -3147,6 +3343,13 @@
 
     <div class="toolbar-spacer" aria-hidden="true"></div>
     <div class="group board-menu-tray">
+      <!-- US-107: the unified Library dialog — Templates, Line Treatments, and
+           saved Projects, all in one searchable gallery. Replaces the three
+           previously scattered entry points (Tools ▾ ▸ Templates, Stitches ▸
+           Line Library, and the old "Project Library…" item below). A direct
+           button, not a toolbar-menu dropdown, since it opens a dialog rather
+           than a menu — same pattern as addImageBtn. -->
+      <button id="libraryBtn" class="manual-only" type="button" title="Browse and organize Templates, Line Treatments, and saved Projects">Library</button>
       <div id="fileMenuWrap" class="toolbar-menu">
         <button id="fileMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="fileMenuList">File ▾</button>
         <div id="fileMenuList" class="toolbar-menu-list" role="menu" hidden>
@@ -3154,7 +3357,6 @@
           <button id="saveProjectBtn" data-key="⌘S" role="menuitem" type="button" title="Save the whole board (images, lines, measurements) to a file you can reopen later">Save project</button>
           <button id="openProjectBtn" data-key="⌘O" role="menuitem" type="button" title="Open a previously saved project file">Open project…</button>
           <button id="importPptxBtn" data-key="I" class="manual-only" role="menuitem" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PowerPoint…</button>
-          <button id="libraryBtn" class="manual-only" role="menuitem" type="button" title="Browse every saved project archived inside this tool">Project Library…</button>
         </div>
       </div>
       <input id="projectFileInput" type="file" accept=".json,application/json" hidden />
@@ -3469,6 +3671,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=a2a13c084a01"></script>
+<script src="app.js?v=eeb880873989"></script>
 </body>
 </html>

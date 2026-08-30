@@ -350,39 +350,22 @@
     return true;
   }
 
-  // Move one preset up (-1) or down (+1). Clamped rather than wrapping: a TD
-  // holding the button expects the row to stop at the end, not jump to the
-  // other one.
-  function moveLinePreset(id, delta) {
-    const list = libraryMoveEntry(getLinePresets(), id, delta);
-    if (!list) return false;
-    commitLinePresets(list);
-    return true;
-  }
-
-  // The menu presents Treatments and saved Looks as separate subgroups. Move
-  // within that visible subgroup so an enabled arrow always produces a visible
-  // result instead of silently crossing the subgroup boundary.
-  function moveLinePresetWithinKind(id, delta) {
-    const list = getLinePresets();
-    const index = list.findIndex(preset => preset.id === id);
-    if (index < 0) return false;
-    const kind = list[index].kind === 'treatment' ? 'treatment' : 'look';
-    const siblingIndices = list
-      .map((preset, presetIndex) => ({ preset, presetIndex }))
-      .filter(entry => (entry.preset.kind === 'treatment' ? 'treatment' : 'look') === kind)
-      .map(entry => entry.presetIndex);
-    const position = siblingIndices.indexOf(index);
-    const targetPosition = clamp(position + Math.sign(Number(delta) || 0), 0, siblingIndices.length - 1);
-    if (targetPosition === position) return false;
-    const targetIndex = siblingIndices[targetPosition];
-    [list[index], list[targetIndex]] = [list[targetIndex], list[index]];
-    commitLinePresets(list);
-    return true;
-  }
-
   function resetLinePresetsToBuiltins() {
     commitLinePresets(builtinLinePresets());
+  }
+
+  // US-107: Library Manager parity with duplicateShapeStamp — a duplicate of
+  // a builtin becomes an ordinary custom entry, not a second canonical builtin.
+  function duplicateLinePreset(id) {
+    const list = getLinePresets();
+    const index = list.findIndex(preset => preset.id === id);
+    if (index === -1) return null;
+    const source = list[index];
+    const copy = { ...clone(source), id: libraryEntryId('lp'), name: (source.name + ' copy').slice(0, 60), builtin: false };
+    const next = list.slice();
+    next.splice(index + 1, 0, copy);
+    commitLinePresets(next);
+    return copy;
   }
 
   // ---- Applying ------------------------------------------------------------
@@ -436,6 +419,18 @@
   function exportLinePresetsFile() {
     const blob = new Blob([JSON.stringify(linePresetsEnvelope(), null, 2)], { type: 'application/json' });
     downloadBlob(blob, 'line-presets.json');
+  }
+
+  // Single-entry export (Library Manager card action) — same envelope shape
+  // as the whole-library export, so importLinePresetsFromJson reads either
+  // one back without a special case.
+  function exportOneLinePreset(id) {
+    const preset = getLinePresetById(id);
+    if (!preset) return false;
+    const envelope = { format: 'bra-line-presets', version: linePresetsFormatVersion(), presets: [preset] };
+    const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
+    downloadBlob(blob, (preset.name || 'treatment').replace(/[^A-Za-z0-9._-]+/g, '-') + '.json');
+    return true;
   }
 
   // Import is additive by id: a preset whose id already exists is replaced, a

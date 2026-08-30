@@ -144,8 +144,6 @@
     appCommand({ id: 'board.image.import', label: 'Import PowerPoint…', category: 'Board · Image',
       page: 'board', mode: 'manual', keywords: 'ppt pptx', shortcut: { key: 'i' },
       target: '#importPptxBtn', action: () => appCommandClick('#importPptxBtn') }),
-    appCommand({ id: 'board.library.open', label: 'Open Project Library…', category: 'Board · Project',
-      page: 'board', mode: 'manual', target: '#libraryBtn', action: () => appCommandClick('#libraryBtn') }),
     appCommand({ id: 'board.select.all', label: 'Select All on Board', category: 'Board · Edit',
       page: 'board', keywords: 'photos lines', shortcut: { key: 'a', meta: true },
       action: () => selectAllOnBoard() }),
@@ -231,29 +229,37 @@
     })),
     appCommand({ id: 'board.focus.brush-size', label: 'Focus Eraser Brush Size', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#brushSizeInput', action: () => document.getElementById('brushSizeInput').focus() }),
-    // US-096 / ADR 0055: the preset library. Open + Save are the two actions
-    // worth a palette entry; applying a specific preset is a click in the menu,
-    // and registering one command per user-created preset would flood the
-    // palette with rows that change under the TD's feet.
-    appCommand({ id: 'board.presets.open', label: 'Open Line Library', category: 'Board · Style',
-      page: 'board', mode: 'manual', target: '#stitchesBtn',
-      action: () => openLinePresetMenu() }),
+    // US-096 / ADR 0055: saving a Treatment from the current selection is
+    // worth a palette entry; picking a specific saved one is a card click in
+    // the Library dialog, and registering one command per user-created entry
+    // would flood the palette with rows that change under the TD's feet.
     appCommand({ id: 'board.presets.save', label: 'Save Selected Line as Treatment', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#linePresetSaveBtn',
       action: () => saveCurrentLookAsPreset() }),
-    // US-097 / ADR 0056: the saved-shape library. Same reasoning as the presets
-    // above — Save is worth a palette entry, and picking a specific shape is a
-    // click in the Tools menu rather than one command per user-created stamp.
+    // US-097 / ADR 0056: the saved-shape library. Same reasoning as the
+    // Treatment above — Save is worth a palette entry, and picking a specific
+    // Template is a card click in the Library dialog rather than one command
+    // per user-created stamp.
     appCommand({ id: 'board.shapes.save', label: 'Save Selection as Template', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#shapeStampSaveBtn',
       when: () => (typeof canSaveShapeStampReason === 'function' ? canSaveShapeStampReason() : true),
       action: () => saveSelectedLineAsShape() }),
-    appCommand({ id: 'board.shapes.open', label: 'Open Templates', category: 'Board · Style',
-      page: 'board', mode: 'manual', target: '#toolsMenuBtn',
-      action: () => {
-        const record = boardToolbarMenuRecords().find(r => r.list && r.list.id === 'toolsMenuList');
-        if (record) openBoardToolbarMenu(record);
-      } }),
+    // US-104: DXF import is Sketch-Focus-only — no `mode`/`page` gate exists
+    // for that, so `when` carries it, matching the disabled-reason
+    // convention every other conditionally-available command already uses.
+    appCommand({ id: 'board.template.import-dxf', label: 'Open DXF file', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#dxfImportBtn',
+      when: () => state.sketchMode ? true : 'Available in Sketch Focus',
+      action: () => appCommandClick('#dxfImportBtn') }),
+    // US-107: the unified Library dialog replaces board.presets.open,
+    // board.shapes.open, and the old Template-only board.template.open-library
+    // with ONE command — Templates, Line Treatments, and saved Projects are
+    // now one searchable gallery behind one toolbar button, so there is one
+    // "open the library" palette entry, not three. Not sketch-mode-gated: the
+    // Projects tab is exactly as useful in POM Focus as in Sketch Focus.
+    appCommand({ id: 'board.library.open', label: 'Library: Open…', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#libraryBtn',
+      action: () => appCommandClick('#libraryBtn') }),
     appCommand({ id: 'board.smart-align.toggle', label: 'Toggle Smart Align', category: 'Board · Edit',
       page: 'board', mode: 'manual', target: '#smartAlignToggleBtn',
       action: () => toggleSmartAlign() }),

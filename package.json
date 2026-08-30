@@ -60,7 +60,9 @@
     "line-presets-check": "node scripts/line-presets-check.mjs",
     "shape-stamps-check": "node scripts/shape-stamps-check.mjs",
     "personal-library-check": "node scripts/personal-library-check.mjs",
-    "sketch-smart-hit-check": "node scripts/sketch-smart-hit-check.mjs"
+    "library-manager-check": "node scripts/library-manager-check.mjs",
+    "sketch-smart-hit-check": "node scripts/sketch-smart-hit-check.mjs",
+    "dxf-import-check": "node scripts/dxf-import-check.mjs"
   },
   "devDependencies": {
     "@slidev/cli": "^52.16.0",

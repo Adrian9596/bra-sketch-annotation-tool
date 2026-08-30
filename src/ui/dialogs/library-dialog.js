@@ -1,8 +1,8 @@
-// Project Library: browse, reopen, and delete saved project snapshots.
+// Project Library pane: browse, reopen, and delete saved project snapshots.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Every writeProjectFile() appends an entry to the IndexedDB-backed library
-// in src/project/project-library.js. This dialog has two tabs:
+// in src/project/project-library.js. This pane has two internal sub-tabs:
 //   - "By Style" (default): one card per styleId, aggregated counts +
 //     evidence/meaning badges, "Open latest" or drill into saves.
 //   - "By Save": flat list, every snapshot is its own row.
@@ -10,25 +10,24 @@
 // creates a new entry (append history), matching the user's chosen
 // "keep history" behavior.
 //
-// This is the stateful dialog controller only (tabs, filter, refresh, the
-// async open/delete/download handlers). The cross-view grouping/formatting
-// helpers live in library-shared.js; the "By Save" flat-list rendering lives
-// in library-list-view.js; the "By Style" card-grid rendering lives in
+// US-107: this used to be its own openLibraryDialog() modal, reachable from
+// File ▾ ▸ "Project Library…". It is now the Projects tab of the unified
+// Library dialog (src/ui/dialogs/library-manager-dialog.js) — buildDialog()'s
+// shell, wide-panel class, and footer/Close button all belong to that outer
+// dialog now, so this function renders only its OWN content into a host
+// container the tab switcher supplies, and reports back through callbacks
+// instead of owning a `dialog` handle of its own.
+//
+// This is the stateful pane controller only (tabs, filter, refresh, the async
+// open/delete/download handlers). The cross-view grouping/formatting helpers
+// live in library-shared.js; the "By Save" flat-list rendering lives in
+// library-list-view.js; the "By Style" card-grid rendering lives in
 // library-grid-view.js.
 
-  function openLibraryDialog() {
-    const dialog = buildDialog({
-      title: 'Library',
-      sub: 'Browse styles you have worked on. Every save is archived per style.',
-    });
-    // The default .dialog-panel is 560px wide; the library cards need more
-    // room or their action buttons clip past the panel edge. ld-wide bumps
-    // the shell to min(820px, 100%), and the body then just fills it.
-    dialog.panel.classList.add('ld-wide');
-
-    const body = document.createElement('div');
-    body.className = 'dialog-body library-body';
-    body.style.minWidth = '0';
+  function buildProjectLibraryPane(host, { onOpened, onStatus } = {}) {
+    host.innerHTML = '';
+    host.className = 'dialog-body library-body';
+    host.style.minWidth = '0';
 
     let viewMode = 'style';
 
@@ -59,7 +58,7 @@
     const saveTabBtn = makeTabBtn('By Save', () => setViewMode('save'));
     tabs.appendChild(styleTabBtn);
     tabs.appendChild(saveTabBtn);
-    body.appendChild(tabs);
+    host.appendChild(tabs);
 
     function setViewMode(mode) {
       if (mode !== 'style' && mode !== 'save') return;
@@ -99,34 +98,28 @@
 
     controls.appendChild(filterInput);
     controls.appendChild(summary);
-    body.appendChild(controls);
+    host.appendChild(controls);
 
     const list = document.createElement('div');
     list.className = 'library-list';
-    list.style.maxHeight = '60vh';
+    list.style.maxHeight = '54vh';
     list.style.overflowY = 'auto';
     list.style.border = '1px solid #ececf0';
     list.style.borderRadius = '8px';
     list.style.background = '#fafafa';
-    body.appendChild(list);
-
-    dialog.panel.appendChild(body);
-
-    const footer = document.createElement('div');
-    footer.className = 'picker-footer';
-    const spacer = document.createElement('span');
-    spacer.style.flex = '1';
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'picker-btn primary';
-    closeBtn.textContent = 'Close';
-    closeBtn.addEventListener('click', dialog.close);
-    footer.appendChild(spacer);
-    footer.appendChild(closeBtn);
-    dialog.panel.appendChild(footer);
+    host.appendChild(list);
 
     let entriesCache = [];
+    let loaded = false;
 
+    // Codex audit LIB-04, 2026-08-30: this summary used to repeat "No
+    // projects saved yet." right next to the SAME message the grid/list body
+    // already shows (renderStyleGridView / renderLibraryList's own empty
+    // state, which — unlike this one — names the next action: "Save the
+    // current board…"). Two messages saying the same thing left the ONE with
+    // useful guidance no more prominent than its redundant neighbor. This
+    // summary now stays terse ("0 saves") when empty, so the single message
+    // with a next action is the body's.
     function applyFilter() {
       const q = filterInput.value.trim().toLowerCase();
       const filtered = q
@@ -139,7 +132,7 @@
         });
         const styleCount = countDistinctStyles(filtered);
         summary.textContent = entriesCache.length === 0
-          ? 'No projects saved yet.'
+          ? '0 saves'
           : styleCount + ' style' + (styleCount === 1 ? '' : 's')
             + '  ·  ' + filtered.length + ' save' + (filtered.length === 1 ? '' : 's');
       } else {
@@ -149,11 +142,12 @@
           onDownload: handleDownload,
         });
         summary.textContent = entriesCache.length === 0
-          ? 'No projects saved yet.'
+          ? '0 saves'
           : (filtered.length === entriesCache.length
               ? entriesCache.length + ' entr' + (entriesCache.length === 1 ? 'y' : 'ies')
               : filtered.length + ' of ' + entriesCache.length + ' shown');
       }
+      if (typeof onStatus === 'function') onStatus(summary.textContent);
     }
 
     function handleViewSaves(styleId) {
@@ -162,13 +156,16 @@
     }
 
     async function refresh() {
+      loaded = true;
       summary.textContent = 'Loading…';
+      if (typeof onStatus === 'function') onStatus(summary.textContent);
       try {
         entriesCache = await listLibraryEntries();
       } catch (err) {
         console.warn(err);
         entriesCache = [];
         summary.textContent = 'Could not read the library.';
+        if (typeof onStatus === 'function') onStatus(summary.textContent);
         list.innerHTML = '';
         const error = document.createElement('div');
         error.style.padding = '16px';
@@ -227,7 +224,7 @@
       try {
         await loadProject(full.snapshot);
         showToast('Project opened from library.');
-        dialog.close();
+        if (typeof onOpened === 'function') onOpened();
       } catch (err) {
         console.error(err);
         showToast('Could not open that entry — saved with an older format.', 4200);
@@ -267,8 +264,20 @@
       downloadBlob(blob, 'bra-sketch-' + baseName + '-' + stamp + '.json');
     }
 
-    dialog.open();
     setViewMode('style');
     filterInput.addEventListener('input', applyFilter);
-    refresh();
+
+    return {
+      // Lazy: an IndexedDB round trip on every dialog open (regardless of
+      // which tab a TD actually wants) is wasted work — refresh only the
+      // first time this pane is actually shown.
+      ensureLoaded() { if (!loaded) refresh(); },
+      refresh,
+      // Codex audit LIB-04, 2026-08-30: lets a host mirror this pane's own
+      // status into a shared readout (the Library dialog's footer) without
+      // forcing a fetch — ensureLoaded() is a no-op once loaded, so a host
+      // that only called that on re-activation would otherwise show whatever
+      // the LAST-active tab left behind.
+      currentStatus() { return summary.textContent; },
+    };
   }

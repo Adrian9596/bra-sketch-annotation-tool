@@ -275,9 +275,11 @@ async function main() {
       start: { x: 0, y: 0 }, end: { x: 1, y: 1 }, aspect: 1,
       style: 'solid', color: 'red', lineWidth: 2.5, arrowType: 'none',
     }] }));
-    document.getElementById('toolsMenuBtn').click();
-    const row = document.querySelector('#shapeStampList .preset-row[data-stamp-id="st-focus-fixture"] [data-stamp-action="use"]');
-    row.click();
+    // US-107: arming moved from a Tools-menu row to the Library dialog's
+    // card click — armForPlacement is the same seam that card calls
+    // (src/ui/dialogs/library-manager-dialog.js), and it now also sets the
+    // tool itself (src/manual/shape-stamps.js), matching a real click exactly.
+    d.library.armForPlacement('st-focus-fixture');
     const view = d.getView(), rect = canvas.getBoundingClientRect();
     const pt = { x: 60 * view.zoom + view.panX + rect.left, y: 60 * view.zoom + view.panY + rect.top };
     canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: pt.x, clientY: pt.y, bubbles: true, cancelable: true, button: 0 }));
@@ -308,9 +310,7 @@ async function main() {
       start: { x: 0, y: 0 }, end: { x: 1, y: 1 }, aspect: 1,
       style: 'solid', color: 'red', lineWidth: 2.5, arrowType: 'none',
     }] }));
-    document.getElementById('toolsMenuBtn').click();
-    const row = document.querySelector('#shapeStampList .preset-row[data-stamp-id="st-focus-fixture-auto"] [data-stamp-action="use"]');
-    row.click();
+    d.library.armForPlacement('st-focus-fixture-auto');
     const view = d.getView(), rect = canvas.getBoundingClientRect();
     const pt = { x: 60 * view.zoom + view.panX + rect.left, y: 60 * view.zoom + view.panY + rect.top };
     canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: pt.x, clientY: pt.y, bubbles: true, cancelable: true, button: 0 }));
@@ -341,9 +341,7 @@ async function main() {
       start: { x: 0, y: 0 }, end: { x: 1, y: 1 }, aspect: 1,
       style: 'solid', color: 'red', lineWidth: 2.5, arrowType: 'none',
     }] }));
-    document.getElementById('toolsMenuBtn').click();
-    const row = document.querySelector('#shapeStampList .preset-row[data-stamp-id="st-focus-fixture-open"] [data-stamp-action="use"]');
-    row.click();
+    d.library.armForPlacement('st-focus-fixture-open');
     const view = d.getView(), rect = canvas.getBoundingClientRect();
     const pt = { x: 60 * view.zoom + view.panX + rect.left, y: 60 * view.zoom + view.panY + rect.top };
     canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: pt.x, clientY: pt.y, bubbles: true, cancelable: true, button: 0 }));

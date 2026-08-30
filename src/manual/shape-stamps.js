@@ -18,7 +18,79 @@
   // Functions, not module-scope consts: the parts share one scope and a const
   // read during load would throw a TDZ ReferenceError.
   function shapeStampsStorageKey() { return 'bra-shape-stamps-v1'; }
-  function shapeStampsFormatVersion() { return 2; }
+  // US-106: v3 adds category/tags/notes/favorite/timestamps/usage/
+  // sourceStyleId/savedSize. Purely additive — a v2 payload still parses
+  // (normalizeShapeStamp fills every new field with its v2-safe default) and
+  // is not rewritten until the TD next saves/edits something, so bumping this
+  // costs nothing for an existing library and is not itself a migration.
+  function shapeStampsFormatVersion() { return 3; }
+
+  // ---- Library taxonomy (US-106) ---------------------------------------------
+  //
+  // A FIXED, versioned list — not free text — because the category rail and
+  // the starter pack both need stable buckets to filter/group by. The
+  // free-form axis is `tags`. Order here is the order the Library Manager's
+  // rail shows them in.
+  function libraryCategories() {
+    return [
+      { id: 'cup', label: 'Cup' },
+      { id: 'cradle-band', label: 'Cradle / Band' },
+      { id: 'wing-back', label: 'Wing / Back' },
+      { id: 'strap', label: 'Strap' },
+      { id: 'neckline', label: 'Neckline' },
+      { id: 'closure-hardware', label: 'Closure / Hardware' },
+      { id: 'seam-detail', label: 'Seam Detail' },
+      { id: 'embellishment', label: 'Embellishment' },
+      { id: 'other', label: 'Other' },
+    ];
+  }
+
+  function libraryCategoryLabel(id) {
+    const found = libraryCategories().find(c => c.id === id);
+    return found ? found.label : 'Other';
+  }
+
+  function normalizeStampCategory(raw) {
+    return libraryCategories().some(c => c.id === raw) ? raw : 'other';
+  }
+
+  // Lowercased, trimmed, deduped, capped — a tag is a quick filter facet, not
+  // a notes field (notes exists separately for prose).
+  function normalizeStampTags(raw) {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const t of raw) {
+      const tag = String(t == null ? '' : t).trim().toLowerCase().slice(0, 24);
+      if (!tag || seen.has(tag)) continue;
+      seen.add(tag);
+      out.push(tag);
+      if (out.length >= 12) break;
+    }
+    return out;
+  }
+
+  function normalizeStampNotes(raw) {
+    return String(raw == null ? '' : raw).trim().slice(0, 240);
+  }
+
+  function normalizeStampTimestamp(raw) {
+    return (typeof raw === 'string' && raw) ? raw : null;
+  }
+
+  function normalizeStampUsage(raw) {
+    const count = Number(raw && raw.count);
+    return {
+      count: Number.isFinite(count) && count > 0 ? Math.floor(count) : 0,
+      lastUsedAt: normalizeStampTimestamp(raw && raw.lastUsedAt),
+    };
+  }
+
+  function normalizeStampSize(raw) {
+    const width = Number(raw && raw.width), height = Number(raw && raw.height);
+    return (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0)
+      ? { width, height } : null;
+  }
 
   // Below this the drag is treated as a click and the stamp is placed at a
   // default size. Screen pixels, like BG_MIN_CREATE_SCREEN_PX.
@@ -123,7 +195,11 @@
     };
   }
 
-  function shapeStampFromAnnotations(annotations, name) {
+  // `options` (US-106, all optional): { category, tags, notes } — the
+  // Library Manager's "Edit details" action can also set these later via
+  // setShapeStampCategory/Tags/Notes, so the quick Save-Template flow can
+  // keep asking for a name only.
+  function shapeStampFromAnnotations(annotations, name, options) {
     const trimmed = String(name == null ? '' : name).trim();
     const anns = (Array.isArray(annotations) ? annotations : []).filter(ann => ann && ann.start && ann.end);
     if (!trimmed || !anns.length) return null;
@@ -133,9 +209,22 @@
     const members = anns.map(ann => shapeTemplateMemberFromAnnotation(ann, bounds)).filter(Boolean);
     if (!members.length) return null;
     const first = members[0];
+    const opts = options || {};
+    const now = new Date().toISOString();
     return {
       id: libraryEntryId('st'),
       name: trimmed.slice(0, 60),
+      category: normalizeStampCategory(opts.category),
+      tags: normalizeStampTags(opts.tags),
+      notes: normalizeStampNotes(opts.notes),
+      favorite: false,
+      createdAt: now,
+      updatedAt: now,
+      usage: { count: 0, lastUsedAt: null },
+      sourceStyleId: (typeof state !== 'undefined' && state.styleId) ? String(state.styleId).trim() || null : null,
+      // WORLD units at save time — see defaultStampBoxAt for how a bare click
+      // on the stamp tool prefers this over the generic size heuristic.
+      savedSize: { width: bounds.width, height: bounds.height },
       members,
       // Keep the first member mirrored at top level so v1 exports and the
       // existing one-path test/debug hooks remain readable during migration.
@@ -204,6 +293,17 @@
     return {
       id: String(raw.id || libraryEntryId('st')),
       name: name.slice(0, 60),
+      // US-106 v3 fields — every one has a safe v2 default, so reading an
+      // older payload never fails and never rewrites storage on its own.
+      category: normalizeStampCategory(raw.category),
+      tags: normalizeStampTags(raw.tags),
+      notes: normalizeStampNotes(raw.notes),
+      favorite: raw.favorite === true,
+      createdAt: normalizeStampTimestamp(raw.createdAt),
+      updatedAt: normalizeStampTimestamp(raw.updatedAt),
+      usage: normalizeStampUsage(raw.usage),
+      sourceStyleId: (typeof raw.sourceStyleId === 'string' && raw.sourceStyleId.trim()) ? raw.sourceStyleId.trim() : null,
+      savedSize: normalizeStampSize(raw.savedSize),
       members,
       aspect: (Number.isFinite(aspect) && aspect > 0) ? aspect : 0,
       ...clone(members[0]),
@@ -276,21 +376,88 @@
     return true;
   }
 
-  function addShapeStampFromSelection(name) {
+  function addShapeStampFromSelection(name, options) {
     const targets = shapeStampSaveTargets();
     if (!targets.length) return null;
-    const stamp = shapeStampFromAnnotations(targets, name);
+    const stamp = shapeStampFromAnnotations(targets, name, options);
     if (!stamp) return null;
     commitShapeStamps([...getShapeStamps(), stamp]);
     return stamp;
   }
 
+  // Every edit below stamps `updatedAt` and goes through the same
+  // commitShapeStamps write path — one place a TD's edit becomes durable (or
+  // visibly fails to), matching renameShapeStamp's existing shape.
+  function updateShapeStamp(id, patch) {
+    const list = getShapeStamps();
+    if (!list.some(stamp => stamp.id === id)) return false;
+    commitShapeStamps(list.map(stamp => (stamp.id === id
+      ? { ...stamp, ...patch, updatedAt: new Date().toISOString() } : stamp)));
+    return true;
+  }
+
   function renameShapeStamp(id, name) {
     const trimmed = String(name == null ? '' : name).trim();
     if (!trimmed) return false;
-    commitShapeStamps(getShapeStamps().map(stamp => (stamp.id === id
-      ? { ...stamp, name: trimmed.slice(0, 60) } : stamp)));
-    return true;
+    return updateShapeStamp(id, { name: trimmed.slice(0, 60) });
+  }
+
+  function setShapeStampCategory(id, category) {
+    return updateShapeStamp(id, { category: normalizeStampCategory(category) });
+  }
+
+  function setShapeStampTags(id, tags) {
+    return updateShapeStamp(id, { tags: normalizeStampTags(tags) });
+  }
+
+  function setShapeStampNotes(id, notes) {
+    return updateShapeStamp(id, { notes: normalizeStampNotes(notes) });
+  }
+
+  function setShapeStampFavorite(id, favorite) {
+    return updateShapeStamp(id, { favorite: !!favorite });
+  }
+
+  function toggleShapeStampFavorite(id) {
+    const stamp = getShapeStampById(id);
+    if (!stamp) return false;
+    return setShapeStampFavorite(id, !stamp.favorite);
+  }
+
+  // Placement (not the Library Manager dialog) is the only caller — bumping
+  // usage on every dialog open/preview would make "recently used" measure
+  // browsing instead of reuse.
+  function touchShapeStampUsage(id) {
+    const stamp = getShapeStampById(id);
+    if (!stamp) return;
+    commitShapeStamps(getShapeStamps().map(s => (s.id === id
+      ? { ...s, usage: { count: (s.usage && s.usage.count || 0) + 1, lastUsedAt: new Date().toISOString() } }
+      : s)));
+  }
+
+  // A independent copy, never sharing identity with the source — renaming or
+  // deleting one must never affect the other. Placed right after the source
+  // in list order (libraryMoveEntry-friendly) rather than appended, so a
+  // duplicate-then-tweak workflow keeps the two next to each other.
+  function duplicateShapeStamp(id) {
+    const list = getShapeStamps();
+    const index = list.findIndex(stamp => stamp.id === id);
+    if (index === -1) return null;
+    const source = list[index];
+    const now = new Date().toISOString();
+    const copy = {
+      ...clone(source),
+      id: libraryEntryId('st'),
+      name: (source.name + ' copy').slice(0, 60),
+      favorite: false,
+      createdAt: now,
+      updatedAt: now,
+      usage: { count: 0, lastUsedAt: null },
+    };
+    const next = list.slice();
+    next.splice(index + 1, 0, copy);
+    commitShapeStamps(next);
+    return copy;
   }
 
   function deleteShapeStamp(id) {
@@ -307,13 +474,6 @@
       setActiveShapeStamp(null);
       if (state.tool === 'stamp' && typeof setTool === 'function') setTool('select');
     }
-    commitShapeStamps(list);
-    return true;
-  }
-
-  function moveShapeStamp(id, delta) {
-    const list = libraryMoveEntry(getShapeStamps(), id, delta);
-    if (!list) return false;
     commitShapeStamps(list);
     return true;
   }
@@ -355,7 +515,18 @@
   // a too-small Rectangle drag creates nothing because the gesture IS the
   // object's definition, but a stamp already exists and the TD has explicitly
   // chosen it, so a click that produces nothing reads as a broken tool.
+  //
+  // US-106: when the stamp carries a `savedSize` (the WORLD-unit box it was
+  // saved from), a bare click reproduces that exact size — a strictly better
+  // default than the generic 30%-of-image guess below, and the one thing
+  // that makes "place a wing at the size it was cut" a one-click gesture. A
+  // v2 stamp (imported, or saved before US-106) has no savedSize and falls
+  // back to the original heuristic unchanged.
   function defaultStampBoxAt(stamp, world) {
+    if (stamp && stamp.savedSize) {
+      const { width, height } = stamp.savedSize;
+      return { x: world.x - width / 2, y: world.y - height / 2, width, height };
+    }
     const image = (typeof bgTopImageAt === 'function') ? bgTopImageAt(world) : null;
     const maxWidth = image && image.width ? image.width * 0.3 : 200;
     // Code review, 2026-08-23: bound BOTH axes. Sizing only the width meant a
@@ -394,14 +565,25 @@
     return { x, y, width, height };
   }
 
+  // US-106: reflects a NORMALIZED ([0,1]-in-its-own-box) point across the
+  // box's own vertical centerline. Applied uniformly to every point of every
+  // member before denormalizing, which is enough on its own to mirror a
+  // whole path (straight or curved) correctly — reflection is affine, so it
+  // commutes with the Bézier construction, and handleIn/handleOut keep
+  // their existing roles (arriving-from / leaving-toward) because mirroring
+  // does not reverse the point order along the path, only its x placement.
+  function mirrorStampPointX(p) {
+    return p ? { x: 1 - p.x, y: p.y } : null;
+  }
+
   // Build the annotation. Mirrors pasteLineFromClipboard's record shape and its
   // ordering lesson (US-093): normalize the curve FIRST, derive the label after,
   // because computeDefaultLabelPosition walks getCurveBeziers and therefore
   // reads the very controls ensureCurveControls exists to supply.
-  function createAnnotationFromTemplateMember(member, rawBox, groupId) {
+  function createAnnotationFromTemplateMember(member, rawBox, groupId, mirrored) {
     if (!member) return null;
     const box = normalizeStampBox(member, rawBox);
-    const d = (p) => denormalizeStampPoint(p, box);
+    const d = (p) => denormalizeStampPoint(mirrored ? mirrorStampPointX(p) : p, box);
     const curved = member.type === 'curved';
     const ann = {
       id: state.idCounter++,
@@ -440,24 +622,27 @@
     return ann;
   }
 
-  function createAnnotationsFromStamp(stamp, rawBox, groupId) {
+  function createAnnotationsFromStamp(stamp, rawBox, groupId, mirrored) {
     if (!stamp) return [];
     const members = Array.isArray(stamp.members) && stamp.members.length ? stamp.members : [stamp];
-    return members.map(member => createAnnotationFromTemplateMember(member, rawBox, groupId)).filter(Boolean);
+    return members.map(member => createAnnotationFromTemplateMember(member, rawBox, groupId, mirrored)).filter(Boolean);
   }
 
-  function createAnnotationFromStamp(stamp, rawBox) {
-    return createAnnotationsFromStamp(stamp, rawBox, null)[0] || null;
+  function createAnnotationFromStamp(stamp, rawBox, mirrored) {
+    return createAnnotationsFromStamp(stamp, rawBox, null, mirrored)[0] || null;
   }
 
-  // The one entry point the pointer layer calls on mouseup.
+  // The one entry point the pointer layer calls on mouseup. Mirroring
+  // (US-106) is read from state — armed once per placement via
+  // armShapeStampForPlacement/setActiveShapeStamp, not passed by the caller —
+  // so the pointer layer does not need to know this feature exists.
   function placeShapeStamp(stamp, start, current, shiftKey, altKey) {
     if (!stamp) return null;
     const dragged = stampBoxFromDrag(stamp, start, current, shiftKey, altKey);
     const tooSmall = Math.max(dragged.width, dragged.height) * state.zoom < stampMinCreateScreenPx();
     const box = tooSmall ? defaultStampBoxAt(stamp, start) : dragged;
     const groupId = 'template-' + state.idCounter++;
-    const anns = createAnnotationsFromStamp(stamp, box, groupId);
+    const anns = createAnnotationsFromStamp(stamp, box, groupId, state.activeStampMirrored);
     if (!anns.length) return null;
     state.annotations.push(...anns);
     state.selection = { kind: 'annotation', id: anns[0].id };
@@ -465,6 +650,7 @@
     state.templateGroupEditId = null;
     // ADR 0058: Template members are Sketch Elements and spend no POM number.
     pushHistoryIfChanged();
+    if (stamp.id) touchShapeStampUsage(stamp.id);
     return anns[0];
   }
 
@@ -485,14 +671,42 @@
     // not spend an id every mousemove.
     const savedId = state.idCounter;
     const savedSeq = state.nextSequence;
-    const preview = createAnnotationsFromStamp(stamp, box, null);
+    const preview = createAnnotationsFromStamp(stamp, box, null, state.activeStampMirrored);
     state.idCounter = savedId;
     state.nextSequence = savedSeq;
     for (const ann of preview) drawLineCore(ann, 0.6);
   }
 
+  // Always resets mirroring — a fresh arm (choosing a Template, including
+  // re-choosing the one already armed) starts un-mirrored; a TD who wants a
+  // mirrored placement asks for it explicitly via
+  // armShapeStampForPlacement/setActiveStampMirrored every time, so it can
+  // never silently carry over onto an unrelated next placement.
   function setActiveShapeStamp(id) {
     state.activeStampId = id || null;
+    state.activeStampMirrored = false;
+  }
+
+  function setActiveStampMirrored(mirrored) {
+    state.activeStampMirrored = !!mirrored;
+  }
+
+  // US-106/US-107: arms the stamp tool, selects which saved Template it will
+  // place, and requests mirroring — one call, so no caller (the Library
+  // dialog, a test driving the debug seam) can set one part and forget
+  // another, or leave the toolbar/status bar showing a stale armed name.
+  // setTool('stamp') runs first: it only clears activeStampId when switching
+  // AWAY from 'stamp' (src/ui/bindings.js), so it never undoes the
+  // setActiveShapeStamp call that follows it here. The explicit updateUI()
+  // at the end matters: setTool('stamp') already re-rendered once, but at
+  // that point activeStampId still held whatever it was BEFORE this call —
+  // without a second render after setActiveShapeStamp, the toolbar/status
+  // bar would keep showing the previously armed (or no) stamp.
+  function armShapeStampForPlacement(id, opts) {
+    if (typeof setTool === 'function') setTool('stamp');
+    setActiveShapeStamp(id);
+    if (opts && opts.mirrored) setActiveStampMirrored(true);
+    if (typeof updateUI === 'function') updateUI();
   }
 
   function getActiveShapeStamp() {
@@ -502,12 +716,30 @@
   // ---- Portability ---------------------------------------------------------
 
   function shapeStampsEnvelope() {
-    return { format: 'bra-shape-stamps', version: shapeStampsFormatVersion(), stamps: getShapeStamps() };
+    return {
+      format: 'bra-shape-stamps', version: shapeStampsFormatVersion(),
+      exportedAt: new Date().toISOString(), stamps: getShapeStamps(),
+    };
   }
 
   function exportShapeStampsFile() {
     const blob = new Blob([JSON.stringify(shapeStampsEnvelope(), null, 2)], { type: 'application/json' });
     downloadBlob(blob, 'shape-stamps.json');
+  }
+
+  // Single-entry export (Library Manager card action) — same envelope shape
+  // as the whole-library export, so importShapeStampsFromJson reads either
+  // one back without a special case.
+  function exportOneShapeStampFile(id) {
+    const stamp = getShapeStampById(id);
+    if (!stamp) return false;
+    const envelope = {
+      format: 'bra-shape-stamps', version: shapeStampsFormatVersion(),
+      exportedAt: new Date().toISOString(), stamps: [stamp],
+    };
+    const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
+    downloadBlob(blob, (stamp.name || 'template').replace(/[^A-Za-z0-9._-]+/g, '-') + '.json');
+    return true;
   }
 
   function importShapeStamps(list) {

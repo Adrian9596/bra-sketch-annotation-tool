@@ -260,6 +260,12 @@
       },
       importLinePresetsJson: (text) => (typeof importLinePresetsFromJson === 'function'
         ? importLinePresetsFromJson(text) : 0),
+      // US-107: a project's own presets the local library does not have yet —
+      // the model half of the Library dialog's "Import N from project" action
+      // (src/manual/line-presets.js), so a suite can assert the offer without
+      // the dialog's own visibility rule standing in for it.
+      getPendingLinePresets: () => (typeof getPendingProjectLinePresets === 'function'
+        ? clone(getPendingProjectLinePresets()) : null),
       // US-097 / ADR 0056: the shape-stamp library. getShapeStamps returns the
       // stored geometry so a suite can compare a placed line against the stamp
       // it came from; sampleAnnotationShape returns the SHAPE of any line,
@@ -275,26 +281,67 @@
       setActiveShapeStamp: (id) => {
         if (typeof setActiveShapeStamp === 'function') setActiveShapeStamp(id);
       },
-      addTemplateFromAnnotationIds: (name, ids) => {
+      addTemplateFromAnnotationIds: (name, ids, options) => {
         const anns = (Array.isArray(ids) ? ids : []).map(id => getAnnotationById(id)).filter(Boolean);
         const template = typeof shapeStampFromAnnotations === 'function'
-          ? shapeStampFromAnnotations(anns, name) : null;
+          ? shapeStampFromAnnotations(anns, name, options) : null;
         if (!template) return null;
         commitShapeStamps([...getShapeStamps(), template]);
         return clone(template);
       },
-      placeTemplateInBox: (id, box) => {
+      placeTemplateInBox: (id, box, mirrored) => {
         const template = getShapeStampById(id);
         if (!template || !box) return [];
         const groupId = 'template-' + state.idCounter++;
-        const anns = createAnnotationsFromStamp(template, box, groupId);
+        const anns = createAnnotationsFromStamp(template, box, groupId, !!mirrored);
         state.annotations.push(...anns);
         if (anns.length) {
           state.selection = { kind: 'annotation', id: anns[0].id };
           state.selectedAnnotationIds = anns.map(ann => ann.id);
         }
         pushHistoryIfChanged(); updateUI(); requestRender();
+        if (template.id) touchShapeStampUsage(template.id);
         return clone(anns);
+      },
+      // US-106: Library Manager — categories, metadata edits, and the two
+      // small placement seams (place-at-saved-size and mirror) so a suite can
+      // assert on the model directly, alongside driving the real dialog.
+      library: {
+        categories: () => (typeof libraryCategories === 'function' ? clone(libraryCategories()) : []),
+        setCategory: (id, category) => (typeof setShapeStampCategory === 'function' ? setShapeStampCategory(id, category) : false),
+        setTags: (id, tags) => (typeof setShapeStampTags === 'function' ? setShapeStampTags(id, tags) : false),
+        setNotes: (id, notes) => (typeof setShapeStampNotes === 'function' ? setShapeStampNotes(id, notes) : false),
+        setFavorite: (id, favorite) => (typeof setShapeStampFavorite === 'function' ? setShapeStampFavorite(id, favorite) : false),
+        toggleFavorite: (id) => (typeof toggleShapeStampFavorite === 'function' ? toggleShapeStampFavorite(id) : false),
+        duplicate: (id) => (typeof duplicateShapeStamp === 'function' ? clone(duplicateShapeStamp(id)) : null),
+        // US-107: deleting a Template is a real dialog action (card menu ▸
+        // Delete…, behind a window.confirm the Library dialog itself owns).
+        // This hook isolates deleteShapeStamp's OWN model-layer behavior —
+        // specifically, that deleting the currently ARMED stamp also clears
+        // the arm and switches the tool away from 'stamp' — from the
+        // confirm-dialog plumbing around it, which library-manager-check.mjs
+        // already drives for real.
+        deleteStamp: (id) => (typeof deleteShapeStamp === 'function' ? deleteShapeStamp(id) : false),
+        armForPlacement: (id, opts) => {
+          if (typeof armShapeStampForPlacement === 'function') armShapeStampForPlacement(id, opts);
+        },
+        getArmedMirrored: () => !!state.activeStampMirrored,
+        defaultBoxAt: (id, world) => {
+          const stamp = getShapeStampById(id);
+          return stamp && typeof defaultStampBoxAt === 'function' ? clone(defaultStampBoxAt(stamp, world)) : null;
+        },
+      },
+      // US-104: DXF import. `parse` is the pure text -> pieces parser (no
+      // board mutation), `computePlacement` the pure viewport-fit transform,
+      // both exposed independently so unit-level cases (bulge signs, cap
+      // boundaries, the auto-fit-box formula) don't need a real file input or
+      // a real viewport. `importText` drives the real one-shot board mutation
+      // the Tools-menu button itself calls.
+      dxf: {
+        parse: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text)) : null),
+        computePlacement: (bounds, rect, centerWorld) => (typeof computeDxfPlacementTransform === 'function'
+          ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld)) : null),
+        importText: (text, rect) => (typeof importDxfText === 'function' ? clone(importDxfText(text, rect)) : null),
       },
       sampleAnnotationShape: (annotationId, samples) => {
         const ann = state.annotations.find(a => a && a.id === annotationId);

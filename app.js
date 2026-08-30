@@ -548,26 +548,22 @@
     stitchesBtnLabel: document.getElementById('stitchesBtnLabel'),
     stitchesMenu: document.getElementById('stitchesMenu'),
     styleOptionBtns: Array.from(document.querySelectorAll('.style-option')),
-    // US-096 / ADR 0055: the line-preset library, which lives INSIDE the
-    // Stitches menu above rather than in a toolbar unit of its own (US-082
-    // caps the primary surface). The rows inside #linePresetList are rendered
-    // from stored data, so they are looked up on demand in
-    // src/ui/line-preset-panel.js rather than captured here.
-    linePresetList: document.getElementById('linePresetList'),
+    // US-096 / ADR 0055, US-107: Save as new treatment… and Customize
+    // selected… stay in the Stitches menu (board-selection-dependent quick
+    // actions) — browsing/picking/managing saved Treatments is the unified
+    // Library dialog now (src/ui/dialogs/library-manager-dialog.js), which
+    // looks up #linePresetFileInput on demand rather than caching it here.
     linePresetSaveBtn: document.getElementById('linePresetSaveBtn'),
     lineTreatmentCustomizeBtn: document.getElementById('lineTreatmentCustomizeBtn'),
-    linePresetExportBtn: document.getElementById('linePresetExportBtn'),
-    linePresetImportBtn: document.getElementById('linePresetImportBtn'),
-    linePresetImportProjectBtn: document.getElementById('linePresetImportProjectBtn'),
-    linePresetResetBtn: document.getElementById('linePresetResetBtn'),
     linePresetFileInput: document.getElementById('linePresetFileInput'),
-    // US-097 / ADR 0056: the saved-shape library, inside the Tools menu.
-    shapeStampList: document.getElementById('shapeStampList'),
+    // US-097 / ADR 0056, US-107: Save selection as Template… stays in the
+    // Tools menu for the same reason. Browsing/picking/managing saved
+    // Templates is the unified Library dialog now.
     shapeStampSaveBtn: document.getElementById('shapeStampSaveBtn'),
-    shapeStampImportProjectBtn: document.getElementById('shapeStampImportProjectBtn'),
-    shapeStampExportBtn: document.getElementById('shapeStampExportBtn'),
-    shapeStampImportBtn: document.getElementById('shapeStampImportBtn'),
     shapeStampFileInput: document.getElementById('shapeStampFileInput'),
+    // US-104: the "Open DXF file" action, inside the Tools menu.
+    dxfImportBtn: document.getElementById('dxfImportBtn'),
+    dxfImportFileInput: document.getElementById('dxfImportFileInput'),
     lineWidthChip: document.getElementById('lineWidthChip'),
     lineWidthInput: document.getElementById('lineWidthInput'),
     fontSizeChip: document.getElementById('fontSizeChip'),
@@ -4178,11 +4174,11 @@
   }
 
   // ---- src/ui/dialogs/library-dialog.js ----
-// Project Library: browse, reopen, and delete saved project snapshots.
+// Project Library pane: browse, reopen, and delete saved project snapshots.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Every writeProjectFile() appends an entry to the IndexedDB-backed library
-// in src/project/project-library.js. This dialog has two tabs:
+// in src/project/project-library.js. This pane has two internal sub-tabs:
 //   - "By Style" (default): one card per styleId, aggregated counts +
 //     evidence/meaning badges, "Open latest" or drill into saves.
 //   - "By Save": flat list, every snapshot is its own row.
@@ -4190,25 +4186,24 @@
 // creates a new entry (append history), matching the user's chosen
 // "keep history" behavior.
 //
-// This is the stateful dialog controller only (tabs, filter, refresh, the
-// async open/delete/download handlers). The cross-view grouping/formatting
-// helpers live in library-shared.js; the "By Save" flat-list rendering lives
-// in library-list-view.js; the "By Style" card-grid rendering lives in
+// US-107: this used to be its own openLibraryDialog() modal, reachable from
+// File ▾ ▸ "Project Library…". It is now the Projects tab of the unified
+// Library dialog (src/ui/dialogs/library-manager-dialog.js) — buildDialog()'s
+// shell, wide-panel class, and footer/Close button all belong to that outer
+// dialog now, so this function renders only its OWN content into a host
+// container the tab switcher supplies, and reports back through callbacks
+// instead of owning a `dialog` handle of its own.
+//
+// This is the stateful pane controller only (tabs, filter, refresh, the async
+// open/delete/download handlers). The cross-view grouping/formatting helpers
+// live in library-shared.js; the "By Save" flat-list rendering lives in
+// library-list-view.js; the "By Style" card-grid rendering lives in
 // library-grid-view.js.
 
-  function openLibraryDialog() {
-    const dialog = buildDialog({
-      title: 'Library',
-      sub: 'Browse styles you have worked on. Every save is archived per style.',
-    });
-    // The default .dialog-panel is 560px wide; the library cards need more
-    // room or their action buttons clip past the panel edge. ld-wide bumps
-    // the shell to min(820px, 100%), and the body then just fills it.
-    dialog.panel.classList.add('ld-wide');
-
-    const body = document.createElement('div');
-    body.className = 'dialog-body library-body';
-    body.style.minWidth = '0';
+  function buildProjectLibraryPane(host, { onOpened, onStatus } = {}) {
+    host.innerHTML = '';
+    host.className = 'dialog-body library-body';
+    host.style.minWidth = '0';
 
     let viewMode = 'style';
 
@@ -4239,7 +4234,7 @@
     const saveTabBtn = makeTabBtn('By Save', () => setViewMode('save'));
     tabs.appendChild(styleTabBtn);
     tabs.appendChild(saveTabBtn);
-    body.appendChild(tabs);
+    host.appendChild(tabs);
 
     function setViewMode(mode) {
       if (mode !== 'style' && mode !== 'save') return;
@@ -4279,34 +4274,28 @@
 
     controls.appendChild(filterInput);
     controls.appendChild(summary);
-    body.appendChild(controls);
+    host.appendChild(controls);
 
     const list = document.createElement('div');
     list.className = 'library-list';
-    list.style.maxHeight = '60vh';
+    list.style.maxHeight = '54vh';
     list.style.overflowY = 'auto';
     list.style.border = '1px solid #ececf0';
     list.style.borderRadius = '8px';
     list.style.background = '#fafafa';
-    body.appendChild(list);
-
-    dialog.panel.appendChild(body);
-
-    const footer = document.createElement('div');
-    footer.className = 'picker-footer';
-    const spacer = document.createElement('span');
-    spacer.style.flex = '1';
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'picker-btn primary';
-    closeBtn.textContent = 'Close';
-    closeBtn.addEventListener('click', dialog.close);
-    footer.appendChild(spacer);
-    footer.appendChild(closeBtn);
-    dialog.panel.appendChild(footer);
+    host.appendChild(list);
 
     let entriesCache = [];
+    let loaded = false;
 
+    // Codex audit LIB-04, 2026-08-30: this summary used to repeat "No
+    // projects saved yet." right next to the SAME message the grid/list body
+    // already shows (renderStyleGridView / renderLibraryList's own empty
+    // state, which — unlike this one — names the next action: "Save the
+    // current board…"). Two messages saying the same thing left the ONE with
+    // useful guidance no more prominent than its redundant neighbor. This
+    // summary now stays terse ("0 saves") when empty, so the single message
+    // with a next action is the body's.
     function applyFilter() {
       const q = filterInput.value.trim().toLowerCase();
       const filtered = q
@@ -4319,7 +4308,7 @@
         });
         const styleCount = countDistinctStyles(filtered);
         summary.textContent = entriesCache.length === 0
-          ? 'No projects saved yet.'
+          ? '0 saves'
           : styleCount + ' style' + (styleCount === 1 ? '' : 's')
             + '  ·  ' + filtered.length + ' save' + (filtered.length === 1 ? '' : 's');
       } else {
@@ -4329,11 +4318,12 @@
           onDownload: handleDownload,
         });
         summary.textContent = entriesCache.length === 0
-          ? 'No projects saved yet.'
+          ? '0 saves'
           : (filtered.length === entriesCache.length
               ? entriesCache.length + ' entr' + (entriesCache.length === 1 ? 'y' : 'ies')
               : filtered.length + ' of ' + entriesCache.length + ' shown');
       }
+      if (typeof onStatus === 'function') onStatus(summary.textContent);
     }
 
     function handleViewSaves(styleId) {
@@ -4342,13 +4332,16 @@
     }
 
     async function refresh() {
+      loaded = true;
       summary.textContent = 'Loading…';
+      if (typeof onStatus === 'function') onStatus(summary.textContent);
       try {
         entriesCache = await listLibraryEntries();
       } catch (err) {
         console.warn(err);
         entriesCache = [];
         summary.textContent = 'Could not read the library.';
+        if (typeof onStatus === 'function') onStatus(summary.textContent);
         list.innerHTML = '';
         const error = document.createElement('div');
         error.style.padding = '16px';
@@ -4407,7 +4400,7 @@
       try {
         await loadProject(full.snapshot);
         showToast('Project opened from library.');
-        dialog.close();
+        if (typeof onOpened === 'function') onOpened();
       } catch (err) {
         console.error(err);
         showToast('Could not open that entry — saved with an older format.', 4200);
@@ -4447,10 +4440,1004 @@
       downloadBlob(blob, 'bra-sketch-' + baseName + '-' + stamp + '.json');
     }
 
-    dialog.open();
     setViewMode('style');
     filterInput.addEventListener('input', applyFilter);
-    refresh();
+
+    return {
+      // Lazy: an IndexedDB round trip on every dialog open (regardless of
+      // which tab a TD actually wants) is wasted work — refresh only the
+      // first time this pane is actually shown.
+      ensureLoaded() { if (!loaded) refresh(); },
+      refresh,
+      // Codex audit LIB-04, 2026-08-30: lets a host mirror this pane's own
+      // status into a shared readout (the Library dialog's footer) without
+      // forcing a fetch — ensureLoaded() is a no-op once loaded, so a host
+      // that only called that on re-activation would otherwise show whatever
+      // the LAST-active tab left behind.
+      currentStatus() { return summary.textContent; },
+    };
+  }
+
+  // ---- src/ui/dialogs/library-manager-dialog.js ----
+// US-106 + US-107: the unified Library dialog — one searchable, categorized
+// place for everything a TD would call "the library": Templates (multi-path
+// saved sketch geometry), Line Treatments (named looks and layered stitch
+// recipes, src/manual/line-presets.js), and Projects (saved whole boards,
+// IndexedDB-backed, src/project/project-library.js). Three tabs, one dialog,
+// one toolbar entry point (#libraryBtn) — replacing the three separate,
+// scattered entry points US-106 review found (Tools ▾ ▸ Templates, the
+// Stitches ▸ Line Library section, and File ▾ ▸ "Project Library…").
+//
+// Every mutation still goes through the three owning model files — this file
+// is presentation only, same split as src/ui/shape-stamp-panel.js and
+// src/ui/line-preset-panel.js, which remain the board-selection-dependent
+// quick actions (Save selection as Template…, Save as new treatment…,
+// Customize selected…) that need a live board selection and so stay in the
+// toolbar rather than move into this "browse what I've already saved" modal.
+// ADR 0059 is unchanged: Templates and Line Treatments remain distinct domain
+// objects sharing one browsing UI, not one merged concept.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // A bigger, gallery-scaled rendering of the same idea as
+  // shapeStampPreviewSvg (src/ui/shape-stamp-panel.js) — a separate function
+  // rather than a shared one with a size parameter, because the two contexts
+  // want different aspect ratios (a slim menu row vs a near-square card) and
+  // forcing one function to serve both would smuggle a magic number through
+  // an unrelated caller.
+  function libraryCardPreviewSvg(stamp) {
+    const w = 160, h = 108, pad = 10;
+    const at = (p) => ({ x: pad + p.x * (w - pad * 2), y: pad + p.y * (h - pad * 2) });
+    const members = Array.isArray(stamp.members) && stamp.members.length ? stamp.members : [stamp];
+    const paths = members.map(member => {
+      const s0 = at(member.start);
+      let d = 'M' + s0.x.toFixed(2) + ' ' + s0.y.toFixed(2);
+      if (member.type === 'curved' && member.control1 && member.control2) {
+        let c1 = at(member.control1);
+        for (const pt of member.points) {
+          const hIn = at(pt.handleIn);
+          const p = at(pt.point);
+          d += ' C' + c1.x.toFixed(2) + ' ' + c1.y.toFixed(2)
+            + ',' + hIn.x.toFixed(2) + ' ' + hIn.y.toFixed(2)
+            + ',' + p.x.toFixed(2) + ' ' + p.y.toFixed(2);
+          c1 = at(pt.handleOut);
+        }
+        const c2 = at(member.control2);
+        const e = at(member.end);
+        d += ' C' + c1.x.toFixed(2) + ' ' + c1.y.toFixed(2)
+          + ',' + c2.x.toFixed(2) + ' ' + c2.y.toFixed(2)
+          + ',' + e.x.toFixed(2) + ' ' + e.y.toFixed(2);
+      } else {
+        const e = at(member.end);
+        d += ' L' + e.x.toFixed(2) + ' ' + e.y.toFixed(2);
+      }
+      const color = LINE_COLORS[member.color] || LINE_COLOR;
+      return '<path d="' + d + '" stroke="' + color + '"/>';
+    }).join('');
+    return '<svg class="lm-card-preview" viewBox="0 0 ' + w + ' ' + h + '" fill="none" '
+      + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+      + 'stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+  }
+
+  function libraryManagerFormatDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString();
+  }
+
+  // ---- Shared: one floating "..." menu for the whole dialog -----------------
+  //
+  // Appended to document.body and positioned in JS from the trigger button's
+  // own viewport rect (position:fixed) rather than living as an absolutely-
+  // positioned child of a card — a card near the top of an independently
+  // scrolling grid has no room to open a menu ABOVE it without the grid's own
+  // overflow clipping it; anchoring to the viewport avoids that clip entirely
+  // and lets the menu flip above/below based on real available space. One
+  // instance serves every menu trigger in the dialog (card menus in both
+  // library tabs, and each tab's top-row "Import / Export" menu) since only
+  // one such menu can ever be open at a time regardless of which tab is
+  // active.
+  function createLibraryFloatingMenu(dialog) {
+    let floatingMenu = null;
+    let activeAnchor = null;
+
+    function close() {
+      if (!floatingMenu) return;
+      floatingMenu.remove();
+      floatingMenu = null;
+      if (activeAnchor) activeAnchor.setAttribute('aria-expanded', 'false');
+      activeAnchor = null;
+    }
+
+    function open(anchorBtn, actions, onAction) {
+      close();
+      const menu = document.createElement('div');
+      menu.className = 'lm-card-menu';
+      menu.innerHTML = actions
+        .map(([action, label]) => '<button type="button" data-menu-action="' + action + '">' + escapeHtml(label) + '</button>')
+        .join('');
+      document.body.appendChild(menu);
+      const anchorRect = anchorBtn.getBoundingClientRect();
+      const menuRect = menu.getBoundingClientRect();
+      const openUpward = window.innerHeight - anchorRect.bottom < menuRect.height + 8 && anchorRect.top > menuRect.height + 8;
+      menu.style.left = Math.max(8, Math.min(anchorRect.right - menuRect.width, window.innerWidth - menuRect.width - 8)) + 'px';
+      menu.style.top = (openUpward ? anchorRect.top - menuRect.height - 4 : anchorRect.bottom + 4) + 'px';
+      menu.addEventListener('click', (event) => {
+        const btn = event.target.closest('[data-menu-action]');
+        if (!btn) return;
+        const action = btn.dataset.menuAction;
+        close();
+        onAction(action);
+      });
+      floatingMenu = menu;
+      activeAnchor = anchorBtn;
+      anchorBtn.setAttribute('aria-expanded', 'true');
+    }
+
+    function isOpenForAnchor(anchorBtn) {
+      return !!floatingMenu && activeAnchor === anchorBtn;
+    }
+
+    document.addEventListener('click', function onOutsideClick(event) {
+      if (!dialog.overlay.isConnected) { document.removeEventListener('click', onOutsideClick); return; }
+      if (!floatingMenu) return;
+      if (event.target.closest('.lm-card-menu')) return;
+      if (activeAnchor && activeAnchor.contains(event.target)) return;
+      close();
+    });
+
+    return { open, close, isOpenForAnchor };
+  }
+
+  // ---- Templates tab ---------------------------------------------------------
+
+  function libraryManagerMatchesQuery(stamp, query) {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    if (stamp.name.toLowerCase().includes(q)) return true;
+    if (libraryCategoryLabel(stamp.category).toLowerCase().includes(q)) return true;
+    if ((stamp.notes || '').toLowerCase().includes(q)) return true;
+    return (stamp.tags || []).some(tag => tag.includes(q));
+  }
+
+  const LIBRARY_RAIL_RECENT_MAX = 12;
+
+  function libraryManagerFilteredEntries(all, rail, query) {
+    let list = all;
+    if (rail === 'favorites') list = list.filter(s => s.favorite);
+    else if (rail === 'recent') {
+      list = list.filter(s => s.usage && s.usage.lastUsedAt)
+        .slice()
+        .sort((a, b) => (b.usage.lastUsedAt || '').localeCompare(a.usage.lastUsedAt || ''))
+        .slice(0, LIBRARY_RAIL_RECENT_MAX);
+    } else if (rail !== 'all') {
+      list = list.filter(s => s.category === rail);
+    }
+    return list.filter(stamp => libraryManagerMatchesQuery(stamp, query));
+  }
+
+  function libraryManagerRailCounts(all) {
+    const counts = { all: all.length, favorites: 0, recent: 0 };
+    for (const c of libraryCategories()) counts[c.id] = 0;
+    for (const stamp of all) {
+      if (stamp.favorite) counts.favorites += 1;
+      if (stamp.usage && stamp.usage.lastUsedAt) counts.recent += 1;
+      if (Object.prototype.hasOwnProperty.call(counts, stamp.category)) counts[stamp.category] += 1;
+    }
+    counts.recent = Math.min(counts.recent, LIBRARY_RAIL_RECENT_MAX);
+    return counts;
+  }
+
+  // ---- Edit-details sub-dialog (category / tags / notes) -----------------
+
+  function openTemplateDetailsDialog(stamp, onSaved) {
+    const dialog = buildDialog({ title: 'Edit Template details', sub: stamp.name });
+    const body = document.createElement('div');
+    body.className = 'scale-body lm-details-body';
+
+    const categoryField = document.createElement('div');
+    categoryField.className = 'scale-field';
+    const categoryLabel = document.createElement('label');
+    categoryLabel.textContent = 'Category';
+    const categorySelect = document.createElement('select');
+    categorySelect.setAttribute('aria-label', 'Category');
+    for (const c of libraryCategories()) {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.label;
+      if (c.id === stamp.category) opt.selected = true;
+      categorySelect.appendChild(opt);
+    }
+    categoryField.appendChild(categoryLabel);
+    categoryField.appendChild(categorySelect);
+
+    const tagsField = document.createElement('div');
+    tagsField.className = 'scale-field';
+    const tagsLabel = document.createElement('label');
+    tagsLabel.textContent = 'Tags (comma-separated)';
+    const tagsInput = document.createElement('input');
+    tagsInput.type = 'text';
+    tagsInput.maxLength = 200;
+    tagsInput.value = (stamp.tags || []).join(', ');
+    tagsInput.setAttribute('aria-label', 'Tags');
+    tagsField.appendChild(tagsLabel);
+    tagsField.appendChild(tagsInput);
+
+    const notesField = document.createElement('div');
+    notesField.className = 'scale-field';
+    const notesLabel = document.createElement('label');
+    notesLabel.textContent = 'Notes';
+    const notesInput = document.createElement('textarea');
+    notesInput.maxLength = 240;
+    notesInput.rows = 3;
+    notesInput.value = stamp.notes || '';
+    notesInput.setAttribute('aria-label', 'Notes');
+    notesField.appendChild(notesLabel);
+    notesField.appendChild(notesInput);
+
+    body.appendChild(categoryField);
+    body.appendChild(tagsField);
+    body.appendChild(notesField);
+    dialog.panel.appendChild(body);
+
+    const footer = document.createElement('div');
+    footer.className = 'picker-footer';
+    const spacer = document.createElement('span');
+    spacer.style.flex = '1';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'picker-btn';
+    cancelBtn.textContent = 'Cancel';
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'picker-btn primary';
+    saveBtn.textContent = 'Save';
+    footer.appendChild(spacer);
+    footer.appendChild(cancelBtn);
+    footer.appendChild(saveBtn);
+    dialog.panel.appendChild(footer);
+
+    cancelBtn.addEventListener('click', dialog.close);
+    saveBtn.addEventListener('click', () => {
+      setShapeStampCategory(stamp.id, categorySelect.value);
+      setShapeStampTags(stamp.id, tagsInput.value.split(','));
+      setShapeStampNotes(stamp.id, notesInput.value);
+      dialog.close();
+      onSaved();
+    });
+    dialog.open();
+    categorySelect.focus();
+  }
+
+  function buildTemplatesTab(panel, outerDialog, floatingMenu, setCount, registerCleanup) {
+    const topRow = document.createElement('div');
+    topRow.className = 'lm-top-row';
+    const searchInput = document.createElement('input');
+    searchInput.type = 'search';
+    searchInput.placeholder = 'Search name, tag, or note…';
+    searchInput.className = 'lm-search';
+    searchInput.autocomplete = 'off';
+    searchInput.spellcheck = false;
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'picker-btn';
+    saveBtn.textContent = 'Save selection as Template…';
+    const moreBtn = document.createElement('button');
+    moreBtn.type = 'button';
+    moreBtn.className = 'picker-btn';
+    moreBtn.setAttribute('aria-haspopup', 'true');
+    moreBtn.setAttribute('aria-expanded', 'false');
+    moreBtn.textContent = 'Import / Export ▾';
+    topRow.appendChild(searchInput);
+    topRow.appendChild(saveBtn);
+    topRow.appendChild(moreBtn);
+    panel.appendChild(topRow);
+
+    const content = document.createElement('div');
+    content.className = 'lm-content';
+    const rail = document.createElement('div');
+    rail.className = 'lm-rail';
+    // Codex audit LIB-01, 2026-08-30: this rail is a FILTER (All/Favorites/
+    // Recent/category), not a set of tabs each owning its own tabpanel — it
+    // used to claim role="tab"/aria-selected, which promised keyboard/AT
+    // behavior (arrow-key roving, a tab->tabpanel relationship) it never had.
+    // A pressed-button group is the honest semantics for "one of several
+    // toggles that narrows the same grid".
+    rail.setAttribute('role', 'group');
+    rail.setAttribute('aria-label', 'Filter Templates by category');
+    const grid = document.createElement('div');
+    grid.className = 'picker-grid lm-grid';
+    content.appendChild(rail);
+    content.appendChild(grid);
+    panel.appendChild(content);
+
+    let activeRail = 'all';
+
+    function railItems() {
+      return [
+        { id: 'all', label: 'All' },
+        { id: 'favorites', label: '★ Favorites' },
+        { id: 'recent', label: 'Recent' },
+        ...libraryCategories(),
+      ];
+    }
+
+    function renderRail() {
+      const all = getShapeStamps();
+      const counts = libraryManagerRailCounts(all);
+      rail.innerHTML = railItems().map(item => {
+        const active = item.id === activeRail ? ' lm-rail-active' : '';
+        return '<button type="button" class="lm-rail-btn' + active + '" data-rail="' + escapeHtml(item.id) + '" '
+          + 'aria-pressed="' + (item.id === activeRail) + '">'
+          + escapeHtml(item.label) + ' <span class="lm-rail-count">' + (counts[item.id] || 0) + '</span></button>';
+      }).join('');
+    }
+
+    // Codex audit LIB-02, 2026-08-30: this CTA used to stay enabled with
+    // nothing to save, so clicking it only ever produced a rejection toast
+    // ("Select one or more lines…"). Disabling it — with the SAME reason
+    // exposed as both a hover tooltip and an accessible name — tells the TD
+    // up front instead of after a click, and the reason string here is the
+    // exact one canSaveShapeStampReason() would otherwise hand to showToast.
+    function updateSaveButtonState() {
+      const reason = canSaveShapeStampReason();
+      const ok = reason === true;
+      saveBtn.disabled = !ok;
+      saveBtn.title = ok ? '' : reason;
+      if (ok) saveBtn.removeAttribute('aria-label');
+      else saveBtn.setAttribute('aria-label', 'Save selection as Template… — ' + reason);
+    }
+
+    function renderGrid() {
+      const all = getShapeStamps();
+      const filtered = libraryManagerFilteredEntries(all, activeRail, searchInput.value.trim());
+      setCount(all.length === 0
+        ? 'No Templates yet.'
+        : (filtered.length === all.length
+          ? all.length + ' Template' + (all.length === 1 ? '' : 's')
+          : filtered.length + ' of ' + all.length + ' shown'));
+      if (!filtered.length) {
+        grid.innerHTML = '<div class="lm-empty">'
+          + (all.length === 0
+            ? 'No Templates saved yet. Select one or more paths on the Board, then '
+              + '"Save selection as Template…" above.'
+            : 'Nothing matches this filter.')
+          + '</div>';
+        return;
+      }
+      grid.innerHTML = filtered.map(stamp => {
+        const tagChips = (stamp.tags || []).map(t => '<span class="lm-tag">' + escapeHtml(t) + '</span>').join('');
+        const memberCount = Array.isArray(stamp.members) ? stamp.members.length : 1;
+        const usageNote = stamp.usage && stamp.usage.count
+          ? ('Used ' + stamp.usage.count + '×' + (stamp.usage.lastUsedAt ? ' · last ' + libraryManagerFormatDate(stamp.usage.lastUsedAt) : ''))
+          : 'Not placed yet';
+        return '<div class="picker-cell lm-card" data-stamp-id="' + escapeHtml(stamp.id) + '">'
+          + '<button type="button" class="lm-fav' + (stamp.favorite ? ' lm-fav-on' : '') + '" '
+          + 'data-card-action="favorite" aria-pressed="' + !!stamp.favorite + '" '
+          + 'aria-label="' + (stamp.favorite ? 'Remove from favorites' : 'Add to favorites') + '" title="Favorite">'
+          + (stamp.favorite ? '★' : '☆') + '</button>'
+          + '<button type="button" class="lm-place-hit" data-card-action="place" '
+          + 'title="' + escapeHtml('Place "' + stamp.name + '" — ' + memberCount + ' path' + (memberCount === 1 ? '' : 's') + ', ' + usageNote) + '">'
+          + '<div class="picker-thumb lm-thumb">' + libraryCardPreviewSvg(stamp) + '</div>'
+          + '<div class="picker-cap">' + escapeHtml(stamp.name) + '</div>'
+          + '</button>'
+          + '<div class="lm-card-meta">'
+          + '<span class="lm-category-chip">' + escapeHtml(libraryCategoryLabel(stamp.category)) + '</span>'
+          + tagChips
+          + '</div>'
+          + '<button type="button" class="lm-more" data-card-action="menu" aria-haspopup="true" '
+          + 'aria-expanded="false" aria-label="More actions for ' + escapeHtml(stamp.name) + '">⋯</button>'
+          + '</div>';
+      }).join('');
+    }
+
+    function refresh() {
+      floatingMenu.close();
+      renderRail();
+      renderGrid();
+      updateSaveButtonState();
+    }
+
+    rail.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-rail]');
+      if (!btn) return;
+      activeRail = btn.dataset.rail;
+      refresh();
+    });
+
+    searchInput.addEventListener('input', () => { floatingMenu.close(); renderGrid(); });
+
+    // The disabled state above already keeps a no-selection click from firing
+    // in the real UI; this guard stays as a defensive no-op (a disabled
+    // button does not dispatch click in any real browser) rather than a live
+    // path, so a stray programmatic .click() still cannot save nothing.
+    saveBtn.addEventListener('click', () => {
+      const reason = canSaveShapeStampReason();
+      if (reason !== true) { showToast(reason); return; }
+      const targets = shapeStampSaveTargets();
+      const kind = targets.length > 1 ? `${targets.length} selected paths` : (targets[0].type === 'curved' ? 'Curve' : 'Straight line');
+      openLinePresetNameDialog({
+        title: 'Save Template',
+        sub: `${kind}, including Scratch Area paths outside the sketch. Set category and tags afterward from the Library.`,
+        value: '',
+        confirmLabel: 'Save Template',
+        onConfirm: (name) => {
+          const stamp = addShapeStampFromSelection(name, activeRail !== 'all' && activeRail !== 'favorites' && activeRail !== 'recent'
+            ? { category: activeRail } : null);
+          if (!stamp) { showToast('Could not save that Template.'); return; }
+          refresh();
+          showToast(shapeStampsPersisted()
+            ? `Saved "${stamp.name}".`
+            : `Saved "${stamp.name}" (this session only — the browser refused to store it).`);
+        },
+      });
+    });
+
+    function moreMenuActions() {
+      const actions = [['export-all', 'Export all as JSON'], ['import', 'Import JSON…']];
+      const pending = getPendingProjectShapeStamps().length;
+      if (pending > 0) actions.push(['import-project', `Import ${pending} shape${pending > 1 ? 's' : ''} from project`]);
+      return actions;
+    }
+
+    moreBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (floatingMenu.isOpenForAnchor(moreBtn)) { floatingMenu.close(); return; }
+      floatingMenu.open(moreBtn, moreMenuActions(), (action) => {
+        if (action === 'export-all') { exportShapeStampsFile(); return; }
+        if (action === 'import') { el.shapeStampFileInput.click(); return; }
+        if (action === 'import-project') {
+          const added = importPendingProjectShapeStamps();
+          refresh();
+          if (!added) { showToast('Nothing to import.'); return; }
+          showToast(`Imported ${added} shape${added > 1 ? 's' : ''} from the project.`);
+        }
+      });
+    });
+
+    function onFileInputChange(event) {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = '';
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const added = importShapeStampsFromJson(String(reader.result || ''));
+        refresh();
+        if (!added) { showToast('That file held no Templates.'); return; }
+        showToast(shapeStampsPersisted()
+          ? `Imported ${added} Template${added > 1 ? 's' : ''}.`
+          : `Imported ${added} Template${added > 1 ? 's' : ''} (this session only — the browser refused to store it).`);
+      };
+      reader.onerror = () => showToast('Could not read that file.');
+      reader.readAsText(file);
+    }
+    if (el.shapeStampFileInput) {
+      el.shapeStampFileInput.addEventListener('change', onFileInputChange);
+      registerCleanup(() => el.shapeStampFileInput.removeEventListener('change', onFileInputChange));
+    }
+
+    function handleCardAction(id, act) {
+      const stamp = getShapeStampById(id);
+      if (!stamp) return;
+      if (act === 'favorite') {
+        toggleShapeStampFavorite(id);
+        refresh();
+        return;
+      }
+      if (act === 'place' || act === 'place-mirrored') {
+        floatingMenu.close();
+        armShapeStampForPlacement(id, { mirrored: act === 'place-mirrored' });
+        closeBoardToolbarMenus(null, false);
+        outerDialog.close();
+        showToast(`Drag to place${act === 'place-mirrored' ? ' (mirrored)' : ''} Template "${stamp.name}". Shift keeps its proportions; a plain click places it at its saved size.`);
+        return;
+      }
+      if (act === 'rename') {
+        floatingMenu.close();
+        openLinePresetNameDialog({
+          title: 'Rename Template', sub: stamp.name, value: stamp.name, confirmLabel: 'Rename',
+          onConfirm: (name) => { renameShapeStamp(id, name); refresh(); },
+        });
+        return;
+      }
+      if (act === 'details') {
+        floatingMenu.close();
+        openTemplateDetailsDialog(stamp, refresh);
+        return;
+      }
+      if (act === 'duplicate') {
+        const copy = duplicateShapeStamp(id);
+        refresh();
+        if (copy) showToast(`Duplicated as "${copy.name}".`);
+        return;
+      }
+      if (act === 'export') {
+        exportOneShapeStampFile(id);
+        refresh();
+        return;
+      }
+      if (act === 'delete') {
+        floatingMenu.close();
+        if (window.confirm(`Delete Template "${stamp.name}"? This cannot be undone.`)) {
+          deleteShapeStamp(id);
+        }
+        refresh();
+        return;
+      }
+    }
+
+    const CARD_MENU_ACTIONS = [
+      ['place-mirrored', 'Place mirrored'],
+      ['rename', 'Rename…'],
+      ['details', 'Edit category / tags / notes…'],
+      ['duplicate', 'Duplicate'],
+      ['export', 'Export this Template…'],
+      ['delete', 'Delete…'],
+    ];
+
+    grid.addEventListener('click', (event) => {
+      const card = event.target.closest('[data-stamp-id]');
+      if (!card) return;
+      const menuBtn = event.target.closest('[data-card-action="menu"]');
+      if (menuBtn) {
+        event.stopPropagation();
+        if (floatingMenu.isOpenForAnchor(menuBtn)) { floatingMenu.close(); return; }
+        floatingMenu.open(menuBtn, CARD_MENU_ACTIONS, (action) => handleCardAction(card.dataset.stampId, action));
+        return;
+      }
+      const action = event.target.closest('[data-card-action]');
+      if (!action) return;
+      event.stopPropagation();
+      handleCardAction(card.dataset.stampId, action.dataset.cardAction);
+    });
+
+    // A scroll inside the grid invalidates the menu's viewport-anchored
+    // position (it does not move with the card it points at) — treat it the
+    // same as an outside click rather than let it visibly drift.
+    grid.addEventListener('scroll', () => floatingMenu.close());
+
+    return {
+      activate() { refresh(); searchInput.focus(); },
+    };
+  }
+
+  // ---- Treatments tab ---------------------------------------------------
+
+  function treatmentRailItems() {
+    return [
+      { id: 'all', label: 'All' },
+      { id: 'treatment', label: 'Treatments' },
+      { id: 'look', label: 'Looks' },
+    ];
+  }
+
+  function treatmentRailCounts(all) {
+    const counts = { all: all.length, treatment: 0, look: 0 };
+    for (const preset of all) counts[preset.kind === 'treatment' ? 'treatment' : 'look'] += 1;
+    return counts;
+  }
+
+  function treatmentManagerFilteredEntries(all, rail, query) {
+    let list = all;
+    if (rail === 'treatment' || rail === 'look') list = list.filter(preset => (preset.kind === 'treatment' ? 'treatment' : 'look') === rail);
+    if (query) {
+      const q = query.toLowerCase();
+      list = list.filter(preset => preset.name.toLowerCase().includes(q));
+    }
+    return list;
+  }
+
+  function buildTreatmentsTab(panel, outerDialog, floatingMenu, setCount, registerCleanup) {
+    const topRow = document.createElement('div');
+    topRow.className = 'lm-top-row';
+    const searchInput = document.createElement('input');
+    searchInput.type = 'search';
+    searchInput.placeholder = 'Search name…';
+    searchInput.className = 'lm-search';
+    searchInput.autocomplete = 'off';
+    searchInput.spellcheck = false;
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'picker-btn';
+    saveBtn.textContent = 'Save selection as Treatment…';
+    const moreBtn = document.createElement('button');
+    moreBtn.type = 'button';
+    moreBtn.className = 'picker-btn';
+    moreBtn.setAttribute('aria-haspopup', 'true');
+    moreBtn.setAttribute('aria-expanded', 'false');
+    moreBtn.textContent = 'Import / Export ▾';
+    topRow.appendChild(searchInput);
+    topRow.appendChild(saveBtn);
+    topRow.appendChild(moreBtn);
+    panel.appendChild(topRow);
+
+    const content = document.createElement('div');
+    content.className = 'lm-content';
+    const rail = document.createElement('div');
+    rail.className = 'lm-rail';
+    // Codex audit LIB-01, 2026-08-30: see the matching comment in
+    // buildTemplatesTab — this is a filter, not an independent tabpanel.
+    rail.setAttribute('role', 'group');
+    rail.setAttribute('aria-label', 'Filter Treatments by kind');
+    const grid = document.createElement('div');
+    grid.className = 'picker-grid lm-grid';
+    content.appendChild(rail);
+    content.appendChild(grid);
+    panel.appendChild(content);
+
+    let activeRail = 'all';
+
+    function renderRail() {
+      const all = getLinePresets();
+      const counts = treatmentRailCounts(all);
+      rail.innerHTML = treatmentRailItems().map(item => {
+        const active = item.id === activeRail ? ' lm-rail-active' : '';
+        return '<button type="button" class="lm-rail-btn' + active + '" data-rail="' + escapeHtml(item.id) + '" '
+          + 'aria-pressed="' + (item.id === activeRail) + '">'
+          + escapeHtml(item.label) + ' <span class="lm-rail-count">' + (counts[item.id] || 0) + '</span></button>';
+      }).join('');
+    }
+
+    // Codex audit LIB-02, 2026-08-30: saveSelectedTreatmentToLibrary() has
+    // always branched — a selected path saves a Treatment, nothing selected
+    // saves a Look (the backward-compatible escape hatch) — but the button
+    // kept one static "Save selection as Treatment…" label regardless, so
+    // the no-selection branch told the TD one thing and did another. The
+    // label now says which branch is about to run.
+    function updateSaveButtonLabel() {
+      const hasSelection = typeof getSelectedAnnotation === 'function' && !!getSelectedAnnotation();
+      saveBtn.textContent = hasSelection ? 'Save selected path as Treatment…' : 'Save current Line Look…';
+    }
+
+    function renderGrid() {
+      const all = getLinePresets();
+      const filtered = treatmentManagerFilteredEntries(all, activeRail, searchInput.value.trim());
+      setCount(all.length === 0
+        ? 'No Treatments yet.'
+        : (filtered.length === all.length
+          ? all.length + (all.length === 1 ? ' entry' : ' entries')
+          : filtered.length + ' of ' + all.length + ' shown'));
+      if (!filtered.length) {
+        grid.innerHTML = '<div class="lm-empty">'
+          + (all.length === 0
+            ? 'No Treatments saved yet.'
+            : 'Nothing matches this filter.')
+          + '</div>';
+        return;
+      }
+      grid.innerHTML = filtered.map(preset => {
+        const kindLabel = preset.kind === 'treatment' ? 'Treatment' : 'Look';
+        return '<div class="picker-cell lm-card" data-preset-id="' + escapeHtml(preset.id) + '">'
+          + '<button type="button" class="lm-place-hit" data-card-action="apply" '
+          + 'title="' + escapeHtml(linePresetRowTitle(preset)) + '">'
+          + '<div class="picker-thumb lm-thumb">' + lineTreatmentPreviewSvg(preset) + '</div>'
+          + '<div class="picker-cap">' + escapeHtml(preset.name) + '</div>'
+          + '</button>'
+          + '<div class="lm-card-meta">'
+          + '<span class="lm-category-chip">' + kindLabel + '</span>'
+          + (preset.builtin ? '<span class="lm-tag">Built-in</span>' : '')
+          + '</div>'
+          + '<button type="button" class="lm-more" data-card-action="menu" aria-haspopup="true" '
+          + 'aria-expanded="false" aria-label="More actions for ' + escapeHtml(preset.name) + '">⋯</button>'
+          + '</div>';
+      }).join('');
+    }
+
+    function refresh() {
+      floatingMenu.close();
+      renderRail();
+      renderGrid();
+      updateSaveButtonLabel();
+    }
+
+    rail.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-rail]');
+      if (!btn) return;
+      activeRail = btn.dataset.rail;
+      refresh();
+    });
+
+    searchInput.addEventListener('input', () => { floatingMenu.close(); renderGrid(); });
+
+    saveBtn.addEventListener('click', () => {
+      saveSelectedTreatmentToLibrary();
+      refresh();
+    });
+
+    function moreMenuActions() {
+      const actions = [['export-all', 'Export all as JSON'], ['import', 'Import JSON…']];
+      const pending = getPendingProjectLinePresets().length;
+      if (pending > 0) actions.push(['import-project', `Import ${pending} preset${pending > 1 ? 's' : ''} from project`]);
+      actions.push(['reset', 'Reset to built-in set']);
+      return actions;
+    }
+
+    moreBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (floatingMenu.isOpenForAnchor(moreBtn)) { floatingMenu.close(); return; }
+      floatingMenu.open(moreBtn, moreMenuActions(), (action) => {
+        if (action === 'export-all') { exportLinePresetsFile(); return; }
+        if (action === 'import') { el.linePresetFileInput.click(); return; }
+        if (action === 'import-project') {
+          const added = importPendingProjectLinePresets();
+          refresh();
+          if (!added) { showToast('Nothing to import.'); return; }
+          linePresetToast(`Imported ${added} preset${added > 1 ? 's' : ''} from the project.`);
+          return;
+        }
+        if (action === 'reset') {
+          resetLinePresetsToBuiltins();
+          refresh();
+          linePresetToast('Line Treatments reset to the built-in set.');
+        }
+      });
+    });
+
+    function onFileInputChange(event) {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = '';
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const added = importLinePresetsFromJson(String(reader.result || ''));
+        refresh();
+        if (!added) { showToast('That file held no line presets.'); return; }
+        linePresetToast(`Imported ${added} preset${added > 1 ? 's' : ''}.`);
+      };
+      reader.onerror = () => showToast('Could not read that file.');
+      reader.readAsText(file);
+    }
+    if (el.linePresetFileInput) {
+      el.linePresetFileInput.addEventListener('change', onFileInputChange);
+      registerCleanup(() => el.linePresetFileInput.removeEventListener('change', onFileInputChange));
+    }
+
+    function handleCardAction(id, act) {
+      const preset = getLinePresetById(id);
+      if (!preset) return;
+      if (act === 'apply') {
+        floatingMenu.close();
+        const applied = applyLinePreset(id);
+        if (applied) outerDialog.close();
+        return;
+      }
+      if (act === 'rename') {
+        floatingMenu.close();
+        openLinePresetNameDialog({
+          title: 'Rename', sub: preset.name, value: preset.name, confirmLabel: 'Rename',
+          onConfirm: (name) => { renameLinePreset(id, name); refresh(); },
+        });
+        return;
+      }
+      if (act === 'edit' && preset.treatment) {
+        floatingMenu.close();
+        openLineTreatmentEditor({
+          title: 'Update Library Treatment', name: preset.name, recipe: preset.treatment,
+          confirmLabel: 'Update treatment',
+          onConfirm: next => {
+            updateLineTreatment(id, next, next.name);
+            refresh();
+            showToast(`Updated "${next.name}". Existing drawings were not changed.`);
+          },
+        });
+        return;
+      }
+      if (act === 'duplicate') {
+        const copy = duplicateLinePreset(id);
+        refresh();
+        if (copy) linePresetToast(`Duplicated as "${copy.name}".`);
+        return;
+      }
+      if (act === 'export') {
+        exportOneLinePreset(id);
+        refresh();
+        return;
+      }
+      if (act === 'delete') {
+        floatingMenu.close();
+        if (window.confirm(`Delete "${preset.name}"? This cannot be undone.`)) {
+          deleteLinePreset(id);
+          linePresetToast(`Deleted "${preset.name}".`);
+        }
+        refresh();
+        return;
+      }
+    }
+
+    function cardMenuActionsFor(preset) {
+      const actions = [['rename', 'Rename…']];
+      if (preset.kind === 'treatment') actions.push(['edit', 'Edit layers…']);
+      actions.push(['duplicate', 'Duplicate'], ['export', 'Export this…'], ['delete', 'Delete…']);
+      return actions;
+    }
+
+    grid.addEventListener('click', (event) => {
+      const card = event.target.closest('[data-preset-id]');
+      if (!card) return;
+      const menuBtn = event.target.closest('[data-card-action="menu"]');
+      if (menuBtn) {
+        event.stopPropagation();
+        if (floatingMenu.isOpenForAnchor(menuBtn)) { floatingMenu.close(); return; }
+        const preset = getLinePresetById(card.dataset.presetId);
+        if (!preset) return;
+        floatingMenu.open(menuBtn, cardMenuActionsFor(preset), (action) => handleCardAction(card.dataset.presetId, action));
+        return;
+      }
+      const action = event.target.closest('[data-card-action]');
+      if (!action) return;
+      event.stopPropagation();
+      handleCardAction(card.dataset.presetId, action.dataset.cardAction);
+    });
+
+    grid.addEventListener('scroll', () => floatingMenu.close());
+
+    return {
+      activate() { refresh(); searchInput.focus(); },
+    };
+  }
+
+  // ---- The unified dialog ------------------------------------------------
+
+  function openLibraryManagerDialog(opts) {
+    const dialog = buildDialog({
+      title: 'Library',
+      sub: 'Templates, Line Treatments, and saved Projects — search, organize, and reuse your work.',
+    });
+    dialog.panel.classList.add('lm-wide');
+
+    const body = document.createElement('div');
+    body.className = 'dialog-body lm-body';
+
+    const tabStrip = document.createElement('div');
+    tabStrip.className = 'lm-tabs';
+    tabStrip.setAttribute('role', 'tablist');
+    body.appendChild(tabStrip);
+
+    const panels = document.createElement('div');
+    panels.className = 'lm-panels';
+    body.appendChild(panels);
+    dialog.panel.appendChild(body);
+
+    const footer = document.createElement('div');
+    footer.className = 'picker-footer';
+    const count = document.createElement('span');
+    count.className = 'picker-count';
+    const spacer = document.createElement('span');
+    spacer.style.flex = '1';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'picker-btn primary';
+    closeBtn.textContent = 'Close';
+    closeBtn.addEventListener('click', dialog.close);
+    footer.appendChild(count);
+    footer.appendChild(spacer);
+    footer.appendChild(closeBtn);
+    dialog.panel.appendChild(footer);
+
+    const cleanupFns = [];
+    function registerCleanup(fn) { cleanupFns.push(fn); }
+    new MutationObserver((mutations, observer) => {
+      if (dialog.overlay.isConnected) return;
+      for (const fn of cleanupFns) { try { fn(); } catch (_) { /* best-effort */ } }
+      observer.disconnect();
+    }).observe(document.body, { childList: true });
+
+    const floatingMenu = createLibraryFloatingMenu(dialog);
+    // The floating menu's own outside-click listener only notices the dialog
+    // is gone on the NEXT click anywhere on the page — closing the dialog via
+    // Escape, the X button, or a card action that calls outerDialog.close()
+    // does not dispatch one, so without this the menu is left orphaned on
+    // screen until some unrelated later click happens to clean it up.
+    registerCleanup(() => floatingMenu.close());
+
+    // Codex audit LIB-01, 2026-08-30: each panel now carries the id/role/
+    // aria-labelledby half of the tab<->tabpanel relationship the tab strip
+    // below points at via aria-controls — previously only the tab buttons
+    // declared role="tab" and nothing on the panel side backed that up.
+    function makePanel(id) {
+      const panel = document.createElement('div');
+      panel.className = 'lm-content-body';
+      panel.id = 'lm-panel-' + id;
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', 'lm-tab-' + id);
+      panels.appendChild(panel);
+      return panel;
+    }
+    const templatesPanel = makePanel('templates');
+    const treatmentsPanel = makePanel('treatments');
+    const projectsPanel = makePanel('projects');
+
+    const templatesTab = buildTemplatesTab(templatesPanel, dialog, floatingMenu, (text) => { count.textContent = text; }, registerCleanup);
+    const treatmentsTab = buildTreatmentsTab(treatmentsPanel, dialog, floatingMenu, (text) => { count.textContent = text; }, registerCleanup);
+    // Codex audit LIB-04, 2026-08-30: Templates/Treatments both drive this
+    // shared footer as their one status readout; the Projects tab used to
+    // blank it instead of following the same mental model. onStatus mirrors
+    // the pane's own near-filter summary into it whenever that summary
+    // changes (including the interim "Loading…"), and currentStatus() lets
+    // `activate` restore whatever it last said WITHOUT forcing a re-fetch —
+    // ensureLoaded() below is a no-op after the first activation, so without
+    // this a second visit to Projects would leave the footer showing
+    // whichever tab was open just before it.
+    const projectsPane = buildProjectLibraryPane(projectsPanel, {
+      onOpened: dialog.close,
+      onStatus: (text) => { count.textContent = text; },
+    });
+
+    const TABS = [
+      { id: 'templates', label: 'Templates', panel: templatesPanel, activate: templatesTab.activate },
+      { id: 'treatments', label: 'Treatments', panel: treatmentsPanel, activate: treatmentsTab.activate },
+      { id: 'projects', label: 'Projects', panel: projectsPanel, activate: () => {
+        count.textContent = projectsPane.currentStatus();
+        projectsPane.ensureLoaded();
+      } },
+    ];
+
+    let activeTabId = (opts && TABS.some(t => t.id === opts.initialTab)) ? opts.initialTab : 'templates';
+
+    // Codex audit LIB-01, 2026-08-30: a full tab pattern needs id/aria-
+    // controls on each tab (not just aria-selected) and a roving tabindex —
+    // only the active tab is a Tab stop; the rest are reachable by arrow key
+    // only. buildDialog()'s own focus trap already filters its focusable set
+    // through :not([tabindex="-1"]), so this alone is what makes Tab jump
+    // over the inactive tabs and into panel content instead of visiting each
+    // one — no change needed there.
+    function renderTabStrip() {
+      tabStrip.innerHTML = TABS.map(t => {
+        const active = t.id === activeTabId;
+        return '<button type="button" role="tab" id="lm-tab-' + t.id + '" '
+          + 'class="lm-tab-btn' + (active ? ' lm-tab-active' : '') + '" '
+          + 'data-tab="' + t.id + '" aria-selected="' + active + '" '
+          + 'aria-controls="lm-panel-' + t.id + '" tabindex="' + (active ? '0' : '-1') + '">'
+          + escapeHtml(t.label) + '</button>';
+      }).join('');
+    }
+
+    function showTab(id) {
+      const tab = TABS.find(t => t.id === id);
+      if (!tab) return;
+      floatingMenu.close();
+      activeTabId = id;
+      renderTabStrip();
+      for (const t of TABS) t.panel.hidden = t.id !== id;
+      tab.activate();
+    }
+
+    // Deliberately does NOT move focus — each tab's own activate() ends by
+    // focusing that tab's search input (a TD who clicks a tab expects to be
+    // able to start typing immediately), and a click already left native
+    // focus on the button the TD clicked. Only the keyboard path below
+    // needs to explicitly land focus back on a tab button, because arrow-
+    // key tablist navigation is expected to keep focus IN the tablist.
+    tabStrip.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-tab]');
+      if (!btn) return;
+      showTab(btn.dataset.tab);
+    });
+
+    tabStrip.addEventListener('keydown', (event) => {
+      const key = event.key;
+      if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Home' && key !== 'End') return;
+      if (!event.target.closest('[data-tab]')) return;
+      // Not strictly needed for correctness (onKeyDown in
+      // keyboard-shortcuts.js already bails out whenever any .picker-overlay
+      // is open, before it would reach the arrow-nudge-selected-line logic),
+      // but stopping propagation here is cheap and keeps this tablist's
+      // arrow keys from ever being read by anything else on the page.
+      event.preventDefault();
+      event.stopPropagation();
+      const idx = TABS.findIndex(t => t.id === activeTabId);
+      let nextIdx = idx;
+      if (key === 'ArrowRight') nextIdx = (idx + 1) % TABS.length;
+      else if (key === 'ArrowLeft') nextIdx = (idx - 1 + TABS.length) % TABS.length;
+      else if (key === 'Home') nextIdx = 0;
+      else if (key === 'End') nextIdx = TABS.length - 1;
+      const nextId = TABS[nextIdx].id;
+      showTab(nextId);
+      const nextBtn = tabStrip.querySelector('[data-tab="' + nextId + '"]');
+      if (nextBtn) nextBtn.focus();
+    });
+
+    dialog.open();
+    showTab(activeTabId);
   }
 
   // ---- src/ui/dialogs/grading-rules-model.js ----
@@ -15507,8 +16494,6 @@ const BOM_MATERIAL_LIBRARY = [
     appCommand({ id: 'board.image.import', label: 'Import PowerPoint…', category: 'Board · Image',
       page: 'board', mode: 'manual', keywords: 'ppt pptx', shortcut: { key: 'i' },
       target: '#importPptxBtn', action: () => appCommandClick('#importPptxBtn') }),
-    appCommand({ id: 'board.library.open', label: 'Open Project Library…', category: 'Board · Project',
-      page: 'board', mode: 'manual', target: '#libraryBtn', action: () => appCommandClick('#libraryBtn') }),
     appCommand({ id: 'board.select.all', label: 'Select All on Board', category: 'Board · Edit',
       page: 'board', keywords: 'photos lines', shortcut: { key: 'a', meta: true },
       action: () => selectAllOnBoard() }),
@@ -15594,29 +16579,37 @@ const BOM_MATERIAL_LIBRARY = [
     })),
     appCommand({ id: 'board.focus.brush-size', label: 'Focus Eraser Brush Size', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#brushSizeInput', action: () => document.getElementById('brushSizeInput').focus() }),
-    // US-096 / ADR 0055: the preset library. Open + Save are the two actions
-    // worth a palette entry; applying a specific preset is a click in the menu,
-    // and registering one command per user-created preset would flood the
-    // palette with rows that change under the TD's feet.
-    appCommand({ id: 'board.presets.open', label: 'Open Line Library', category: 'Board · Style',
-      page: 'board', mode: 'manual', target: '#stitchesBtn',
-      action: () => openLinePresetMenu() }),
+    // US-096 / ADR 0055: saving a Treatment from the current selection is
+    // worth a palette entry; picking a specific saved one is a card click in
+    // the Library dialog, and registering one command per user-created entry
+    // would flood the palette with rows that change under the TD's feet.
     appCommand({ id: 'board.presets.save', label: 'Save Selected Line as Treatment', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#linePresetSaveBtn',
       action: () => saveCurrentLookAsPreset() }),
-    // US-097 / ADR 0056: the saved-shape library. Same reasoning as the presets
-    // above — Save is worth a palette entry, and picking a specific shape is a
-    // click in the Tools menu rather than one command per user-created stamp.
+    // US-097 / ADR 0056: the saved-shape library. Same reasoning as the
+    // Treatment above — Save is worth a palette entry, and picking a specific
+    // Template is a card click in the Library dialog rather than one command
+    // per user-created stamp.
     appCommand({ id: 'board.shapes.save', label: 'Save Selection as Template', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#shapeStampSaveBtn',
       when: () => (typeof canSaveShapeStampReason === 'function' ? canSaveShapeStampReason() : true),
       action: () => saveSelectedLineAsShape() }),
-    appCommand({ id: 'board.shapes.open', label: 'Open Templates', category: 'Board · Style',
-      page: 'board', mode: 'manual', target: '#toolsMenuBtn',
-      action: () => {
-        const record = boardToolbarMenuRecords().find(r => r.list && r.list.id === 'toolsMenuList');
-        if (record) openBoardToolbarMenu(record);
-      } }),
+    // US-104: DXF import is Sketch-Focus-only — no `mode`/`page` gate exists
+    // for that, so `when` carries it, matching the disabled-reason
+    // convention every other conditionally-available command already uses.
+    appCommand({ id: 'board.template.import-dxf', label: 'Open DXF file', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#dxfImportBtn',
+      when: () => state.sketchMode ? true : 'Available in Sketch Focus',
+      action: () => appCommandClick('#dxfImportBtn') }),
+    // US-107: the unified Library dialog replaces board.presets.open,
+    // board.shapes.open, and the old Template-only board.template.open-library
+    // with ONE command — Templates, Line Treatments, and saved Projects are
+    // now one searchable gallery behind one toolbar button, so there is one
+    // "open the library" palette entry, not three. Not sketch-mode-gated: the
+    // Projects tab is exactly as useful in POM Focus as in Sketch Focus.
+    appCommand({ id: 'board.library.open', label: 'Library: Open…', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#libraryBtn',
+      action: () => appCommandClick('#libraryBtn') }),
     appCommand({ id: 'board.smart-align.toggle', label: 'Toggle Smart Align', category: 'Board · Edit',
       page: 'board', mode: 'manual', target: '#smartAlignToggleBtn',
       action: () => toggleSmartAlign() }),
@@ -15948,10 +16941,6 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   function openBoardToolbarMenu(record) {
-    // US-097: the Tools menu carries the saved-shape library, whose rows are
-    // stored data rather than markup, so they are rendered each time it opens.
-    if (record.list && record.list.id === 'toolsMenuList'
-      && typeof renderShapeStampList === 'function') renderShapeStampList();
     closeLineStyleMenu();
     closeBoardToolbarMenus(record.list, false);
     record.list.hidden = false;
@@ -16511,56 +17500,6 @@ const BOM_MATERIAL_LIBRARY = [
       : base + '. A measurement line.';
   }
 
-  function renderLinePresetList() {
-    if (!el.linePresetList) return;
-    // Only offered while an opened project actually holds presets this browser
-    // lacks — otherwise it is a row that does nothing.
-    if (el.linePresetImportProjectBtn) {
-      const pending = getPendingProjectLinePresets().length;
-      el.linePresetImportProjectBtn.hidden = pending === 0;
-      el.linePresetImportProjectBtn.textContent = pending
-        ? `Import ${pending} preset${pending > 1 ? 's' : ''} from project`
-        : 'Import from project';
-    }
-    const presets = getLinePresets();
-    const swatch = (color) => LINE_COLORS[color] || LINE_COLOR;
-    const rowHtml = (preset) => {
-      const kind = preset.kind === 'treatment' ? 'treatment' : 'look';
-      const siblings = presets.filter(item => (item.kind === 'treatment' ? 'treatment' : 'look') === kind);
-      const index = siblings.findIndex(item => item.id === preset.id);
-      const first = index === 0 ? ' disabled' : '';
-      const last = index === siblings.length - 1 ? ' disabled' : '';
-      return '<div class="preset-row" data-preset-id="' + escapeHtml(preset.id) + '">'
-        + '<button type="button" role="menuitem" class="preset-apply" data-preset-action="apply"'
-        + ' style="color:' + escapeHtml(swatch(preset.color)) + '"'
-        + ' title="' + escapeHtml(linePresetRowTitle(preset)) + '">'
-        + lineTreatmentPreviewSvg(preset)
-        + '<span>' + escapeHtml(preset.name) + '</span>'
-        + '</button>'
-        + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="up" aria-label="Move up" title="Move up"' + first + '>&#9650;</button>'
-        + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="down" aria-label="Move down" title="Move down"' + last + '>&#9660;</button>'
-        + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="rename" aria-label="Rename" title="Rename">&#9998;</button>'
-        + (preset.kind === 'treatment' ? '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="edit" aria-label="Edit treatment" title="Edit layers">&#9881;</button>' : '')
-        + '<button type="button" role="menuitem" class="preset-ctl" data-preset-action="delete" aria-label="Delete" title="Delete">&times;</button>'
-        + '</div>';
-    };
-    const treatments = presets.filter(preset => preset.kind === 'treatment');
-    const looks = presets.filter(preset => preset.kind !== 'treatment');
-    el.linePresetList.innerHTML = (treatments.length
-      ? '<div class="preset-subgroup">Construction treatments</div>' + treatments.map(rowHtml).join('') : '')
-      + (looks.length
-        ? '<div class="preset-subgroup">Saved line looks</div>' + looks.map(rowHtml).join('') : '');
-  }
-
-  // The library has no dropdown of its own: it lives in the Stitches menu, whose
-  // openLineStyleMenu calls this. US-082 caps how many units may sit on the
-  // primary Board surface, and a preset IS a line look — the same thing the five
-  // built-in rows above it are — so a second trigger would have spent a slot to
-  // split one idea across two menus.
-  function openLinePresetMenu() {
-    openLineStyleMenu();
-  }
-
   // Every library action ends in exactly one toast, worded for that action and
   // truthful about whether it will survive a reload. saveLinePresets is silent
   // precisely so this is the only message the TD sees.
@@ -16632,7 +17571,6 @@ const BOM_MATERIAL_LIBRARY = [
       onConfirm: (name) => {
         const preset = addLinePreset(name);
         if (!preset) { showToast('Could not save that preset.'); return; }
-        renderLinePresetList();
         linePresetToast(`Saved "${preset.name}" to the line presets.`);
       },
     });
@@ -16801,7 +17739,6 @@ const BOM_MATERIAL_LIBRARY = [
       recipe, confirmLabel: 'Save treatment',
       onConfirm: next => {
         const saved = addLineTreatment(next.name, next);
-        renderLinePresetList();
         linePresetToast(saved ? `Saved "${saved.name}" to Line Treatments.` : 'Could not save that Treatment.');
       },
     });
@@ -16820,90 +17757,19 @@ const BOM_MATERIAL_LIBRARY = [
     });
   }
 
-  function onLinePresetListClick(event) {
-    const button = event.target.closest('[data-preset-action]');
-    if (!button || button.disabled) return;
-    const row = button.closest('[data-preset-id]');
-    if (!row) return;
-    event.stopPropagation();
-    const id = row.dataset.presetId;
-    const action = button.dataset.presetAction;
-    const preset = getLinePresetById(id);
-    if (!preset) return;
-
-    if (action === 'apply') {
-      applyLinePreset(id);
-      closeLineStyleMenu();
-      return;
-    }
-    if (action === 'up' || action === 'down') {
-      moveLinePresetWithinKind(id, action === 'up' ? -1 : 1);
-      renderLinePresetList();
-      refocusLibraryRowControl('linePresetList', id, { kind: 'preset', name: action });
-      return;
-    }
-    if (action === 'rename') {
-      openLinePresetNameDialog({
-        title: 'Rename preset',
-        sub: preset.name,
-        value: preset.name,
-        confirmLabel: 'Rename',
-        onConfirm: (name) => {
-          renameLinePreset(id, name);
-          renderLinePresetList();
-          refocusLibraryRowControl('linePresetList', id, { kind: 'preset', name: 'rename' });
-        },
-      });
-      return;
-    }
-    if (action === 'edit' && preset.treatment) {
-      closeLineStyleMenu();
-      openLineTreatmentEditor({
-        title: 'Update Library Treatment', name: preset.name, recipe: preset.treatment,
-        confirmLabel: 'Update treatment',
-        onConfirm: next => {
-          updateLineTreatment(id, next, next.name);
-          renderLinePresetList();
-          linePresetToast(`Updated "${next.name}". Existing drawings were not changed.`);
-        },
-      });
-      return;
-    }
-    if (action === 'delete') {
-      const order = getLinePresets().map(p => p.id);
-      const index = order.indexOf(id);
-      deleteLinePreset(id);
-      renderLinePresetList();
-      const after = getLinePresets();
-      const neighbour = after[Math.min(index, after.length - 1)];
-      if (neighbour) refocusLibraryRowControl('linePresetList', neighbour.id, { kind: 'preset', name: 'delete' });
-      linePresetToast(`Deleted "${preset.name}".`);
-    }
-  }
-
-  function onLinePresetImportFile(event) {
-    const file = event.target.files && event.target.files[0];
-    event.target.value = '';
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const added = importLinePresetsFromJson(String(reader.result || ''));
-      renderLinePresetList();
-      if (!added) { showToast('That file held no line presets.'); return; }
-      linePresetToast(`Imported ${added} preset${added > 1 ? 's' : ''}.`);
-    };
-    reader.onerror = () => showToast('Could not read that file.');
-    reader.readAsText(file);
-  }
-
+  // US-107: browsing/picking/managing a saved preset moved to the unified
+  // Library dialog (src/ui/dialogs/library-manager-dialog.js). What stays
+  // here reads the board's LIVE selection (Save as new treatment…, Customize
+  // selected…) — a board-context action, not a library-browsing one — so it
+  // belongs in the Stitches menu the TD is already looking at.
   function bindLinePresetPanel() {
-    if (!el.linePresetList) return;
-    el.linePresetList.addEventListener('click', onLinePresetListClick);
-    el.linePresetSaveBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      closeLineStyleMenu();
-      saveSelectedTreatmentToLibrary();
-    });
+    if (el.linePresetSaveBtn) {
+      el.linePresetSaveBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        closeLineStyleMenu();
+        saveSelectedTreatmentToLibrary();
+      });
+    }
     if (el.lineTreatmentCustomizeBtn) {
       el.lineTreatmentCustomizeBtn.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -16911,32 +17777,6 @@ const BOM_MATERIAL_LIBRARY = [
         customizeSelectedTreatment();
       });
     }
-    el.linePresetExportBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      exportLinePresetsFile();
-      closeLineStyleMenu();
-    });
-    el.linePresetImportBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      el.linePresetFileInput.click();
-    });
-    el.linePresetFileInput.addEventListener('change', onLinePresetImportFile);
-    if (el.linePresetImportProjectBtn) {
-      el.linePresetImportProjectBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        const added = importPendingProjectLinePresets();
-        el.linePresetImportProjectBtn.hidden = true;
-        renderLinePresetList();
-        if (!added) { showToast('Nothing to import.'); return; }
-        linePresetToast(`Imported ${added} preset${added > 1 ? 's' : ''} from the project.`);
-      });
-    }
-    el.linePresetResetBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      resetLinePresetsToBuiltins();
-      renderLinePresetList();
-      linePresetToast('Line Treatments reset to the built-in set.');
-    });
     // Dismissal is the Stitches menu's: the document click handler and Escape
     // in bindings.js / keyboard-shortcuts.js already own it, and every control
     // here stops propagation so operating the library does not close the menu
@@ -16944,94 +17784,18 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   // ---- src/ui/shape-stamp-panel.js ----
-// US-097 + US-098 / ADR 0059: the Template section of the Tools menu.
+// US-097 + US-098 / ADR 0059: the Template quick action in the Tools menu.
 //
-// Presentation only, mirroring src/ui/line-preset-panel.js exactly: every
-// mutation goes through src/manual/shape-stamps.js, which owns the model, the
-// storage and the placement semantics.
+// US-107: this used to also render #shapeStampList (a quick-pick browse list)
+// and own Export/Import Templates JSON here — all of that moved into the
+// unified Library dialog (src/ui/dialogs/library-manager-dialog.js), which is
+// now the ONLY place a TD browses, picks, or manages saved Templates. What
+// stays here is "Save selection as Template…" specifically BECAUSE it reads
+// the board's live selection — a board-context action, not a library-browsing
+// one — so it belongs in the toolbar the TD is already looking at, not buried
+// behind a modal. Every mutation still goes through src/manual/shape-stamps.js,
+// which owns the model, the storage and the placement semantics.
 // Source part for app.js. Run `npm run build` after editing.
-
-  // The preview is the stamp's OWN geometry, sampled into an SVG path and
-  // fitted to the swatch — not a generic curve icon. Two saved cup curves that
-  // differ only in their bow have to be distinguishable in the list, which is
-  // the whole reason a TD saved both.
-  function shapeStampPreviewSvg(stamp) {
-    const w = 36, h = 14, pad = 2;
-    const at = (p) => ({
-      x: pad + (p.x * (w - pad * 2)),
-      y: pad + (p.y * (h - pad * 2)),
-    });
-    const members = Array.isArray(stamp.members) && stamp.members.length ? stamp.members : [stamp];
-    const paths = members.map(member => {
-      const s0 = at(member.start);
-      let d = 'M' + s0.x.toFixed(2) + ' ' + s0.y.toFixed(2);
-      if (member.type === 'curved' && member.control1 && member.control2) {
-        let c1 = at(member.control1);
-        for (const pt of member.points) {
-        const hIn = at(pt.handleIn);
-        const p = at(pt.point);
-        d += ' C' + c1.x.toFixed(2) + ' ' + c1.y.toFixed(2)
-          + ',' + hIn.x.toFixed(2) + ' ' + hIn.y.toFixed(2)
-          + ',' + p.x.toFixed(2) + ' ' + p.y.toFixed(2);
-        c1 = at(pt.handleOut);
-      }
-      const c2 = at(member.control2);
-      const e = at(member.end);
-      d += ' C' + c1.x.toFixed(2) + ' ' + c1.y.toFixed(2)
-        + ',' + c2.x.toFixed(2) + ' ' + c2.y.toFixed(2)
-        + ',' + e.x.toFixed(2) + ' ' + e.y.toFixed(2);
-    } else {
-      const e = at(member.end);
-      d += ' L' + e.x.toFixed(2) + ' ' + e.y.toFixed(2);
-    }
-      const color = LINE_COLORS[member.color] || LINE_COLOR;
-      return '<path d="' + d + '" stroke="' + color + '"/>';
-    }).join('');
-    return '<svg class="style-preview" viewBox="0 0 ' + w + ' ' + h + '" fill="none" '
-      + 'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" '
-      + 'stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
-  }
-
-  function shapeStampRowTitle(stamp) {
-    const shape = stamp.type === 'curved'
-      ? `curve, ${stamp.points.length + 1} segment${stamp.points.length ? 's' : ''}`
-      : 'straight';
-    const ratio = stamp.aspect > 0
-      ? `${stamp.aspect.toFixed(2)}:1 tall (Shift while dragging locks it)`
-      : 'no fixed proportion';
-    const count = Array.isArray(stamp.members) ? stamp.members.length : 1;
-    return `${stamp.name} — ${count} editable path${count === 1 ? '' : 's'}, ${shape}, ${ratio}. Places a grouped Sketch Element, never an automatic POM.`;
-  }
-
-  function renderShapeStampList() {
-    if (!el.shapeStampList) return;
-    if (el.shapeStampImportProjectBtn) {
-      const pending = getPendingProjectShapeStamps().length;
-      el.shapeStampImportProjectBtn.hidden = pending === 0;
-      el.shapeStampImportProjectBtn.textContent = pending
-        ? `Import ${pending} shape${pending > 1 ? 's' : ''} from project`
-        : 'Import from project';
-    }
-    const stamps = getShapeStamps();
-    const swatch = (color) => LINE_COLORS[color] || LINE_COLOR;
-    el.shapeStampList.innerHTML = stamps.map((stamp, index) => {
-      const first = index === 0 ? ' disabled' : '';
-      const last = index === stamps.length - 1 ? ' disabled' : '';
-      const active = state.activeStampId === stamp.id ? ' active' : '';
-      return '<div class="preset-row" data-stamp-id="' + escapeHtml(stamp.id) + '">'
-        + '<button type="button" role="menuitem" class="preset-apply' + active + '" data-stamp-action="use"'
-        + ' style="color:' + escapeHtml(swatch(stamp.color)) + '"'
-        + ' title="' + escapeHtml(shapeStampRowTitle(stamp)) + '">'
-        + shapeStampPreviewSvg(stamp)
-        + '<span>' + escapeHtml(stamp.name) + '</span>'
-        + '</button>'
-        + '<button type="button" role="menuitem" class="preset-ctl" data-stamp-action="up" aria-label="Move up" title="Move up"' + first + '>&#9650;</button>'
-        + '<button type="button" role="menuitem" class="preset-ctl" data-stamp-action="down" aria-label="Move down" title="Move down"' + last + '>&#9660;</button>'
-        + '<button type="button" role="menuitem" class="preset-ctl" data-stamp-action="rename" aria-label="Rename" title="Rename">&#9998;</button>'
-        + '<button type="button" role="menuitem" class="preset-ctl" data-stamp-action="delete" aria-label="Delete" title="Delete">&times;</button>'
-        + '</div>';
-    }).join('');
-  }
 
   // One truthful toast per action, worded for that action — the US-096 lesson:
   // showToast queues rather than replaces, so a message fired from inside the
@@ -17055,113 +17819,51 @@ const BOM_MATERIAL_LIBRARY = [
       onConfirm: (name) => {
         const stamp = addShapeStampFromSelection(name);
         if (!stamp) { showToast('Could not save that Template.'); return; }
-        renderShapeStampList();
-        shapeStampToast(`Saved "${stamp.name}" — pick it from Templates to place it.`);
+        shapeStampToast(`Saved "${stamp.name}" — open the Library to place it.`);
       },
     });
   }
 
-  function onShapeStampListClick(event) {
-    const button = event.target.closest('[data-stamp-action]');
-    if (!button || button.disabled) return;
-    const row = button.closest('[data-stamp-id]');
-    if (!row) return;
-    event.stopPropagation();
-    const id = row.dataset.stampId;
-    const action = button.dataset.stampAction;
-    const stamp = getShapeStampById(id);
-    if (!stamp) return;
-
-    if (action === 'use') {
-      // Order matters: setTool('stamp') would disarm anything already chosen,
-      // so arm AFTER switching.
-      setTool('stamp');
-      setActiveShapeStamp(id);
-      closeBoardToolbarMenus(null, false);
-      updateUI();
-      showToast(`Drag to place Template "${stamp.name}". Shift keeps its proportions.`);
-      return;
-    }
-    if (action === 'up' || action === 'down') {
-      moveShapeStamp(id, action === 'up' ? -1 : 1);
-      renderShapeStampList();
-      // The re-render replaced the button that was just pressed; put focus
-      // back on it, or arrow-key menu navigation dies and a repeated reorder
-      // needs the mouse.
-      refocusLibraryRowControl('shapeStampList', id, { kind: 'stamp', name: action });
-      return;
-    }
-    if (action === 'rename') {
-      openLinePresetNameDialog({
-        title: 'Rename Template',
-        sub: stamp.name,
-        value: stamp.name,
-        confirmLabel: 'Rename',
-        onConfirm: (name) => {
-          renameShapeStamp(id, name);
-          renderShapeStampList();
-          refocusLibraryRowControl('shapeStampList', id, { kind: 'stamp', name: 'rename' });
-        },
-      });
-      return;
-    }
-    if (action === 'delete') {
-      // The deleted row is gone, so there is nothing to refocus INSIDE it —
-      // move to the same control on whichever row took its place, or the one
-      // before it. Without this, focus falls to <body> and arrow navigation of
-      // the whole menu dies, the same failure the reorder fix names.
-      const order = getShapeStamps().map(s => s.id);
-      const index = order.indexOf(id);
-      deleteShapeStamp(id);
-      renderShapeStampList();
-      const after = getShapeStamps();
-      const neighbour = after[Math.min(index, after.length - 1)];
-      if (neighbour) refocusLibraryRowControl('shapeStampList', neighbour.id, { kind: 'stamp', name: 'delete' });
-      shapeStampToast(`Deleted Template "${stamp.name}".`);
-    }
-  }
-
-  function onShapeStampImportFile(event) {
-    const file = event.target.files && event.target.files[0];
-    event.target.value = '';
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const added = importShapeStampsFromJson(String(reader.result || ''));
-      renderShapeStampList();
-      if (!added) { showToast('That file held no Templates.'); return; }
-      shapeStampToast(`Imported ${added} Template${added > 1 ? 's' : ''}.`);
-    };
-    reader.onerror = () => showToast('Could not read that file.');
-    reader.readAsText(file);
-  }
-
   function bindShapeStampPanel() {
-    if (!el.shapeStampList) return;
-    el.shapeStampList.addEventListener('click', onShapeStampListClick);
+    if (!el.shapeStampSaveBtn) return;
     el.shapeStampSaveBtn.addEventListener('click', (event) => {
       event.stopPropagation();
       closeBoardToolbarMenus(null, false);
       saveSelectedLineAsShape();
     });
-    el.shapeStampExportBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      exportShapeStampsFile();
+  }
+
+  // ---- src/ui/dxf-import-panel.js ----
+// US-104: the "Open DXF file" action in the Tools menu.
+//
+// Presentation only, mirroring src/ui/shape-stamp-panel.js's split: the
+// model (parsing, geometry, the board mutation) lives in
+// src/manual/dxf-import.js. This file is just the hidden file input, the
+// FileReader glue, and closing the Tools menu after picking a file.
+// Source part for app.js. Run `npm run build` after editing.
+
+  function onDxfImportFile(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      // Unlike Template JSON import, a successful result lands on the board,
+      // not inside this menu — close it so the TD sees the placed pieces.
       closeBoardToolbarMenus(null, false);
-    });
-    el.shapeStampImportBtn.addEventListener('click', (event) => {
+      importDxfText(String(reader.result || ''));
+    };
+    reader.onerror = () => showToast('Could not read that file.');
+    reader.readAsText(file);
+  }
+
+  function bindDxfImportPanel() {
+    if (!el.dxfImportBtn || !el.dxfImportFileInput) return;
+    el.dxfImportBtn.addEventListener('click', (event) => {
       event.stopPropagation();
-      el.shapeStampFileInput.click();
+      el.dxfImportFileInput.click();
     });
-    el.shapeStampFileInput.addEventListener('change', onShapeStampImportFile);
-    el.shapeStampImportProjectBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      const added = importPendingProjectShapeStamps();
-      el.shapeStampImportProjectBtn.hidden = true;
-      renderShapeStampList();
-      if (!added) { showToast('Nothing to import.'); return; }
-      shapeStampToast(`Imported ${added} shape${added > 1 ? 's' : ''} from the project.`);
-    });
+    el.dxfImportFileInput.addEventListener('change', onDxfImportFile);
   }
 
   // ---- src/ui/bindings.js ----
@@ -17194,6 +17896,7 @@ const BOM_MATERIAL_LIBRARY = [
     // US-096: the preset dropdown owns its own rows and handlers.
     bindLinePresetPanel();
     bindShapeStampPanel();
+    bindDxfImportPanel();
     el.styleOptionBtns.forEach((button) => {
       button.addEventListener('click', () => {
         setLineStyle(button.dataset.style);
@@ -17369,7 +18072,10 @@ const BOM_MATERIAL_LIBRARY = [
     el.openProjectBtn.addEventListener('click', () => el.projectFileInput.click());
     el.projectFileInput.addEventListener('change', onProjectFileChosen);
     if (el.libraryBtn) {
-      el.libraryBtn.addEventListener('click', openLibraryDialog);
+      el.libraryBtn.addEventListener('click', () => {
+        closeBoardToolbarMenus(null, false);
+        openLibraryManagerDialog();
+      });
     }
 
     el.labelEditor.addEventListener('keydown', onLabelEditorKeyDown);
@@ -17484,9 +18190,6 @@ const BOM_MATERIAL_LIBRARY = [
 
   function openLineStyleMenu() {
     if (el.stitchesBtn.disabled) return;
-    // US-096: the preset rows are stored data, so they are rendered each time
-    // the menu opens rather than written into index.html.
-    renderLinePresetList();
     el.stitchesMenu.hidden = false;
     el.stitchesBtn.setAttribute('aria-expanded', 'true');
   }
@@ -23139,39 +23842,22 @@ function onWheel(e) {
     return true;
   }
 
-  // Move one preset up (-1) or down (+1). Clamped rather than wrapping: a TD
-  // holding the button expects the row to stop at the end, not jump to the
-  // other one.
-  function moveLinePreset(id, delta) {
-    const list = libraryMoveEntry(getLinePresets(), id, delta);
-    if (!list) return false;
-    commitLinePresets(list);
-    return true;
-  }
-
-  // The menu presents Treatments and saved Looks as separate subgroups. Move
-  // within that visible subgroup so an enabled arrow always produces a visible
-  // result instead of silently crossing the subgroup boundary.
-  function moveLinePresetWithinKind(id, delta) {
-    const list = getLinePresets();
-    const index = list.findIndex(preset => preset.id === id);
-    if (index < 0) return false;
-    const kind = list[index].kind === 'treatment' ? 'treatment' : 'look';
-    const siblingIndices = list
-      .map((preset, presetIndex) => ({ preset, presetIndex }))
-      .filter(entry => (entry.preset.kind === 'treatment' ? 'treatment' : 'look') === kind)
-      .map(entry => entry.presetIndex);
-    const position = siblingIndices.indexOf(index);
-    const targetPosition = clamp(position + Math.sign(Number(delta) || 0), 0, siblingIndices.length - 1);
-    if (targetPosition === position) return false;
-    const targetIndex = siblingIndices[targetPosition];
-    [list[index], list[targetIndex]] = [list[targetIndex], list[index]];
-    commitLinePresets(list);
-    return true;
-  }
-
   function resetLinePresetsToBuiltins() {
     commitLinePresets(builtinLinePresets());
+  }
+
+  // US-107: Library Manager parity with duplicateShapeStamp — a duplicate of
+  // a builtin becomes an ordinary custom entry, not a second canonical builtin.
+  function duplicateLinePreset(id) {
+    const list = getLinePresets();
+    const index = list.findIndex(preset => preset.id === id);
+    if (index === -1) return null;
+    const source = list[index];
+    const copy = { ...clone(source), id: libraryEntryId('lp'), name: (source.name + ' copy').slice(0, 60), builtin: false };
+    const next = list.slice();
+    next.splice(index + 1, 0, copy);
+    commitLinePresets(next);
+    return copy;
   }
 
   // ---- Applying ------------------------------------------------------------
@@ -23225,6 +23911,18 @@ function onWheel(e) {
   function exportLinePresetsFile() {
     const blob = new Blob([JSON.stringify(linePresetsEnvelope(), null, 2)], { type: 'application/json' });
     downloadBlob(blob, 'line-presets.json');
+  }
+
+  // Single-entry export (Library Manager card action) — same envelope shape
+  // as the whole-library export, so importLinePresetsFromJson reads either
+  // one back without a special case.
+  function exportOneLinePreset(id) {
+    const preset = getLinePresetById(id);
+    if (!preset) return false;
+    const envelope = { format: 'bra-line-presets', version: linePresetsFormatVersion(), presets: [preset] };
+    const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
+    downloadBlob(blob, (preset.name || 'treatment').replace(/[^A-Za-z0-9._-]+/g, '-') + '.json');
+    return true;
   }
 
   // Import is additive by id: a preset whose id already exists is replaced, a
@@ -23305,7 +24003,79 @@ function onWheel(e) {
   // Functions, not module-scope consts: the parts share one scope and a const
   // read during load would throw a TDZ ReferenceError.
   function shapeStampsStorageKey() { return 'bra-shape-stamps-v1'; }
-  function shapeStampsFormatVersion() { return 2; }
+  // US-106: v3 adds category/tags/notes/favorite/timestamps/usage/
+  // sourceStyleId/savedSize. Purely additive — a v2 payload still parses
+  // (normalizeShapeStamp fills every new field with its v2-safe default) and
+  // is not rewritten until the TD next saves/edits something, so bumping this
+  // costs nothing for an existing library and is not itself a migration.
+  function shapeStampsFormatVersion() { return 3; }
+
+  // ---- Library taxonomy (US-106) ---------------------------------------------
+  //
+  // A FIXED, versioned list — not free text — because the category rail and
+  // the starter pack both need stable buckets to filter/group by. The
+  // free-form axis is `tags`. Order here is the order the Library Manager's
+  // rail shows them in.
+  function libraryCategories() {
+    return [
+      { id: 'cup', label: 'Cup' },
+      { id: 'cradle-band', label: 'Cradle / Band' },
+      { id: 'wing-back', label: 'Wing / Back' },
+      { id: 'strap', label: 'Strap' },
+      { id: 'neckline', label: 'Neckline' },
+      { id: 'closure-hardware', label: 'Closure / Hardware' },
+      { id: 'seam-detail', label: 'Seam Detail' },
+      { id: 'embellishment', label: 'Embellishment' },
+      { id: 'other', label: 'Other' },
+    ];
+  }
+
+  function libraryCategoryLabel(id) {
+    const found = libraryCategories().find(c => c.id === id);
+    return found ? found.label : 'Other';
+  }
+
+  function normalizeStampCategory(raw) {
+    return libraryCategories().some(c => c.id === raw) ? raw : 'other';
+  }
+
+  // Lowercased, trimmed, deduped, capped — a tag is a quick filter facet, not
+  // a notes field (notes exists separately for prose).
+  function normalizeStampTags(raw) {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const t of raw) {
+      const tag = String(t == null ? '' : t).trim().toLowerCase().slice(0, 24);
+      if (!tag || seen.has(tag)) continue;
+      seen.add(tag);
+      out.push(tag);
+      if (out.length >= 12) break;
+    }
+    return out;
+  }
+
+  function normalizeStampNotes(raw) {
+    return String(raw == null ? '' : raw).trim().slice(0, 240);
+  }
+
+  function normalizeStampTimestamp(raw) {
+    return (typeof raw === 'string' && raw) ? raw : null;
+  }
+
+  function normalizeStampUsage(raw) {
+    const count = Number(raw && raw.count);
+    return {
+      count: Number.isFinite(count) && count > 0 ? Math.floor(count) : 0,
+      lastUsedAt: normalizeStampTimestamp(raw && raw.lastUsedAt),
+    };
+  }
+
+  function normalizeStampSize(raw) {
+    const width = Number(raw && raw.width), height = Number(raw && raw.height);
+    return (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0)
+      ? { width, height } : null;
+  }
 
   // Below this the drag is treated as a click and the stamp is placed at a
   // default size. Screen pixels, like BG_MIN_CREATE_SCREEN_PX.
@@ -23410,7 +24180,11 @@ function onWheel(e) {
     };
   }
 
-  function shapeStampFromAnnotations(annotations, name) {
+  // `options` (US-106, all optional): { category, tags, notes } — the
+  // Library Manager's "Edit details" action can also set these later via
+  // setShapeStampCategory/Tags/Notes, so the quick Save-Template flow can
+  // keep asking for a name only.
+  function shapeStampFromAnnotations(annotations, name, options) {
     const trimmed = String(name == null ? '' : name).trim();
     const anns = (Array.isArray(annotations) ? annotations : []).filter(ann => ann && ann.start && ann.end);
     if (!trimmed || !anns.length) return null;
@@ -23420,9 +24194,22 @@ function onWheel(e) {
     const members = anns.map(ann => shapeTemplateMemberFromAnnotation(ann, bounds)).filter(Boolean);
     if (!members.length) return null;
     const first = members[0];
+    const opts = options || {};
+    const now = new Date().toISOString();
     return {
       id: libraryEntryId('st'),
       name: trimmed.slice(0, 60),
+      category: normalizeStampCategory(opts.category),
+      tags: normalizeStampTags(opts.tags),
+      notes: normalizeStampNotes(opts.notes),
+      favorite: false,
+      createdAt: now,
+      updatedAt: now,
+      usage: { count: 0, lastUsedAt: null },
+      sourceStyleId: (typeof state !== 'undefined' && state.styleId) ? String(state.styleId).trim() || null : null,
+      // WORLD units at save time — see defaultStampBoxAt for how a bare click
+      // on the stamp tool prefers this over the generic size heuristic.
+      savedSize: { width: bounds.width, height: bounds.height },
       members,
       // Keep the first member mirrored at top level so v1 exports and the
       // existing one-path test/debug hooks remain readable during migration.
@@ -23491,6 +24278,17 @@ function onWheel(e) {
     return {
       id: String(raw.id || libraryEntryId('st')),
       name: name.slice(0, 60),
+      // US-106 v3 fields — every one has a safe v2 default, so reading an
+      // older payload never fails and never rewrites storage on its own.
+      category: normalizeStampCategory(raw.category),
+      tags: normalizeStampTags(raw.tags),
+      notes: normalizeStampNotes(raw.notes),
+      favorite: raw.favorite === true,
+      createdAt: normalizeStampTimestamp(raw.createdAt),
+      updatedAt: normalizeStampTimestamp(raw.updatedAt),
+      usage: normalizeStampUsage(raw.usage),
+      sourceStyleId: (typeof raw.sourceStyleId === 'string' && raw.sourceStyleId.trim()) ? raw.sourceStyleId.trim() : null,
+      savedSize: normalizeStampSize(raw.savedSize),
       members,
       aspect: (Number.isFinite(aspect) && aspect > 0) ? aspect : 0,
       ...clone(members[0]),
@@ -23563,21 +24361,88 @@ function onWheel(e) {
     return true;
   }
 
-  function addShapeStampFromSelection(name) {
+  function addShapeStampFromSelection(name, options) {
     const targets = shapeStampSaveTargets();
     if (!targets.length) return null;
-    const stamp = shapeStampFromAnnotations(targets, name);
+    const stamp = shapeStampFromAnnotations(targets, name, options);
     if (!stamp) return null;
     commitShapeStamps([...getShapeStamps(), stamp]);
     return stamp;
   }
 
+  // Every edit below stamps `updatedAt` and goes through the same
+  // commitShapeStamps write path — one place a TD's edit becomes durable (or
+  // visibly fails to), matching renameShapeStamp's existing shape.
+  function updateShapeStamp(id, patch) {
+    const list = getShapeStamps();
+    if (!list.some(stamp => stamp.id === id)) return false;
+    commitShapeStamps(list.map(stamp => (stamp.id === id
+      ? { ...stamp, ...patch, updatedAt: new Date().toISOString() } : stamp)));
+    return true;
+  }
+
   function renameShapeStamp(id, name) {
     const trimmed = String(name == null ? '' : name).trim();
     if (!trimmed) return false;
-    commitShapeStamps(getShapeStamps().map(stamp => (stamp.id === id
-      ? { ...stamp, name: trimmed.slice(0, 60) } : stamp)));
-    return true;
+    return updateShapeStamp(id, { name: trimmed.slice(0, 60) });
+  }
+
+  function setShapeStampCategory(id, category) {
+    return updateShapeStamp(id, { category: normalizeStampCategory(category) });
+  }
+
+  function setShapeStampTags(id, tags) {
+    return updateShapeStamp(id, { tags: normalizeStampTags(tags) });
+  }
+
+  function setShapeStampNotes(id, notes) {
+    return updateShapeStamp(id, { notes: normalizeStampNotes(notes) });
+  }
+
+  function setShapeStampFavorite(id, favorite) {
+    return updateShapeStamp(id, { favorite: !!favorite });
+  }
+
+  function toggleShapeStampFavorite(id) {
+    const stamp = getShapeStampById(id);
+    if (!stamp) return false;
+    return setShapeStampFavorite(id, !stamp.favorite);
+  }
+
+  // Placement (not the Library Manager dialog) is the only caller — bumping
+  // usage on every dialog open/preview would make "recently used" measure
+  // browsing instead of reuse.
+  function touchShapeStampUsage(id) {
+    const stamp = getShapeStampById(id);
+    if (!stamp) return;
+    commitShapeStamps(getShapeStamps().map(s => (s.id === id
+      ? { ...s, usage: { count: (s.usage && s.usage.count || 0) + 1, lastUsedAt: new Date().toISOString() } }
+      : s)));
+  }
+
+  // A independent copy, never sharing identity with the source — renaming or
+  // deleting one must never affect the other. Placed right after the source
+  // in list order (libraryMoveEntry-friendly) rather than appended, so a
+  // duplicate-then-tweak workflow keeps the two next to each other.
+  function duplicateShapeStamp(id) {
+    const list = getShapeStamps();
+    const index = list.findIndex(stamp => stamp.id === id);
+    if (index === -1) return null;
+    const source = list[index];
+    const now = new Date().toISOString();
+    const copy = {
+      ...clone(source),
+      id: libraryEntryId('st'),
+      name: (source.name + ' copy').slice(0, 60),
+      favorite: false,
+      createdAt: now,
+      updatedAt: now,
+      usage: { count: 0, lastUsedAt: null },
+    };
+    const next = list.slice();
+    next.splice(index + 1, 0, copy);
+    commitShapeStamps(next);
+    return copy;
   }
 
   function deleteShapeStamp(id) {
@@ -23594,13 +24459,6 @@ function onWheel(e) {
       setActiveShapeStamp(null);
       if (state.tool === 'stamp' && typeof setTool === 'function') setTool('select');
     }
-    commitShapeStamps(list);
-    return true;
-  }
-
-  function moveShapeStamp(id, delta) {
-    const list = libraryMoveEntry(getShapeStamps(), id, delta);
-    if (!list) return false;
     commitShapeStamps(list);
     return true;
   }
@@ -23642,7 +24500,18 @@ function onWheel(e) {
   // a too-small Rectangle drag creates nothing because the gesture IS the
   // object's definition, but a stamp already exists and the TD has explicitly
   // chosen it, so a click that produces nothing reads as a broken tool.
+  //
+  // US-106: when the stamp carries a `savedSize` (the WORLD-unit box it was
+  // saved from), a bare click reproduces that exact size — a strictly better
+  // default than the generic 30%-of-image guess below, and the one thing
+  // that makes "place a wing at the size it was cut" a one-click gesture. A
+  // v2 stamp (imported, or saved before US-106) has no savedSize and falls
+  // back to the original heuristic unchanged.
   function defaultStampBoxAt(stamp, world) {
+    if (stamp && stamp.savedSize) {
+      const { width, height } = stamp.savedSize;
+      return { x: world.x - width / 2, y: world.y - height / 2, width, height };
+    }
     const image = (typeof bgTopImageAt === 'function') ? bgTopImageAt(world) : null;
     const maxWidth = image && image.width ? image.width * 0.3 : 200;
     // Code review, 2026-08-23: bound BOTH axes. Sizing only the width meant a
@@ -23681,14 +24550,25 @@ function onWheel(e) {
     return { x, y, width, height };
   }
 
+  // US-106: reflects a NORMALIZED ([0,1]-in-its-own-box) point across the
+  // box's own vertical centerline. Applied uniformly to every point of every
+  // member before denormalizing, which is enough on its own to mirror a
+  // whole path (straight or curved) correctly — reflection is affine, so it
+  // commutes with the Bézier construction, and handleIn/handleOut keep
+  // their existing roles (arriving-from / leaving-toward) because mirroring
+  // does not reverse the point order along the path, only its x placement.
+  function mirrorStampPointX(p) {
+    return p ? { x: 1 - p.x, y: p.y } : null;
+  }
+
   // Build the annotation. Mirrors pasteLineFromClipboard's record shape and its
   // ordering lesson (US-093): normalize the curve FIRST, derive the label after,
   // because computeDefaultLabelPosition walks getCurveBeziers and therefore
   // reads the very controls ensureCurveControls exists to supply.
-  function createAnnotationFromTemplateMember(member, rawBox, groupId) {
+  function createAnnotationFromTemplateMember(member, rawBox, groupId, mirrored) {
     if (!member) return null;
     const box = normalizeStampBox(member, rawBox);
-    const d = (p) => denormalizeStampPoint(p, box);
+    const d = (p) => denormalizeStampPoint(mirrored ? mirrorStampPointX(p) : p, box);
     const curved = member.type === 'curved';
     const ann = {
       id: state.idCounter++,
@@ -23727,24 +24607,27 @@ function onWheel(e) {
     return ann;
   }
 
-  function createAnnotationsFromStamp(stamp, rawBox, groupId) {
+  function createAnnotationsFromStamp(stamp, rawBox, groupId, mirrored) {
     if (!stamp) return [];
     const members = Array.isArray(stamp.members) && stamp.members.length ? stamp.members : [stamp];
-    return members.map(member => createAnnotationFromTemplateMember(member, rawBox, groupId)).filter(Boolean);
+    return members.map(member => createAnnotationFromTemplateMember(member, rawBox, groupId, mirrored)).filter(Boolean);
   }
 
-  function createAnnotationFromStamp(stamp, rawBox) {
-    return createAnnotationsFromStamp(stamp, rawBox, null)[0] || null;
+  function createAnnotationFromStamp(stamp, rawBox, mirrored) {
+    return createAnnotationsFromStamp(stamp, rawBox, null, mirrored)[0] || null;
   }
 
-  // The one entry point the pointer layer calls on mouseup.
+  // The one entry point the pointer layer calls on mouseup. Mirroring
+  // (US-106) is read from state — armed once per placement via
+  // armShapeStampForPlacement/setActiveShapeStamp, not passed by the caller —
+  // so the pointer layer does not need to know this feature exists.
   function placeShapeStamp(stamp, start, current, shiftKey, altKey) {
     if (!stamp) return null;
     const dragged = stampBoxFromDrag(stamp, start, current, shiftKey, altKey);
     const tooSmall = Math.max(dragged.width, dragged.height) * state.zoom < stampMinCreateScreenPx();
     const box = tooSmall ? defaultStampBoxAt(stamp, start) : dragged;
     const groupId = 'template-' + state.idCounter++;
-    const anns = createAnnotationsFromStamp(stamp, box, groupId);
+    const anns = createAnnotationsFromStamp(stamp, box, groupId, state.activeStampMirrored);
     if (!anns.length) return null;
     state.annotations.push(...anns);
     state.selection = { kind: 'annotation', id: anns[0].id };
@@ -23752,6 +24635,7 @@ function onWheel(e) {
     state.templateGroupEditId = null;
     // ADR 0058: Template members are Sketch Elements and spend no POM number.
     pushHistoryIfChanged();
+    if (stamp.id) touchShapeStampUsage(stamp.id);
     return anns[0];
   }
 
@@ -23772,14 +24656,42 @@ function onWheel(e) {
     // not spend an id every mousemove.
     const savedId = state.idCounter;
     const savedSeq = state.nextSequence;
-    const preview = createAnnotationsFromStamp(stamp, box, null);
+    const preview = createAnnotationsFromStamp(stamp, box, null, state.activeStampMirrored);
     state.idCounter = savedId;
     state.nextSequence = savedSeq;
     for (const ann of preview) drawLineCore(ann, 0.6);
   }
 
+  // Always resets mirroring — a fresh arm (choosing a Template, including
+  // re-choosing the one already armed) starts un-mirrored; a TD who wants a
+  // mirrored placement asks for it explicitly via
+  // armShapeStampForPlacement/setActiveStampMirrored every time, so it can
+  // never silently carry over onto an unrelated next placement.
   function setActiveShapeStamp(id) {
     state.activeStampId = id || null;
+    state.activeStampMirrored = false;
+  }
+
+  function setActiveStampMirrored(mirrored) {
+    state.activeStampMirrored = !!mirrored;
+  }
+
+  // US-106/US-107: arms the stamp tool, selects which saved Template it will
+  // place, and requests mirroring — one call, so no caller (the Library
+  // dialog, a test driving the debug seam) can set one part and forget
+  // another, or leave the toolbar/status bar showing a stale armed name.
+  // setTool('stamp') runs first: it only clears activeStampId when switching
+  // AWAY from 'stamp' (src/ui/bindings.js), so it never undoes the
+  // setActiveShapeStamp call that follows it here. The explicit updateUI()
+  // at the end matters: setTool('stamp') already re-rendered once, but at
+  // that point activeStampId still held whatever it was BEFORE this call —
+  // without a second render after setActiveShapeStamp, the toolbar/status
+  // bar would keep showing the previously armed (or no) stamp.
+  function armShapeStampForPlacement(id, opts) {
+    if (typeof setTool === 'function') setTool('stamp');
+    setActiveShapeStamp(id);
+    if (opts && opts.mirrored) setActiveStampMirrored(true);
+    if (typeof updateUI === 'function') updateUI();
   }
 
   function getActiveShapeStamp() {
@@ -23789,12 +24701,30 @@ function onWheel(e) {
   // ---- Portability ---------------------------------------------------------
 
   function shapeStampsEnvelope() {
-    return { format: 'bra-shape-stamps', version: shapeStampsFormatVersion(), stamps: getShapeStamps() };
+    return {
+      format: 'bra-shape-stamps', version: shapeStampsFormatVersion(),
+      exportedAt: new Date().toISOString(), stamps: getShapeStamps(),
+    };
   }
 
   function exportShapeStampsFile() {
     const blob = new Blob([JSON.stringify(shapeStampsEnvelope(), null, 2)], { type: 'application/json' });
     downloadBlob(blob, 'shape-stamps.json');
+  }
+
+  // Single-entry export (Library Manager card action) — same envelope shape
+  // as the whole-library export, so importShapeStampsFromJson reads either
+  // one back without a special case.
+  function exportOneShapeStampFile(id) {
+    const stamp = getShapeStampById(id);
+    if (!stamp) return false;
+    const envelope = {
+      format: 'bra-shape-stamps', version: shapeStampsFormatVersion(),
+      exportedAt: new Date().toISOString(), stamps: [stamp],
+    };
+    const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
+    downloadBlob(blob, (stamp.name || 'template').replace(/[^A-Za-z0-9._-]+/g, '-') + '.json');
+    return true;
   }
 
   function importShapeStamps(list) {
@@ -23834,6 +24764,761 @@ function onWheel(e) {
     const added = importShapeStamps(pendingProjectShapeStamps);
     pendingProjectShapeStamps = [];
     return added;
+  }
+
+  // ---- src/manual/dxf-import.js ----
+// US-104: "Open DXF file" import in Sketch Focus.
+//
+// Parses a constrained, explicitly-planar subset of ASCII DXF (LINE, ARC,
+// CIRCLE, LWPOLYLINE, legacy POLYLINE+VERTEX+SEQEND) and places each
+// connected pattern piece as its own independently movable group of
+// `purpose: 'sketch-element'` annotations — never a Template, never a POM.
+// The full contract (entity scope, planarity gate, malformed-entity rules,
+// piece detection, placement formula, output caps) is
+// docs/stories/epics/E01-manual-mode/US-104-dxf-import.md; this file is the
+// authority for HOW those rules are implemented, not a restatement of WHY.
+//
+// Split deliberately into three layers so each is independently testable:
+//   1. parseDxfDocument(text)              — pure text -> pieces (local
+//      drawing space: DXF's own units, Y already flipped to screen-down).
+//   2. computeDxfPlacementTransform(...)    — pure bounds+viewport -> one
+//      shared scale/offset (reuses createImageRecord's own numbers).
+//   3. importDxfText(text, rect)            — orchestrates 1 + 2, builds real
+//      annotation objects, and performs the one board mutation.
+// Sibling file: the Tools-menu button / FileReader glue is
+// src/ui/dxf-import-panel.js.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // ---- Text normalization + group-code tokenizing ---------------------------
+
+  const DXF_BINARY_SENTINEL = 'AutoCAD Binary DXF';
+  const DXF_PLANAR_EPS = 1e-6;
+  // Per-piece: NOT normalizeShapeStamp's Template-member cap (80) — a real
+  // digitized garment pattern piece traces its cutting curves as many short
+  // straight segments rather than arcs/bulges, and routinely exceeds 80 on
+  // its own. Verified against a real production file (demo/DXF file/
+  // 3380.dxf, 25 POLYLINE + 42 LINE entities): with no cap it resolves to 6
+  // real pieces sized [103, 149, 167, 263, 275, 295] segments — the 80 figure
+  // would have rejected every one of them. 1000 clears the largest observed
+  // piece (295) with >3x headroom while still bounding a pathological file.
+  // A piece THIS large, saved as a Template later, still truncates at
+  // normalizeShapeStamp's own 80 — that pre-existing, unrelated limit is
+  // unchanged; see the Acceptance Criteria note below.
+  const DXF_PER_PIECE_CAP = 1000;
+  // Unchanged: the real file above needed only 6, and 40 was already a
+  // generous ceiling for a realistic single-style garment pattern.
+  const DXF_PIECE_COUNT_CAP = 40;
+  // Board-performance backstop. The real file above totals 1252 segments
+  // across 6 pieces with no cap — 3000 clears it with >2x headroom.
+  const DXF_TOTAL_OUTPUT_CAP = 3000;
+
+  // BOM/CRLF/trailing-newline normalization has to happen BEFORE the
+  // even/odd group-code pairing check below, or an ordinary, well-formed
+  // file (one trailing newline, or authored on Windows) reads as corrupt:
+  // a lone trailing "\n" splits into one extra empty final line, making an
+  // otherwise-even line count odd.
+  function dxfNormalizeText(text) {
+    let s = String(text == null ? '' : text);
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    return s.replace(/\r\n?/g, '\n');
+  }
+
+  function dxfTokenizePairs(text) {
+    const lines = dxfNormalizeText(text).split('\n');
+    // Strip every trailing blank line, not just one — a file can end with
+    // more than one newline (an editor-added blank line, a re-save) and none
+    // of that is a corrupt group-code stream.
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    if (lines.length === 0 || lines.length % 2 !== 0) return null;
+    const pairs = [];
+    for (let i = 0; i < lines.length; i += 2) {
+      const code = Number(lines[i].trim());
+      if (!Number.isInteger(code)) return null;
+      pairs.push({ code, value: lines[i + 1] });
+    }
+    return pairs;
+  }
+
+  function dxfFirst(pairs, code) {
+    for (const p of pairs) if (p.code === code) return p.value;
+    return undefined;
+  }
+
+  function dxfNum(pairs, code) {
+    const raw = dxfFirst(pairs, code);
+    return raw === undefined ? undefined : Number(String(raw).trim());
+  }
+
+  // Same as dxfNum, but for a group that is OPTIONAL-with-a-DXF-default
+  // (thickness, elevation, extrusion). Absent -> the spec's default; PRESENT
+  // but unparsable -> NaN, deliberately, so the caller can flag it malformed
+  // rather than silently treating garbage as "0, so this must be flat."
+  function dxfOptNum(pairs, code, fallback) {
+    const raw = dxfFirst(pairs, code);
+    return raw === undefined ? fallback : Number(String(raw).trim());
+  }
+
+  function dxfExtrusion(pairs) {
+    const x = dxfOptNum(pairs, 210, 0);
+    const y = dxfOptNum(pairs, 220, 0);
+    const z = dxfOptNum(pairs, 230, 1);
+    return { x, y, z, finite: Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) };
+  }
+
+  function dxfPlanarOk(zValues, thickness, ext) {
+    for (const z of zValues) if (Math.abs(z) > DXF_PLANAR_EPS) return false;
+    if (Math.abs(thickness) > DXF_PLANAR_EPS) return false;
+    if (Math.abs(ext.x) > DXF_PLANAR_EPS || Math.abs(ext.y) > DXF_PLANAR_EPS
+      || Math.abs(ext.z - 1) > DXF_PLANAR_EPS) return false;
+    return true;
+  }
+
+  // ---- Section scoping + entity-record collection ----------------------------
+
+  // Groups the flat pair stream into per-entity records, restricted to the
+  // ENTITIES section only. POLYLINE swallows its own VERTEX children up to
+  // SEQEND — a POLYLINE with no SEQEND is a whole-file structural problem
+  // (its VERTEX children have no other way to know where they end), so it is
+  // reported as a scan error, not a skipped entity.
+  function dxfCollectEntitiesBody(pairs, startIdx) {
+    const records = [];
+    let idx = startIdx;
+    const n = pairs.length;
+    while (idx < n) {
+      const pair = pairs[idx];
+      if (pair.code === 0 && String(pair.value).trim() === 'ENDSEC') {
+        return { records, nextIndex: idx };
+      }
+      if (pair.code !== 0) { idx += 1; continue; }
+      const type = String(pair.value).trim();
+      idx += 1;
+      const bodyPairs = [];
+      while (idx < n && pairs[idx].code !== 0) { bodyPairs.push(pairs[idx]); idx += 1; }
+      if (type === 'POLYLINE') {
+        const vertices = [];
+        let sawSeqend = false;
+        while (idx < n) {
+          const p = pairs[idx];
+          if (p.code === 0 && String(p.value).trim() === 'VERTEX') {
+            idx += 1;
+            const vPairs = [];
+            while (idx < n && pairs[idx].code !== 0) { vPairs.push(pairs[idx]); idx += 1; }
+            vertices.push(vPairs);
+            continue;
+          }
+          if (p.code === 0 && String(p.value).trim() === 'SEQEND') { idx += 1; sawSeqend = true; }
+          break;
+        }
+        if (!sawSeqend) return { error: 'a POLYLINE has no matching SEQEND' };
+        records.push({ type, pairs: bodyPairs, vertices });
+        continue;
+      }
+      records.push({ type, pairs: bodyPairs });
+    }
+    return { error: 'the ENTITIES section has no matching ENDSEC' };
+  }
+
+  function dxfScanSections(pairs) {
+    let idx = 0;
+    const n = pairs.length;
+    let sectionOpen = false;
+    let currentSection = null;
+    let sawEntities = false;
+    const entityRecords = [];
+    while (idx < n) {
+      const pair = pairs[idx];
+      if (pair.code === 0 && String(pair.value).trim() === 'SECTION') {
+        if (sectionOpen) return { error: 'a SECTION opens before the previous one closed' };
+        sectionOpen = true;
+        idx += 1;
+        currentSection = (idx < n && pairs[idx].code === 2) ? String(pairs[idx].value).trim() : null;
+        if (currentSection != null) idx += 1;
+        if (currentSection === 'ENTITIES') {
+          if (sawEntities) return { error: 'more than one ENTITIES section' };
+          sawEntities = true;
+          const body = dxfCollectEntitiesBody(pairs, idx);
+          if (body.error) return { error: body.error };
+          entityRecords.push(...body.records);
+          idx = body.nextIndex;
+        }
+        continue;
+      }
+      if (pair.code === 0 && String(pair.value).trim() === 'ENDSEC') {
+        if (!sectionOpen) return { error: 'an ENDSEC has no matching SECTION' };
+        sectionOpen = false;
+        currentSection = null;
+        idx += 1;
+        continue;
+      }
+      idx += 1;
+    }
+    if (sectionOpen) return { error: 'a SECTION has no matching ENDSEC' };
+    if (!sawEntities) return { error: 'no ENTITIES section' };
+    return { entityRecords };
+  }
+
+  // ---- Per-entity outcome helpers --------------------------------------------
+
+  function dxfOk(segments) { return { ok: true, segments }; }
+  function dxfSkip(bucket, reason) { return { ok: false, bucket, reason }; }
+  function dxfMalformed(reason) { return dxfSkip('malformed', reason); }
+  function dxfNonPlanar(reason) { return dxfSkip('nonPlanar', reason); }
+  function dxfUnsupportedType(reason) { return dxfSkip('unsupportedType', reason); }
+  function dxfUnsupportedFit(reason) { return dxfSkip('unsupportedFit', reason); }
+
+  // ---- Arc / bulge -> cubic Bézier geometry ----------------------------------
+  //
+  // One shared chunker for ARC, CIRCLE and a polyline bulge alike: given a
+  // center, radius, start angle and a SIGNED sweep (radians, CCW positive,
+  // magnitude < 2*PI), split into pieces no wider than 90 degrees and convert
+  // each with the standard tangent-based cubic approximation. All of this
+  // runs in native DXF (Y-up) coordinates; the caller flips Y on the
+  // resulting points afterward, uniformly, for every segment in the drawing.
+  // Bézier curves are affine-covariant, so negating Y on the four control
+  // points of an already-correct curve reproduces the curve's mirrored image
+  // exactly — there is no separate "flip the sweep sign" step to get wrong.
+  function dxfArcChunkToBezier(cx, cy, r, a0, a1) {
+    const theta = a1 - a0;
+    const alpha = (4 / 3) * Math.tan(theta / 4);
+    const p0 = { x: cx + r * Math.cos(a0), y: cy + r * Math.sin(a0) };
+    const p3 = { x: cx + r * Math.cos(a1), y: cy + r * Math.sin(a1) };
+    const c1 = { x: p0.x - alpha * r * Math.sin(a0), y: p0.y + alpha * r * Math.cos(a0) };
+    const c2 = { x: p3.x + alpha * r * Math.sin(a1), y: p3.y - alpha * r * Math.cos(a1) };
+    return { kind: 'curve', p0, c1, c2, p3 };
+  }
+
+  function dxfArcToBezierChunks(cx, cy, r, startAngle, sweep) {
+    const maxChunk = Math.PI / 2;
+    const count = Math.max(1, Math.ceil(Math.abs(sweep) / maxChunk - 1e-9));
+    const chunkSweep = sweep / count;
+    const chunks = [];
+    let a = startAngle;
+    for (let i = 0; i < count; i += 1) {
+      chunks.push(dxfArcChunkToBezier(cx, cy, r, a, a + chunkSweep));
+      a += chunkSweep;
+    }
+    return chunks;
+  }
+
+  // Bulge -> arc center/radius/angles, derived and numerically verified
+  // against the DXF spec's own definition (bulge = tan(sweep/4), positive =
+  // CCW from the vertex to the next one) rather than assumed: for a chord
+  // P1->P2 with unit direction u and left-normal v = (-u.y, u.x), the CCW
+  // sweep theta = 4*atan(bulge), radius r = d / (2*|sin(theta/2)|), and the
+  // signed offset from the chord midpoint to the center along v is
+  // h = sign(bulge) * r * cos(theta/2) — confirmed against the theta=180°
+  // case (h=0, center exactly on the midpoint) and against a theta=90° case
+  // solved by hand (center reproduces both P1 and P2 exactly under a CCW
+  // sweep of theta from the recovered start angle).
+  function dxfBulgeToBezierChunks(p1, p2, bulge) {
+    const d = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    if (!(d > 1e-9)) return [];
+    const theta = 4 * Math.atan(bulge);
+    const ux = (p2.x - p1.x) / d, uy = (p2.y - p1.y) / d;
+    const vx = -uy, vy = ux;
+    const r = d / (2 * Math.abs(Math.sin(theta / 2)));
+    const s = bulge < 0 ? -1 : 1;
+    const h = s * r * Math.cos(theta / 2);
+    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+    const cx = mx + vx * h, cy = my + vy * h;
+    const a0 = Math.atan2(p1.y - cy, p1.x - cx);
+    return dxfArcToBezierChunks(cx, cy, r, a0, theta);
+  }
+
+  // ---- Per-entity converters --------------------------------------------------
+
+  function convertDxfLineEntity(rec) {
+    const x1 = dxfNum(rec.pairs, 10), y1 = dxfNum(rec.pairs, 20);
+    const x2 = dxfNum(rec.pairs, 11), y2 = dxfNum(rec.pairs, 21);
+    if ([x1, y1, x2, y2].some(v => v === undefined)) return dxfMalformed('LINE missing 10/20 or 11/21');
+    if (![x1, y1, x2, y2].every(Number.isFinite)) return dxfMalformed('LINE has a non-finite coordinate');
+    const z1 = dxfOptNum(rec.pairs, 30, 0), z2 = dxfOptNum(rec.pairs, 31, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(z1) || !Number.isFinite(z2) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('LINE has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([z1, z2], thickness, ext)) return dxfNonPlanar('LINE is not flat');
+    return dxfOk([{ kind: 'straight', a: { x: x1, y: y1 }, b: { x: x2, y: y2 } }]);
+  }
+
+  function convertDxfArcEntity(rec) {
+    const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
+    const r = dxfNum(rec.pairs, 40);
+    const a0Deg = dxfNum(rec.pairs, 50), a1Deg = dxfNum(rec.pairs, 51);
+    if ([cx, cy, r, a0Deg, a1Deg].some(v => v === undefined)) return dxfMalformed('ARC missing 10/20/40/50/51');
+    if (![cx, cy, r, a0Deg, a1Deg].every(Number.isFinite)) return dxfMalformed('ARC has a non-finite value');
+    if (!(r > 0)) return dxfMalformed('ARC radius <= 0');
+    const z = dxfOptNum(rec.pairs, 30, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(z) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('ARC has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('ARC is not flat');
+    // Always CCW from start to end per the DXF spec — this handles a
+    // 350deg -> 10deg wraparound as a 20deg sweep, not a naive -340deg.
+    const sweepDeg = ((a1Deg - a0Deg) % 360 + 360) % 360;
+    if (!(sweepDeg > 1e-9)) return dxfMalformed('ARC has zero sweep');
+    const sweepRad = sweepDeg * Math.PI / 180;
+    const startRad = a0Deg * Math.PI / 180;
+    return dxfOk(dxfArcToBezierChunks(cx, cy, r, startRad, sweepRad));
+  }
+
+  function convertDxfCircleEntity(rec) {
+    const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
+    const r = dxfNum(rec.pairs, 40);
+    if ([cx, cy, r].some(v => v === undefined)) return dxfMalformed('CIRCLE missing 10/20/40');
+    if (![cx, cy, r].every(Number.isFinite)) return dxfMalformed('CIRCLE has a non-finite value');
+    if (!(r > 0)) return dxfMalformed('CIRCLE radius <= 0');
+    const z = dxfOptNum(rec.pairs, 30, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(z) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('CIRCLE has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('CIRCLE is not flat');
+    // Always exactly four 90-degree quadrants, per the product contract —
+    // not "chunked to <=90", a fixed four, so every CIRCLE outputs the same
+    // shape regardless of an arbitrary starting angle.
+    const chunks = [];
+    for (let i = 0; i < 4; i += 1) chunks.push(dxfArcChunkToBezier(cx, cy, r, i * (Math.PI / 2), (i + 1) * (Math.PI / 2)));
+    return dxfOk(chunks);
+  }
+
+  function dxfParseLwpolylineVertices(pairs) {
+    const vertices = [];
+    let current = null;
+    for (const p of pairs) {
+      if (p.code === 10) {
+        current = { x: Number(String(p.value).trim()), y: undefined, bulge: 0 };
+        vertices.push(current);
+      } else if (p.code === 20 && current) {
+        current.y = Number(String(p.value).trim());
+      } else if (p.code === 42 && current) {
+        current.bulge = Number(String(p.value).trim());
+      }
+    }
+    return vertices;
+  }
+
+  function dxfPolylineVerticesToSegments(vertices, closed) {
+    const segs = [];
+    const n = vertices.length;
+    const last = closed ? n : n - 1;
+    for (let i = 0; i < last; i += 1) {
+      const a = vertices[i];
+      const b = vertices[(i + 1) % n];
+      if (a.bulge) segs.push(...dxfBulgeToBezierChunks(a, b, a.bulge));
+      else segs.push({ kind: 'straight', a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } });
+    }
+    return segs;
+  }
+
+  function convertDxfLwpolylineEntity(rec) {
+    const declaredRaw = dxfFirst(rec.pairs, 90);
+    if (declaredRaw === undefined) return dxfMalformed('LWPOLYLINE missing group 90 vertex count');
+    const declared = Number(String(declaredRaw).trim());
+    if (!Number.isFinite(declared)) return dxfMalformed('LWPOLYLINE group 90 is not a finite number');
+    const flags = dxfOptNum(rec.pairs, 70, 0);
+    if (!Number.isFinite(flags)) return dxfMalformed('LWPOLYLINE has a non-finite flag value');
+    const vertices = dxfParseLwpolylineVertices(rec.pairs);
+    if (declared !== vertices.length) return dxfMalformed('LWPOLYLINE group-90 count does not match its vertex pairs');
+    if (vertices.length < 2) return dxfMalformed('LWPOLYLINE has fewer than 2 vertices');
+    for (const v of vertices) {
+      if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.bulge)) {
+        return dxfMalformed('LWPOLYLINE has a non-finite vertex or bulge value');
+      }
+    }
+    const elevation = dxfOptNum(rec.pairs, 38, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(elevation) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('LWPOLYLINE has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([elevation], thickness, ext)) return dxfNonPlanar('LWPOLYLINE is not flat');
+    const closed = (Math.trunc(flags) & 1) === 1;
+    return dxfOk(dxfPolylineVerticesToSegments(vertices, closed));
+  }
+
+  function convertDxfPolylineEntity(rec) {
+    const flagsRaw = dxfOptNum(rec.pairs, 70, 0);
+    if (!Number.isFinite(flagsRaw)) return dxfMalformed('POLYLINE has a non-finite flag value');
+    const flags = Math.trunc(flagsRaw);
+    if ((flags & 2) || (flags & 4)) return dxfUnsupportedFit('POLYLINE has the curve-fit or spline-fit flag set');
+    if ((flags & 8) || (flags & 16) || (flags & 64)) return dxfNonPlanar('POLYLINE is 3D/mesh (flag bit 3, 4, or 6)');
+    const closed = (flags & 1) === 1;
+    const headerZ = dxfOptNum(rec.pairs, 30, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(headerZ) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('POLYLINE has a non-finite planarity field');
+    }
+    const rawVertices = Array.isArray(rec.vertices) ? rec.vertices : [];
+    if (rawVertices.length < 2) return dxfMalformed('POLYLINE has fewer than 2 vertices');
+    const vertices = [];
+    for (const vPairs of rawVertices) {
+      const x = dxfNum(vPairs, 10), y = dxfNum(vPairs, 20);
+      if (x === undefined || y === undefined) return dxfMalformed('POLYLINE VERTEX missing 10/20');
+      const z = dxfOptNum(vPairs, 30, 0);
+      const bulge = dxfOptNum(vPairs, 42, 0);
+      if (![x, y, z, bulge].every(Number.isFinite)) return dxfMalformed('POLYLINE VERTEX has a non-finite value');
+      vertices.push({ x, y, z, bulge });
+    }
+    if (!dxfPlanarOk([headerZ, ...vertices.map(v => v.z)], thickness, ext)) return dxfNonPlanar('POLYLINE is not flat');
+    return dxfOk(dxfPolylineVerticesToSegments(vertices, closed));
+  }
+
+  function convertDxfEntity(rec) {
+    switch (rec.type) {
+      case 'LINE': return convertDxfLineEntity(rec);
+      case 'ARC': return convertDxfArcEntity(rec);
+      case 'CIRCLE': return convertDxfCircleEntity(rec);
+      case 'LWPOLYLINE': return convertDxfLwpolylineEntity(rec);
+      case 'POLYLINE': return convertDxfPolylineEntity(rec);
+      default: return dxfUnsupportedType('entity type "' + rec.type + '" is not supported');
+    }
+  }
+
+  // ---- Y-flip (DXF Y-up -> board Y-down) -------------------------------------
+
+  function dxfFlipPointY(p) { return { x: p.x, y: -p.y }; }
+
+  function dxfFlipSegmentY(seg) {
+    return seg.kind === 'straight'
+      ? { kind: 'straight', a: dxfFlipPointY(seg.a), b: dxfFlipPointY(seg.b) }
+      : { kind: 'curve', p0: dxfFlipPointY(seg.p0), c1: dxfFlipPointY(seg.c1), c2: dxfFlipPointY(seg.c2), p3: dxfFlipPointY(seg.p3) };
+  }
+
+  function dxfSegmentEndpoints(seg) {
+    return seg.kind === 'straight' ? [seg.a, seg.b] : [seg.p0, seg.p3];
+  }
+
+  // Every point that defines the segment's painted extent, handles included
+  // — mirrors shapeStampGeometryPoints's reasoning: a curve's bulge can sit
+  // outside the a/b chord, so a bounds box built from endpoints alone can
+  // clip or under-fit it.
+  function dxfSegmentPoints(seg) {
+    return seg.kind === 'straight' ? [seg.a, seg.b] : [seg.p0, seg.c1, seg.c2, seg.p3];
+  }
+
+  function dxfBoundsOfPoints(points) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of points) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    if (!Number.isFinite(minX)) return { x: 0, y: 0, width: 0, height: 0 };
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+
+  function dxfBoundsOfSegments(segments) {
+    return dxfBoundsOfPoints(segments.flatMap(dxfSegmentPoints));
+  }
+
+  // ---- Piece detection: connected components, then containment merge --------
+
+  function dxfUnionFind(n) {
+    const parent = Array.from({ length: n }, (_, i) => i);
+    function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+    function union(a, b) { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+    return { find, union };
+  }
+
+  // A relative tolerance (fraction of the whole drawing's diagonal), not an
+  // absolute one — a DXF can be authored at any unit scale (mm, m, unitless)
+  // and an absolute pixel-ish tolerance would either miss real joins on a
+  // huge drawing or over-merge on a tiny one.
+  function dxfConnectedComponents(segments) {
+    const endpoints = segments.map(dxfSegmentEndpoints);
+    const allPts = endpoints.flat();
+    const bbox = dxfBoundsOfPoints(allPts);
+    const diag = Math.hypot(bbox.width, bbox.height) || 1;
+    const tol = 0.0001 * diag;
+    const uf = dxfUnionFind(segments.length);
+    for (let i = 0; i < segments.length; i += 1) {
+      for (let j = i + 1; j < segments.length; j += 1) {
+        let touch = false;
+        for (const p of endpoints[i]) {
+          for (const q of endpoints[j]) if (distance(p, q) <= tol) { touch = true; break; }
+          if (touch) break;
+        }
+        if (touch) uf.union(i, j);
+      }
+    }
+    const groups = new Map();
+    for (let i = 0; i < segments.length; i += 1) {
+      const root = uf.find(i);
+      if (!groups.has(root)) groups.set(root, []);
+      groups.get(root).push(i);
+    }
+    return Array.from(groups.values()).map(segIdxs => ({
+      segIdxs,
+      bounds: dxfBoundsOfPoints(segIdxs.flatMap(i => dxfSegmentPoints(segments[i]))),
+    }));
+  }
+
+  // A drill hole, grainline, or other internal mark never touches its
+  // panel's outline, so connectivity alone would split a real pattern piece
+  // into several. Fully-contained components merge into the smallest
+  // containing one; a merely-overlapping pair (not fully contained either
+  // way) is deliberately left as two separate pieces, so two genuinely
+  // different pieces whose boxes happen to graze never get wrongly fused.
+  // Bounding-box containment, not point-in-polygon — a mark in the "cutout"
+  // of a concave outline could be merged incorrectly; accepted for v1.
+  function dxfMergeContainedComponents(components) {
+    const n = components.length;
+    const uf = dxfUnionFind(n);
+    const contains = (outer, inner) => (
+      inner.x >= outer.x - 1e-9 && inner.y >= outer.y - 1e-9
+      && inner.x + inner.width <= outer.x + outer.width + 1e-9
+      && inner.y + inner.height <= outer.y + outer.height + 1e-9
+    );
+    for (let i = 0; i < n; i += 1) {
+      let bestJ = -1, bestArea = Infinity;
+      for (let j = 0; j < n; j += 1) {
+        if (i === j) continue;
+        if (!contains(components[j].bounds, components[i].bounds)) continue;
+        const area = components[j].bounds.width * components[j].bounds.height;
+        if (area < bestArea) { bestArea = area; bestJ = j; }
+      }
+      if (bestJ !== -1) uf.union(i, bestJ);
+    }
+    const groups = new Map();
+    for (let i = 0; i < n; i += 1) {
+      const root = uf.find(i);
+      if (!groups.has(root)) groups.set(root, []);
+      groups.get(root).push(...components[i].segIdxs);
+    }
+    return Array.from(groups.values());
+  }
+
+  // segments -> array of pieces, each an array of segments (still in local
+  // drawing space — no viewport transform applied yet).
+  function dxfBuildPieces(segments) {
+    const components = dxfConnectedComponents(segments);
+    const pieceSegIdxLists = dxfMergeContainedComponents(components);
+    return pieceSegIdxLists.map(idxs => idxs.map(i => segments[i]));
+  }
+
+  // ---- Placement transform ----------------------------------------------------
+
+  // Reuses createImageRecord's own first-image-on-empty-board numbers
+  // (src/manual/image-records.js) rather than inventing new ones: fit into
+  // 42% of the viewport with a 180px floor on maxW/maxH, centered the same
+  // way. Unlike a raster image, DXF vector data has no native pixel
+  // resolution to cap upscaling against, so — unlike the image case — there
+  // is no `Math.min(scale, 1)` "never upscale" clause, and no 60px floor on
+  // the OUTPUT box either: that second floor is the image case's own
+  // per-axis minimum-visible-size guard, applied AFTER its own upscale cap,
+  // and copying it here would independently distort a uniformly-scaled
+  // drawing's aspect ratio on a tiny/extreme fixture.
+  //
+  // `centerWorld` is optional (tests pass one to get deterministic numbers
+  // without a live pan/zoom); the real call site omits it and gets the
+  // exact `screenToWorld` result createImageRecord itself uses.
+  function computeDxfPlacementTransform(bounds, rect, centerWorld) {
+    const w = Math.max(bounds.width, 1e-9);
+    const h = Math.max(bounds.height, 1e-9);
+    const maxW = Math.max(180, rect.width * 0.42);
+    const maxH = Math.max(180, rect.height * 0.42);
+    const scale = Math.min(maxW / w, maxH / h);
+    const outputWidth = w * scale;
+    const outputHeight = h * scale;
+    const center = centerWorld || screenToWorld(rect.width / 2, rect.height / 2);
+    return {
+      scale,
+      originX: center.x - outputWidth / 2,
+      originY: center.y - outputHeight / 2,
+      outputWidth,
+      outputHeight,
+    };
+  }
+
+  function applyDxfTransform(p, bounds, transform) {
+    return {
+      x: transform.originX + (p.x - bounds.x) * transform.scale,
+      y: transform.originY + (p.y - bounds.y) * transform.scale,
+    };
+  }
+
+  // ---- Document-level parse (pure; no state/DOM) -----------------------------
+
+  // text -> { ok, pieces, buckets, ... } | { ok:false, atomic:true, reason,
+  // message, buckets }. `pieces` (when ok) is an array of per-piece segment
+  // arrays in LOCAL drawing space (already Y-flipped), each already under
+  // the per-piece cap and the whole set already under the piece-count and
+  // total-output caps — the only work left for the caller is the viewport
+  // transform and building real annotation objects.
+  function parseDxfDocument(text) {
+    const normalized = dxfNormalizeText(text);
+    if (normalized.slice(0, DXF_BINARY_SENTINEL.length) === DXF_BINARY_SENTINEL) {
+      return {
+        ok: false, atomic: true, reason: 'binary',
+        message: 'This looks like a binary DXF file. Re-export as ASCII DXF and try again.',
+      };
+    }
+    const pairs = dxfTokenizePairs(normalized);
+    if (!pairs) {
+      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file.' };
+    }
+    const scan = dxfScanSections(pairs);
+    if (scan.error) {
+      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file (' + scan.error + ').' };
+    }
+    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0 };
+    const acceptedSegments = [];
+    for (const rec of scan.entityRecords) {
+      const result = convertDxfEntity(rec);
+      if (!result.ok) { buckets[result.bucket] += 1; continue; }
+      acceptedSegments.push(...result.segments);
+    }
+    if (!acceptedSegments.length) {
+      return { ok: false, atomic: true, reason: 'empty', message: 'No supported entities were found in this DXF file.', buckets };
+    }
+    const flipped = acceptedSegments.map(dxfFlipSegmentY);
+    const allPieces = dxfBuildPieces(flipped);
+    if (allPieces.length > DXF_PIECE_COUNT_CAP) {
+      return {
+        ok: false, atomic: true, reason: 'piece-cap', buckets,
+        message: 'This DXF has ' + allPieces.length + ' pieces, over the ' + DXF_PIECE_COUNT_CAP + '-piece limit. Import rejected.',
+      };
+    }
+    const keptPieces = [];
+    let skippedOversizedPieces = 0;
+    for (const piece of allPieces) {
+      if (piece.length > DXF_PER_PIECE_CAP) { skippedOversizedPieces += 1; continue; }
+      keptPieces.push(piece);
+    }
+    if (!keptPieces.length) {
+      return {
+        ok: false, atomic: true, reason: 'empty-after-piece-cap', buckets,
+        message: 'Every piece in this DXF exceeded the ' + DXF_PER_PIECE_CAP + '-line per-piece limit. Import rejected.',
+      };
+    }
+    const totalOutputCount = keptPieces.reduce((sum, piece) => sum + piece.length, 0);
+    if (totalOutputCount > DXF_TOTAL_OUTPUT_CAP) {
+      return {
+        ok: false, atomic: true, reason: 'total-cap', buckets,
+        message: 'This DXF would place ' + totalOutputCount + ' lines, over the ' + DXF_TOTAL_OUTPUT_CAP + '-line combined limit. Import rejected.',
+      };
+    }
+    return { ok: true, pieces: keptPieces, buckets, skippedOversizedPieces };
+  }
+
+  // ---- Board mutation (real annotations, real state) -------------------------
+
+  function dxfAnnotationFromSegment(seg, bounds, transform, groupId) {
+    const T = (p) => applyDxfTransform(p, bounds, transform);
+    const base = {
+      id: state.idCounter++,
+      seq: state.nextSequence, // never advanced — a Sketch Element spends no POM number (ADR 0058, matches createAnnotationFromTemplateMember)
+      style: 'solid',
+      color: 'black',
+      arrowType: 'none',
+      lineWidth: DEFAULT_LINE_WIDTH,
+      lineTreatment: null,
+      purpose: 'sketch-element',
+      templateGroupId: groupId,
+      midPoint: null,
+      midHandleIn: null,
+      midHandleOut: null,
+      labelManual: false,
+      text: null,
+      value: null,
+    };
+    let ann;
+    if (seg.kind === 'straight') {
+      ann = Object.assign(base, { type: 'straight', start: T(seg.a), end: T(seg.b), control1: null, control2: null, points: [] });
+    } else {
+      ann = Object.assign(base, { type: 'curved', start: T(seg.p0), end: T(seg.p3), control1: T(seg.c1), control2: T(seg.c2), points: [] });
+      ensureCurveControls(ann);
+    }
+    ann.label = computeDefaultLabelPosition(ann);
+    return ann;
+  }
+
+  function dxfBucketLabel(key) {
+    switch (key) {
+      case 'unsupportedType': return 'unsupported type';
+      case 'nonPlanar': return 'non-planar';
+      case 'unsupportedFit': return 'unsupported polyline fit mode';
+      case 'malformed': return 'malformed';
+      default: return key;
+    }
+  }
+
+  function dxfBucketsToast(buckets) {
+    const parts = [];
+    for (const key of ['unsupportedType', 'nonPlanar', 'unsupportedFit', 'malformed']) {
+      const count = buckets && buckets[key];
+      if (count) parts.push(count + ' ' + dxfBucketLabel(key));
+    }
+    return parts.length ? 'Skipped: ' + parts.join(', ') + '.' : '';
+  }
+
+  // The one entry point the Tools-menu button / test hooks call. `rect`
+  // defaults to the real board viewport; tests may pass a fake one.
+  function importDxfText(text, rect) {
+    const parsed = parseDxfDocument(text);
+    if (!parsed.ok) {
+      const toastMsg = [parsed.message, dxfBucketsToast(parsed.buckets)].filter(Boolean).join(' ');
+      showToast(toastMsg);
+      return { ok: false, reason: parsed.reason, message: parsed.message, buckets: parsed.buckets || null };
+    }
+    const viewportRect = rect || getViewportRect();
+    const bounds = dxfBoundsOfSegments(parsed.pieces.flat());
+    const transform = computeDxfPlacementTransform(bounds, viewportRect);
+    const allNewIds = [];
+    let firstId = null;
+    for (const piece of parsed.pieces) {
+      const groupId = 'dxf-' + state.idCounter++;
+      const pieceAnns = piece.map(seg => dxfAnnotationFromSegment(seg, bounds, transform, groupId));
+      // One sourceImageId per PIECE (not per segment), matching
+      // createAnnotationFromTemplateMember's own convention: landing outside
+      // every board image gives the piece no sourceImageId at all, which is
+      // exactly the Scratch Area placement semantics already documented for
+      // every other sketch-element source.
+      const pieceBounds = dxfBoundsOfPoints(pieceAnns.flatMap(a => a.type === 'straight'
+        ? [a.start, a.end] : [a.start, a.control1, a.control2, a.end]));
+      const owner = (typeof bgTopImageAt === 'function')
+        ? bgTopImageAt({ x: pieceBounds.x + pieceBounds.width / 2, y: pieceBounds.y + pieceBounds.height / 2 })
+        : null;
+      for (const ann of pieceAnns) {
+        if (owner) ann.sourceImageId = owner.id;
+        state.annotations.push(ann);
+        allNewIds.push(ann.id);
+        if (firstId == null) firstId = ann.id;
+      }
+    }
+    state.selection = { kind: 'annotation', id: firstId };
+    state.selectedAnnotationIds = allNewIds;
+    state.templateGroupEditId = null;
+    pushHistoryIfChanged();
+    if (typeof updateUI === 'function') updateUI();
+    if (typeof requestRender === 'function') requestRender();
+
+    const pieceCount = parsed.pieces.length;
+    const pieceWord = pieceCount === 1 ? 'piece' : 'pieces';
+    const lineWord = allNewIds.length === 1 ? 'line' : 'lines';
+    const skipParts = [dxfBucketsToast(parsed.buckets)];
+    if (parsed.skippedOversizedPieces) {
+      skipParts.push(parsed.skippedOversizedPieces + ' oversized piece'
+        + (parsed.skippedOversizedPieces === 1 ? '' : 's') + ' (over ' + DXF_PER_PIECE_CAP + ' lines each).');
+    }
+    const skipMsg = skipParts.filter(Boolean).join(' ');
+    showToast('Imported ' + pieceCount + ' ' + pieceWord + ' (' + allNewIds.length + ' ' + lineWord + ').'
+      + (skipMsg ? ' ' + skipMsg : ''));
+    return {
+      ok: true,
+      pieceCount,
+      annotationCount: allNewIds.length,
+      annotationIds: allNewIds.slice(),
+      buckets: parsed.buckets,
+      skippedOversizedPieces: parsed.skippedOversizedPieces || 0,
+    };
   }
 
   // ---- src/manual/viewport.js ----
@@ -24238,6 +25923,28 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // src/manual/annotation-lookup.js.
 // Source part for app.js. Run `npm run build` after editing.
 
+  // US-104 "Quick length readout": a read-only, non-persisted length for the
+  // current selection, shown whenever every selected annotation is a Sketch
+  // Element (a DXF import, a placed Template, or any hand-drawn Scratch Area
+  // line) — never for ordinary POM lines, which already have their own
+  // measured-value display in the spec panel. Sums lineLength() over the
+  // WHOLE selection rather than requiring exactly one: a normal click on a
+  // multi-line piece auto-expands to its whole templateGroupId, so gating on
+  // "exactly one" could never fire from a normal click. Not gated by Sketch
+  // Focus vs POM Focus — the geometry is already on the board regardless of
+  // focus state, and this is read-only, not an authoring tool.
+  function sketchSelectionLengthReadout() {
+    const anns = getSelectedAnnotations();
+    if (!anns.length || !anns.every(ann => ann.purpose === 'sketch-element')) return '';
+    const totalPx = anns.reduce((sum, ann) => sum + lineLength(ann), 0);
+    if (!(totalPx > 0)) return '';
+    const label = anns.length > 1 ? 'Total length' : 'Length';
+    const value = state.calibration.unitsPerPx != null
+      ? formatMeasure(totalPx * state.calibration.unitsPerPx) + ' ' + state.calibration.unit
+      : Math.round(totalPx) + ' px (uncalibrated)';
+    return ' <span class="muted">' + label + ': ' + value + '</span>';
+  }
+
   function updateUI() {
     // US-093 / ADR 0053 code review, 2026-08-21: the Add-point fallback has to
     // run before the tool buttons below read state.tool. It used to sit past
@@ -24375,7 +26082,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       } else if (selectedAnnotation) {
         toolText = 'Select – Drag line, endpoints, curve shape handle, or label. Smart Align is '
           + (state.smartAlignEnabled ? 'on; hold <span class="kbd">Alt/Option</span> to bypass it. ' : 'off. ')
-          + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
+          + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).'
+          + sketchSelectionLengthReadout();
       } else if (selectedGraphic) {
         toolText = state.graphicEdit
           ? 'Edit Path – Select and drag nodes, handles, or segments; Cut Path opens the active point.'
@@ -39509,6 +41217,12 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       },
       importLinePresetsJson: (text) => (typeof importLinePresetsFromJson === 'function'
         ? importLinePresetsFromJson(text) : 0),
+      // US-107: a project's own presets the local library does not have yet —
+      // the model half of the Library dialog's "Import N from project" action
+      // (src/manual/line-presets.js), so a suite can assert the offer without
+      // the dialog's own visibility rule standing in for it.
+      getPendingLinePresets: () => (typeof getPendingProjectLinePresets === 'function'
+        ? clone(getPendingProjectLinePresets()) : null),
       // US-097 / ADR 0056: the shape-stamp library. getShapeStamps returns the
       // stored geometry so a suite can compare a placed line against the stamp
       // it came from; sampleAnnotationShape returns the SHAPE of any line,
@@ -39524,26 +41238,67 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       setActiveShapeStamp: (id) => {
         if (typeof setActiveShapeStamp === 'function') setActiveShapeStamp(id);
       },
-      addTemplateFromAnnotationIds: (name, ids) => {
+      addTemplateFromAnnotationIds: (name, ids, options) => {
         const anns = (Array.isArray(ids) ? ids : []).map(id => getAnnotationById(id)).filter(Boolean);
         const template = typeof shapeStampFromAnnotations === 'function'
-          ? shapeStampFromAnnotations(anns, name) : null;
+          ? shapeStampFromAnnotations(anns, name, options) : null;
         if (!template) return null;
         commitShapeStamps([...getShapeStamps(), template]);
         return clone(template);
       },
-      placeTemplateInBox: (id, box) => {
+      placeTemplateInBox: (id, box, mirrored) => {
         const template = getShapeStampById(id);
         if (!template || !box) return [];
         const groupId = 'template-' + state.idCounter++;
-        const anns = createAnnotationsFromStamp(template, box, groupId);
+        const anns = createAnnotationsFromStamp(template, box, groupId, !!mirrored);
         state.annotations.push(...anns);
         if (anns.length) {
           state.selection = { kind: 'annotation', id: anns[0].id };
           state.selectedAnnotationIds = anns.map(ann => ann.id);
         }
         pushHistoryIfChanged(); updateUI(); requestRender();
+        if (template.id) touchShapeStampUsage(template.id);
         return clone(anns);
+      },
+      // US-106: Library Manager — categories, metadata edits, and the two
+      // small placement seams (place-at-saved-size and mirror) so a suite can
+      // assert on the model directly, alongside driving the real dialog.
+      library: {
+        categories: () => (typeof libraryCategories === 'function' ? clone(libraryCategories()) : []),
+        setCategory: (id, category) => (typeof setShapeStampCategory === 'function' ? setShapeStampCategory(id, category) : false),
+        setTags: (id, tags) => (typeof setShapeStampTags === 'function' ? setShapeStampTags(id, tags) : false),
+        setNotes: (id, notes) => (typeof setShapeStampNotes === 'function' ? setShapeStampNotes(id, notes) : false),
+        setFavorite: (id, favorite) => (typeof setShapeStampFavorite === 'function' ? setShapeStampFavorite(id, favorite) : false),
+        toggleFavorite: (id) => (typeof toggleShapeStampFavorite === 'function' ? toggleShapeStampFavorite(id) : false),
+        duplicate: (id) => (typeof duplicateShapeStamp === 'function' ? clone(duplicateShapeStamp(id)) : null),
+        // US-107: deleting a Template is a real dialog action (card menu ▸
+        // Delete…, behind a window.confirm the Library dialog itself owns).
+        // This hook isolates deleteShapeStamp's OWN model-layer behavior —
+        // specifically, that deleting the currently ARMED stamp also clears
+        // the arm and switches the tool away from 'stamp' — from the
+        // confirm-dialog plumbing around it, which library-manager-check.mjs
+        // already drives for real.
+        deleteStamp: (id) => (typeof deleteShapeStamp === 'function' ? deleteShapeStamp(id) : false),
+        armForPlacement: (id, opts) => {
+          if (typeof armShapeStampForPlacement === 'function') armShapeStampForPlacement(id, opts);
+        },
+        getArmedMirrored: () => !!state.activeStampMirrored,
+        defaultBoxAt: (id, world) => {
+          const stamp = getShapeStampById(id);
+          return stamp && typeof defaultStampBoxAt === 'function' ? clone(defaultStampBoxAt(stamp, world)) : null;
+        },
+      },
+      // US-104: DXF import. `parse` is the pure text -> pieces parser (no
+      // board mutation), `computePlacement` the pure viewport-fit transform,
+      // both exposed independently so unit-level cases (bulge signs, cap
+      // boundaries, the auto-fit-box formula) don't need a real file input or
+      // a real viewport. `importText` drives the real one-shot board mutation
+      // the Tools-menu button itself calls.
+      dxf: {
+        parse: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text)) : null),
+        computePlacement: (bounds, rect, centerWorld) => (typeof computeDxfPlacementTransform === 'function'
+          ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld)) : null),
+        importText: (text, rect) => (typeof importDxfText === 'function' ? clone(importDxfText(text, rect)) : null),
       },
       sampleAnnotationShape: (annotationId, samples) => {
         const ann = state.annotations.find(a => a && a.id === annotationId);
