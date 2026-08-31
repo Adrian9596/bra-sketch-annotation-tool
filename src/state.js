@@ -68,6 +68,13 @@
     noteTextColor: 'black',
     noteLeaderColor: 'red',
     annotations: [],
+    // ADR 0070: templateGroupId -> human label (a DXF INSERT's block name,
+    // e.g. "CUP_36C"), for the Pattern Pieces panel only. Sparse — only DXF
+    // import writes an entry, and only when the source block had a name; a
+    // group with no entry falls back to a positional label. Not view state
+    // like templateGroupEditId above: it describes the sketch itself, so it
+    // is persisted with the project (see buildProjectSnapshot/loadProject).
+    templateGroupLabels: {},
     // US-095: visual vector construction shapes. Deliberately separate from
     // annotations, which are the measurement/POM collection.
     graphics: [],

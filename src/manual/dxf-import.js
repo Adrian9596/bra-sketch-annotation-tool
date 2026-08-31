@@ -912,9 +912,19 @@
     // other). Each top-level INSERT gets its own fresh, never-reused id, so
     // dxfConnectedComponents/dxfMergeContainedComponents never fuse two
     // separately-placed instances together.
+    //
+    // ADR 0070: a top-level INSERT's own block name (group 2) is the only
+    // human-readable identity a grading-nest piece carries — real files name
+    // blocks like "CUP_36C" or "BACKIN_38D" (see ADR 0067's Context). Recorded
+    // here, keyed by instance, purely so the Pattern Pieces panel can label a
+    // piece for the TD instead of an anonymous "Piece 3"; never read by parsing
+    // or piece-detection itself. Instance 0 (direct entities, no INSERT) never
+    // gets an entry — dxfBuildPieces callers fall back to a positional label.
+    const instanceBlockNames = new Map();
     let nextDxfInstanceId = 1;
     for (const rec of scan.entityRecords) {
       const instance = rec.type === 'INSERT' ? nextDxfInstanceId++ : 0;
+      if (rec.type === 'INSERT') instanceBlockNames.set(instance, dxfInsertParams(rec).blockName);
       const result = dxfConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance);
       if (!result.ok) { buckets[result.bucket] += 1; continue; }
       acceptedSegments.push(...result.segments);
@@ -949,7 +959,7 @@
         message: 'This DXF would place ' + totalOutputCount + ' lines, over the ' + DXF_TOTAL_OUTPUT_CAP + '-line combined limit. Import rejected.',
       };
     }
-    return { ok: true, pieces: keptPieces, buckets, skippedOversizedPieces };
+    return { ok: true, pieces: keptPieces, buckets, skippedOversizedPieces, instanceBlockNames };
   }
 
   // ---- Board mutation (real annotations, real state) -------------------------
@@ -1024,10 +1034,22 @@
     // originally placed it — the board annotations are the only thing that
     // actually tracks a later whole-piece move.
     const pieceFirstAnnotationIds = [];
+    // ADR 0070: one groupId per piece, in the same order as parsed.pieces, so
+    // the Pattern Pieces panel (opened below) can label each row from the
+    // block name recorded against that piece's instance — falling back to a
+    // plain per-position label when the piece came from instance 0 (direct
+    // ENTITIES, no INSERT) or an unnamed block.
+    const groupIds = [];
     for (const piece of parsed.pieces) {
       const groupId = 'dxf-' + state.idCounter++;
+      groupIds.push(groupId);
       const pieceAnns = piece.map(seg => dxfAnnotationFromSegment(seg, bounds, transform, groupId));
       pieceFirstAnnotationIds.push(pieceAnns.length ? pieceAnns[0].id : null);
+      const blockName = piece.length ? parsed.instanceBlockNames.get(piece[0].instance) : null;
+      if (blockName) {
+        if (!state.templateGroupLabels) state.templateGroupLabels = {};
+        state.templateGroupLabels[groupId] = blockName;
+      }
       // One sourceImageId per PIECE (not per segment), matching
       // createAnnotationFromTemplateMember's own convention: landing outside
       // every board image gives the piece no sourceImageId at all, which is
@@ -1070,11 +1092,18 @@
     const skipMsg = skipParts.filter(Boolean).join(' ');
     showToast('Imported ' + pieceCount + ' ' + pieceWord + ' (' + allNewIds.length + ' ' + lineWord + ').'
       + (skipMsg ? ' ' + skipMsg : ''));
+    // ADR 0070: a grading-nest file places every chosen size's piece at the
+    // same board position (see ADR 0069's Context) — more than one piece
+    // means the TD likely just imported an overlapping stack of sizes and
+    // needs the Pattern Pieces panel to tell them apart, not a single
+    // "1 piece" import where there is nothing to pick between.
+    if (pieceCount > 1 && typeof openPatternPiecesPanel === 'function') openPatternPiecesPanel();
     return {
       ok: true,
       pieceCount,
       annotationCount: allNewIds.length,
       annotationIds: allNewIds.slice(),
+      groupIds,
       buckets: parsed.buckets,
       skippedOversizedPieces: parsed.skippedOversizedPieces || 0,
     };

@@ -156,6 +156,9 @@
 
       state.annotations = clone(s.annotations || []);
       state.annotations.forEach(ensureCurveControls);
+      // ADR 0070: additive — a file saved before this existed has no key.
+      state.templateGroupLabels = (s.templateGroupLabels && typeof s.templateGroupLabels === 'object')
+        ? clone(s.templateGroupLabels) : {};
       // US-095 additive migration: pre-shape projects omit this key.
       state.graphics = normalizeBoardGraphics(s.graphics || []);
       state.graphicEdit = null;

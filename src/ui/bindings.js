@@ -28,6 +28,7 @@
     bindLinePresetPanel();
     bindShapeStampPanel();
     bindDxfImportPanel();
+    bindPatternPiecesPanel();
     bindDxfMeasurePanel();
     el.styleOptionBtns.forEach((button) => {
       button.addEventListener('click', () => {
@@ -252,9 +253,19 @@
           && e.target !== el.canvas) {
         closeAnchorManager();
       }
+      // ADR 0070: same click-outside-closes contract as the anchor panel
+      // above — not the canvas, so selecting a piece via the board while the
+      // panel is open stays possible.
+      if (isPatternPiecesPanelOpen()
+          && !el.patternPiecesPanel.contains(e.target)
+          && e.target !== el.patternPiecesBtn
+          && e.target !== el.canvas) {
+        closePatternPiecesPanel();
+      }
     });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && isAnchorManagerOpen()) closeAnchorManager();
+      if (e.key === 'Escape' && isPatternPiecesPanelOpen()) closePatternPiecesPanel();
     });
     document.addEventListener('paste', onPasteEvent);
     document.addEventListener('keydown', onKeyDown);

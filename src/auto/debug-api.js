@@ -342,6 +342,17 @@
         computePlacement: (bounds, rect, centerWorld, zoom) => (typeof computeDxfPlacementTransform === 'function'
           ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld, zoom)) : null),
         importText: (text, rect) => (typeof importDxfText === 'function' ? clone(importDxfText(text, rect)) : null),
+        // ADR 0070: the Pattern Pieces panel's pure state operations, exposed
+        // independently of the real DOM panel (src/ui/pattern-pieces-panel.js)
+        // so a headless suite can assert the group-list/remove logic without
+        // driving live checkbox clicks for every case.
+        patternPieces: {
+          groups: () => (typeof patternPieceGroups === 'function' ? clone(patternPieceGroups()) : null),
+          remove: (groupIds) => { if (typeof removePatternPieceGroups === 'function') removePatternPieceGroups(groupIds); },
+          isOpen: () => (typeof isPatternPiecesPanelOpen === 'function' ? isPatternPiecesPanelOpen() : null),
+          open: () => { if (typeof openPatternPiecesPanel === 'function') openPatternPiecesPanel(); },
+          close: () => { if (typeof closePatternPiecesPanel === 'function') closePatternPiecesPanel(); },
+        },
         // US-105: Pattern Measure. `measure.*` exposes the pure native
         // parser + geometry kernel independently of any board/UI state (unit
         // tests), plus read-only session getters an E2E suite can compare

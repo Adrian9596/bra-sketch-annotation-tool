@@ -1405,6 +1405,128 @@ window.__DXF = (() => {
   check(halo.handleAtEndpointCount > 0,
     'a real single-selection must still show its drawSelectionHelpers white-fill endpoint handle, unaffected by the halo change');
 
+  // ===========================================================================
+  // 12. ADR 0070: the Pattern Pieces panel. A grading-nest DXF places every
+  //     size's piece at the same board position, overlapping (ADR 0069's
+  //     Context) — this panel lists every templateGroupId group so the TD can
+  //     tell them apart (by the source INSERT's block name, when the DXF
+  //     names its blocks) and remove the ones they don't want. Manual, not
+  //     auto-detected: ADR 0067's own research found no reliable way to guess
+  //     which size is "standard."
+  // ===========================================================================
+
+  const patternPieces = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug;
+    const resetBoard = async () => {
+      const p = d.exportProject();
+      p.state.annotations = []; p.state.images = []; p.state.graphics = []; p.state.notes = [];
+      p.state.templateGroupLabels = {};
+      await d.loadProject(p);
+      document.getElementById('modeManualBtn').click();
+      if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    };
+
+    // A. Two named blocks, far apart (never touching, so each is its own
+    // piece regardless of the instance-boundary rule) — one carries a real
+    // grading-nest-style name, proving the label reaches the panel.
+    await resetBoard();
+    const namedDoc = ${JSON.stringify(docWithBlocks(
+      [dxfBlock('CUP_36C', dxfLine(0, 0, 10, 0)), dxfBlock('CUP_38C', dxfLine(0, 0, 10, 0))],
+      [dxfInsert('CUP_36C', 0, 0), dxfInsert('CUP_38C', 1000, 0)],
+    ))};
+    const namedImport = d.dxf.importText(namedDoc);
+    const namedGroups = d.dxf.patternPieces.groups();
+    const panelAutoOpen = d.dxf.patternPieces.isOpen();
+
+    // B. Direct, unblocked entities (instance 0) fall back to a positional
+    // label — the vast majority of real files that DO have block names still
+    // leave instance 0 unlabeled (nothing was ever placed via INSERT there).
+    await resetBoard();
+    const scatteredDoc = ${JSON.stringify(doc([dxfScatteredPieces(2)]))};
+    d.dxf.importText(scatteredDoc);
+    const scatteredGroups = d.dxf.patternPieces.groups();
+
+    // C. Removing one group deletes exactly its annotations and its label,
+    // leaves the other group untouched, and is a plain annotation deletion —
+    // no new hidden-state field, so the normal history stack covers undo.
+    await resetBoard();
+    d.dxf.importText(namedDoc);
+    const beforeRemove = d.dxf.patternPieces.groups();
+    const keepGroupId = beforeRemove.find(g => g.label === 'CUP_38C').groupId;
+    const killGroupId = beforeRemove.find(g => g.label === 'CUP_36C').groupId;
+    d.dxf.patternPieces.remove([killGroupId]);
+    const afterRemove = { anns: d.getAnnotations(), groups: d.dxf.patternPieces.groups(), exported: d.exportProject() };
+
+    // D. A single-piece import (nothing to choose between) must not
+    // auto-open the panel.
+    await resetBoard();
+    const soloDoc = ${JSON.stringify(doc([dxfLine(0, 0, 10, 0)]))};
+    d.dxf.importText(soloDoc);
+    const soloAutoOpen = d.dxf.patternPieces.isOpen();
+
+    // E. Real DOM: Tools-menu entry opens the panel; the close button closes
+    // it; the live checkbox + "Remove unchecked" button flow (not the debug
+    // hook) removes exactly the unchecked piece from the board.
+    await resetBoard();
+    d.dxf.patternPieces.close();
+    document.getElementById('toolsMenuBtn').click();
+    const btnVisible = document.getElementById('patternPiecesBtn').offsetParent !== null;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    d.dxf.importText(namedDoc);
+    const openedByImport = d.dxf.patternPieces.isOpen();
+    document.getElementById('patternPiecesCloseBtn').click();
+    const closedByButton = d.dxf.patternPieces.isOpen();
+    document.getElementById('patternPiecesBtn').click();
+    const reopenedByToolsMenu = d.dxf.patternPieces.isOpen();
+    const rows = Array.from(document.querySelectorAll('#patternPiecesBody .pattern-piece-row'));
+    const row36 = rows.find(r => r.querySelector('.pattern-piece-label').textContent === 'CUP_36C');
+    row36.querySelector('.pattern-piece-checkbox').click();
+    document.getElementById('patternPiecesApplyBtn').click();
+    const afterDomRemove = d.getAnnotations();
+
+    return {
+      namedImport, namedGroups, panelAutoOpen, scatteredGroups,
+      beforeRemove, afterRemove, soloAutoOpen,
+      btnVisible, openedByImport, closedByButton, reopenedByToolsMenu,
+      rowsCountBeforeDom: rows.length, afterDomRemoveLen: afterDomRemove.length,
+    };
+  })()`);
+
+  check(patternPieces.namedImport.ok === true && patternPieces.namedImport.pieceCount === 2,
+    `fixture sanity: two far-apart named blocks must import as 2 pieces, got ${JSON.stringify(patternPieces.namedImport)}`);
+  check(patternPieces.namedGroups.length === 2
+    && patternPieces.namedGroups.map(g => g.label).sort().join(',') === 'CUP_36C,CUP_38C',
+    `a DXF INSERT's own block name must reach the panel as that piece's label, got ${JSON.stringify(patternPieces.namedGroups.map(g => g.label))}`);
+  check(patternPieces.namedGroups.every(g => g.count === 1),
+    `each named piece here is a single LINE, got ${JSON.stringify(patternPieces.namedGroups.map(g => g.count))}`);
+  check(patternPieces.panelAutoOpen === true,
+    'importing more than one piece must auto-open the Pattern Pieces panel (this is the grading-nest declutter moment)');
+  check(patternPieces.scatteredGroups.length === 2
+    && patternPieces.scatteredGroups.map(g => g.label).sort().join(',') === 'Piece 1,Piece 2',
+    `direct entities (no INSERT, no block name) must fall back to a positional label, got ${JSON.stringify(patternPieces.scatteredGroups.map(g => g.label))}`);
+
+  check(patternPieces.afterRemove.groups.length === 1 && patternPieces.afterRemove.groups[0].label === 'CUP_38C',
+    `removing one group must leave exactly the other piece, got ${JSON.stringify(patternPieces.afterRemove.groups)}`);
+  check(patternPieces.afterRemove.anns.length === 1 && patternPieces.afterRemove.anns[0].templateGroupId === patternPieces.beforeRemove.find(g => g.label === 'CUP_38C').groupId,
+    `removePatternPieceGroups must be a plain annotation deletion — only the removed group's annotations disappear from state.annotations, got ${JSON.stringify(patternPieces.afterRemove.anns.map(a => a.templateGroupId))}`);
+  check(!(patternPieces.afterRemove.exported.state.templateGroupLabels
+    && Object.prototype.hasOwnProperty.call(patternPieces.afterRemove.exported.state.templateGroupLabels, patternPieces.beforeRemove.find(g => g.label === 'CUP_36C').groupId)),
+    'the removed group\'s label must be cleaned out of templateGroupLabels, not left as a stale entry');
+  check(patternPieces.afterRemove.exported.state.templateGroupLabels[patternPieces.beforeRemove.find(g => g.label === 'CUP_38C').groupId] === 'CUP_38C',
+    `templateGroupLabels must persist in the project snapshot (ADR 0070 — a real decision, not a session-only review toggle), got ${JSON.stringify(patternPieces.afterRemove.exported.state.templateGroupLabels)}`);
+
+  check(patternPieces.soloAutoOpen === false,
+    'a single-piece import has nothing to choose between and must not auto-open the panel');
+
+  check(patternPieces.btnVisible === true,
+    '"Pattern pieces…" must be visible in the Tools menu in Sketch Focus');
+  check(patternPieces.openedByImport === true, 'a multi-piece import must open the panel');
+  check(patternPieces.closedByButton === false, 'the panel close button must actually close it');
+  check(patternPieces.reopenedByToolsMenu === true, 'the Tools-menu entry must reopen the panel on demand');
+  check(patternPieces.rowsCountBeforeDom === 2, `the panel must render one row per piece, got ${patternPieces.rowsCountBeforeDom}`);
+  check(patternPieces.afterDomRemoveLen === 1,
+    `unchecking one row and clicking "Remove unchecked" through the REAL DOM (not the debug hook) must remove exactly that piece, got ${patternPieces.afterDomRemoveLen} annotations left`);
+
   const errors = await s.eval('window.__dxfErrors || []');
   check(errors.length === 0, 'browser console errors: ' + errors.join(' | '));
   await s.close();

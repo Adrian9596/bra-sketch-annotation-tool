@@ -275,6 +275,13 @@
     noteTextColor: 'black',
     noteLeaderColor: 'red',
     annotations: [],
+    // ADR 0070: templateGroupId -> human label (a DXF INSERT's block name,
+    // e.g. "CUP_36C"), for the Pattern Pieces panel only. Sparse — only DXF
+    // import writes an entry, and only when the source block had a name; a
+    // group with no entry falls back to a positional label. Not view state
+    // like templateGroupEditId above: it describes the sketch itself, so it
+    // is persisted with the project (see buildProjectSnapshot/loadProject).
+    templateGroupLabels: {},
     // US-095: visual vector construction shapes. Deliberately separate from
     // annotations, which are the measurement/POM collection.
     graphics: [],
@@ -582,6 +589,14 @@
     // US-105: the Pattern Measure tool entries, inside the Tools menu.
     dxfMeasureAlongBtn: document.getElementById('dxfMeasureAlongBtn'),
     dxfMeasureOutBtn: document.getElementById('dxfMeasureOutBtn'),
+    // ADR 0070: the Pattern Pieces panel — Tools menu entry + the floating
+    // panel itself, mirroring the anchorManager* refs above.
+    patternPiecesBtn: document.getElementById('patternPiecesBtn'),
+    patternPiecesPanel: document.getElementById('patternPiecesPanel'),
+    patternPiecesCloseBtn: document.getElementById('patternPiecesCloseBtn'),
+    patternPiecesCount: document.getElementById('patternPiecesCount'),
+    patternPiecesBody: document.getElementById('patternPiecesBody'),
+    patternPiecesApplyBtn: document.getElementById('patternPiecesApplyBtn'),
     lineWidthChip: document.getElementById('lineWidthChip'),
     lineWidthInput: document.getElementById('lineWidthInput'),
     fontSizeChip: document.getElementById('fontSizeChip'),
@@ -17230,6 +17245,12 @@ const BOM_MATERIAL_LIBRARY = [
       page: 'board', mode: 'manual', target: '#dxfImportBtn',
       when: () => state.sketchMode ? true : 'Available in Sketch Focus',
       action: () => appCommandClick('#dxfImportBtn') }),
+    // ADR 0070: same Sketch-Focus gate as the DXF import command above — the
+    // panel only has anything to list once a sketch-element piece exists.
+    appCommand({ id: 'board.pattern-pieces.open', label: 'Pattern Pieces: Choose Sizes', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#patternPiecesBtn',
+      when: () => state.sketchMode ? true : 'Available in Sketch Focus',
+      action: () => appCommandClick('#patternPiecesBtn') }),
     // US-107: the unified Library dialog replaces board.presets.open,
     // board.shapes.open, and the old Template-only board.template.open-library
     // with ONE command — Templates, Line Treatments, and saved Projects are
@@ -18533,6 +18554,181 @@ const BOM_MATERIAL_LIBRARY = [
     if (el.dxfMeasureOutBtn) el.dxfMeasureOutBtn.addEventListener('click', () => setDxfMeasureMode('out-of-path'));
   }
 
+  // ---- src/ui/pattern-pieces-panel.js ----
+// ADR 0070: the Pattern Pieces panel — a floating, non-modal list of every
+// templateGroupId group on the board (DXF-imported grading-nest pieces, and
+// Template placements, since both share the same field), so the TD can tell
+// apart a stack of overlapping same-position sizes and keep only the ones
+// they want. Mirrors src/ui/anchor-manager-panel.js's shape (floating panel,
+// row-per-item, a Select action, plain DOM row-building), but the per-row
+// action here is REMOVE, not hide: ADR 0067's research found no reliable way
+// to auto-detect which size is "standard," so this is a manual, decisive
+// choice, not a review-only toggle like the POM/anchor hide mechanisms —
+// removed pieces are ordinary annotation deletions (undo-able via the normal
+// history stack), not a new visibility flag layered onto rendering.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // One row per distinct templateGroupId currently in state.annotations, in
+  // first-seen order. Labeled from state.templateGroupLabels when DXF import
+  // recorded a block name for that group; a positional fallback otherwise
+  // (an anonymous block, or a non-DXF template group).
+  function patternPieceGroups() {
+    const order = [];
+    const byId = new Map();
+    for (const ann of state.annotations) {
+      const gid = ann.templateGroupId;
+      if (gid == null) continue;
+      if (!byId.has(gid)) { byId.set(gid, { groupId: gid, ids: [] }); order.push(gid); }
+      byId.get(gid).ids.push(ann.id);
+    }
+    return order.map((gid, i) => {
+      const g = byId.get(gid);
+      const label = (state.templateGroupLabels && state.templateGroupLabels[gid]) || ('Piece ' + (i + 1));
+      return { groupId: gid, label, count: g.ids.length, ids: g.ids.slice() };
+    });
+  }
+
+  function isPatternPiecesPanelOpen() {
+    return !!(el.patternPiecesPanel && !el.patternPiecesPanel.hidden);
+  }
+
+  function openPatternPiecesPanel() {
+    if (!el.patternPiecesPanel) return;
+    if (!patternPieceGroups().length) {
+      showToast('No sketch-element pieces on the board yet.');
+      return;
+    }
+    el.patternPiecesPanel.hidden = false;
+    if (el.patternPiecesBtn) el.patternPiecesBtn.classList.add('active');
+    renderPatternPiecesPanel();
+  }
+
+  function closePatternPiecesPanel() {
+    if (!el.patternPiecesPanel) return;
+    el.patternPiecesPanel.hidden = true;
+    if (el.patternPiecesBtn) el.patternPiecesBtn.classList.remove('active');
+  }
+
+  function togglePatternPiecesPanel() {
+    if (isPatternPiecesPanelOpen()) closePatternPiecesPanel();
+    else openPatternPiecesPanel();
+  }
+
+  // Selects the group's annotations on the board so the existing multi-select
+  // halo (render-loop.js) highlights exactly this outline among the stack —
+  // reuses the click-a-group-member selection behavior already wired for
+  // templateGroupId (src/manual/selection.js), just triggered from the panel
+  // instead of a canvas click.
+  function selectPatternPieceGroup(ids) {
+    if (!ids || !ids.length) return;
+    state.selection = { kind: 'annotation', id: ids[0] };
+    state.selectedAnnotationIds = ids.slice();
+    if (typeof updateUI === 'function') updateUI();
+    if (typeof requestRender === 'function') requestRender();
+  }
+
+  // Deletes every annotation belonging to the given groups. Sketch-element
+  // pieces carry no POM identity (ADR 0059/0060 — Templates and DXF geometry
+  // never create a POM), so unlike deleteSelected()'s POM-review bookkeeping
+  // (deletedPomKeys), a plain filter is the whole operation; the normal
+  // history stack (pushHistoryIfChanged) is what makes this undo-able.
+  function removePatternPieceGroups(groupIds) {
+    const kill = new Set(groupIds);
+    if (!kill.size) return;
+    state.annotations = state.annotations.filter(ann => !kill.has(ann.templateGroupId));
+    if (state.templateGroupLabels) {
+      for (const gid of kill) delete state.templateGroupLabels[gid];
+    }
+    if (state.selection && state.selection.kind === 'annotation'
+        && !state.annotations.some(a => a.id === state.selection.id)) {
+      state.selection = { kind: null, id: null };
+    }
+    state.selectedAnnotationIds = (state.selectedAnnotationIds || [])
+      .filter(id => state.annotations.some(a => a.id === id));
+    if (kill.has(state.templateGroupEditId)) state.templateGroupEditId = null;
+    pushHistoryIfChanged();
+    if (typeof updateUI === 'function') updateUI();
+    if (typeof requestRender === 'function') requestRender();
+  }
+
+  function patternPieceMiniBtn(label, title, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pattern-piece-mini-btn';
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+    return b;
+  }
+
+  // Rebuilt on open and after Apply only (not on every generic updateUI, like
+  // Anchor Manager's live-refresh) — a checkbox's unchecked state lives only
+  // in this render's own closure until Apply reads it, matching the shape of
+  // a one-shot "review this list, then act" tool rather than a live view.
+  function renderPatternPiecesPanel() {
+    const panel = el.patternPiecesPanel;
+    const body = el.patternPiecesBody;
+    if (!panel || !body) return;
+    const groups = patternPieceGroups();
+    if (!groups.length) { closePatternPiecesPanel(); return; }
+    if (el.patternPiecesCount) {
+      el.patternPiecesCount.textContent = groups.length + (groups.length === 1 ? ' piece' : ' pieces');
+    }
+    body.innerHTML = '';
+    const keep = new Set(groups.map(g => g.groupId)); // every row starts checked ("keep")
+    for (const g of groups) {
+      const row = document.createElement('div');
+      row.className = 'pattern-piece-row';
+
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.className = 'pattern-piece-checkbox';
+      box.checked = true;
+      box.title = 'Uncheck to remove this piece from the board';
+      box.addEventListener('change', () => {
+        if (box.checked) keep.add(g.groupId); else keep.delete(g.groupId);
+      });
+      row.appendChild(box);
+
+      const label = document.createElement('span');
+      label.className = 'pattern-piece-label';
+      label.textContent = g.label;
+      label.title = g.label + ' — click to select on the board';
+      label.addEventListener('click', (e) => { e.stopPropagation(); selectPatternPieceGroup(g.ids); });
+      row.appendChild(label);
+
+      const count = document.createElement('span');
+      count.className = 'pattern-piece-count';
+      count.textContent = g.count + (g.count === 1 ? ' line' : ' lines');
+      row.appendChild(count);
+
+      row.appendChild(patternPieceMiniBtn('Select', 'Highlight this piece on the board',
+        () => selectPatternPieceGroup(g.ids)));
+      body.appendChild(row);
+    }
+
+    if (el.patternPiecesApplyBtn) {
+      el.patternPiecesApplyBtn.onclick = () => {
+        const toRemove = groups.filter(g => !keep.has(g.groupId)).map(g => g.groupId);
+        if (!toRemove.length) { showToast('Nothing unchecked — every piece stays.'); return; }
+        removePatternPieceGroups(toRemove);
+        showToast('Removed ' + toRemove.length + (toRemove.length === 1 ? ' piece.' : ' pieces.'));
+        renderPatternPiecesPanel();
+      };
+    }
+  }
+
+  function bindPatternPiecesPanel() {
+    if (el.patternPiecesBtn) {
+      el.patternPiecesBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (typeof closeBoardToolbarMenus === 'function') closeBoardToolbarMenus(null, false);
+        openPatternPiecesPanel();
+      });
+    }
+    if (el.patternPiecesCloseBtn) el.patternPiecesCloseBtn.addEventListener('click', closePatternPiecesPanel);
+  }
+
   // ---- src/ui/bindings.js ----
 // Top-level UI bindings: bindUI() wires the toolbar, dropdowns, file
 // inputs, the canvas, the label editor, and keyboard shortcuts. Tool and
@@ -18564,6 +18760,7 @@ const BOM_MATERIAL_LIBRARY = [
     bindLinePresetPanel();
     bindShapeStampPanel();
     bindDxfImportPanel();
+    bindPatternPiecesPanel();
     bindDxfMeasurePanel();
     el.styleOptionBtns.forEach((button) => {
       button.addEventListener('click', () => {
@@ -18788,9 +18985,19 @@ const BOM_MATERIAL_LIBRARY = [
           && e.target !== el.canvas) {
         closeAnchorManager();
       }
+      // ADR 0070: same click-outside-closes contract as the anchor panel
+      // above — not the canvas, so selecting a piece via the board while the
+      // panel is open stays possible.
+      if (isPatternPiecesPanelOpen()
+          && !el.patternPiecesPanel.contains(e.target)
+          && e.target !== el.patternPiecesBtn
+          && e.target !== el.canvas) {
+        closePatternPiecesPanel();
+      }
     });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && isAnchorManagerOpen()) closeAnchorManager();
+      if (e.key === 'Escape' && isPatternPiecesPanelOpen()) closePatternPiecesPanel();
     });
     document.addEventListener('paste', onPasteEvent);
     document.addEventListener('keydown', onKeyDown);
@@ -19288,6 +19495,9 @@ const BOM_MATERIAL_LIBRARY = [
       savedAt: new Date().toISOString(),
       state: {
         annotations: clone(state.annotations),
+        // ADR 0070: sparse groupId -> label map (DXF block names). Additive —
+        // files saved before this existed have no key and default to {}.
+        templateGroupLabels: clone(state.templateGroupLabels || {}),
         graphics: clone(state.graphics || []),
         images: state.images.map(img => ({
           id: img.id, dataURL: img.dataURL,
@@ -19592,6 +19802,9 @@ const BOM_MATERIAL_LIBRARY = [
 
       state.annotations = clone(s.annotations || []);
       state.annotations.forEach(ensureCurveControls);
+      // ADR 0070: additive — a file saved before this existed has no key.
+      state.templateGroupLabels = (s.templateGroupLabels && typeof s.templateGroupLabels === 'object')
+        ? clone(s.templateGroupLabels) : {};
       // US-095 additive migration: pre-shape projects omit this key.
       state.graphics = normalizeBoardGraphics(s.graphics || []);
       state.graphicEdit = null;
@@ -26514,9 +26727,19 @@ function onWheel(e) {
     // other). Each top-level INSERT gets its own fresh, never-reused id, so
     // dxfConnectedComponents/dxfMergeContainedComponents never fuse two
     // separately-placed instances together.
+    //
+    // ADR 0070: a top-level INSERT's own block name (group 2) is the only
+    // human-readable identity a grading-nest piece carries — real files name
+    // blocks like "CUP_36C" or "BACKIN_38D" (see ADR 0067's Context). Recorded
+    // here, keyed by instance, purely so the Pattern Pieces panel can label a
+    // piece for the TD instead of an anonymous "Piece 3"; never read by parsing
+    // or piece-detection itself. Instance 0 (direct entities, no INSERT) never
+    // gets an entry — dxfBuildPieces callers fall back to a positional label.
+    const instanceBlockNames = new Map();
     let nextDxfInstanceId = 1;
     for (const rec of scan.entityRecords) {
       const instance = rec.type === 'INSERT' ? nextDxfInstanceId++ : 0;
+      if (rec.type === 'INSERT') instanceBlockNames.set(instance, dxfInsertParams(rec).blockName);
       const result = dxfConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance);
       if (!result.ok) { buckets[result.bucket] += 1; continue; }
       acceptedSegments.push(...result.segments);
@@ -26551,7 +26774,7 @@ function onWheel(e) {
         message: 'This DXF would place ' + totalOutputCount + ' lines, over the ' + DXF_TOTAL_OUTPUT_CAP + '-line combined limit. Import rejected.',
       };
     }
-    return { ok: true, pieces: keptPieces, buckets, skippedOversizedPieces };
+    return { ok: true, pieces: keptPieces, buckets, skippedOversizedPieces, instanceBlockNames };
   }
 
   // ---- Board mutation (real annotations, real state) -------------------------
@@ -26626,10 +26849,22 @@ function onWheel(e) {
     // originally placed it — the board annotations are the only thing that
     // actually tracks a later whole-piece move.
     const pieceFirstAnnotationIds = [];
+    // ADR 0070: one groupId per piece, in the same order as parsed.pieces, so
+    // the Pattern Pieces panel (opened below) can label each row from the
+    // block name recorded against that piece's instance — falling back to a
+    // plain per-position label when the piece came from instance 0 (direct
+    // ENTITIES, no INSERT) or an unnamed block.
+    const groupIds = [];
     for (const piece of parsed.pieces) {
       const groupId = 'dxf-' + state.idCounter++;
+      groupIds.push(groupId);
       const pieceAnns = piece.map(seg => dxfAnnotationFromSegment(seg, bounds, transform, groupId));
       pieceFirstAnnotationIds.push(pieceAnns.length ? pieceAnns[0].id : null);
+      const blockName = piece.length ? parsed.instanceBlockNames.get(piece[0].instance) : null;
+      if (blockName) {
+        if (!state.templateGroupLabels) state.templateGroupLabels = {};
+        state.templateGroupLabels[groupId] = blockName;
+      }
       // One sourceImageId per PIECE (not per segment), matching
       // createAnnotationFromTemplateMember's own convention: landing outside
       // every board image gives the piece no sourceImageId at all, which is
@@ -26672,11 +26907,18 @@ function onWheel(e) {
     const skipMsg = skipParts.filter(Boolean).join(' ');
     showToast('Imported ' + pieceCount + ' ' + pieceWord + ' (' + allNewIds.length + ' ' + lineWord + ').'
       + (skipMsg ? ' ' + skipMsg : ''));
+    // ADR 0070: a grading-nest file places every chosen size's piece at the
+    // same board position (see ADR 0069's Context) — more than one piece
+    // means the TD likely just imported an overlapping stack of sizes and
+    // needs the Pattern Pieces panel to tell them apart, not a single
+    // "1 piece" import where there is nothing to pick between.
+    if (pieceCount > 1 && typeof openPatternPiecesPanel === 'function') openPatternPiecesPanel();
     return {
       ok: true,
       pieceCount,
       annotationCount: allNewIds.length,
       annotationIds: allNewIds.slice(),
+      groupIds,
       buckets: parsed.buckets,
       skippedOversizedPieces: parsed.skippedOversizedPieces || 0,
     };
@@ -44070,6 +44312,17 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         computePlacement: (bounds, rect, centerWorld, zoom) => (typeof computeDxfPlacementTransform === 'function'
           ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld, zoom)) : null),
         importText: (text, rect) => (typeof importDxfText === 'function' ? clone(importDxfText(text, rect)) : null),
+        // ADR 0070: the Pattern Pieces panel's pure state operations, exposed
+        // independently of the real DOM panel (src/ui/pattern-pieces-panel.js)
+        // so a headless suite can assert the group-list/remove logic without
+        // driving live checkbox clicks for every case.
+        patternPieces: {
+          groups: () => (typeof patternPieceGroups === 'function' ? clone(patternPieceGroups()) : null),
+          remove: (groupIds) => { if (typeof removePatternPieceGroups === 'function') removePatternPieceGroups(groupIds); },
+          isOpen: () => (typeof isPatternPiecesPanelOpen === 'function' ? isPatternPiecesPanelOpen() : null),
+          open: () => { if (typeof openPatternPiecesPanel === 'function') openPatternPiecesPanel(); },
+          close: () => { if (typeof closePatternPiecesPanel === 'function') closePatternPiecesPanel(); },
+        },
         // US-105: Pattern Measure. `measure.*` exposes the pure native
         // parser + geometry kernel independently of any board/UI state (unit
         // tests), plus read-only session getters an E2E suite can compare

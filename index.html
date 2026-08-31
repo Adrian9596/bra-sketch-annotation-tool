@@ -380,6 +380,26 @@
   }
   .anchor-panel-btn:hover{ border-color:#94a3b8; }
   .anchor-panel-body{ overflow-y:auto; padding:2px 0 6px; }
+  /* ADR 0070: Pattern Pieces panel reuses the .anchor-panel shell, docked on
+     the opposite corner so the two floating panels never overlap. */
+  .pattern-pieces-panel{ left:auto; right:12px; }
+  .pattern-piece-row{
+    display:flex; align-items:center; gap:8px; padding:5px 10px;
+    font-size:12px; border-top:1px solid #f4f6fa;
+  }
+  .pattern-piece-row:first-child{ border-top:0; }
+  .pattern-piece-label{
+    flex:1; color:#0f172a; cursor:pointer; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap;
+  }
+  .pattern-piece-label:hover{ text-decoration:underline; }
+  .pattern-piece-count{ font-size:10.5px; color:#64748b; flex:0 0 auto; }
+  .pattern-piece-mini-btn{
+    border:1px solid #cbd5e1; background:#fff; border-radius:5px;
+    cursor:pointer; font-size:11px; line-height:1; padding:2px 6px;
+    color:#334155; flex:0 0 auto;
+  }
+  .pattern-piece-mini-btn:hover{ border-color:#94a3b8; }
   .board-card.no-image{
     border:1px dashed #dcdce2;
   }
@@ -3239,6 +3259,13 @@
               <button id="dxfImportBtn" type="button" role="menuitem" title="Import LINE/ARC/CIRCLE/LWPOLYLINE/POLYLINE geometry from an ASCII DXF file — each piece places as its own movable Sketch Element group, never a POM">Open DXF file…</button>
             </div>
             <input id="dxfImportFileInput" type="file" accept=".dxf" hidden />
+            <!-- ADR 0070: a grading-nest DXF places every size of a piece at
+                 the same board position, overlapping. This opens the
+                 floating panel that lists every piece so the TD can pick
+                 which ones to keep — see src/ui/pattern-pieces-panel.js. -->
+            <div class="preset-menu-actions sketch-mode-only">
+              <button id="patternPiecesBtn" type="button" role="menuitem" title="List every sketch-element piece on the board (e.g. one per grading-nest size) so you can keep only the ones you want">Pattern pieces…</button>
+            </div>
             <!-- US-104 round 8: "Set Scale" itself is unchanged (still the
                  same #setScaleBtn/#clearScaleBtn handlers, src/ui/bindings.js)
                  — the More menu that houses it is Sketch-Focus-hidden
@@ -3489,6 +3516,27 @@
           </div>
           <div id="anchorManagerBody" class="anchor-panel-body"></div>
         </div>
+        <!-- ADR 0070: lists every sketch-element piece (templateGroupId
+             group) on the board — DXF grading-nest pieces, chiefly — so the
+             TD can pick which sizes to keep. Floating, non-modal, docked
+             opposite the anchor panel. Opened from the Tools menu
+             (#patternPiecesBtn) or automatically after a multi-piece DXF
+             import; see src/ui/pattern-pieces-panel.js. -->
+        <div id="patternPiecesPanel" class="anchor-panel pattern-pieces-panel" hidden aria-label="Pattern pieces">
+          <div class="anchor-panel-head">
+            <div class="anchor-panel-titles">
+              <div class="anchor-panel-title">Pattern pieces</div>
+              <div class="anchor-panel-sub">Pick which pieces to keep</div>
+            </div>
+            <button id="patternPiecesCloseBtn" type="button" class="anchor-panel-close" title="Close">×</button>
+          </div>
+          <div class="anchor-panel-actions">
+            <span id="patternPiecesCount" class="anchor-panel-count">0 pieces</span>
+            <span class="anchor-panel-spacer"></span>
+            <button id="patternPiecesApplyBtn" type="button" class="anchor-panel-btn">Remove unchecked</button>
+          </div>
+          <div id="patternPiecesBody" class="anchor-panel-body"></div>
+        </div>
         <div id="boardEmpty" class="board-empty" aria-hidden="true">
           <div class="board-empty-icon">
             <svg viewBox="0 0 48 48" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -3723,6 +3771,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=e9fff629155d"></script>
+<script src="app.js?v=acc40897024c"></script>
 </body>
 </html>

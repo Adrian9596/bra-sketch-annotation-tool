@@ -77,6 +77,7 @@ export const SOURCE_PARTS = [
   'src/ui/shape-stamp-panel.js',
   'src/ui/dxf-import-panel.js',
   'src/ui/dxf-measure-panel.js',
+  'src/ui/pattern-pieces-panel.js',
   'src/ui/bindings.js',
   'src/project/history.js',
   'src/project/project-save.js',

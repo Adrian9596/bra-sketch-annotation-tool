@@ -263,6 +263,12 @@
       page: 'board', mode: 'manual', target: '#dxfImportBtn',
       when: () => state.sketchMode ? true : 'Available in Sketch Focus',
       action: () => appCommandClick('#dxfImportBtn') }),
+    // ADR 0070: same Sketch-Focus gate as the DXF import command above — the
+    // panel only has anything to list once a sketch-element piece exists.
+    appCommand({ id: 'board.pattern-pieces.open', label: 'Pattern Pieces: Choose Sizes', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#patternPiecesBtn',
+      when: () => state.sketchMode ? true : 'Available in Sketch Focus',
+      action: () => appCommandClick('#patternPiecesBtn') }),
     // US-107: the unified Library dialog replaces board.presets.open,
     // board.shapes.open, and the old Template-only board.template.open-library
     // with ONE command — Templates, Line Treatments, and saved Projects are

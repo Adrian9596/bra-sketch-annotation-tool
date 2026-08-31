@@ -188,8 +188,9 @@ async function main() {
   // Sketch Focus: the library (and Smart Align) become reachable, and End
   // now walks all the way to the last action in the menu — the US-097 claim
   // this test made before US-102 existed, now true only in this state. US-104
-  // added "Open DXF file…" after the Template library's own actions, so it
-  // is now the last item, not shapeStampImportBtn.
+  // added "Open DXF file…" after the Template library's own actions, making
+  // it the last item instead of shapeStampImportBtn; ADR 0070 then added
+  // "Pattern pieces…" right after that, so it is now the last item instead.
   await s.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }))`);
   await s.eval(`document.getElementById('sketchFocusBtn').click()`);
   await s.eval(`document.getElementById('toolsMenuBtn').click()`);
@@ -203,8 +204,8 @@ async function main() {
   // Named by id, not read back from the same query the implementation walks —
   // comparing an implementation against itself proves only that it is
   // self-consistent.
-  check(await s.eval(`document.activeElement.id`) === 'dxfImportBtn',
-    `Sketch Focus: End should focus the last item in the whole menu — "Open DXF file…" `
+  check(await s.eval(`document.activeElement.id`) === 'patternPiecesBtn',
+    `Sketch Focus: End should focus the last item in the whole menu — "Pattern pieces…" `
     + `(got ${await s.eval('document.activeElement.id')})`);
   check(toolsOpenSketch.allReachable.length > toolsOpenSketch.reachable.length,
     'Sketch Focus: precondition: the library section really does add reachable items, or the check '

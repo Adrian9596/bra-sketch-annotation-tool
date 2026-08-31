@@ -45,6 +45,14 @@
     // US-105: the Pattern Measure tool entries, inside the Tools menu.
     dxfMeasureAlongBtn: document.getElementById('dxfMeasureAlongBtn'),
     dxfMeasureOutBtn: document.getElementById('dxfMeasureOutBtn'),
+    // ADR 0070: the Pattern Pieces panel — Tools menu entry + the floating
+    // panel itself, mirroring the anchorManager* refs above.
+    patternPiecesBtn: document.getElementById('patternPiecesBtn'),
+    patternPiecesPanel: document.getElementById('patternPiecesPanel'),
+    patternPiecesCloseBtn: document.getElementById('patternPiecesCloseBtn'),
+    patternPiecesCount: document.getElementById('patternPiecesCount'),
+    patternPiecesBody: document.getElementById('patternPiecesBody'),
+    patternPiecesApplyBtn: document.getElementById('patternPiecesApplyBtn'),
     lineWidthChip: document.getElementById('lineWidthChip'),
     lineWidthInput: document.getElementById('lineWidthInput'),
     fontSizeChip: document.getElementById('fontSizeChip'),

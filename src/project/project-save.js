@@ -13,6 +13,9 @@
       savedAt: new Date().toISOString(),
       state: {
         annotations: clone(state.annotations),
+        // ADR 0070: sparse groupId -> label map (DXF block names). Additive —
+        // files saved before this existed have no key and default to {}.
+        templateGroupLabels: clone(state.templateGroupLabels || {}),
         graphics: clone(state.graphics || []),
         images: state.images.map(img => ({
           id: img.id, dataURL: img.dataURL,
