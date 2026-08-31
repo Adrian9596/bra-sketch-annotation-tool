@@ -4,13 +4,26 @@
   // refLabel is optional. When calibrating from a spec-panel row it names the
   // POM ("POM 1 — 1/2 Bottom Band, Relax"); the Set Scale button passes nothing
   // and the copy falls back to "selected line".
-  function openScaleDialog(px, refLabel) {
+  //
+  // annId is optional (round 9, Codex follow-up on US-104). The spec-panel 📏
+  // shortcut (spec-row-builders.js) opens this dialog for a POM's line without
+  // ever selecting it on the board, so with several look-alike DXF/Template
+  // segments a TD had no way to tell which physical line the dialog was
+  // about. Selecting it here makes the board's own selection rendering
+  // (handles, active colour) highlight exactly that segment for as long as
+  // the dialog is open — setScaleFromSelection's caller is already the
+  // primary selection, so this is a no-op there.
+  function openScaleDialog(px, refLabel, annId) {
+    if (annId != null && (state.selection.kind !== 'annotation' || state.selection.id !== annId)) {
+      setSelection('annotation', annId);
+    }
     const cal = state.calibration;
     const currentUnit = cal && cal.unit ? cal.unit : 'in';
     const currentValue = cal && cal.unitsPerPx != null
       ? +(px * cal.unitsPerPx).toFixed(3)
       : '';
     const refText = refLabel ? refLabel : 'the selected line';
+    const pxText = Math.round(px);
 
     const dialog = buildDialog({
       title: 'Set scale',
@@ -20,7 +33,7 @@
     const body = document.createElement('div');
     body.className = 'scale-body';
     body.innerHTML = `
-      <p class="scale-lead">Type the real length of <b>${refText}</b>. Every other line on the board is then estimated from it.</p>
+      <p class="scale-lead">Type the real length of <b>${refText}</b> (now highlighted on the board) — measured as <b>${pxText} px</b>. Every other line on the board is then estimated from it.</p>
       <div class="scale-field">
         <input type="number" min="0" step="any" inputmode="decimal" placeholder="e.g. 14" aria-label="Real length" />
         <select aria-label="Unit">

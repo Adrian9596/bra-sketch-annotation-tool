@@ -649,6 +649,9 @@
         templateGroupEditId: state.templateGroupEditId || null,
         smartAlignEnabled: !!state.smartAlignEnabled,
         sketchMode: !!state.sketchMode,
+        // US-104 round 8: so a suite can assert Set/Clear Scale actually
+        // wrote/cleared calibration, not just that a button toggled.
+        calibration: clone(state.calibration),
         activeStampId: state.activeStampId != null ? state.activeStampId : null,
         interaction: state.interaction ? { type: state.interaction.type } : null,
         drawStyle: state.drawStyle,

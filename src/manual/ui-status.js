@@ -18,6 +18,15 @@
   // "exactly one" could never fire from a normal click. Not gated by Sketch
   // Focus vs POM Focus — the geometry is already on the board regardless of
   // focus state, and this is read-only, not an authoring tool.
+  //
+  // Round-6 fix: this used to be plain text appended to the end of the
+  // free-form Tool status sentence, which is `white-space:nowrap` +
+  // `text-overflow:ellipsis` — the LAST thing appended is the first thing an
+  // over-length sentence cuts off, so the one number a TD actually wants
+  // could silently vanish behind "…". It is now a standalone pill rendered
+  // as a flex sibling of that sentence (see updateUI's toolStatus assembly
+  // below and the `.sketch-length-chip` / `#toolStatus` CSS in index.html),
+  // never inside the truncated span, and never truncated itself.
   function sketchSelectionLengthReadout() {
     const anns = getSelectedAnnotations();
     if (!anns.length || !anns.every(ann => ann.purpose === 'sketch-element')) return '';
@@ -27,7 +36,8 @@
     const value = state.calibration.unitsPerPx != null
       ? formatMeasure(totalPx * state.calibration.unitsPerPx) + ' ' + state.calibration.unit
       : Math.round(totalPx) + ' px (uncalibrated)';
-    return ' <span class="muted">' + label + ': ' + value + '</span>';
+    return '<span class="sketch-length-chip" title="Sum of the selected Sketch Element line length(s)">'
+      + label + ': ' + value + '</span>';
   }
 
   function updateUI() {
@@ -75,6 +85,12 @@
     const annotationCount = state.annotations.length;
     const imageCount = state.images.length;
     const selectedAnnotation = getSelectedAnnotation();
+    // Round 9: Set Scale must require exactly one segment (see setScaleFromSelection's
+    // comment in bindings.js) — a fresh DXF import or a Shift-clicked/marquee
+    // multi-select both leave getSelectedAnnotationIds() with more than one id
+    // even though selectedAnnotation (the primary) is a single line.
+    const scaleGroupSelected = getSelectedAnnotationIds().length > 1;
+    const soloAnnotationSelected = !!selectedAnnotation && !scaleGroupSelected;
     const selectedImage = getSelectedImage();
     const selectedNote = getSelectedNote();
     const selectedGraphic = getSelectedBoardGraphic();
@@ -150,6 +166,7 @@
     el.arrowNoneBtn.disabled = false;
 
     let toolText = '';
+    let lengthChipHtml = '';
     if (state.tool === 'text') {
       toolText = 'Text – Click the board to write a note. New notes use the active Note appearance and colours. <span class="kbd">Enter</span> makes a new line; <span class="kbd">⌘/Ctrl</span>+<span class="kbd">Enter</span> or a click on the board finishes it.';
     } else if (state.tool === 'stamp') {
@@ -167,8 +184,8 @@
       } else if (selectedAnnotation) {
         toolText = 'Select – Drag line, endpoints, curve shape handle, or label. Smart Align is '
           + (state.smartAlignEnabled ? 'on; hold <span class="kbd">Alt/Option</span> to bypass it. ' : 'off. ')
-          + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).'
-          + sketchSelectionLengthReadout();
+          + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
+        lengthChipHtml = sketchSelectionLengthReadout();
       } else if (selectedGraphic) {
         toolText = state.graphicEdit
           ? 'Edit Path – Select and drag nodes, handles, or segments; Cut Path opens the active point.'
@@ -212,7 +229,7 @@
             ? 'Eraser – Release to commit. <span class="kbd">[</span>/<span class="kbd">]</span> resize brush.'
             : 'Eraser – Drag on the image to paint white over unwanted lines. <span class="kbd">[</span>/<span class="kbd">]</span> resize brush.');
     }
-    el.toolStatus.innerHTML = '<strong>Tool:</strong> ' + toolText;
+    el.toolStatus.innerHTML = '<span class="tool-status-text"><strong>Tool:</strong> ' + toolText + '</span>' + lengthChipHtml;
 
     const modeTitle = isStitchMode()
       ? 'Stitch mode: callout numbers are hidden so the stitch styles read clearly.'
@@ -271,9 +288,20 @@
       el.undoBtn.disabled = state.history.past.length <= 1;
       el.redoBtn.disabled = state.history.future.length === 0;
     }
-    el.setScaleBtn.disabled = !selectedAnnotation;
+    const scaleBtnTitle = scaleGroupSelected
+      ? 'Multiple segments selected — double-click one segment to select it alone, then Set Scale.'
+      : 'Calibrate from a selected line whose real length you know';
+    el.setScaleBtn.disabled = !soloAnnotationSelected;
     el.setScaleBtn.classList.toggle('active', state.calibration.unitsPerPx != null);
+    el.setScaleBtn.title = scaleBtnTitle;
     el.clearScaleBtn.disabled = state.calibration.unitsPerPx == null;
+    // Round 8: the Sketch-Focus-visible Set/Clear Scale pair mirrors the
+    // same enabled/active state as the More-menu originals — same
+    // calibration, just a second place to reach it.
+    el.sketchSetScaleBtn.disabled = !soloAnnotationSelected;
+    el.sketchSetScaleBtn.classList.toggle('active', state.calibration.unitsPerPx != null);
+    el.sketchSetScaleBtn.title = scaleBtnTitle;
+    el.sketchClearScaleBtn.disabled = state.calibration.unitsPerPx == null;
     // US-105: both entries need an active measure session; the title
     // explains why when there isn't one (matching the disabled-reason
     // convention every other conditionally-available control here uses).

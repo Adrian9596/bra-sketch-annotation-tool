@@ -297,6 +297,32 @@
   .status-item[hidden]{ display:none; }
   .status-item strong{ font-weight:700; }
   .muted{ color:var(--muted); }
+  /* Round 6 (US-104 follow-up): the quick length readout used to be plain
+     text appended inside #toolStatus's own ellipsis-truncated sentence, so a
+     long Tool status could silently cut it off. #toolStatus is now a flex
+     row: .tool-status-text keeps the OLD single-line-ellipsis behavior for
+     the free-form instructions, and .sketch-length-chip is a fixed-size
+     sibling pill that is never truncated. */
+  #toolStatus{ display:flex; align-items:center; gap:8px; }
+  #toolStatus .tool-status-text{
+    min-width:0;
+    flex:1 1 auto;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .sketch-length-chip{
+    flex:0 0 auto;
+    display:inline-flex;
+    align-items:center;
+    white-space:nowrap;
+    padding:3px 10px;
+    border-radius:999px;
+    background:var(--chip);
+    border:1px solid var(--chip-border);
+    color:var(--select);
+    font:700 12px/1.4 system-ui,sans-serif;
+  }
   .workspace{
     grid-row:3;
     min-height:0;
@@ -3213,6 +3239,21 @@
               <button id="dxfImportBtn" type="button" role="menuitem" title="Import LINE/ARC/CIRCLE/LWPOLYLINE/POLYLINE geometry from an ASCII DXF file — each piece places as its own movable Sketch Element group, never a POM">Open DXF file…</button>
             </div>
             <input id="dxfImportFileInput" type="file" accept=".dxf" hidden />
+            <!-- US-104 round 8: "Set Scale" itself is unchanged (still the
+                 same #setScaleBtn/#clearScaleBtn handlers, src/ui/bindings.js)
+                 — the More menu that houses it is Sketch-Focus-hidden
+                 wholesale (.pom-mode-only on #moreMenuWrap), and the Command
+                 Palette route is easy to miss, so a TD who just imported a
+                 DXF had no visible way to calibrate it without leaving Sketch
+                 Focus first. This is a second, Sketch-Focus-visible entry
+                 point onto the exact same calibration, placed right after
+                 Import since "just imported geometry, now calibrate it" is
+                 the motivating workflow. -->
+            <div class="preset-divider sketch-mode-only" role="separator">Measure</div>
+            <div class="preset-menu-actions sketch-mode-only">
+              <button id="sketchSetScaleBtn" type="button" role="menuitem" title="Calibrate from a selected line whose real length you know">Set Scale…</button>
+              <button id="sketchClearScaleBtn" type="button" role="menuitem" title="Remove calibration">Clear Scale</button>
+            </div>
             <!-- US-105 / ADR 0062: Pattern Measure — temporary, session-only
                  A/B length overlays read straight from the imported DXF's
                  own native coordinates. Disabled (not hidden) with no
@@ -3366,11 +3407,11 @@
         <div id="fileMenuList" class="toolbar-menu-list" role="menu" hidden>
           <button id="addImageMenuBtn" class="manual-only" role="menuitem" type="button">Add image…</button>
           <button id="saveProjectBtn" data-key="⌘S" role="menuitem" type="button" title="Save the whole board (images, lines, measurements) to a file you can reopen later">Save project</button>
-          <button id="openProjectBtn" data-key="⌘O" role="menuitem" type="button" title="Open a previously saved project file">Open project…</button>
+          <button id="openProjectBtn" data-key="⌘O" role="menuitem" type="button" title="Open a previously saved project (.json), or import a DXF sketch (.dxf) onto the board">Open project…</button>
           <button id="importPptxBtn" data-key="I" class="manual-only" role="menuitem" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PowerPoint…</button>
         </div>
       </div>
-      <input id="projectFileInput" type="file" accept=".json,application/json" hidden />
+      <input id="projectFileInput" type="file" accept=".json,.dxf,application/json" hidden />
 
       <div id="exportMenuWrap" class="toolbar-menu manual-only">
         <button id="exportMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="exportMenuList">Export ▾</button>
@@ -3682,6 +3723,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=31395afef245"></script>
+<script src="app.js?v=b62f16727d5d"></script>
 </body>
 </html>

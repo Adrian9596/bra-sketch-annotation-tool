@@ -168,7 +168,7 @@
       scaleBtn.addEventListener('mouseleave', () => { scaleBtn.style.opacity = '0.5'; });
       scaleBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        openScaleDialog(refPx, refLabel);
+        openScaleDialog(refPx, refLabel, ann.id);
       });
       td.appendChild(scaleBtn);
     }

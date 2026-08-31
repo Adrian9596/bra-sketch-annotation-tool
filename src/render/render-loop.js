@@ -91,6 +91,19 @@ function requestRender() {
       drawAnnotationHoverOutline(hoveredAnnotation);
     }
 
+    // Round 11: the multi-select group halo moved here, into the same
+    // "paint under the crisp line body" pass as hover above (it used to run
+    // much later, on top of every line/label/anchor — fine for two small
+    // dots, wrong for a soft halo meant to sit behind the line it outlines).
+    // Single-selection's real editing handles stay in their original late
+    // position below, unchanged.
+    if (state.appMode !== 'auto') {
+      const selAnnIdsForHalo = getSelectedAnnotationIds();
+      if (selAnnIdsForHalo.length > 1) {
+        drawMultiSelectHalo(selAnnIdsForHalo.map(id => getAnnotationById(id)).filter(a => a && !isAnnHidden(a.id)));
+      }
+    }
+
     for (const ann of state.annotations) {
       if (isAnnHidden(ann.id)) continue;
       drawAnnotation(ann, false); // line body only — numbers drawn in the label pass below
@@ -170,16 +183,10 @@ function requestRender() {
       }
     }
 
-    // Line selection: a single selection shows full endpoint/handle helpers; a
-    // multi-selection (Shift+click / marquee) shows a lighter per-line outline
-    // on each member so the group reads as one.
-    const selAnnIds = state.appMode !== 'auto' ? getSelectedAnnotationIds() : [];
-    if (selAnnIds.length > 1) {
-      for (const id of selAnnIds) {
-        const a = getAnnotationById(id);
-        if (a && !isAnnHidden(a.id)) drawAnnotationSelectedOutline(a);
-      }
-    } else {
+    // Line selection: a single selection shows full endpoint/handle helpers.
+    // A multi-selection's group halo is drawn much earlier now (see the
+    // drawMultiSelectHalo call above, next to hover) — round 11.
+    if (state.appMode !== 'auto' && getSelectedAnnotationIds().length <= 1) {
       const selectedAnnotation = getSelectedAnnotation();
       if (selectedAnnotation && !isAnnHidden(selectedAnnotation.id)) {
         drawSelectionHelpers(selectedAnnotation);

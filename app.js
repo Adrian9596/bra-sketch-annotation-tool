@@ -622,6 +622,10 @@
     workspace: document.querySelector('.workspace'),
     setScaleBtn: document.getElementById('setScaleBtn'),
     clearScaleBtn: document.getElementById('clearScaleBtn'),
+    // US-104 round 8: same calibration, a second Sketch-Focus-visible
+    // entry point (the More menu housing setScaleBtn is Sketch-Focus-hidden).
+    sketchSetScaleBtn: document.getElementById('sketchSetScaleBtn'),
+    sketchClearScaleBtn: document.getElementById('sketchClearScaleBtn'),
     sizeRunBtn: document.getElementById('sizeRunBtn'),
     gradingBtn: document.getElementById('gradingBtn'),
     exportPdfBtn: document.getElementById('exportPdfBtn'),
@@ -2963,13 +2967,26 @@
   // refLabel is optional. When calibrating from a spec-panel row it names the
   // POM ("POM 1 — 1/2 Bottom Band, Relax"); the Set Scale button passes nothing
   // and the copy falls back to "selected line".
-  function openScaleDialog(px, refLabel) {
+  //
+  // annId is optional (round 9, Codex follow-up on US-104). The spec-panel 📏
+  // shortcut (spec-row-builders.js) opens this dialog for a POM's line without
+  // ever selecting it on the board, so with several look-alike DXF/Template
+  // segments a TD had no way to tell which physical line the dialog was
+  // about. Selecting it here makes the board's own selection rendering
+  // (handles, active colour) highlight exactly that segment for as long as
+  // the dialog is open — setScaleFromSelection's caller is already the
+  // primary selection, so this is a no-op there.
+  function openScaleDialog(px, refLabel, annId) {
+    if (annId != null && (state.selection.kind !== 'annotation' || state.selection.id !== annId)) {
+      setSelection('annotation', annId);
+    }
     const cal = state.calibration;
     const currentUnit = cal && cal.unit ? cal.unit : 'in';
     const currentValue = cal && cal.unitsPerPx != null
       ? +(px * cal.unitsPerPx).toFixed(3)
       : '';
     const refText = refLabel ? refLabel : 'the selected line';
+    const pxText = Math.round(px);
 
     const dialog = buildDialog({
       title: 'Set scale',
@@ -2979,7 +2996,7 @@
     const body = document.createElement('div');
     body.className = 'scale-body';
     body.innerHTML = `
-      <p class="scale-lead">Type the real length of <b>${refText}</b>. Every other line on the board is then estimated from it.</p>
+      <p class="scale-lead">Type the real length of <b>${refText}</b> (now highlighted on the board) — measured as <b>${pxText} px</b>. Every other line on the board is then estimated from it.</p>
       <div class="scale-field">
         <input type="number" min="0" step="any" inputmode="decimal" placeholder="e.g. 14" aria-label="Real length" />
         <select aria-label="Unit">
@@ -7816,7 +7833,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       scaleBtn.addEventListener('mouseleave', () => { scaleBtn.style.opacity = '0.5'; });
       scaleBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        openScaleDialog(refPx, refLabel);
+        openScaleDialog(refPx, refLabel, ann.id);
       });
       td.appendChild(scaleBtn);
     }
@@ -16984,6 +17001,17 @@ const BOM_MATERIAL_LIBRARY = [
     return state.selection.kind === 'annotation' ? true : 'Select one Board line first.';
   }
 
+  // Round 9 (Codex follow-up on US-104): Set Scale must act on exactly one
+  // segment — see setScaleFromSelection's comment in bindings.js for why a
+  // group (a fresh DXF-piece import, a Template group, or a plain multi
+  // -select) can't be the target.
+  function appCommandSoloSelectedAnnotationReason() {
+    if (state.selection.kind !== 'annotation') return 'Select one Board line first.';
+    return getSelectedAnnotationIds().length > 1
+      ? 'Double-click a segment to select it alone, then try again.'
+      : true;
+  }
+
   function appCommandSelectedAnnotationOrGraphicReason() {
     return (state.selection.kind === 'annotation' || state.selection.kind === 'graphic')
       ? true : 'Select one Board line or shape first.';
@@ -17265,7 +17293,7 @@ const BOM_MATERIAL_LIBRARY = [
       page: 'board', shortcut: { key: 'n' }, target: '#toggleLabelsBtn', action: () => toggleLabels() }),
     appCommand({ id: 'board.scale.set', label: 'Set Scale…', category: 'Board · Measurements',
       page: 'board', mode: 'manual', target: '#setScaleBtn',
-      when: appCommandSelectedAnnotationReason, action: () => setScaleFromSelection() }),
+      when: appCommandSoloSelectedAnnotationReason, action: () => setScaleFromSelection() }),
     appCommand({ id: 'board.scale.clear', label: 'Clear Scale', category: 'Board · Measurements',
       page: 'board', mode: 'manual', target: '#clearScaleBtn',
       when: () => state.pixelsPerUnit ? true : 'No scale is currently set.', action: () => clearScale() }),
@@ -18614,6 +18642,8 @@ const BOM_MATERIAL_LIBRARY = [
     el.toggleLabelsBtn.addEventListener('click', toggleLabels);
     el.setScaleBtn.addEventListener('click', setScaleFromSelection);
     el.clearScaleBtn.addEventListener('click', clearScale);
+    el.sketchSetScaleBtn.addEventListener('click', setScaleFromSelection);
+    el.sketchClearScaleBtn.addEventListener('click', clearScale);
     el.sizeRunBtn.addEventListener('click', () => openSizeRunDialog());
     el.gradingBtn.addEventListener('click', () => openGradingDialog());
     el.exportPdfBtn.addEventListener('click', exportPdf);
@@ -19011,7 +19041,22 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   // ---- Calibration ----
+  // Round 9 (Codex follow-up on US-104): a DXF import lands as one selected
+  // GROUP (every segment of every piece — dxf-import.js's importDxfText sets
+  // state.selectedAnnotationIds to the whole batch), and a Template group
+  // widens the same way on click. getSelectedAnnotation() only ever reads the
+  // PRIMARY, so calibrating straight off a group silently used just its first
+  // segment while every segment looked selected/highlighted — a TD had no way
+  // to tell which line "10 in" actually meant. Requiring exactly one segment
+  // in getSelectedAnnotationIds() (and pointing at the existing double-click
+  // -> enterTemplateGroupForAnnotation gesture, viewport.js's onDoubleClick)
+  // reuses the isolation mechanic the Template system already has, rather
+  // than inventing a second one.
   function setScaleFromSelection() {
+    if (getSelectedAnnotationIds().length > 1) {
+      showToast('Multiple segments selected — double-click one segment to select it alone, then click Set Scale.');
+      return;
+    }
     const ann = getSelectedAnnotation();
     if (!ann) {
       showToast('Select a line first, then click Set Scale to calibrate by its real length.');
@@ -19022,7 +19067,7 @@ const BOM_MATERIAL_LIBRARY = [
       showToast('That line is too short to calibrate.');
       return;
     }
-    openScaleDialog(px);
+    openScaleDialog(px, null, ann.id);
   }
 
   function clearScale() {
@@ -19389,21 +19434,52 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   // ---- src/project/project-load.js ----
-// Open a .json project file: file-input handling, then restore it onto the
-// board. Saving is project-save.js.
+// Open a .json project file, or import a .dxf sketch: shared file-input
+// handling for the File menu's "Open project…" item, then dispatch to
+// whichever flow the chosen file actually is. Saving is project-save.js;
+// the DXF geometry importer itself is src/manual/dxf-import.js.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // loadProject restores a saved snapshot, including image pixel data, and
 // seeds a fresh history stack. Unapplied Auto Mode drafts are never
 // silently dropped; the open flow prompts the TD to apply, discard, or
-// cancel before replacing the board.
+// cancel before replacing the board. Importing a DXF is additive (it never
+// replaces the board), so it only needs that same dialog to settle Auto
+// Mode out of the way before switching to Manual + Sketch Focus — never to
+// guard against losing work.
 
+  // Dispatch on extension first (the normal case — every real file picker
+  // and every drag-and-drop supplies one); a file with no recognized
+  // extension falls back to sniffing the actual text content, since a
+  // DXF's own MIME type is unreliable (browsers report '' for it).
   function onProjectFileChosen(e) {
     const input = e.target;
     const file = input.files && input.files[0];
     input.value = '';
     if (!file) return;
 
+    const name = (file.name || '').toLowerCase();
+    if (name.endsWith('.dxf')) {
+      importDxfFileIntoBoard(file);
+      return;
+    }
+    if (name.endsWith('.json')) {
+      openProjectFileWithGuard(file);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || '');
+      let looksLikeJson = true;
+      try { JSON.parse(text); } catch (error) { looksLikeJson = false; }
+      if (looksLikeJson) openProjectFileWithGuard(file);
+      else importDxfTextIntoBoard(text);
+    };
+    reader.onerror = () => showToast('Could not read that file.', 4200);
+    reader.readAsText(file);
+  }
+
+  function openProjectFileWithGuard(file) {
     const drafts = state.autoMode.draftAnnotations;
     if (state.appMode === 'auto' && drafts.length > 0) {
       const approvedCount = drafts.filter(d => d.tdApproved && !isReviewOnlyDraft(d)).length;
@@ -19434,6 +19510,57 @@ const BOM_MATERIAL_LIBRARY = [
       return;
     }
     readAndLoadProjectFile(file);
+  }
+
+  // A DXF chosen via "Open project…" must land the same place the Tools-menu
+  // "Open DXF file…" button does — Manual Mode with Sketch Focus on — even
+  // when it is picked from a fresh Auto Mode load. Unlike opening a .json
+  // project, unapplied Auto drafts are never at risk of being lost (DXF
+  // import only adds annotations), so the exit dialog here exists purely to
+  // let the TD settle the draft layer before the mode switch, not to guard
+  // against overwriting work.
+  function importDxfTextIntoBoard(text) {
+    const proceed = () => {
+      if (!state.sketchMode) setSketchModeEnabled(true, false);
+      importDxfText(text);
+    };
+
+    if (state.appMode === 'auto') {
+      const drafts = state.autoMode.draftAnnotations;
+      if (drafts.length > 0) {
+        const approvedCount = drafts.filter(d => d.tdApproved && !isReviewOnlyDraft(d)).length;
+        openAutoModeExitDialog({
+          approvedCount,
+          totalCount: drafts.length,
+          reason: 'Importing a DXF file switches to Manual Mode. Choose what to do with the Auto Mode draft layer first:',
+        }).then(choice => {
+          if (choice === 'apply') {
+            const applied = applyApprovedDraftsAtomically();
+            if (!applied) return;
+            if (state.autoMode.draftAnnotations.length > 0) {
+              showToast('Some drafts remain. Resolve them before importing a DXF file.');
+              return;
+            }
+            proceed();
+          } else if (choice === 'discard') {
+            discardAutoDrafts(true);
+            setAppMode('manual');
+            proceed();
+          }
+          // 'stay' = cancel the import; current drafts and board are untouched.
+        });
+        return;
+      }
+      setAppMode('manual');
+    }
+    proceed();
+  }
+
+  function importDxfFileIntoBoard(file) {
+    const reader = new FileReader();
+    reader.onload = () => importDxfTextIntoBoard(String(reader.result || ''));
+    reader.onerror = () => showToast('Could not read that file.', 4200);
+    reader.readAsText(file);
   }
 
   function readAndLoadProjectFile(file) {
@@ -28272,6 +28399,15 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // "exactly one" could never fire from a normal click. Not gated by Sketch
   // Focus vs POM Focus — the geometry is already on the board regardless of
   // focus state, and this is read-only, not an authoring tool.
+  //
+  // Round-6 fix: this used to be plain text appended to the end of the
+  // free-form Tool status sentence, which is `white-space:nowrap` +
+  // `text-overflow:ellipsis` — the LAST thing appended is the first thing an
+  // over-length sentence cuts off, so the one number a TD actually wants
+  // could silently vanish behind "…". It is now a standalone pill rendered
+  // as a flex sibling of that sentence (see updateUI's toolStatus assembly
+  // below and the `.sketch-length-chip` / `#toolStatus` CSS in index.html),
+  // never inside the truncated span, and never truncated itself.
   function sketchSelectionLengthReadout() {
     const anns = getSelectedAnnotations();
     if (!anns.length || !anns.every(ann => ann.purpose === 'sketch-element')) return '';
@@ -28281,7 +28417,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     const value = state.calibration.unitsPerPx != null
       ? formatMeasure(totalPx * state.calibration.unitsPerPx) + ' ' + state.calibration.unit
       : Math.round(totalPx) + ' px (uncalibrated)';
-    return ' <span class="muted">' + label + ': ' + value + '</span>';
+    return '<span class="sketch-length-chip" title="Sum of the selected Sketch Element line length(s)">'
+      + label + ': ' + value + '</span>';
   }
 
   function updateUI() {
@@ -28329,6 +28466,12 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     const annotationCount = state.annotations.length;
     const imageCount = state.images.length;
     const selectedAnnotation = getSelectedAnnotation();
+    // Round 9: Set Scale must require exactly one segment (see setScaleFromSelection's
+    // comment in bindings.js) — a fresh DXF import or a Shift-clicked/marquee
+    // multi-select both leave getSelectedAnnotationIds() with more than one id
+    // even though selectedAnnotation (the primary) is a single line.
+    const scaleGroupSelected = getSelectedAnnotationIds().length > 1;
+    const soloAnnotationSelected = !!selectedAnnotation && !scaleGroupSelected;
     const selectedImage = getSelectedImage();
     const selectedNote = getSelectedNote();
     const selectedGraphic = getSelectedBoardGraphic();
@@ -28404,6 +28547,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     el.arrowNoneBtn.disabled = false;
 
     let toolText = '';
+    let lengthChipHtml = '';
     if (state.tool === 'text') {
       toolText = 'Text – Click the board to write a note. New notes use the active Note appearance and colours. <span class="kbd">Enter</span> makes a new line; <span class="kbd">⌘/Ctrl</span>+<span class="kbd">Enter</span> or a click on the board finishes it.';
     } else if (state.tool === 'stamp') {
@@ -28421,8 +28565,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       } else if (selectedAnnotation) {
         toolText = 'Select – Drag line, endpoints, curve shape handle, or label. Smart Align is '
           + (state.smartAlignEnabled ? 'on; hold <span class="kbd">Alt/Option</span> to bypass it. ' : 'off. ')
-          + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).'
-          + sketchSelectionLengthReadout();
+          + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
+        lengthChipHtml = sketchSelectionLengthReadout();
       } else if (selectedGraphic) {
         toolText = state.graphicEdit
           ? 'Edit Path – Select and drag nodes, handles, or segments; Cut Path opens the active point.'
@@ -28466,7 +28610,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
             ? 'Eraser – Release to commit. <span class="kbd">[</span>/<span class="kbd">]</span> resize brush.'
             : 'Eraser – Drag on the image to paint white over unwanted lines. <span class="kbd">[</span>/<span class="kbd">]</span> resize brush.');
     }
-    el.toolStatus.innerHTML = '<strong>Tool:</strong> ' + toolText;
+    el.toolStatus.innerHTML = '<span class="tool-status-text"><strong>Tool:</strong> ' + toolText + '</span>' + lengthChipHtml;
 
     const modeTitle = isStitchMode()
       ? 'Stitch mode: callout numbers are hidden so the stitch styles read clearly.'
@@ -28525,9 +28669,20 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       el.undoBtn.disabled = state.history.past.length <= 1;
       el.redoBtn.disabled = state.history.future.length === 0;
     }
-    el.setScaleBtn.disabled = !selectedAnnotation;
+    const scaleBtnTitle = scaleGroupSelected
+      ? 'Multiple segments selected — double-click one segment to select it alone, then Set Scale.'
+      : 'Calibrate from a selected line whose real length you know';
+    el.setScaleBtn.disabled = !soloAnnotationSelected;
     el.setScaleBtn.classList.toggle('active', state.calibration.unitsPerPx != null);
+    el.setScaleBtn.title = scaleBtnTitle;
     el.clearScaleBtn.disabled = state.calibration.unitsPerPx == null;
+    // Round 8: the Sketch-Focus-visible Set/Clear Scale pair mirrors the
+    // same enabled/active state as the More-menu originals — same
+    // calibration, just a second place to reach it.
+    el.sketchSetScaleBtn.disabled = !soloAnnotationSelected;
+    el.sketchSetScaleBtn.classList.toggle('active', state.calibration.unitsPerPx != null);
+    el.sketchSetScaleBtn.title = scaleBtnTitle;
+    el.sketchClearScaleBtn.disabled = state.calibration.unitsPerPx == null;
     // US-105: both entries need an active measure session; the title
     // explains why when there isn't one (matching the disabled-reason
     // convention every other conditionally-available control here uses).
@@ -43992,6 +44147,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         templateGroupEditId: state.templateGroupEditId || null,
         smartAlignEnabled: !!state.smartAlignEnabled,
         sketchMode: !!state.sketchMode,
+        // US-104 round 8: so a suite can assert Set/Clear Scale actually
+        // wrote/cleared calibration, not just that a button toggled.
+        calibration: clone(state.calibration),
         activeStampId: state.activeStampId != null ? state.activeStampId : null,
         interaction: state.interaction ? { type: state.interaction.type } : null,
         drawStyle: state.drawStyle,
@@ -46655,8 +46813,11 @@ function makeExportFileName() {
     ctx.restore();
   }
 
-  function drawAnnotationPath(ann) {
-    ctx.beginPath();
+  // Round 11: split out from drawAnnotationPath so a multi-select halo can
+  // append several annotations onto ONE path (one ctx.beginPath(), no
+  // stroke() in between) instead of one path+stroke() per annotation — see
+  // drawMultiSelectHalo below for why that distinction matters.
+  function appendAnnotationPathSegment(ann) {
     ctx.moveTo(ann.start.x, ann.start.y);
     if (ann.type === 'straight') {
       ctx.lineTo(ann.end.x, ann.end.y);
@@ -46665,6 +46826,11 @@ function makeExportFileName() {
         ctx.bezierCurveTo(s.p1.x, s.p1.y, s.p2.x, s.p2.y, s.p3.x, s.p3.y);
       }
     }
+  }
+
+  function drawAnnotationPath(ann) {
+    ctx.beginPath();
+    appendAnnotationPathSegment(ann);
   }
 
   function drawArrowheadsForStraight(ann, color, lineWidth) {
@@ -46795,14 +46961,41 @@ function makeExportFileName() {
     drawAdjustmentReadout(ann);
   }
 
-  // Lighter per-line marker for a MULTI-selection (Shift+click / marquee): just
-  // the endpoint dots, no control/label handles or readout — enough to show the
-  // line is in the group without the busy single-line editing apparatus.
-  function drawAnnotationSelectedOutline(ann) {
-    if (!ann || !ann.start || !ann.end) return;
+  // Round 11 (user-reported, from a screenshot of the real demo DXF pattern):
+  // this used to draw two small circles (drawHandle) per selected annotation
+  // — round 10 shrank them, but on a tessellated curve they still visually
+  // clustered, AND (a follow-up review caught this) stroking each annotation
+  // SEPARATELY with a translucent rgba() colour alpha-stacks at every shared
+  // vertex between adjacent segments (two paints at alpha .4 composite to
+  // 1-(1-.4)^2 = .64, a visibly darker seam — softer than dots, not solved).
+  // The fix traces every selected annotation into ONE path (one
+  // ctx.beginPath(), appendAnnotationPathSegment per member, no stroke() in
+  // between) and paints it with ONE stroke() call under ctx.globalAlpha
+  // rather than an rgba() strokeStyle: globalAlpha scales the alpha of the
+  // whole draw call's composited result exactly once, so overlapping/
+  // touching sub-paths within that single stroke() cannot double-blend
+  // regardless of where they touch. This is a property of the API, not an
+  // assumption about how any given browser rasterizes overlapping subpaths.
+  //
+  // One shared lineWidth for the whole batch (the widest member's own visual
+  // extent) rather than per-annotation width: a deliberate simplification
+  // for a group-level "these are selected" cue, not a per-line measurement —
+  // every DXF-imported segment is uniform width anyway.
+  function drawMultiSelectHalo(anns) {
+    const visible = (anns || []).filter(a => a && a.start && a.end);
+    if (!visible.length) return;
+    const extent = Math.max(...visible.map(a => hasLineTreatment(a)
+      ? lineTreatmentVisualExtent(a.lineTreatment) : getLineWidth(a) / 2));
     ctx.save();
-    drawHandle(ann.start, true, false);
-    drawHandle(ann.end, true, false);
+    ctx.globalAlpha = 0.4;
+    ctx.strokeStyle = SELECT_COLOR;
+    ctx.lineWidth = Math.max(8, extent * 2 + 6) / Math.max(0.0001, state.zoom);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (const ann of visible) appendAnnotationPathSegment(ann);
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -46812,7 +47005,12 @@ function makeExportFileName() {
       ? lineTreatmentVisualExtent(ann.lineTreatment)
       : getLineWidth(ann) / 2;
     ctx.save();
-    ctx.strokeStyle = 'rgba(53,109,255,.22)';
+    // Round 11: same globalAlpha + solid-colour form as drawMultiSelectHalo
+    // (a single annotation per call never had the stacking issue, but
+    // sharing the technique keeps the two halos' only difference the alpha
+    // value, which is what the hover-vs-selection pixel test relies on).
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = SELECT_COLOR;
     ctx.lineWidth = Math.max(8, extent * 2 + 6) / Math.max(0.0001, state.zoom);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -48515,6 +48713,19 @@ function requestRender() {
       drawAnnotationHoverOutline(hoveredAnnotation);
     }
 
+    // Round 11: the multi-select group halo moved here, into the same
+    // "paint under the crisp line body" pass as hover above (it used to run
+    // much later, on top of every line/label/anchor — fine for two small
+    // dots, wrong for a soft halo meant to sit behind the line it outlines).
+    // Single-selection's real editing handles stay in their original late
+    // position below, unchanged.
+    if (state.appMode !== 'auto') {
+      const selAnnIdsForHalo = getSelectedAnnotationIds();
+      if (selAnnIdsForHalo.length > 1) {
+        drawMultiSelectHalo(selAnnIdsForHalo.map(id => getAnnotationById(id)).filter(a => a && !isAnnHidden(a.id)));
+      }
+    }
+
     for (const ann of state.annotations) {
       if (isAnnHidden(ann.id)) continue;
       drawAnnotation(ann, false); // line body only — numbers drawn in the label pass below
@@ -48594,16 +48805,10 @@ function requestRender() {
       }
     }
 
-    // Line selection: a single selection shows full endpoint/handle helpers; a
-    // multi-selection (Shift+click / marquee) shows a lighter per-line outline
-    // on each member so the group reads as one.
-    const selAnnIds = state.appMode !== 'auto' ? getSelectedAnnotationIds() : [];
-    if (selAnnIds.length > 1) {
-      for (const id of selAnnIds) {
-        const a = getAnnotationById(id);
-        if (a && !isAnnHidden(a.id)) drawAnnotationSelectedOutline(a);
-      }
-    } else {
+    // Line selection: a single selection shows full endpoint/handle helpers.
+    // A multi-selection's group halo is drawn much earlier now (see the
+    // drawMultiSelectHalo call above, next to hover) — round 11.
+    if (state.appMode !== 'auto' && getSelectedAnnotationIds().length <= 1) {
       const selectedAnnotation = getSelectedAnnotation();
       if (selectedAnnotation && !isAnnHidden(selectedAnnotation.id)) {
         drawSelectionHelpers(selectedAnnotation);

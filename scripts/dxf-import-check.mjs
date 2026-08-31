@@ -168,7 +168,43 @@ window.__DXF = (() => {
     g.fillStyle = cssColor; g.fillRect(0, 0, w, h);
     return c.toDataURL('image/png');
   };
-  return { d, canvas, settle, toClient, mouse, click, drag, importViaRealInput, solidImage };
+  // Round 11: real-pixel assertions for the multi-select halo, reusing
+  // notes-check.mjs's established world-rect -> canvas-buffer-pixel
+  // technique (getImageData on the live #boardCanvas) rather than trusting
+  // state alone — this is a rendering defect, and state can't see it.
+  const sample = (worldRect) => {
+    const v = d.getView();
+    const r = canvas.getBoundingClientRect();
+    const dpr = canvas.width / r.width;
+    const x = Math.round((worldRect.x * v.zoom + v.panX) * dpr);
+    const y = Math.round((worldRect.y * v.zoom + v.panY) * dpr);
+    const w = Math.max(1, Math.round(worldRect.width * v.zoom * dpr));
+    const h = Math.max(1, Math.round(worldRect.height * v.zoom * dpr));
+    if (x < 0 || y < 0 || x + w > canvas.width || y + h > canvas.height) {
+      return { offscreen: true, x, y, w, h, buffer: [canvas.width, canvas.height] };
+    }
+    return { offscreen: false, x, y, w, h, data: Array.from(canvas.getContext('2d').getImageData(x, y, w, h).data) };
+  };
+  const meanColor = (worldRect) => {
+    const s = sample(worldRect);
+    if (s.offscreen) return { offscreen: true };
+    let r = 0, g = 0, b = 0, a = 0, n = 0;
+    for (let i = 0; i < s.data.length; i += 4) {
+      r += s.data[i]; g += s.data[i + 1]; b += s.data[i + 2]; a += s.data[i + 3]; n += 1;
+    }
+    return { offscreen: false, r: r / n, g: g / n, b: b / n, a: a / n, n };
+  };
+  const countColor = (worldRect, rgb, tol, minAlpha) => {
+    const s = sample(worldRect);
+    if (s.offscreen) return { offscreen: true, count: 0 };
+    let count = 0;
+    for (let i = 0; i < s.data.length; i += 4) {
+      if (Math.abs(s.data[i] - rgb[0]) <= tol && Math.abs(s.data[i + 1] - rgb[1]) <= tol
+        && Math.abs(s.data[i + 2] - rgb[2]) <= tol && s.data[i + 3] >= minAlpha) count += 1;
+    }
+    return { offscreen: false, count, total: s.data.length / 4 };
+  };
+  return { d, canvas, settle, toClient, mouse, click, drag, importViaRealInput, solidImage, sample, meanColor, countColor };
 })();
 'ready'`;
   check(await s.eval(HARNESS) === 'ready', 'the harness failed to install');
@@ -633,7 +669,35 @@ window.__DXF = (() => {
     // length floor isolates just the outline without hand-picking ids.
     const outlinePerimeterPx = anns.filter(a => a.type === 'straight' && segLength(a) > 50)
       .reduce((sum, a) => sum + segLength(a), 0);
-    return { selection: d.getState().selectedAnnotationIds, uncalibratedText, expectedTotalPx, outlinePerimeterPx, annCount: anns.length };
+
+    // Round 6: the readout is now a dedicated .sketch-length-chip, a flex
+    // sibling of the ellipsis-truncated sentence — prove that with a REAL
+    // bounding box / visibility check, not another innerText/innerHTML
+    // substring match (a chip could sit in the DOM with markup intact while
+    // CSS collapses it to zero size, and no innerText assertion would ever
+    // catch that).
+    const chipEl = document.querySelector('#toolStatus .sketch-length-chip');
+    const naturalRect = chipEl.getBoundingClientRect();
+    const naturalVisible = naturalRect.width > 0 && naturalRect.height > 0 && chipEl.offsetParent !== null;
+    const chipIsDirectChild = chipEl.parentElement === document.getElementById('toolStatus');
+    // Force the sentence to genuinely overflow (squeeze the status bar to
+    // 60px) and re-measure the chip's real box afterward — this is exactly
+    // the failure mode being fixed: a long Tool sentence used to eat the
+    // length text via text-overflow:ellipsis because both lived in the same
+    // truncated span.
+    const toolStatusEl = document.getElementById('toolStatus');
+    const prevWidth = toolStatusEl.style.width, prevMaxWidth = toolStatusEl.style.maxWidth;
+    toolStatusEl.style.width = '60px';
+    toolStatusEl.style.maxWidth = '60px';
+    const squeezedRect = chipEl.getBoundingClientRect();
+    const squeezedVisible = squeezedRect.width > 0 && squeezedRect.height > 0 && chipEl.offsetParent !== null;
+    toolStatusEl.style.width = prevWidth;
+    toolStatusEl.style.maxWidth = prevMaxWidth;
+
+    return {
+      selection: d.getState().selectedAnnotationIds, uncalibratedText, expectedTotalPx, outlinePerimeterPx, annCount: anns.length,
+      naturalVisible, chipIsDirectChild, squeezedVisible, squeezedRectWidth: squeezedRect.width,
+    };
   })()`);
   check(readout.annCount === 9, `outline(4) + circle(4 chunks) + grainline(1) must be 9 annotations, got ${readout.annCount}`);
   check(readout.selection.length === 9, `clicking the outline of this piece must select the whole 9-annotation group, got ${JSON.stringify(readout.selection)}`);
@@ -642,6 +706,12 @@ window.__DXF = (() => {
     `the status line must show the uncalibrated total length (hand-computed ${expectedRounded}px from the real, scaled geometry) with an "(uncalibrated)" note, got ${JSON.stringify(readout.uncalibratedText)}`);
   check(readout.expectedTotalPx > readout.outlinePerimeterPx + 1,
     `the readout must sum MORE than the outline's own perimeter — it includes the internal circle and grainline, got total=${readout.expectedTotalPx} vs outline-only=${readout.outlinePerimeterPx}`);
+  check(readout.naturalVisible,
+    'the length chip must have a real, nonzero bounding box and a non-null offsetParent, not just be present in innerHTML');
+  check(readout.chipIsDirectChild,
+    'the length chip must be a direct sibling of the tool-status sentence inside #toolStatus, not nested inside its ellipsis-truncated span');
+  check(readout.squeezedVisible && readout.squeezedRectWidth > 0,
+    `even with #toolStatus squeezed to 60px (forcing the sentence to genuinely ellipsis), the length chip must keep a real, nonzero bounding box, got width=${readout.squeezedRectWidth}`);
 
   // ===========================================================================
   // 8. Tools-menu visibility and Command Palette availability per focus
@@ -712,6 +782,440 @@ window.__DXF = (() => {
     check(realFile.annotationCount === 1252 && realFile.groupCount === 6,
       `the real production file must import as 6 pieces / 1252 lines end to end, got ${JSON.stringify(realFile)}`);
   }
+
+  // ===========================================================================
+  // 10. "Open project…" (File menu) now also accepts a DXF file, dispatched
+  //     by extension first and by content when the file name carries none —
+  //     the SAME picker already used for saved .json projects. Also covers
+  //     picking a DXF from a genuinely fresh Auto-Mode load (ADR 0008: an
+  //     empty snapshot boots Auto): the switch to Manual + Sketch Focus must
+  //     happen automatically, since this picker is reachable well before a TD
+  //     would ever open Sketch Focus by hand. The Tools-menu "Open DXF
+  //     file…" button (section 8 above) is unchanged and still
+  //     Sketch-Focus-only; this is a second, independent entry point onto
+  //     the SAME importDxfText engine.
+  //     NOT covered here: choosing a DXF from Auto Mode while UNAPPLIED
+  //     drafts are on the board (the exit-dialog branch) — that dialog logic
+  //     is identical to the existing requestAppModeChange / "Open project"
+  //     draft-dialog handling already exercised by hand-testing and by the
+  //     Auto Mode suites; adding a duplicate CDP-driven dialog test here
+  //     would not add coverage of anything specific to the DXF dispatch.
+  // ===========================================================================
+
+  const openProjectDispatch = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug;
+    const settle = async () => { for (let i = 0; i < 40; i += 1) await new Promise(r => setTimeout(r, 40)); };
+    const chooseViaOpenProject = async (name, text) => {
+      document.getElementById('fileMenuBtn').click();
+      const input = document.getElementById('projectFileInput');
+      const dt = new DataTransfer();
+      dt.items.add(new File([text], name, { type: 'application/octet-stream' }));
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      await settle();
+    };
+    const resetToFreshAutoLoad = async () => {
+      const p = d.exportProject();
+      p.state.annotations = [];
+      p.state.images = [];
+      p.state.graphics = [];
+      p.state.notes = [];
+      await d.loadProject(p);
+    };
+
+    await resetToFreshAutoLoad();
+    const beforeA = d.getState();
+    await chooseViaOpenProject('fixture-a.dxf', ${JSON.stringify(doc([dxfChain(3)]))});
+    const afterA = { state: d.getState(), anns: d.getAnnotations() };
+    const exportedFromA = d.exportProject();
+
+    await resetToFreshAutoLoad();
+    const afterReset = d.getState();
+    await chooseViaOpenProject('mystery-file', ${JSON.stringify(doc([dxfChain(2)]))});
+    const afterExtensionlessDxf = { state: d.getState(), anns: d.getAnnotations() };
+
+    // Reset first: the JSON-content-sniff branch goes through the SAME
+    // "replace the board?" guard as a named .json file, and this suite has
+    // no CDP dialog handler installed for window.confirm — leaving the two
+    // DXF annotations above on the board would hit that guard and hang.
+    await resetToFreshAutoLoad();
+    await chooseViaOpenProject('mystery-file-2', JSON.stringify(exportedFromA));
+    const afterExtensionlessJson = { state: d.getState(), anns: d.getAnnotations() };
+
+    return {
+      beforeA, afterA, afterReset, afterExtensionlessDxf, afterExtensionlessJson,
+      exportedIds: exportedFromA.state.annotations.map(a => a.id),
+    };
+  })()`);
+
+  check(openProjectDispatch.beforeA.appMode === 'auto' && openProjectDispatch.beforeA.sketchMode === false,
+    `resetToFreshAutoLoad must reproduce a genuine fresh-load state (Auto, POM Focus), got ${JSON.stringify(openProjectDispatch.beforeA)}`);
+  check(openProjectDispatch.afterA.state.appMode === 'manual' && openProjectDispatch.afterA.state.sketchMode === true,
+    `choosing a .dxf via Open Project from a fresh Auto-Mode load must switch to Manual + Sketch Focus, got ${JSON.stringify(openProjectDispatch.afterA.state)}`);
+  check(openProjectDispatch.afterA.anns.length === 3 && openProjectDispatch.afterA.anns.every(a => a.purpose === 'sketch-element'),
+    `Open Project must import the DXF's 3 segments as sketch-element annotations, got ${JSON.stringify(openProjectDispatch.afterA.anns.map(a => a.purpose))}`);
+
+  check(openProjectDispatch.afterReset.appMode === 'auto',
+    `the second resetToFreshAutoLoad must also land back in Auto Mode, got ${JSON.stringify(openProjectDispatch.afterReset)}`);
+  check(openProjectDispatch.afterExtensionlessDxf.state.appMode === 'manual' && openProjectDispatch.afterExtensionlessDxf.state.sketchMode === true
+    && openProjectDispatch.afterExtensionlessDxf.anns.length === 2,
+    `a file with no recognized extension but DXF content must still route to the DXF importer (content sniff), got ${JSON.stringify(openProjectDispatch.afterExtensionlessDxf)}`);
+
+  check(openProjectDispatch.afterExtensionlessJson.anns.length === openProjectDispatch.exportedIds.length
+    && openProjectDispatch.exportedIds.every(id => openProjectDispatch.afterExtensionlessJson.anns.some(a => a.id === id)),
+    `a file with no recognized extension but JSON project content must load as a project, not get misrouted to the DXF importer, got ${JSON.stringify({ anns: openProjectDispatch.afterExtensionlessJson.anns.map(a => a.id), expected: openProjectDispatch.exportedIds })}`);
+
+  // ===========================================================================
+  // 11. "Set Scale" is now reachable from Sketch Focus itself (round 8): the
+  //     More menu that houses the original #setScaleBtn/#clearScaleBtn is
+  //     Sketch-Focus-hidden wholesale (.pom-mode-only on #moreMenuWrap), so a
+  //     TD who just imported a DXF had no VISIBLE way to calibrate it without
+  //     leaving Sketch Focus first (the Command Palette route existed but is
+  //     easy to miss). #sketchSetScaleBtn / #sketchClearScaleBtn are a
+  //     second, Sketch-Focus-visible entry point wired to the exact same
+  //     setScaleFromSelection()/clearScale() handlers — this section drives
+  //     the real dialog end to end (typed input, real button clicks), not a
+  //     direct call into the calibration function.
+  // ===========================================================================
+
+  const setScaleInSketch = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug, h = window.__DXF;
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    await d.loadProject(await (async () => {
+      const p = d.exportProject(); p.state.annotations = []; p.state.images = []; return p;
+    })());
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    await h.importViaRealInput(${JSON.stringify(doc([dxfLine(0, 0, 100, 0)]))});
+    // Click at the REAL placed geometry, not the raw DXF units — the auto-fit
+    // placement transform re-centers and rescales everything to the
+    // viewport, so (0,0)-(100,0) in the file is not (0,0)-(100,0) on the
+    // board (the exact mistake this suite's own multi-piece test above
+    // avoids by reading the annotation's actual start/end back).
+    const line = d.getAnnotations()[0];
+    const mid = { x: (line.start.x + line.end.x) / 2, y: (line.start.y + line.end.y) / 2 };
+    // A fresh import auto-selects its own new piece (importDxfText sets
+    // state.selection to the newly imported ids) — deselect explicitly first
+    // so "before select" actually means nothing selected.
+    await h.click(-9999, -9999);
+
+    document.getElementById('toolsMenuBtn').click(); // open the Tools menu — offsetParent is null while it's closed
+    const beforeSelect = {
+      setBtnVisible: document.getElementById('sketchSetScaleBtn').offsetParent !== null,
+      setBtnDisabled: document.getElementById('sketchSetScaleBtn').disabled,
+      clearBtnDisabled: document.getElementById('sketchClearScaleBtn').disabled,
+    };
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    await h.click(mid.x, mid.y); // select the single imported line
+    const afterSelect = {
+      setBtnDisabled: document.getElementById('sketchSetScaleBtn').disabled,
+    };
+
+    // Open, then Cancel: calibration must stay untouched.
+    document.getElementById('sketchSetScaleBtn').click();
+    const dialogOpenedOnCancel = !!document.querySelector('.scale-body');
+    // Scope button lookup to the dialog panel itself and match by exact text
+    // — the Measurements panel has its OWN permanent "+ Add POM" button that
+    // also carries the shared .picker-btn class, so a bare
+    // ".picker-btn:not(.primary)" query can match that instead of Cancel.
+    const dialogButtons = () => Array.from(document.querySelector('.scale-body').closest('.picker-panel').querySelectorAll('.picker-btn'));
+    dialogButtons().find(b => b.textContent.trim() === 'Cancel').click();
+    const afterCancel = { unitsPerPx: d.getState().calibration.unitsPerPx, dialogClosed: !document.querySelector('.scale-body') };
+
+    // Open again, type a real length, Set scale.
+    document.getElementById('sketchSetScaleBtn').click();
+    const input = document.querySelector('.scale-body input');
+    const select = document.querySelector('.scale-body select');
+    input.value = '10';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    select.value = 'in';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    dialogButtons().find(b => b.textContent.trim() === 'Set scale').click();
+    const afterApply = { calibration: d.getState().calibration, clearBtnDisabled: document.getElementById('sketchClearScaleBtn').disabled };
+
+    document.getElementById('sketchClearScaleBtn').click();
+    const afterClear = { unitsPerPx: d.getState().calibration.unitsPerPx };
+
+    // POM Focus must hide both — the original More-menu pair already covers it there.
+    document.getElementById('sketchFocusBtn').click();
+    document.getElementById('toolsMenuBtn').click();
+    const inPomFocus = {
+      setBtnVisible: document.getElementById('sketchSetScaleBtn').offsetParent !== null,
+      clearBtnVisible: document.getElementById('sketchClearScaleBtn').offsetParent !== null,
+    };
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    document.getElementById('sketchFocusBtn').click(); // back to Sketch Focus
+
+    // The rendered line's pixel length after the auto-fit placement
+    // transform (NOT the 100 DXF units in the fixture) is what "10 in" was
+    // actually calibrated against.
+    const linePx = Math.hypot(line.end.x - line.start.x, line.end.y - line.start.y);
+
+    return { beforeSelect, afterSelect, dialogOpenedOnCancel, afterCancel, afterApply, afterClear, inPomFocus, linePx };
+  })()`);
+
+  check(setScaleInSketch.beforeSelect.setBtnVisible === true,
+    `"Set Scale…" must be visible in the Tools menu in Sketch Focus, got ${JSON.stringify(setScaleInSketch.beforeSelect)}`);
+  check(setScaleInSketch.beforeSelect.setBtnDisabled === true && setScaleInSketch.beforeSelect.clearBtnDisabled === true,
+    `with nothing selected and no calibration set, both buttons must start disabled, got ${JSON.stringify(setScaleInSketch.beforeSelect)}`);
+  check(setScaleInSketch.afterSelect.setBtnDisabled === false,
+    'selecting a line must enable "Set Scale…" in Sketch Focus');
+  check(setScaleInSketch.dialogOpenedOnCancel === true, 'clicking "Set Scale…" must open the real scale dialog (.scale-body)');
+  check(setScaleInSketch.afterCancel.unitsPerPx == null && setScaleInSketch.afterCancel.dialogClosed === true,
+    `Cancel must close the dialog and leave calibration untouched, got ${JSON.stringify(setScaleInSketch.afterCancel)}`);
+  const expectedUnitsPerPx = 10 / setScaleInSketch.linePx;
+  check(setScaleInSketch.afterApply.calibration.unit === 'in'
+    && Math.abs(setScaleInSketch.afterApply.calibration.unitsPerPx - expectedUnitsPerPx) < 1e-9,
+    `typing "10 in" for the real (auto-fit-scaled) line and clicking "Set scale" must set unitsPerPx=10/${setScaleInSketch.linePx}=${expectedUnitsPerPx}, got ${JSON.stringify(setScaleInSketch.afterApply.calibration)}`);
+  check(setScaleInSketch.afterApply.clearBtnDisabled === false, '"Clear Scale" must enable once a scale is set');
+  check(setScaleInSketch.afterClear.unitsPerPx == null, '"Clear Scale" must clear the calibration');
+  check(setScaleInSketch.inPomFocus.setBtnVisible === false && setScaleInSketch.inPomFocus.clearBtnVisible === false,
+    `the Sketch-Focus Set/Clear Scale pair must be hidden in POM Focus (the More-menu originals cover it there), got ${JSON.stringify(setScaleInSketch.inPomFocus)}`);
+
+  // ===========================================================================
+  // 12. Round 9 (Codex follow-up): Set Scale must require exactly ONE segment,
+  //     not merely "something selected". Section 11's fixture was a single
+  //     LINE — one segment IS one piece IS never a group, so that distinction
+  //     could never surface there. A real multi-segment piece (dxfChain, one
+  //     templateGroupId, several members) is selected AS A GROUP the instant
+  //     it lands (importDxfText sets state.selectedAnnotationIds to the whole
+  //     batch) — getSelectedAnnotation() only ever reads the primary, so
+  //     calibrating straight off it would silently target just the first
+  //     segment while every segment looks selected. This drives the disable
+  //     gate, the Command Palette `when` guard (bypassing the disabled DOM
+  //     button entirely), the double-click isolation gesture the Template
+  //     system already teaches, and the dialog's own highlight + pixel-length
+  //     copy (round 9 items 1 and 2) against the ISOLATED segment, not the
+  //     piece total.
+  // ===========================================================================
+
+  const soloScale = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug, h = window.__DXF;
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    await d.loadProject(await (async () => {
+      const p = d.exportProject(); p.state.annotations = []; p.state.images = []; return p;
+    })());
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+
+    await h.importViaRealInput(${JSON.stringify(doc([dxfChain(3, 100)]))});
+    const anns = d.getAnnotations();
+    const groupIds = [...new Set(anns.map(a => a.templateGroupId))];
+
+    // .disabled/.title are plain DOM properties readable whether or not the
+    // Tools dropdown is open — no need to open it (and no Escape keydown,
+    // which is ALSO the board's clear-selection shortcut and would wipe the
+    // very selection this test is about to isolate).
+    const rightAfterImport = {
+      annCount: anns.length,
+      groupCount: groupIds.length,
+      selectedIds: d.getState().selectedAnnotationIds.length,
+      setBtnDisabled: document.getElementById('sketchSetScaleBtn').disabled,
+      setBtnTitle: document.getElementById('sketchSetScaleBtn').title,
+      paletteReason: d.commands.list().find(c => c.id === 'board.scale.set').availability,
+    };
+
+    // Bypassing the disabled DOM button entirely: the command's own \`when\`
+    // guard must still refuse a group selection and never open the dialog.
+    const ranWhileGroupSelected = d.commands.run('board.scale.set');
+    const dialogOpenedWhileGroupSelected = !!document.querySelector('.scale-body');
+
+    // Double-click the MIDDLE segment (not an end one, so a wrong tolerance
+    // couldn't accidentally hit a neighbor) to isolate it from the group —
+    // the same enterTemplateGroupForAnnotation gesture the Template/Shape
+    // -stamp system already teaches (viewport.js's onDoubleClick).
+    const middle = anns[1];
+    const mid = { x: (middle.start.x + middle.end.x) / 2, y: (middle.start.y + middle.end.y) / 2 };
+    h.mouse('mousedown', mid.x, mid.y);
+    h.mouse('mouseup', mid.x, mid.y);
+    h.mouse('dblclick', mid.x, mid.y);
+    await h.settle();
+
+    const afterIsolate = {
+      selectedIds: d.getState().selectedAnnotationIds.length,
+      selectionId: d.getState().selection.id,
+      setBtnDisabled: document.getElementById('sketchSetScaleBtn').disabled,
+    };
+
+    document.getElementById('sketchSetScaleBtn').click();
+    const leadText = document.querySelector('.scale-lead') ? document.querySelector('.scale-lead').textContent : null;
+    const dialogButtons = () => Array.from(document.querySelector('.scale-body').closest('.picker-panel').querySelectorAll('.picker-btn'));
+    dialogButtons().find(b => b.textContent.trim() === 'Cancel').click();
+
+    const middlePx = Math.hypot(middle.end.x - middle.start.x, middle.end.y - middle.start.y);
+
+    return { rightAfterImport, ranWhileGroupSelected, dialogOpenedWhileGroupSelected, middleId: middle.id, afterIsolate, leadText, middlePx };
+  })()`);
+
+  check(soloScale.rightAfterImport.annCount === 3 && soloScale.rightAfterImport.groupCount === 1,
+    `fixture sanity: dxfChain(3) must import as 3 segments sharing ONE templateGroupId, got ${JSON.stringify(soloScale.rightAfterImport)}`);
+  check(soloScale.rightAfterImport.selectedIds === 3,
+    `a fresh multi-segment import must leave the WHOLE piece selected as a group, got ${soloScale.rightAfterImport.selectedIds}`);
+  check(soloScale.rightAfterImport.setBtnDisabled === true,
+    'Set Scale must stay disabled while a multi-segment group is selected, not just when nothing is selected');
+  check(/double-click/i.test(soloScale.rightAfterImport.setBtnTitle),
+    `the disabled button's title must guide the TD to double-click a segment, got ${JSON.stringify(soloScale.rightAfterImport.setBtnTitle)}`);
+  check(soloScale.rightAfterImport.paletteReason.enabled === false && /double-click/i.test(soloScale.rightAfterImport.paletteReason.reason),
+    `the Command Palette entry must also refuse a group selection with the same guidance, got ${JSON.stringify(soloScale.rightAfterImport.paletteReason)}`);
+  check(soloScale.ranWhileGroupSelected === false && soloScale.dialogOpenedWhileGroupSelected === false,
+    'running board.scale.set directly (bypassing the disabled DOM button) must still refuse a group selection and never open the dialog');
+  check(soloScale.afterIsolate.selectedIds === 1 && soloScale.afterIsolate.selectionId === soloScale.middleId,
+    `double-clicking one segment must isolate it to a solo selection matching that exact segment, got ${JSON.stringify(soloScale.afterIsolate)} vs expected id ${soloScale.middleId}`);
+  check(soloScale.afterIsolate.setBtnDisabled === false,
+    'isolating one segment via double-click must enable Set Scale');
+  const expectedMiddlePxText = String(Math.round(soloScale.middlePx));
+  check(typeof soloScale.leadText === 'string' && soloScale.leadText.includes(expectedMiddlePxText + ' px'),
+    `the dialog must show the ISOLATED segment's own pixel length (${expectedMiddlePxText} px), not the 3-segment piece total, got ${JSON.stringify(soloScale.leadText)}`);
+  check(typeof soloScale.leadText === 'string' && soloScale.leadText.includes('highlighted'),
+    `the dialog copy must call out that the segment is highlighted on the board, got ${JSON.stringify(soloScale.leadText)}`);
+
+  // ===========================================================================
+  // 13. Round 11 (user-reported, then a follow-up review caught a real
+  //     alpha-stacking bug in the first fix): the multi-select group marker
+  //     used to be two small circles (drawHandle) per selected annotation;
+  //     on a tessellated curve they visually clustered. It's now ONE halo
+  //     stroked along every selected annotation's path, batched into a
+  //     SINGLE path + SINGLE stroke() call under ctx.globalAlpha specifically
+  //     so a shared vertex between two tessellated segments does not
+  //     alpha-stack (two separate translucent paints there would composite
+  //     to a visibly higher alpha than either paint alone — the exact
+  //     "seam" defect a naive per-annotation rgba() fix would still have).
+  //     These assertions read REAL canvas pixels (getImageData), reusing
+  //     notes-check.mjs's established sample/meanColor/countColor technique
+  //     — state alone cannot see a rendering defect. The board here clears
+  //     to fully transparent (no image loaded), so a single translucent
+  //     paint of SELECT_COLOR at globalAlpha A reports back as the EXACT
+  //     source RGB (53,109,255) with alpha ≈ A*255 — compositing over
+  //     transparent doesn't blend the RGB toward anything, only alpha
+  //     accumulates on a second, separate paint. That is what makes the
+  //     alpha channel (not the RGB channel) the sensitive probe for the
+  //     stacking bug: single-pass ≈ 0.4*255 ≈ 102, the OLD two-separate
+  //     -paints bug would have read ≈ (1-(1-0.4)^2)*255 ≈ 163.
+  // ===========================================================================
+
+  const halo = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug, h = window.__DXF;
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    await d.loadProject(await (async () => {
+      const p = d.exportProject(); p.state.annotations = []; p.state.images = []; return p;
+    })());
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+
+    // A 3-segment chain (one piece, two real shared vertices) PLUS a lone,
+    // far-away line as a SECOND piece in the SAME file/import — two separate
+    // imports would each auto-fit-center on the current viewport and land
+    // on top of each other; one shared-transform import preserves their
+    // relative spacing from the source file instead (this is exactly what
+    // "layout-preserving placement" already guarantees).
+    await h.importViaRealInput(${JSON.stringify(doc([dxfChain(3, 100), dxfLine(1000, 0, 1100, 0)]))});
+    const anns = d.getAnnotations();
+    const chain = anns.slice(0, 3);
+    const lone = anns[3];
+    const groupIds = [...new Set(chain.map(a => a.templateGroupId))];
+
+    // The halo/core widths are set in WORLD units as (screen-px) / zoom (so
+    // their ON-SCREEN size stays constant at any zoom — the same convention
+    // drawMultiSelectHalo/drawLineCore use) — this is a long-running single
+    // page session across every section in this file, so state.zoom here is
+    // whatever an EARLIER section left it at, not necessarily 1. Offsets
+    // have to divide by the SAME live zoom or they land at the wrong
+    // relative distance from the centerline entirely (this failed loudly,
+    // landing fully off the halo, before this division was added).
+    const z = Math.max(0.0001, d.getView().zoom);
+    const OFFSET = 2.75 / z;    // dead center of the halo's annular band (core edge 1.25/z .. halo edge 4.25/z)
+    const OLD_DOT_OFFSET = 5.5 / z; // inside the OLD 7.5/z-radius dot, outside the new halo
+    const HALF = 1.0 / z;
+    const sampleNear = (point, offsetDir, offset, half) => h.sample({
+      x: point.x - half, y: point.y + offset * offsetDir - half, width: half * 2, height: half * 2,
+    });
+    const meanNear = (point, offsetDir, offset, half) => h.meanColor({
+      x: point.x - half, y: point.y + offset * offsetDir - half, width: half * 2, height: half * 2,
+    });
+    const countWhiteNear = (point, offsetDir, offset, half) => h.countColor({
+      x: point.x - half, y: point.y + offset * offsetDir - half, width: half * 2, height: half * 2,
+    }, [255, 255, 255], 10, 200);
+
+    // Right after import the WHOLE batch (both pieces) is selected as a
+    // group — exactly the scenario that surfaced this bug (a fresh DXF
+    // import, not a deliberate Shift-click).
+    const sharedVertex = chain[0].end; // === chain[1].start
+    const midOfMiddleSegment = { x: (chain[1].start.x + chain[1].end.x) / 2, y: (chain[1].start.y + chain[1].end.y) / 2 };
+
+    const dotsGone = countWhiteNear(sharedVertex, -1, OLD_DOT_OFFSET, 0.8);
+    const haloAtOffset = meanNear(sharedVertex, -1, OFFSET, HALF);
+    const seamMean = meanNear(sharedVertex, -1, OFFSET, HALF);
+    const midMean = meanNear(midOfMiddleSegment, -1, OFFSET, HALF);
+
+    // Narrow the selection to just the chain. A plain click on an item
+    // ALREADY part of a multi-selection deliberately KEEPS the whole group
+    // (pointer-events.js: "so the drag moves them all") — clicking a chain
+    // member right now would leave all 4 selected, not narrow to 3. Deselect
+    // first (click empty canvas), so the next click is a genuinely fresh
+    // pick that re-widens to just its own templateGroupId (the same
+    // mechanic the round-9 double-click isolation uses, just without
+    // entering single-member edit mode) — freeing the lone line to be
+    // hovered as genuinely unselected.
+    await h.click(-9999, -9999);
+    await h.click(midOfMiddleSegment.x, midOfMiddleSegment.y);
+    const selectedAfterClick = d.getState().selectedAnnotationIds.length;
+
+    h.mouse('mousemove', lone.start.x + (lone.end.x - lone.start.x) / 2, lone.start.y);
+    await h.settle();
+    const hoveredId = d.getState().hoverAnnotationId;
+    const loneMid = { x: (lone.start.x + lone.end.x) / 2, y: (lone.start.y + lone.end.y) / 2 };
+    const hoverMean = meanNear(loneMid, -1, OFFSET, HALF);
+
+    // Double-click isolates one chain segment to a solo selection — the
+    // real single-selection editing handles (drawSelectionHelpers) must be
+    // completely unaffected by any of the above.
+    h.mouse('mousedown', midOfMiddleSegment.x, midOfMiddleSegment.y);
+    h.mouse('mouseup', midOfMiddleSegment.x, midOfMiddleSegment.y);
+    h.mouse('dblclick', midOfMiddleSegment.x, midOfMiddleSegment.y);
+    await h.settle();
+    const soloSelectedCount = d.getState().selectedAnnotationIds.length;
+    const soloId = d.getState().selection.id;
+    const soloAnn = d.getAnnotations().find(a => a.id === soloId);
+    const handleAtEndpoint = h.countColor({
+      x: soloAnn.end.x - 0.6, y: soloAnn.end.y - 0.6, width: 1.2, height: 1.2,
+    }, [255, 255, 255], 10, 200);
+
+    return {
+      annCount: anns.length, groupCount: groupIds.length,
+      dotsGoneCount: dotsGone.count, haloAtOffset, seamAlpha: seamMean.a, midAlpha: midMean.a,
+      selectedAfterClick, hoveredId, loneId: lone.id, hoverAlpha: hoverMean.a,
+      soloSelectedCount, handleAtEndpointCount: handleAtEndpoint.count,
+    };
+  })()`);
+
+  check(halo.annCount === 4 && halo.groupCount === 1,
+    `fixture sanity: a 3-segment chain + a lone line must import as 4 segments with the chain sharing ONE templateGroupId, got ${JSON.stringify({ annCount: halo.annCount, groupCount: halo.groupCount })}`);
+  check(halo.dotsGoneCount === 0,
+    `the old drawHandle white-fill dot must no longer render at a shared vertex, got ${halo.dotsGoneCount} near-white opaque pixels`);
+  check(Math.abs(halo.haloAtOffset.r - 53) < 20 && Math.abs(halo.haloAtOffset.g - 109) < 20 && Math.abs(halo.haloAtOffset.b - 255) < 20 && halo.haloAtOffset.a > 60,
+    `the halo must actually paint outside the line's own core stroke, blended toward SELECT_COLOR, got ${JSON.stringify(halo.haloAtOffset)}`);
+  check(Math.abs(halo.seamAlpha - 102) < 25,
+    `a shared vertex's halo alpha must be close to the single-pass value (~102 for globalAlpha 0.4 over transparent), got ${halo.seamAlpha}`);
+  check(halo.seamAlpha < 140,
+    `a shared vertex must read well below the OLD double-paint value (~163) — this is the actual regression guard, got ${halo.seamAlpha}`);
+  check(Math.abs(halo.seamAlpha - halo.midAlpha) < 20,
+    `a shared vertex must read NO DARKER than the middle of a segment (no seam) — vertex ${halo.seamAlpha} vs mid-segment ${halo.midAlpha}`);
+  check(halo.selectedAfterClick === 3,
+    `a plain click on one chain member must re-select the whole 3-member piece, got ${halo.selectedAfterClick}`);
+  check(halo.hoveredId === halo.loneId,
+    `a real mousemove over the now-unselected lone line must set hoverAnnotationId to it, got ${halo.hoveredId} vs expected ${halo.loneId}`);
+  check(Math.abs(halo.hoverAlpha - 56) < 20,
+    `hover's own halo alpha must be close to its single-pass value (~56 for globalAlpha 0.22), got ${halo.hoverAlpha}`);
+  check(halo.hoverAlpha < halo.seamAlpha - 20,
+    `hover must read visibly LIGHTER than the multi-select halo (0.22 vs 0.4 globalAlpha) — hover ${halo.hoverAlpha} vs selection ${halo.seamAlpha}`);
+  check(halo.soloSelectedCount === 1,
+    `double-clicking one chain segment must isolate it to a solo selection, got ${halo.soloSelectedCount}`);
+  check(halo.handleAtEndpointCount > 0,
+    'a real single-selection must still show its drawSelectionHelpers white-fill endpoint handle, unaffected by the halo change');
 
   const errors = await s.eval('window.__dxfErrors || []');
   check(errors.length === 0, 'browser console errors: ' + errors.join(' | '));

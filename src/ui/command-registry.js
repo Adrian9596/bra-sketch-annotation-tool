@@ -34,6 +34,17 @@
     return state.selection.kind === 'annotation' ? true : 'Select one Board line first.';
   }
 
+  // Round 9 (Codex follow-up on US-104): Set Scale must act on exactly one
+  // segment — see setScaleFromSelection's comment in bindings.js for why a
+  // group (a fresh DXF-piece import, a Template group, or a plain multi
+  // -select) can't be the target.
+  function appCommandSoloSelectedAnnotationReason() {
+    if (state.selection.kind !== 'annotation') return 'Select one Board line first.';
+    return getSelectedAnnotationIds().length > 1
+      ? 'Double-click a segment to select it alone, then try again.'
+      : true;
+  }
+
   function appCommandSelectedAnnotationOrGraphicReason() {
     return (state.selection.kind === 'annotation' || state.selection.kind === 'graphic')
       ? true : 'Select one Board line or shape first.';
@@ -315,7 +326,7 @@
       page: 'board', shortcut: { key: 'n' }, target: '#toggleLabelsBtn', action: () => toggleLabels() }),
     appCommand({ id: 'board.scale.set', label: 'Set Scale…', category: 'Board · Measurements',
       page: 'board', mode: 'manual', target: '#setScaleBtn',
-      when: appCommandSelectedAnnotationReason, action: () => setScaleFromSelection() }),
+      when: appCommandSoloSelectedAnnotationReason, action: () => setScaleFromSelection() }),
     appCommand({ id: 'board.scale.clear', label: 'Clear Scale', category: 'Board · Measurements',
       page: 'board', mode: 'manual', target: '#clearScaleBtn',
       when: () => state.pixelsPerUnit ? true : 'No scale is currently set.', action: () => clearScale() }),

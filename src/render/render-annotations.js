@@ -80,8 +80,11 @@
     ctx.restore();
   }
 
-  function drawAnnotationPath(ann) {
-    ctx.beginPath();
+  // Round 11: split out from drawAnnotationPath so a multi-select halo can
+  // append several annotations onto ONE path (one ctx.beginPath(), no
+  // stroke() in between) instead of one path+stroke() per annotation — see
+  // drawMultiSelectHalo below for why that distinction matters.
+  function appendAnnotationPathSegment(ann) {
     ctx.moveTo(ann.start.x, ann.start.y);
     if (ann.type === 'straight') {
       ctx.lineTo(ann.end.x, ann.end.y);
@@ -90,6 +93,11 @@
         ctx.bezierCurveTo(s.p1.x, s.p1.y, s.p2.x, s.p2.y, s.p3.x, s.p3.y);
       }
     }
+  }
+
+  function drawAnnotationPath(ann) {
+    ctx.beginPath();
+    appendAnnotationPathSegment(ann);
   }
 
   function drawArrowheadsForStraight(ann, color, lineWidth) {
@@ -220,14 +228,41 @@
     drawAdjustmentReadout(ann);
   }
 
-  // Lighter per-line marker for a MULTI-selection (Shift+click / marquee): just
-  // the endpoint dots, no control/label handles or readout — enough to show the
-  // line is in the group without the busy single-line editing apparatus.
-  function drawAnnotationSelectedOutline(ann) {
-    if (!ann || !ann.start || !ann.end) return;
+  // Round 11 (user-reported, from a screenshot of the real demo DXF pattern):
+  // this used to draw two small circles (drawHandle) per selected annotation
+  // — round 10 shrank them, but on a tessellated curve they still visually
+  // clustered, AND (a follow-up review caught this) stroking each annotation
+  // SEPARATELY with a translucent rgba() colour alpha-stacks at every shared
+  // vertex between adjacent segments (two paints at alpha .4 composite to
+  // 1-(1-.4)^2 = .64, a visibly darker seam — softer than dots, not solved).
+  // The fix traces every selected annotation into ONE path (one
+  // ctx.beginPath(), appendAnnotationPathSegment per member, no stroke() in
+  // between) and paints it with ONE stroke() call under ctx.globalAlpha
+  // rather than an rgba() strokeStyle: globalAlpha scales the alpha of the
+  // whole draw call's composited result exactly once, so overlapping/
+  // touching sub-paths within that single stroke() cannot double-blend
+  // regardless of where they touch. This is a property of the API, not an
+  // assumption about how any given browser rasterizes overlapping subpaths.
+  //
+  // One shared lineWidth for the whole batch (the widest member's own visual
+  // extent) rather than per-annotation width: a deliberate simplification
+  // for a group-level "these are selected" cue, not a per-line measurement —
+  // every DXF-imported segment is uniform width anyway.
+  function drawMultiSelectHalo(anns) {
+    const visible = (anns || []).filter(a => a && a.start && a.end);
+    if (!visible.length) return;
+    const extent = Math.max(...visible.map(a => hasLineTreatment(a)
+      ? lineTreatmentVisualExtent(a.lineTreatment) : getLineWidth(a) / 2));
     ctx.save();
-    drawHandle(ann.start, true, false);
-    drawHandle(ann.end, true, false);
+    ctx.globalAlpha = 0.4;
+    ctx.strokeStyle = SELECT_COLOR;
+    ctx.lineWidth = Math.max(8, extent * 2 + 6) / Math.max(0.0001, state.zoom);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (const ann of visible) appendAnnotationPathSegment(ann);
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -237,7 +272,12 @@
       ? lineTreatmentVisualExtent(ann.lineTreatment)
       : getLineWidth(ann) / 2;
     ctx.save();
-    ctx.strokeStyle = 'rgba(53,109,255,.22)';
+    // Round 11: same globalAlpha + solid-colour form as drawMultiSelectHalo
+    // (a single annotation per call never had the stacking issue, but
+    // sharing the technique keeps the two halos' only difference the alpha
+    // value, which is what the hover-vs-selection pixel test relies on).
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = SELECT_COLOR;
     ctx.lineWidth = Math.max(8, extent * 2 + 6) / Math.max(0.0001, state.zoom);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';

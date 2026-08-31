@@ -85,6 +85,10 @@
     workspace: document.querySelector('.workspace'),
     setScaleBtn: document.getElementById('setScaleBtn'),
     clearScaleBtn: document.getElementById('clearScaleBtn'),
+    // US-104 round 8: same calibration, a second Sketch-Focus-visible
+    // entry point (the More menu housing setScaleBtn is Sketch-Focus-hidden).
+    sketchSetScaleBtn: document.getElementById('sketchSetScaleBtn'),
+    sketchClearScaleBtn: document.getElementById('sketchClearScaleBtn'),
     sizeRunBtn: document.getElementById('sizeRunBtn'),
     gradingBtn: document.getElementById('gradingBtn'),
     exportPdfBtn: document.getElementById('exportPdfBtn'),

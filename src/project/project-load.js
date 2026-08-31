@@ -1,18 +1,49 @@
-// Open a .json project file: file-input handling, then restore it onto the
-// board. Saving is project-save.js.
+// Open a .json project file, or import a .dxf sketch: shared file-input
+// handling for the File menu's "Open project…" item, then dispatch to
+// whichever flow the chosen file actually is. Saving is project-save.js;
+// the DXF geometry importer itself is src/manual/dxf-import.js.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // loadProject restores a saved snapshot, including image pixel data, and
 // seeds a fresh history stack. Unapplied Auto Mode drafts are never
 // silently dropped; the open flow prompts the TD to apply, discard, or
-// cancel before replacing the board.
+// cancel before replacing the board. Importing a DXF is additive (it never
+// replaces the board), so it only needs that same dialog to settle Auto
+// Mode out of the way before switching to Manual + Sketch Focus — never to
+// guard against losing work.
 
+  // Dispatch on extension first (the normal case — every real file picker
+  // and every drag-and-drop supplies one); a file with no recognized
+  // extension falls back to sniffing the actual text content, since a
+  // DXF's own MIME type is unreliable (browsers report '' for it).
   function onProjectFileChosen(e) {
     const input = e.target;
     const file = input.files && input.files[0];
     input.value = '';
     if (!file) return;
 
+    const name = (file.name || '').toLowerCase();
+    if (name.endsWith('.dxf')) {
+      importDxfFileIntoBoard(file);
+      return;
+    }
+    if (name.endsWith('.json')) {
+      openProjectFileWithGuard(file);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || '');
+      let looksLikeJson = true;
+      try { JSON.parse(text); } catch (error) { looksLikeJson = false; }
+      if (looksLikeJson) openProjectFileWithGuard(file);
+      else importDxfTextIntoBoard(text);
+    };
+    reader.onerror = () => showToast('Could not read that file.', 4200);
+    reader.readAsText(file);
+  }
+
+  function openProjectFileWithGuard(file) {
     const drafts = state.autoMode.draftAnnotations;
     if (state.appMode === 'auto' && drafts.length > 0) {
       const approvedCount = drafts.filter(d => d.tdApproved && !isReviewOnlyDraft(d)).length;
@@ -43,6 +74,57 @@
       return;
     }
     readAndLoadProjectFile(file);
+  }
+
+  // A DXF chosen via "Open project…" must land the same place the Tools-menu
+  // "Open DXF file…" button does — Manual Mode with Sketch Focus on — even
+  // when it is picked from a fresh Auto Mode load. Unlike opening a .json
+  // project, unapplied Auto drafts are never at risk of being lost (DXF
+  // import only adds annotations), so the exit dialog here exists purely to
+  // let the TD settle the draft layer before the mode switch, not to guard
+  // against overwriting work.
+  function importDxfTextIntoBoard(text) {
+    const proceed = () => {
+      if (!state.sketchMode) setSketchModeEnabled(true, false);
+      importDxfText(text);
+    };
+
+    if (state.appMode === 'auto') {
+      const drafts = state.autoMode.draftAnnotations;
+      if (drafts.length > 0) {
+        const approvedCount = drafts.filter(d => d.tdApproved && !isReviewOnlyDraft(d)).length;
+        openAutoModeExitDialog({
+          approvedCount,
+          totalCount: drafts.length,
+          reason: 'Importing a DXF file switches to Manual Mode. Choose what to do with the Auto Mode draft layer first:',
+        }).then(choice => {
+          if (choice === 'apply') {
+            const applied = applyApprovedDraftsAtomically();
+            if (!applied) return;
+            if (state.autoMode.draftAnnotations.length > 0) {
+              showToast('Some drafts remain. Resolve them before importing a DXF file.');
+              return;
+            }
+            proceed();
+          } else if (choice === 'discard') {
+            discardAutoDrafts(true);
+            setAppMode('manual');
+            proceed();
+          }
+          // 'stay' = cancel the import; current drafts and board are untouched.
+        });
+        return;
+      }
+      setAppMode('manual');
+    }
+    proceed();
+  }
+
+  function importDxfFileIntoBoard(file) {
+    const reader = new FileReader();
+    reader.onload = () => importDxfTextIntoBoard(String(reader.result || ''));
+    reader.onerror = () => showToast('Could not read that file.', 4200);
+    reader.readAsText(file);
   }
 
   function readAndLoadProjectFile(file) {

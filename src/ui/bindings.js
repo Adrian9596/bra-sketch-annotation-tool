@@ -106,6 +106,8 @@
     el.toggleLabelsBtn.addEventListener('click', toggleLabels);
     el.setScaleBtn.addEventListener('click', setScaleFromSelection);
     el.clearScaleBtn.addEventListener('click', clearScale);
+    el.sketchSetScaleBtn.addEventListener('click', setScaleFromSelection);
+    el.sketchClearScaleBtn.addEventListener('click', clearScale);
     el.sizeRunBtn.addEventListener('click', () => openSizeRunDialog());
     el.gradingBtn.addEventListener('click', () => openGradingDialog());
     el.exportPdfBtn.addEventListener('click', exportPdf);
@@ -503,7 +505,22 @@
   }
 
   // ---- Calibration ----
+  // Round 9 (Codex follow-up on US-104): a DXF import lands as one selected
+  // GROUP (every segment of every piece — dxf-import.js's importDxfText sets
+  // state.selectedAnnotationIds to the whole batch), and a Template group
+  // widens the same way on click. getSelectedAnnotation() only ever reads the
+  // PRIMARY, so calibrating straight off a group silently used just its first
+  // segment while every segment looked selected/highlighted — a TD had no way
+  // to tell which line "10 in" actually meant. Requiring exactly one segment
+  // in getSelectedAnnotationIds() (and pointing at the existing double-click
+  // -> enterTemplateGroupForAnnotation gesture, viewport.js's onDoubleClick)
+  // reuses the isolation mechanic the Template system already has, rather
+  // than inventing a second one.
   function setScaleFromSelection() {
+    if (getSelectedAnnotationIds().length > 1) {
+      showToast('Multiple segments selected — double-click one segment to select it alone, then click Set Scale.');
+      return;
+    }
     const ann = getSelectedAnnotation();
     if (!ann) {
       showToast('Select a line first, then click Set Scale to calibrate by its real length.');
@@ -514,7 +531,7 @@
       showToast('That line is too short to calibrate.');
       return;
     }
-    openScaleDialog(px);
+    openScaleDialog(px, null, ann.id);
   }
 
   function clearScale() {
