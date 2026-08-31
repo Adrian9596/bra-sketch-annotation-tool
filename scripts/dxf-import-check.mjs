@@ -6,8 +6,12 @@
 // group-code/section parser (including the BOM/CRLF/trailing-newline
 // normalization that has to run BEFORE the even/odd pair check, or an
 // ordinary well-formed file reads as corrupt), the planarity gate, the
-// malformed-entity contract, the bulge-to-arc sign convention, piece
-// detection (connectivity + containment merge + no over-merge), the three
+// malformed-entity contract, the bulge-to-arc sign convention, INSERT ->
+// BLOCK resolution (translate/scale/rotate, recursive nesting, the
+// undefined-block/non-uniform-scale/MINSERT/circular-reference rejections —
+// the dominant real-world DXF shape, see
+// docs/decisions/0067-dxf-grading-nest-import.md), piece detection
+// (connectivity + containment merge + no over-merge), the three
 // output caps, the exact auto-fit placement formula (reused from
 // createImageRecord, not reinvented), and — driven through the REAL
 // Tools-menu button / file input / pointer events, not by calling internal
@@ -84,6 +88,25 @@ function dxfPolyline(flags, verts, extra = {}, omitSeqend = false) {
   if (!omitSeqend) out.push(P(0, 'SEQEND'));
   return out;
 }
+// A named BLOCK definition wrapping arbitrary entity pairs, terminated by
+// ENDBLK — the real-world shape a garment-CAD DXF export uses to hold one
+// pattern piece's geometry (see dxfInsert below).
+function dxfBlock(name, bodyPairs) {
+  return [P(0, 'BLOCK'), P(8, '0'), P(2, name), P(70, 0), P(10, 0), P(20, 0), ...bodyPairs, P(0, 'ENDBLK')];
+}
+function dxfInsert(name, x, y, extra = {}) {
+  const out = [P(0, 'INSERT'), P(8, '0'), P(2, name), P(10, x), P(20, y)];
+  if ('sx' in extra) out.push(P(41, extra.sx));
+  if ('sy' in extra) out.push(P(42, extra.sy));
+  if ('rot' in extra) out.push(P(50, extra.rot));
+  if ('cols' in extra) out.push(P(70, extra.cols));
+  if ('rows' in extra) out.push(P(71, extra.rows));
+  return out;
+}
+const docWithBlocks = (blockArrays, entityArrays) => rawDoc([
+  sectionBlock('BLOCKS', blockArrays.flat()), sectionBlock('ENTITIES', entityArrays.flat()),
+]);
+
 // A connected chain of N collinear LINE entities — one piece, N segments —
 // for the per-piece output-cap boundary tests.
 function dxfChain(n, spacing = 1) {
@@ -323,13 +346,17 @@ window.__DXF = (() => {
   check(lwTwoVertex.ok === true && lwTwoVertex.pieces[0].length === 1,
     `a 2-vertex LWPOLYLINE must import as one segment, got ${JSON.stringify(lwTwoVertex)}`);
 
-  // Section scoping: BLOCKS content is never entities; a POLYLINE without
-  // SEQEND and a missing ENTITIES section are whole-file, not per-entity.
+  // Section scoping: geometry sitting BARE in BLOCKS (no BLOCK/ENDBLK
+  // wrapper — not real DXF, but a malformed shape worth pinning) is still
+  // never entities; a POLYLINE without SEQEND and a missing ENTITIES section
+  // are whole-file, not per-entity. A PROPERLY block-wrapped piece that IS
+  // referenced by an INSERT is a different, now-supported case — see
+  // "INSERT -> BLOCK resolution" below.
   const blocksOnly = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(rawDoc([
     sectionBlock('BLOCKS', dxfLine(0, 0, 10, 0)), sectionBlock('ENTITIES', []),
   ]))})`);
   check(blocksOnly.ok === false && blocksOnly.reason === 'empty',
-    `geometry defined only in BLOCKS with an empty ENTITIES must report "no supported entities", got ${JSON.stringify(blocksOnly)}`);
+    `geometry sitting bare in BLOCKS with no BLOCK wrapper and an empty ENTITIES must report "no supported entities", got ${JSON.stringify(blocksOnly)}`);
   const missingEntities = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(rawDoc([sectionBlock('HEADER', [])]))})`);
   check(missingEntities.ok === false && missingEntities.atomic === true,
     `a file with no ENTITIES section must be an atomic rejection, got ${JSON.stringify(missingEntities)}`);
@@ -366,6 +393,164 @@ window.__DXF = (() => {
     `CRLF line endings must parse identically to LF, got ${JSON.stringify(withCrlf)}`);
   check(withBom.ok === true && withBom.pieces[0].length === 1,
     `a UTF-8 BOM prefix must not corrupt the first group code, got ${JSON.stringify(withBom)}`);
+
+  // ===========================================================================
+  // 1c. INSERT -> BLOCK resolution — the real-world fix. Garment-CAD DXF
+  //     exports (Gerber/Lectra/Rich-style) put every pattern piece's actual
+  //     geometry inside a named BLOCK and reference it once via INSERT in
+  //     ENTITIES; left unresolved, a file built this way has zero directly-
+  //     supported entities and is rejected outright even though it is an
+  //     ordinary, valid pattern (see docs/decisions/0067-dxf-grading-nest-import.md).
+  // ===========================================================================
+
+  const insertBasic = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('PIECE', dxfLine(0, 0, 10, 0))],
+    [dxfInsert('PIECE', 100, 200)],
+  ))})`);
+  check(insertBasic.ok === true && insertBasic.pieces.length === 1 && insertBasic.pieces[0].length === 1
+    && insertBasic.pieces[0][0].kind === 'straight',
+    `a block referenced by one INSERT must resolve to that block's geometry, got ${JSON.stringify(insertBasic)}`);
+  // Y-flip runs AFTER placement, so a block LINE (0,0)->(10,0) placed at
+  // INSERT (100,200) lands at local (100,200)->(110,200), flipped to
+  // (100,-200)->(110,-200).
+  const insertSeg = insertBasic.pieces[0][0];
+  check(Math.abs(insertSeg.a.x - 100) < 1e-6 && Math.abs(insertSeg.a.y + 200) < 1e-6
+    && Math.abs(insertSeg.b.x - 110) < 1e-6 && Math.abs(insertSeg.b.y + 200) < 1e-6,
+    `INSERT's insertion point (10/20) must translate the block's local geometry, got ${JSON.stringify(insertSeg)}`);
+
+  // Uniform scale + rotation: a unit-length LINE along +X, INSERT scale 2,
+  // rotation 90deg, at the origin -> pre-flip that's a length-2 segment along
+  // local +Y; parseDxfDocument's own Y-flip (applied uniformly, after
+  // placement, to every accepted segment) then puts it at -Y in the result.
+  const insertTransformed = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('P', dxfLine(0, 0, 1, 0))],
+    [dxfInsert('P', 0, 0, { sx: 2, sy: 2, rot: 90 })],
+  ))})`);
+  check(insertTransformed.ok === true, `a scaled+rotated INSERT must still resolve, got ${JSON.stringify(insertTransformed)}`);
+  const tSeg = insertTransformed.pieces[0][0];
+  check(Math.abs(tSeg.a.x) < 1e-6 && Math.abs(tSeg.a.y) < 1e-6
+    && Math.abs(tSeg.b.x) < 1e-6 && Math.abs(tSeg.b.y + 2) < 1e-6,
+    `INSERT scale 2 + rotation 90deg on a unit +X segment must produce a length-2 segment ending at Y-flipped (0,-2), got ${JSON.stringify(tSeg)}`);
+
+  // Two INSERTs of the same block at different points -> two separate
+  // pieces (no accidental sharing/merging of the block's own geometry).
+  const insertTwice = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('P', dxfLine(0, 0, 10, 0))],
+    [dxfInsert('P', 0, 0), dxfInsert('P', 1000, 1000)],
+  ))})`);
+  check(insertTwice.ok === true && insertTwice.pieces.length === 2,
+    `the same block placed by two INSERTs must yield two independent pieces, got ${JSON.stringify(insertTwice)}`);
+
+  // Nested INSERT: block B contains an INSERT of block A — recursive
+  // resolution, not just one level deep.
+  const insertNested = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('A', dxfLine(0, 0, 10, 0)), dxfBlock('B', dxfInsert('A', 5, 5))],
+    [dxfInsert('B', 0, 0)],
+  ))})`);
+  check(insertNested.ok === true && insertNested.pieces.length === 1 && insertNested.pieces[0].length === 1,
+    `an INSERT-of-an-INSERT (nested block reference) must resolve recursively, got ${JSON.stringify(insertNested)}`);
+
+  // A block containing both a supported LINE and an unsupported TEXT: the
+  // LINE is placed, and the TEXT is bucketed exactly like a top-level one.
+  const insertMixedBlock = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('P', [...dxfLine(0, 0, 10, 0), P(0, 'TEXT'), P(1, 'hi')])],
+    [dxfInsert('P', 0, 0)],
+  ))})`);
+  check(insertMixedBlock.ok === true && insertMixedBlock.pieces.flat().length === 1
+    && insertMixedBlock.buckets.unsupportedType === 1,
+    `an unsupported entity inside a resolved block must still be bucketed, not silently dropped or fail the whole INSERT, got ${JSON.stringify(insertMixedBlock)}`);
+
+  // INSERT referencing a block name that doesn't exist -> malformed, not a
+  // silent no-op or a whole-file crash.
+  const insertUndefined = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('P', dxfLine(0, 0, 10, 0))],
+    [dxfInsert('GHOST', 0, 0)],
+  ))})`);
+  check(insertUndefined.ok === false && insertUndefined.buckets.malformed === 1,
+    `an INSERT referencing an undefined block must be malformed, got ${JSON.stringify(insertUndefined)}`);
+
+  // Non-uniform scale (sx != sy) is explicitly out of scope for v1 — rejected
+  // with a stated reason, never silently distorted.
+  const insertNonUniform = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('P', dxfLine(0, 0, 10, 0))],
+    [dxfInsert('P', 0, 0, { sx: 2, sy: 1 })],
+  ))})`);
+  check(insertNonUniform.ok === false && insertNonUniform.buckets.unsupportedType === 1,
+    `an INSERT with non-uniform scale must be skipped as unsupported, not silently distorted, got ${JSON.stringify(insertNonUniform)}`);
+
+  // MINSERT (rectangular array via group 70/71 > 1) is explicitly out of
+  // scope for v1 — rejected with a stated reason, never silently duplicated.
+  const insertArray = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('P', dxfLine(0, 0, 10, 0))],
+    [dxfInsert('P', 0, 0, { cols: 3, rows: 1 })],
+  ))})`);
+  check(insertArray.ok === false && insertArray.buckets.unsupportedType === 1,
+    `a rectangular-array INSERT (MINSERT) must be skipped as unsupported, not silently duplicated, got ${JSON.stringify(insertArray)}`);
+
+  // Circular BLOCK/INSERT reference must be rejected (bounded recursion),
+  // never hang or crash the parse.
+  const insertCircular = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('A', dxfInsert('B', 0, 0)), dxfBlock('B', dxfInsert('A', 0, 0))],
+    [dxfInsert('A', 0, 0)],
+  ))})`);
+  check(insertCircular.ok === false,
+    `a circular BLOCK/INSERT reference must be rejected (bounded recursion), not hang, got ${JSON.stringify(insertCircular)}`);
+
+  // ---------------------------------------------------------------------------
+  // ADR 0069: placement-instance boundary. A grading-nest DXF places every
+  // size/piece as its own INSERT, usually all at the SAME (identity)
+  // transform — their geometry routinely nests or even touches by pure
+  // coincidence of shared placement, which used to fuse unrelated pieces
+  // into one blob (measured on real files: a 17182-segment single "piece").
+  // ---------------------------------------------------------------------------
+
+  // Two different blocks, one's outline fully bounding-box-contains the
+  // other's — must stay TWO pieces (different INSERTs), not merge the way
+  // a real drill-hole/grainline inside the SAME block would.
+  const square = (x0, y0, size) => [
+    ...dxfLine(x0, y0, x0 + size, y0), ...dxfLine(x0 + size, y0, x0 + size, y0 + size),
+    ...dxfLine(x0 + size, y0 + size, x0, y0 + size), ...dxfLine(x0, y0 + size, x0, y0),
+  ];
+  const insertNestedInstances = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('OUTER', square(0, 0, 100)), dxfBlock('INNER', square(10, 10, 80))],
+    [dxfInsert('OUTER', 0, 0), dxfInsert('INNER', 0, 0)],
+  ))})`);
+  check(insertNestedInstances.ok === true && insertNestedInstances.pieces.length === 2,
+    `two different blocks whose bounding boxes nest must stay two pieces, not merge like an internal mark would, got ${JSON.stringify(insertNestedInstances.ok ? insertNestedInstances.pieces.map(p => p.length) : insertNestedInstances)}`);
+
+  // Two different blocks whose geometry TOUCHES exactly (shared endpoint,
+  // by coincidence of both using identity placement) — must stay TWO
+  // pieces; connectivity must not cross an instance boundary either.
+  const insertTouchingInstances = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('A', dxfLine(0, 0, 10, 0)), dxfBlock('B', dxfLine(10, 0, 20, 0))],
+    [dxfInsert('A', 0, 0), dxfInsert('B', 0, 0)],
+  ))})`);
+  check(insertTouchingInstances.ok === true && insertTouchingInstances.pieces.length === 2,
+    `two different blocks whose geometry happens to share an endpoint must stay two pieces, got ${JSON.stringify(insertTouchingInstances.ok ? insertTouchingInstances.pieces.map(p => p.length) : insertTouchingInstances)}`);
+
+  // Combines both: ONE block's own outline + internal drill hole (same
+  // instance) still merge into one piece as before, while a SEPARATE
+  // block's mark that happens to nest inside that same outline's bbox
+  // stays its own piece.
+  const insertMixedInstances = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('PIECE', [...square(0, 0, 50), ...dxfCircle(25, 25, 5)]), dxfBlock('OTHER', dxfLine(20, 20, 30, 30))],
+    [dxfInsert('PIECE', 0, 0), dxfInsert('OTHER', 0, 0)],
+  ))})`);
+  check(insertMixedInstances.ok === true && insertMixedInstances.pieces.length === 2
+    && insertMixedInstances.pieces.some(p => p.length === 4 /* square */ + 4 /* circle chunks */)
+    && insertMixedInstances.pieces.some(p => p.length === 1 /* OTHER's lone line */),
+    `a block's own internal mark still merges with its own outline, but a different block's mark nested in the same bbox must not, got ${JSON.stringify(insertMixedInstances.ok ? insertMixedInstances.pieces.map(p => p.length) : insertMixedInstances)}`);
+
+  // Nested INSERT (block B = an INSERT of block A + B's own directly-placed
+  // touching LINE): both must share B's single top-level instance and
+  // merge into ONE piece, not be treated as "different instances" just
+  // because the geometry traces back through a nested INSERT.
+  const insertNestedSameInstance = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('A', dxfLine(0, 0, 10, 0)), dxfBlock('B', [...dxfInsert('A', 0, 0), ...dxfLine(10, 0, 20, 0)])],
+    [dxfInsert('B', 0, 0)],
+  ))})`);
+  check(insertNestedSameInstance.ok === true && insertNestedSameInstance.pieces.length === 1 && insertNestedSameInstance.pieces[0].length === 2,
+    `a nested INSERT's geometry and its containing block's own directly-placed geometry must still merge as one piece, got ${JSON.stringify(insertNestedSameInstance.ok ? insertNestedSameInstance.pieces.map(p => p.length) : insertNestedSameInstance)}`);
 
   // ===========================================================================
   // 2. Pure placement transform — round 11: DXF's own 85% fit ratio, and
@@ -442,33 +627,36 @@ window.__DXF = (() => {
   // 4. Output caps.
   // ===========================================================================
 
-  // Per-piece cap is 1000, NOT 80 (that number is normalizeShapeStamp's own
+  // Per-piece cap is 2500, NOT 80 (that number is normalizeShapeStamp's own
   // Template-member cap, unrelated) — see the constant's own comment in
-  // src/manual/dxf-import.js for the real production file (3380.dxf) that
-  // forced this: single real garment pieces there ran up to 295 segments.
-  const cap999 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfChain(999)]))})`);
-  const cap1000 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfChain(1000)]))})`);
-  const cap1001 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfChain(1001), dxfLine(-100, -100, -90, -100)]))})`);
-  check(cap999.ok === true && cap999.pieces[0].length === 999, `a 999-segment piece must import fully, got ${JSON.stringify(cap999.pieces?.map(p=>p.length))}`);
-  check(cap1000.ok === true && cap1000.pieces[0].length === 1000, `an exactly-1000-segment piece must import fully, got ${JSON.stringify(cap1000.pieces?.map(p=>p.length))}`);
-  check(cap1001.ok === true && cap1001.skippedOversizedPieces === 1 && cap1001.pieces.length === 1 && cap1001.pieces[0].length === 1,
-    `a 1001-segment piece must be skipped while a smaller valid piece in the same file still imports, got ${JSON.stringify(cap1001)}`);
+  // src/manual/dxf-import.js for the real production files (3380.dxf,
+  // ADR 0068's 1290. Flexcamo .dxf / 2892XL-new.dxf) that forced this: real
+  // garment pieces there ran up to 1914/1886 segments once INSERT->BLOCK
+  // resolution could see them.
+  const cap2499 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfChain(2499)]))})`);
+  const cap2500 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfChain(2500)]))})`);
+  const cap2501 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfChain(2501), dxfLine(-100, -100, -90, -100)]))})`);
+  check(cap2499.ok === true && cap2499.pieces[0].length === 2499, `a 2499-segment piece must import fully, got ${JSON.stringify(cap2499.pieces?.map(p=>p.length))}`);
+  check(cap2500.ok === true && cap2500.pieces[0].length === 2500, `an exactly-2500-segment piece must import fully, got ${JSON.stringify(cap2500.pieces?.map(p=>p.length))}`);
+  check(cap2501.ok === true && cap2501.skippedOversizedPieces === 1 && cap2501.pieces.length === 1 && cap2501.pieces[0].length === 1,
+    `a 2501-segment piece must be skipped while a smaller valid piece in the same file still imports, got ${JSON.stringify(cap2501)}`);
 
-  const pieces40 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfScatteredPieces(40)]))})`);
-  const pieces41 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfScatteredPieces(41)]))})`);
-  check(pieces40.ok === true && pieces40.pieces.length === 40, `exactly 40 pieces must import, got ${JSON.stringify(pieces40.ok)} ${pieces40.pieces?.length}`);
-  check(pieces41.ok === false && pieces41.reason === 'piece-cap', `41 pieces must be a whole-file piece-cap rejection, got ${JSON.stringify(pieces41)}`);
+  const pieces120 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfScatteredPieces(120)]))})`);
+  const pieces121 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfScatteredPieces(121)]))})`);
+  check(pieces120.ok === true && pieces120.pieces.length === 120, `exactly 120 pieces must import, got ${JSON.stringify(pieces120.ok)} ${pieces120.pieces?.length}`);
+  check(pieces121.ok === false && pieces121.reason === 'piece-cap', `121 pieces must be a whole-file piece-cap rejection, got ${JSON.stringify(pieces121)}`);
 
-  // Four 800-segment chains, spaced far apart (4*800=3200 > 3000 total, each
-  // piece under the 1000 per-piece cap, 4 pieces well under the 40 cap).
-  const fourChains = [0, 5000, 10000, 15000].flatMap(offset => {
+  // Nine 2400-segment chains, spaced far apart (9*2400=21600 > 20000
+  // total, each piece under the 2500 per-piece cap, 9 pieces well under the
+  // 120-piece cap).
+  const nineChains = [0, 20000, 40000, 60000, 80000, 100000, 120000, 140000, 160000].flatMap(offset => {
     const segs = [];
-    for (let i = 0; i < 800; i += 1) segs.push(...dxfLine(offset + i, 0, offset + i + 1, 0));
+    for (let i = 0; i < 2400; i += 1) segs.push(...dxfLine(offset + i, 0, offset + i + 1, 0));
     return segs;
   });
-  const totalCap = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([fourChains]))})`);
+  const totalCap = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([nineChains]))})`);
   check(totalCap.ok === false && totalCap.reason === 'total-cap',
-    `4 pieces of 800 segments (3200 total, each under the 1000 per-piece cap, 4 under the 40-piece cap) must be rejected by the 3000 combined-output cap, got ${JSON.stringify(totalCap)}`);
+    `9 pieces of 2400 segments (21600 total, each under the 2500 per-piece cap, 9 under the 120-piece cap) must be rejected by the 20000 combined-output cap, got ${JSON.stringify(totalCap)}`);
 
   // ===========================================================================
   // 5. Integration: the REAL Tools-menu button + hidden file input + real

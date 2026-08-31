@@ -25633,18 +25633,47 @@ function onWheel(e) {
   // its own. Verified against a real production file (demo/DXF file/
   // 3380.dxf, 25 POLYLINE + 42 LINE entities): with no cap it resolves to 6
   // real pieces sized [103, 149, 167, 263, 275, 295] segments — the 80 figure
-  // would have rejected every one of them. 1000 clears the largest observed
-  // piece (295) with >3x headroom while still bounding a pathological file.
+  // would have rejected every one of them.
+  //
+  // Revised 1000 -> 2500 (ADR 0068 Follow-Up): ADR 0068's INSERT->BLOCK
+  // resolution exposes far more real geometry per file than this cap was
+  // ever sized against. `demo/DXF file/dxf/1290. Flexcamo .dxf` (30 blocks,
+  // single size, real garment pieces) has a legitimate 1914-segment piece;
+  // `demo/DXF file/dxf/2892XL-new.dxf` (no blocks, just an unusually
+  // detailed direct-entity file) has real pieces up to 1886. 2500 clears
+  // both with headroom while staying well below the 3835-17182-segment
+  // "pieces" seen on `DM7549-LACE--STRIKE COST.dxf` /
+  // `SN0004-BRA0978--STRIKE COST VER D.dxf` / `SN1252-MFB253--BACK-STRIKE
+  // COST.dxf` — those are a DIFFERENT, deliberately NOT-fixed-here failure
+  // mode: a grading-nest file whose same-position, overlapping same-size
+  // blocks get fused into one merged blob by dxfMergeContainedComponents.
   // A piece THIS large, saved as a Template later, still truncates at
   // normalizeShapeStamp's own 80 — that pre-existing, unrelated limit is
   // unchanged; see the Acceptance Criteria note below.
-  const DXF_PER_PIECE_CAP = 1000;
-  // Unchanged: the real file above needed only 6, and 40 was already a
-  // generous ceiling for a realistic single-style garment pattern.
-  const DXF_PIECE_COUNT_CAP = 40;
-  // Board-performance backstop. The real file above totals 1252 segments
-  // across 6 pieces with no cap — 3000 clears it with >2x headroom.
-  const DXF_TOTAL_OUTPUT_CAP = 3000;
+  const DXF_PER_PIECE_CAP = 2500;
+  // Revised 40 -> 120 (ADR 0068 Follow-Up): the real file above needed only
+  // 6, but two other real files now resolvable via INSERT->BLOCK need more:
+  // `1290. Flexcamo .dxf` legitimately decomposes into 75 pieces (many tiny
+  // — notches/grainline marks that never touch the outline) and
+  // `SofyLift v.A 1.0_Pattern.dxf` into 96. 120 clears both with headroom.
+  const DXF_PIECE_COUNT_CAP = 120;
+  // Board-performance backstop. Revised 3000 -> 16000 (ADR 0068 Follow-Up):
+  // `2892XL-new.dxf` (24 real pieces, no blocks) totals 13894 segments with
+  // both caps above cleared; verified in a real headless-Chrome import that
+  // this renders, pans, and drags with no lag or corruption at that count
+  // (previously blocked at the old 3000 combined limit).
+  //
+  // Revised 16000 -> 20000 (ADR 0069): once the instance-boundary fix (see
+  // dxfConnectedComponents) correctly split `SN1252-MFB253--BACK-STRIKE
+  // COST.dxf`'s 28 blocks into 28 real, individually-small pieces (none
+  // near the per-piece cap), their real combined total came to 17182 —
+  // just over the old 16000. 20000 clears it with headroom. The
+  // instance-boundary check also makes this cap CHEAPER to reach than
+  // before: it short-circuits the O(n^2) connectivity scan for the vast
+  // majority of pairs (different placed instances), so a grading-nest
+  // file's real parse time dropped rather than rose (SN0004-BRA0978--
+  // STRIKE COST VER D.dxf: 4448ms -> 937ms measured before/after).
+  const DXF_TOTAL_OUTPUT_CAP = 20000;
   // Round 11 (user-reported): a technical pattern has no "sits beside other
   // photos" reason to stay small, and shrinking it packs more of a
   // tessellated curve's points into the same screen distance — the opposite
@@ -25720,13 +25749,18 @@ function onWheel(e) {
   // SEQEND — a POLYLINE with no SEQEND is a whole-file structural problem
   // (its VERTEX children have no other way to know where they end), so it is
   // reported as a scan error, not a skipped entity.
-  function dxfCollectEntitiesBody(pairs, startIdx) {
+  // Generalized so a BLOCK's own body (terminated by ENDBLK, not ENDSEC) can
+  // reuse the exact same entity/POLYLINE-vertex collection logic as the
+  // top-level ENTITIES section — see dxfCollectBlocksBody below. Delegating
+  // dxfCollectEntitiesBody to this keeps its own observable output
+  // byte-for-byte identical (same records shape, same error string).
+  function dxfCollectEntityRecordsUntil(pairs, startIdx, stopType, notFoundMessage) {
     const records = [];
     let idx = startIdx;
     const n = pairs.length;
     while (idx < n) {
       const pair = pairs[idx];
-      if (pair.code === 0 && String(pair.value).trim() === 'ENDSEC') {
+      if (pair.code === 0 && String(pair.value).trim() === stopType) {
         return { records, nextIndex: idx };
       }
       if (pair.code !== 0) { idx += 1; continue; }
@@ -25755,7 +25789,47 @@ function onWheel(e) {
       }
       records.push({ type, pairs: bodyPairs });
     }
-    return { error: 'the ENTITIES section has no matching ENDSEC' };
+    return { error: notFoundMessage };
+  }
+
+  function dxfCollectEntitiesBody(pairs, startIdx) {
+    return dxfCollectEntityRecordsUntil(pairs, startIdx, 'ENDSEC', 'the ENTITIES section has no matching ENDSEC');
+  }
+
+  // A named BLOCK definition's body is entities exactly like ENTITIES',
+  // terminated by ENDBLK instead of ENDSEC. Real garment-CAD DXF exports
+  // (Gerber/Lectra/Rich-style) put every pattern piece's actual geometry
+  // here, one block per piece, and merely reference it once via INSERT in
+  // ENTITIES — see dxfConvertInsertEntity below for why that reference must
+  // be resolved rather than treated as an unsupported entity type.
+  function dxfCollectBlocksBody(pairs, startIdx) {
+    const blocks = new Map();
+    let idx = startIdx;
+    const n = pairs.length;
+    while (idx < n) {
+      const pair = pairs[idx];
+      if (pair.code === 0 && String(pair.value).trim() === 'ENDSEC') return { blocks, nextIndex: idx };
+      if (pair.code === 0 && String(pair.value).trim() === 'BLOCK') {
+        idx += 1;
+        let name = null;
+        while (idx < n && pairs[idx].code !== 0) {
+          if (pairs[idx].code === 2 && name == null) name = String(pairs[idx].value).trim();
+          idx += 1;
+        }
+        if (name == null) return { error: 'a BLOCK has no name (group 2)' };
+        const body = dxfCollectEntityRecordsUntil(pairs, idx, 'ENDBLK', 'a BLOCK has no matching ENDBLK');
+        if (body.error) return { error: body.error };
+        idx = body.nextIndex;
+        if (idx >= n) return { error: 'a BLOCK has no matching ENDBLK' };
+        idx += 1; // step past the ENDBLK marker
+        while (idx < n && pairs[idx].code !== 0) idx += 1; // ENDBLK's own fields, if any
+        if (!blocks.has(name)) blocks.set(name, []);
+        blocks.get(name).push(...body.records);
+        continue;
+      }
+      idx += 1;
+    }
+    return { error: 'the BLOCKS section has no matching ENDSEC' };
   }
 
   function dxfScanSections(pairs) {
@@ -25764,7 +25838,9 @@ function onWheel(e) {
     let sectionOpen = false;
     let currentSection = null;
     let sawEntities = false;
+    let sawBlocks = false;
     const entityRecords = [];
+    const blocks = new Map();
     while (idx < n) {
       const pair = pairs[idx];
       if (pair.code === 0 && String(pair.value).trim() === 'SECTION') {
@@ -25780,6 +25856,16 @@ function onWheel(e) {
           if (body.error) return { error: body.error };
           entityRecords.push(...body.records);
           idx = body.nextIndex;
+        } else if (currentSection === 'BLOCKS') {
+          if (sawBlocks) return { error: 'more than one BLOCKS section' };
+          sawBlocks = true;
+          const body = dxfCollectBlocksBody(pairs, idx);
+          if (body.error) return { error: body.error };
+          for (const [name, records] of body.blocks) {
+            if (!blocks.has(name)) blocks.set(name, []);
+            blocks.get(name).push(...records);
+          }
+          idx = body.nextIndex;
         }
         continue;
       }
@@ -25794,7 +25880,7 @@ function onWheel(e) {
     }
     if (sectionOpen) return { error: 'a SECTION has no matching ENDSEC' };
     if (!sawEntities) return { error: 'no ENTITIES section' };
-    return { entityRecords };
+    return { entityRecords, blocks };
   }
 
   // ---- Per-entity outcome helpers --------------------------------------------
@@ -26034,14 +26120,116 @@ function onWheel(e) {
     }
   }
 
+  // ---- INSERT -> BLOCK resolution ---------------------------------------------
+  //
+  // Real garment-CAD DXF exports (Gerber/Lectra/Rich-style) are the dominant
+  // real-world shape this importer sees: every pattern piece's actual
+  // LINE/POLYLINE geometry sits inside a named BLOCKS definition, and
+  // ENTITIES only carries one INSERT per piece referencing it (see 2026-08-31
+  // audit in docs/decisions/0067-dxf-grading-nest-import.md). Left
+  // unresolved, a file built this way has ZERO directly-supported entities
+  // and is rejected outright ("no supported entities were found") even
+  // though it is a completely ordinary, valid pattern file — this is the bug
+  // being fixed here. Deliberately scoped to a plain instance placement
+  // (translate + uniform scale + rotation, bounded recursive nesting): a
+  // non-uniform scale or MINSERT array is rejected with a stated reason
+  // rather than silently producing distorted or duplicated geometry, since
+  // no real sample file needs either.
+  const DXF_INSERT_MAX_DEPTH = 8; // generous bound against a circular BLOCK/INSERT reference; no real file needs more than 1-2 levels
+
+  function dxfInsertParams(rec) {
+    const blockNameRaw = dxfFirst(rec.pairs, 2);
+    return {
+      blockName: blockNameRaw == null ? null : String(blockNameRaw).trim(),
+      ix: dxfOptNum(rec.pairs, 10, 0),
+      iy: dxfOptNum(rec.pairs, 20, 0),
+      sx: dxfOptNum(rec.pairs, 41, 1),
+      sy: dxfOptNum(rec.pairs, 42, 1),
+      angleRad: dxfOptNum(rec.pairs, 50, 0) * Math.PI / 180,
+      colCount: dxfOptNum(rec.pairs, 70, 1),
+      rowCount: dxfOptNum(rec.pairs, 71, 1),
+    };
+  }
+
+  // Scale about the block-local origin, then rotate, then translate to the
+  // insertion point — the standard DXF INSERT transform order. Affine, so it
+  // maps a straight segment's endpoints or a curve's Bézier control points
+  // exactly, including a mirrored (negative-scale) instance of the block.
+  function dxfInsertTransformPoint(p, ins) {
+    const sx = p.x * ins.sx, sy = p.y * ins.sy;
+    const cos = Math.cos(ins.angleRad), sin = Math.sin(ins.angleRad);
+    return { x: ins.ix + sx * cos - sy * sin, y: ins.iy + sx * sin + sy * cos };
+  }
+
+  function dxfApplyInsertTransformToSegment(seg, ins) {
+    return seg.kind === 'straight'
+      ? { kind: 'straight', a: dxfInsertTransformPoint(seg.a, ins), b: dxfInsertTransformPoint(seg.b, ins) }
+      : {
+        kind: 'curve',
+        p0: dxfInsertTransformPoint(seg.p0, ins), c1: dxfInsertTransformPoint(seg.c1, ins),
+        c2: dxfInsertTransformPoint(seg.c2, ins), p3: dxfInsertTransformPoint(seg.p3, ins),
+      };
+  }
+
+  // `buckets` is shared mutable state the caller also increments into — a
+  // block's own unsupported/malformed children (e.g. TEXT alongside LINE)
+  // are counted here as they're found, so one bucket total covers both
+  // directly-placed and block-resolved entities uniformly. `instance`
+  // (ADR 0069) is opaque here — always the SAME value this call's own
+  // caller was given, propagated unchanged to every child so a piece
+  // assembled from nested INSERTs still shares one instance boundary; see
+  // dxfConnectedComponents/dxfMergeContainedComponents for what it's for.
+  function dxfConvertInsertEntity(rec, blocks, depth, buckets, instance) {
+    const p = dxfInsertParams(rec);
+    if (p.blockName == null) return dxfMalformed('INSERT missing block name (group 2)');
+    if (![p.ix, p.iy, p.sx, p.sy, p.angleRad].every(Number.isFinite)) return dxfMalformed('INSERT has a non-finite placement field');
+    if (Math.abs(p.sx) < 1e-9 || Math.abs(p.sy) < 1e-9) return dxfMalformed('INSERT has a zero scale factor');
+    if (Math.abs(Math.abs(p.sx) - Math.abs(p.sy)) > 1e-6) {
+      return dxfUnsupportedType('INSERT has non-uniform scale (X and Y scale differ), not supported');
+    }
+    if ((p.colCount && p.colCount !== 1) || (p.rowCount && p.rowCount !== 1)) {
+      return dxfUnsupportedType('INSERT is a rectangular array (MINSERT), not supported');
+    }
+    const blockRecords = blocks.get(p.blockName);
+    if (!blockRecords) return dxfMalformed('INSERT references an undefined block "' + p.blockName + '"');
+    if (depth >= DXF_INSERT_MAX_DEPTH) return dxfMalformed('INSERT nesting is too deep (possible circular BLOCK reference)');
+    const segments = [];
+    for (const childRec of blockRecords) {
+      const result = dxfConvertEntityResolvingBlocks(childRec, blocks, depth + 1, buckets, instance);
+      if (!result.ok) { buckets[result.bucket] += 1; continue; }
+      segments.push(...result.segments);
+    }
+    if (!segments.length) return dxfMalformed('INSERT\'s block "' + p.blockName + '" has no supported geometry');
+    return dxfOk(segments.map(seg => dxfApplyInsertTransformToSegment(seg, p)));
+  }
+
+  // Stamps every accepted segment with its placement `instance` (ADR 0069)
+  // regardless of which branch produced it — the one place this needs to
+  // happen, since dxfConvertInsertEntity's own return (after
+  // dxfApplyInsertTransformToSegment rebuilds fresh segment objects) would
+  // otherwise lose it.
+  function dxfConvertEntityResolvingBlocks(rec, blocks, depth, buckets, instance) {
+    const result = rec.type === 'INSERT'
+      ? dxfConvertInsertEntity(rec, blocks, depth, buckets, instance)
+      : convertDxfEntity(rec);
+    if (!result.ok) return result;
+    return { ok: true, segments: result.segments.map(seg => Object.assign({}, seg, { instance })) };
+  }
+
   // ---- Y-flip (DXF Y-up -> board Y-down) -------------------------------------
 
   function dxfFlipPointY(p) { return { x: p.x, y: -p.y }; }
 
+  // ADR 0069: preserves `instance` (set by dxfConvertEntityResolvingBlocks,
+  // read by dxfConnectedComponents/dxfMergeContainedComponents) — dropping
+  // it here would silently turn every segment's instance to `undefined`
+  // before piece detection ever runs, making the whole instance-boundary
+  // rule a no-op. Caught by this exact regression during development: the
+  // fix initially had zero effect on any real file until this was found.
   function dxfFlipSegmentY(seg) {
     return seg.kind === 'straight'
-      ? { kind: 'straight', a: dxfFlipPointY(seg.a), b: dxfFlipPointY(seg.b) }
-      : { kind: 'curve', p0: dxfFlipPointY(seg.p0), c1: dxfFlipPointY(seg.c1), c2: dxfFlipPointY(seg.c2), p3: dxfFlipPointY(seg.p3) };
+      ? { kind: 'straight', a: dxfFlipPointY(seg.a), b: dxfFlipPointY(seg.b), instance: seg.instance }
+      : { kind: 'curve', p0: dxfFlipPointY(seg.p0), c1: dxfFlipPointY(seg.c1), c2: dxfFlipPointY(seg.c2), p3: dxfFlipPointY(seg.p3), instance: seg.instance };
   }
 
   // US-105: a point at native arc parameter t in [0,1] — center + radius at
@@ -26112,6 +26300,24 @@ function onWheel(e) {
   // absolute one — a DXF can be authored at any unit scale (mm, m, unitless)
   // and an absolute pixel-ish tolerance would either miss real joins on a
   // huge drawing or over-merge on a tiny one.
+  //
+  // ADR 0069: never union two segments from a DIFFERENT placed `instance`
+  // (see dxfInstanceForEntity below) even if they geometrically touch or
+  // nest. A grading-nest DXF places every size/piece as its own INSERT, all
+  // at the SAME (usually identity) transform, so different sizes' outlines
+  // routinely touch or cross within this relative tolerance — measured on
+  // real files (SN0004-BRA0978--STRIKE COST VER D.dxf) a single raw
+  // component ballooned to 2180 segments this way, several real sizes
+  // fused into one. `instance` is `0` for every entity placed directly in
+  // ENTITIES (matches this function's pre-existing behavior exactly — a
+  // real multi-entity piece like 3380.dxf's is built from many direct
+  // LINE/POLYLINE entities that must still freely connect) and a distinct
+  // id per top-level INSERT (nested INSERTs inherit their parent's id, so
+  // a piece assembled from nested reusable sub-blocks still connects as
+  // one). Segments the native measurement parser (dxf-native-parser.js)
+  // produces never set `instance` at all (`undefined`), so this guard is a
+  // no-op there — untouched per ADR 0068's decision to scope block
+  // resolution to board import only.
   function dxfConnectedComponents(segments) {
     const endpoints = segments.map(dxfSegmentEndpoints);
     const allPts = endpoints.flat();
@@ -26121,6 +26327,7 @@ function onWheel(e) {
     const uf = dxfUnionFind(segments.length);
     for (let i = 0; i < segments.length; i += 1) {
       for (let j = i + 1; j < segments.length; j += 1) {
+        if (segments[i].instance !== segments[j].instance) continue;
         let touch = false;
         for (const p of endpoints[i]) {
           for (const q of endpoints[j]) if (distance(p, q) <= tol) { touch = true; break; }
@@ -26138,6 +26345,10 @@ function onWheel(e) {
     return Array.from(groups.values()).map(segIdxs => ({
       segIdxs,
       bounds: dxfBoundsOfPoints(segIdxs.flatMap(i => dxfSegmentPoints(segments[i]))),
+      // Every member's instance is identical by construction (the union
+      // loop above never crosses instances), so any member's value is the
+      // whole component's value.
+      instance: segments[segIdxs[0]].instance,
     }));
   }
 
@@ -26161,6 +26372,17 @@ function onWheel(e) {
       let bestJ = -1, bestArea = Infinity;
       for (let j = 0; j < n; j += 1) {
         if (i === j) continue;
+        // ADR 0069: same instance-boundary rule as dxfConnectedComponents
+        // above — a bounding-box nesting alone is not enough evidence two
+        // components are "outline + internal mark," and area-ratio
+        // thresholds were tried and rejected (measured, real: a legitimate
+        // lining piece in 2927.dxf nests at 68.67% area ratio, well inside
+        // the range grading-nest false merges occupy in other real files —
+        // no threshold separates the two cases reliably). Placement
+        // instance does: real drill holes/grainlines are always defined
+        // INSIDE the same block/placement as their outline, never as a
+        // separate INSERT.
+        if (components[i].instance !== components[j].instance) continue;
         if (!contains(components[j].bounds, components[i].bounds)) continue;
         const area = components[j].bounds.width * components[j].bounds.height;
         if (area < bestArea) { bestArea = area; bestJ = j; }
@@ -26286,8 +26508,16 @@ function onWheel(e) {
     }
     const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0 };
     const acceptedSegments = [];
+    // ADR 0069: instance 0 is the single shared "placed directly in
+    // ENTITIES" group (matches this loop's pre-INSERT-support behavior —
+    // every direct entity could always freely connect/contain against any
+    // other). Each top-level INSERT gets its own fresh, never-reused id, so
+    // dxfConnectedComponents/dxfMergeContainedComponents never fuse two
+    // separately-placed instances together.
+    let nextDxfInstanceId = 1;
     for (const rec of scan.entityRecords) {
-      const result = convertDxfEntity(rec);
+      const instance = rec.type === 'INSERT' ? nextDxfInstanceId++ : 0;
+      const result = dxfConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance);
       if (!result.ok) { buckets[result.bucket] += 1; continue; }
       acceptedSegments.push(...result.segments);
     }
