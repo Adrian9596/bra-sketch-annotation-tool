@@ -142,7 +142,7 @@
   function dxfMeasureDisplayValueInches(session, measurement) {
     const preview = dxfMeasureDragPreviewFor(session, measurement.id);
     if (preview && preview.status === 'ok') {
-      const factor = session.source.unit;
+      const factor = dxfMeasureEffectiveUnitFactor(session);
       let nativeLength = null;
       if (measurement.mode === 'out-of-path') {
         const which = session.interaction.which;

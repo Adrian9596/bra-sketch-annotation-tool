@@ -22,4 +22,17 @@
   function bindDxfMeasurePanel() {
     if (el.dxfMeasureAlongBtn) el.dxfMeasureAlongBtn.addEventListener('click', () => setDxfMeasureMode('along-path'));
     if (el.dxfMeasureOutBtn) el.dxfMeasureOutBtn.addEventListener('click', () => setDxfMeasureMode('out-of-path'));
+    // ADR 0073: picking a unit is an explicit override even when it matches
+    // the parser's guess — "the TD confirmed in" and "the parser assumed in"
+    // are different provenance states, and the note reflects that.
+    if (el.dxfMeasureUnitSelect) {
+      el.dxfMeasureUnitSelect.addEventListener('change', () => {
+        const session = state.dxfMeasureSession;
+        if (!session) return;
+        dxfMeasureSetUnitOverride(session, el.dxfMeasureUnitSelect.value);
+      });
+      // The Tools menu closes itself on stray clicks; a click that is just
+      // opening the select's dropdown must not bubble into that handler.
+      el.dxfMeasureUnitSelect.addEventListener('click', (event) => event.stopPropagation());
+    }
   }

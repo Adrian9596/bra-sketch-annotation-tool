@@ -431,6 +431,73 @@
     return newNodeId;
   }
 
+  // ADR 0073: collapse EXACT-duplicate parallel edges before route search.
+  // Real factory exports draw the same contour several times over (verified
+  // raw: `BiancaBra v.A 1.0_Pattern.dxf`'s block `11_22_M` traces one small
+  // rectangle as 4 stacked POLYLINEs — 4 identical copies of every edge).
+  // Those copies land as parallel edges between the same two graph nodes,
+  // and the simple-path DFS then multiplies candidates by (copies)^(hops) —
+  // even a 16-segment piece blows straight through both search caps and
+  // Along Path reports ROUTE_SEARCH_TRUNCATED on a trivially measurable
+  // shape. A line drawn four times is still ONE path on the factory floor,
+  // so keeping a single representative is the measurement-true behavior,
+  // not a shortcut. Deliberately narrow: only edges between the SAME node
+  // pair, same kind, same length (and for arcs the same circle + |sweep|)
+  // collapse — a genuinely different second path between the same two
+  // points (e.g. the two arcs of a lens) differs in geometry and survives.
+  // Self-loop edges (nodeA === nodeB, e.g. full circles) are skipped: the
+  // node-pair key cannot express their traversal direction, and parallel
+  // self-loops never feed the DFS explosion anyway (a loop edge cannot
+  // advance a simple path).
+  //
+  // `refs` (the A/B point references, in segIndex space) are remapped in
+  // place when their own segment's edge was one of the dropped copies —
+  // onto the kept representative, with t flipped when the copy was authored
+  // in the opposite direction (for a straight or an arc with equal |sweep|,
+  // the point at t on the reversed copy is the point at 1-t on the kept one,
+  // exactly).
+  function dxfCollapseDuplicateParallelEdges(work, refs, tol) {
+    const groups = new Map();
+    const kept = [];
+    const remap = new Map();
+    let collapsed = 0;
+    for (const e of work.edges) {
+      if (e.nodeA === e.nodeB) { kept.push(e); continue; }
+      const pairKey = e.nodeA < e.nodeB ? e.nodeA + '|' + e.nodeB : e.nodeB + '|' + e.nodeA;
+      const lenEps = Math.max(tol, Math.abs(e.length) * 1e-9);
+      const group = groups.get(pairKey) || [];
+      // The geometric midpoint pins the path itself, independent of
+      // traversal direction (a curve's own middle is the same point walked
+      // either way) — it is what separates a genuine duplicate from, say,
+      // the upper and lower halves of one circle between the same two
+      // endpoints (same circle, same |sweep|, same length — different arcs).
+      const eMid = dxfPointOnSegment(e.seg, 0.5);
+      const match = group.find(g => {
+        if (g.seg.kind !== e.seg.kind) return false;
+        if (Math.abs(g.length - e.length) > lenEps) return false;
+        return distance(dxfPointOnSegment(g.seg, 0.5), eMid) <= tol;
+      });
+      if (match) {
+        remap.set(e.segIndex, { segIndex: match.segIndex, flipped: e.nodeA !== match.nodeA });
+        collapsed += 1;
+        continue;
+      }
+      group.push(e);
+      groups.set(pairKey, group);
+      kept.push(e);
+    }
+    if (!collapsed) return 0;
+    work.edges = kept;
+    for (const ref of refs) {
+      const m = remap.get(ref.segIndex);
+      if (m) {
+        ref.segIndex = m.segIndex;
+        if (m.flipped) ref.t = 1 - ref.t;
+      }
+    }
+    return collapsed;
+  }
+
   // Every simple (no-repeated-node) path from startNode to endNode, as
   // ordered {edge, forward} steps. Depth/route-count budgeted: real garment
   // pattern graphs are sparse (a traced outline is degree <= 2 almost
@@ -500,8 +567,16 @@
       nextNodeId: graph.nodes.length,
       nextEdgeId: graph.edges.length,
     };
-    const nodeA = dxfInsertPointRefIntoGraph(work, { segIndex: refA.segIndex, t: clamp(refA.t, 0, 1) });
-    const nodeB = dxfInsertPointRefIntoGraph(work, { segIndex: refB.segIndex, t: clamp(refB.t, 0, 1) });
+    // ADR 0073: drop stacked exact-duplicate copies (and remap A/B onto the
+    // kept representative) BEFORE inserting the point refs — inserting first
+    // would split only the clicked copy, turning its un-split duplicates
+    // into node-skipping bypass edges instead of recognizable parallels.
+    const workRefA = { segIndex: refA.segIndex, t: clamp(refA.t, 0, 1) };
+    const workRefB = { segIndex: refB.segIndex, t: clamp(refB.t, 0, 1) };
+    const tolUsed = Number.isFinite(nodeTolerance) && nodeTolerance > 0 ? nodeTolerance : dxfDefaultTopologyTolerance(segments);
+    dxfCollapseDuplicateParallelEdges(work, [workRefA, workRefB], tolUsed);
+    const nodeA = dxfInsertPointRefIntoGraph(work, workRefA);
+    const nodeB = dxfInsertPointRefIntoGraph(work, workRefB);
     if (nodeA == null || nodeB == null) {
       return { ok: false, reason: DXF_MEASURE_REASON.NON_FINITE_GEOMETRY, routes: [], truncated: false };
     }

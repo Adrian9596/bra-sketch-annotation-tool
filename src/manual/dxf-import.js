@@ -1090,8 +1090,17 @@
         + (parsed.skippedOversizedPieces === 1 ? '' : 's') + ' (over ' + DXF_PER_PIECE_CAP + ' lines each).');
     }
     const skipMsg = skipParts.filter(Boolean).join(' ');
+    // ADR 0073: a guessed unit rides on the import toast itself, not a
+    // separate earlier toast — toast.js's fair-reading queue would swap a
+    // separate warning away after ~900ms in favor of this success message.
+    // Guarded: startDxfMeasureSession can fail and leave the session null
+    // (it shows its own explanation in that case).
+    const measureSession = state.dxfMeasureSession;
+    const unitWarning = (measureSession && measureSession.source.unitSource !== 'dxf-header')
+      ? ' Units assumed (in) — set them under Tools ▸ Pattern Measure if the file is mm/cm.'
+      : '';
     showToast('Imported ' + pieceCount + ' ' + pieceWord + ' (' + allNewIds.length + ' ' + lineWord + ').'
-      + (skipMsg ? ' ' + skipMsg : ''));
+      + (skipMsg ? ' ' + skipMsg : '') + unitWarning);
     // ADR 0070: a grading-nest file places every chosen size's piece at the
     // same board position (see ADR 0069's Context) — more than one piece
     // means the TD likely just imported an overlapping stack of sizes and

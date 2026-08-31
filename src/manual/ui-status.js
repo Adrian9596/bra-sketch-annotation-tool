@@ -235,6 +235,11 @@
       } else {
         toolText = 'Pattern Measure (' + modeLabel + ') – Click the first point on the pattern.';
       }
+      // ADR 0073: the unit and where it came from ride along on every
+      // Pattern Measure status line — a guessed unit must never be invisible
+      // while the TD is actively reading measured numbers.
+      const unitStatus = dxfMeasureUnitStatus(measureSession);
+      if (unitStatus) toolText += ' · Units: ' + unitStatus.key + ' (' + unitStatus.provenance + ')';
     } else {
       toolText = imageCount === 0
         ? 'Eraser – Paste or import an image first, then drag to paint white over unwanted lines.'
@@ -334,6 +339,27 @@
       el.dxfMeasureOutBtn.title = hasSession ? 'Measure the direct straight-line distance between two points' : 'Import a DXF file first';
       el.dxfMeasureOutBtn.classList.toggle('active', state.tool === 'pattern-measure'
         && hasSession && state.dxfMeasureSession.pendingMode === 'out-of-path');
+    }
+    // ADR 0073: the native-unit select + provenance note. The select mirrors
+    // the session's EFFECTIVE unit; the activeElement guard is the
+    // brushSizeInput pattern above — never fight the TD mid-interaction.
+    if (el.dxfMeasureUnitSelect) {
+      const measureSession = state.dxfMeasureSession;
+      const unitStatus = measureSession ? dxfMeasureUnitStatus(measureSession) : null;
+      el.dxfMeasureUnitSelect.disabled = !measureSession;
+      el.dxfMeasureUnitSelect.title = measureSession
+        ? 'The unit the DXF file\'s own coordinates are in'
+        : 'Import a DXF file first';
+      if (measureSession && document.activeElement !== el.dxfMeasureUnitSelect) {
+        // A file-declared ft/m/us-ft has no matching option; leave the
+        // select showing its current value — the note names the real unit.
+        if (['in', 'mm', 'cm'].includes(unitStatus.key)) el.dxfMeasureUnitSelect.value = unitStatus.key;
+      }
+      if (el.dxfMeasureUnitNote) {
+        el.dxfMeasureUnitNote.textContent = unitStatus
+          ? unitStatus.key + ' — ' + unitStatus.provenance
+          : '';
+      }
     }
     el.toggleLabelsBtn.textContent = state.showLabels ? 'Hide Numbers' : 'Show Numbers';
     el.toggleLabelsBtn.classList.toggle('active', !state.showLabels);

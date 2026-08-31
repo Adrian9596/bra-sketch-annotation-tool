@@ -3299,6 +3299,22 @@
               <button id="dxfMeasureAlongBtn" type="button" role="menuitem" title="Import a DXF file first">Along Path</button>
               <button id="dxfMeasureOutBtn" type="button" role="menuitem" title="Import a DXF file first">Out of Path</button>
             </div>
+            <!-- ADR 0073: the DXF's native unit. Real factory files routinely
+                 omit $INSUNITS, so the parser's inch default is a guess — the
+                 note names the provenance (from file / assumed / unsupported
+                 code / set by you) and the select lets the TD correct it.
+                 Deliberately NOT role="menuitem": board-toolbar.js closes the
+                 menu on menuitem clicks, and picking a unit must not dismiss
+                 the menu mid-thought. -->
+            <div class="preset-menu-actions sketch-mode-only dxf-measure-units-row">
+              <label for="dxfMeasureUnitSelect" style="font-size:12px;">Units</label>
+              <select id="dxfMeasureUnitSelect" title="The unit the DXF file's own coordinates are in" disabled>
+                <option value="in">in</option>
+                <option value="mm">mm</option>
+                <option value="cm">cm</option>
+              </select>
+              <span id="dxfMeasureUnitNote" class="muted" style="font-size:11px;"></span>
+            </div>
           </div>
         </div>
         <!-- US-093 / ADR 0053: only reachable while a curved annotation is
@@ -3778,6 +3794,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=2a4e8676a65a"></script>
+<script src="app.js?v=e193a7e6bd0b"></script>
 </body>
 </html>

@@ -207,6 +207,103 @@
     return { ok: true, segments: converted.segments, rejectedDegenerateSegments: converted.rejectedDegenerateSegments };
   }
 
+  // ---- INSERT -> BLOCK resolution (ADR 0073, reversing ADR 0068 item 1) ----
+  //
+  // Same real-world motivation as dxf-import.js's dxfConvertInsertEntity:
+  // 36/44 real factory files in the demo corpus keep every piece's geometry
+  // inside a named BLOCK and reference it once via INSERT — without resolving
+  // that here, Pattern Measure was structurally dead on all of them (the
+  // board displayed the pieces, this parser returned reason:'empty'; see
+  // findings-dxf.md Finding 1). Gates and reason strings mirror the board
+  // converter byte-for-byte so the two parses never disagree about WHICH
+  // entities are acceptable — only about the shape of the accepted geometry.
+
+  // Exact similarity transform of a native segment. Unlike the board's
+  // dxfApplyInsertTransformToSegment (straight/curve only — the board never
+  // has an 'arc' kind at INSERT time), this must map an exact arc to an
+  // exact arc: the INSERT gate below enforces |sx| == |sy|, so the linear
+  // part R(angle)·diag(sx,sy) is a similarity — circles map to circles with
+  // radius scaled by |sx|. The new start angle is derived from the
+  // TRANSFORMED start point (not analytic angle arithmetic), which is exact
+  // and uniform across all four sign combinations of (sx, sy); a mirrored
+  // instance (sx·sy < 0) flips traversal orientation, so the sweep sign
+  // flips — |sweep| is unchanged, so a full-circle CIRCLE arc (sweep 2π)
+  // stays within the kernel's |sweep| <= 2π contract.
+  //
+  // Object.assign clone, not a rebuilt object: native segments already carry
+  // provenance (layer/handle/entityOrder/partIndex, stamped by
+  // dxfNativeConvertEntity below) that must survive the transform — the
+  // board's transform rebuilds bare objects only because the board stamps
+  // nothing at that stage.
+  function dxfNativeApplyInsertTransformToSegment(seg, ins) {
+    if (seg.kind === 'straight') {
+      return Object.assign({}, seg, {
+        a: dxfInsertTransformPoint(seg.a, ins),
+        b: dxfInsertTransformPoint(seg.b, ins),
+      });
+    }
+    const center = dxfInsertTransformPoint(seg.center, ins);
+    const radius = seg.radius * Math.abs(ins.sx);
+    const start = dxfInsertTransformPoint(dxfPointOnArcSegment(seg, 0), ins);
+    const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+    const sweep = ins.sx * ins.sy < 0 ? -seg.sweep : seg.sweep;
+    return Object.assign({}, seg, { center, radius, startAngle, sweep });
+  }
+
+  // `order` is the TOP-LEVEL entity index — every segment resolved out of a
+  // block (however deeply nested) inherits the placing INSERT's own order,
+  // while keeping the child entity's layer/handle (nothing downstream
+  // consumes entityOrder today; it stays pure provenance).
+  function dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order) {
+    const p = dxfInsertParams(rec);
+    if (p.blockName == null) return dxfMalformed('INSERT missing block name (group 2)');
+    if (![p.ix, p.iy, p.sx, p.sy, p.angleRad].every(Number.isFinite)) return dxfMalformed('INSERT has a non-finite placement field');
+    if (Math.abs(p.sx) < 1e-9 || Math.abs(p.sy) < 1e-9) return dxfMalformed('INSERT has a zero scale factor');
+    if (Math.abs(Math.abs(p.sx) - Math.abs(p.sy)) > 1e-6) {
+      return dxfUnsupportedType('INSERT has non-uniform scale (X and Y scale differ), not supported');
+    }
+    if ((p.colCount && p.colCount !== 1) || (p.rowCount && p.rowCount !== 1)) {
+      return dxfUnsupportedType('INSERT is a rectangular array (MINSERT), not supported');
+    }
+    const blockRecords = blocks.get(p.blockName);
+    if (!blockRecords) return dxfMalformed('INSERT references an undefined block "' + p.blockName + '"');
+    if (depth >= DXF_INSERT_MAX_DEPTH) return dxfMalformed('INSERT nesting is too deep (possible circular BLOCK reference)');
+    const segments = [];
+    let rejectedDegenerateSegments = 0;
+    for (const childRec of blockRecords) {
+      const result = dxfNativeConvertEntityResolvingBlocks(childRec, blocks, depth + 1, buckets, instance, order);
+      if (!result.ok) { buckets[result.bucket] += 1; continue; }
+      rejectedDegenerateSegments += result.rejectedDegenerateSegments || 0;
+      segments.push(...result.segments);
+    }
+    if (!segments.length) return dxfMalformed('INSERT\'s block "' + p.blockName + '" has no supported geometry');
+    return {
+      ok: true,
+      segments: segments.map(seg => dxfNativeApplyInsertTransformToSegment(seg, p)),
+      rejectedDegenerateSegments,
+    };
+  }
+
+  // Dispatch + `instance` stamp (ADR 0069: piece detection must never union
+  // segments from different placed instances — without this, a grading-nest
+  // file's overlapping sizes fuse on the native side and the piece list
+  // diverges from the board's, nulling every pieceAnchor in
+  // makeDxfMeasureSession). NOTE this wrapper deliberately does NOT copy the
+  // board wrapper's `{ok, segments}`-only return shape: this parser's
+  // converters also report `rejectedDegenerateSegments` (RB-4), and dropping
+  // that field here would silently zero the bucket for every entity.
+  function dxfNativeConvertEntityResolvingBlocks(rec, blocks, depth, buckets, instance, order) {
+    const result = rec.type === 'INSERT'
+      ? dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order)
+      : dxfNativeConvertEntity(rec, order);
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      segments: result.segments.map(seg => Object.assign({}, seg, { instance })),
+      rejectedDegenerateSegments: result.rejectedDegenerateSegments || 0,
+    };
+  }
+
   // Dispatch, then stamp provenance (layer, handle when present, and the
   // entity's own order in the file) onto every segment the entity produced —
   // "original entity order and direction" per the checklist, kept on the
@@ -264,8 +361,15 @@
     const unitInfo = dxfResolveNativeToInch(insunits);
     const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, rejectedDegenerateSegments: 0 };
     const acceptedSegments = [];
+    // ADR 0073: same instance-id scheme as parseDxfDocument (ADR 0069) —
+    // instance 0 for every directly-placed entity, a fresh id per top-level
+    // INSERT (nested INSERTs inherit their parent's) — so dxfBuildPieces
+    // groups the native pieces exactly the way it groups the board's,
+    // keeping makeDxfMeasureSession's count-based pieceAnchors pairing alive.
+    let nativeNextInstanceId = 1;
     scan.entityRecords.forEach((rec, order) => {
-      const result = dxfNativeConvertEntity(rec, order);
+      const instance = rec.type === 'INSERT' ? nativeNextInstanceId++ : 0;
+      const result = dxfNativeConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, order);
       if (!result.ok) { buckets[result.bucket] += 1; return; }
       buckets.rejectedDegenerateSegments += result.rejectedDegenerateSegments || 0;
       acceptedSegments.push(...result.segments);

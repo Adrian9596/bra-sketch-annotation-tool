@@ -392,6 +392,10 @@
               pieceCount: session.pieces.length,
               pieceSegmentCounts: session.pieces.map(p => p.segments.length),
               source: clone(session.source),
+              // ADR 0073: the TD's unit override + the resolved status the
+              // UI note/status chip renders from.
+              unitOverride: session.unitOverride || null,
+              unitStatus: (typeof dxfMeasureUnitStatus === 'function') ? clone(dxfMeasureUnitStatus(session)) : null,
               topologyToleranceNative: session.topologyToleranceNative,
               measurementCount: session.measurements.length,
               measurements: clone(session.measurements),
@@ -484,6 +488,10 @@
           },
           deleteMeasurement: (id) => (typeof dxfMeasureDeleteMeasurement === 'function'
             ? dxfMeasureDeleteMeasurement(state.dxfMeasureSession, id) : false),
+          // ADR 0073: the TD unit override — same function the real
+          // #dxfMeasureUnitSelect change handler calls.
+          setUnitOverride: (key) => (typeof dxfMeasureSetUnitOverride === 'function'
+            ? dxfMeasureSetUnitOverride(state.dxfMeasureSession, key) : false),
           undo: () => (typeof dxfMeasureUndo === 'function' ? dxfMeasureUndo() : false),
           redo: () => (typeof dxfMeasureRedo === 'function' ? dxfMeasureRedo() : false),
         },

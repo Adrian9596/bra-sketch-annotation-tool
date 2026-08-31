@@ -45,6 +45,9 @@
     // US-105: the Pattern Measure tool entries, inside the Tools menu.
     dxfMeasureAlongBtn: document.getElementById('dxfMeasureAlongBtn'),
     dxfMeasureOutBtn: document.getElementById('dxfMeasureOutBtn'),
+    // ADR 0073: the DXF native-unit select + provenance note beside them.
+    dxfMeasureUnitSelect: document.getElementById('dxfMeasureUnitSelect'),
+    dxfMeasureUnitNote: document.getElementById('dxfMeasureUnitNote'),
     // ADR 0070: the Pattern Pieces panel — Tools menu entry + the floating
     // panel itself, mirroring the anchorManager* refs above.
     patternPiecesBtn: document.getElementById('patternPiecesBtn'),

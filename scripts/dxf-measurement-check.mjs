@@ -46,6 +46,27 @@ const dxfLwpolyline = (verts, closed) => {
   for (const [x, y, bulge] of verts) { out.push(P(10, x), P(20, y)); if (bulge) out.push(P(42, bulge)); }
   return out;
 };
+// ADR 0073: BLOCK/INSERT + HEADER builders (private copies, same convention
+// as this file's other builders — dxf-import-check.mjs's versions have
+// different signatures, deliberately not shared).
+const dxfBlock = (name, entityArrays) => [P(0, 'BLOCK'), P(2, name), ...entityArrays.flat(), P(0, 'ENDBLK')];
+const dxfInsert = (name, x, y, extra = {}) => {
+  const out = [P(0, 'INSERT'), P(2, name), P(10, x), P(20, y)];
+  if (extra.sx !== undefined) out.push(P(41, extra.sx));
+  if (extra.sy !== undefined) out.push(P(42, extra.sy));
+  if (extra.rot !== undefined) out.push(P(50, extra.rot));
+  return out;
+};
+const docWithBlocks = (blockArrays, entityArrays) => pairsToText([
+  ...sectionBlock('BLOCKS', blockArrays.flat()),
+  ...sectionBlock('ENTITIES', entityArrays.flat()),
+  P(0, 'EOF'),
+]);
+const docWithHeader = (headerPairs, entityArrays) => pairsToText([
+  ...sectionBlock('HEADER', headerPairs),
+  ...sectionBlock('ENTITIES', entityArrays.flat()),
+  P(0, 'EOF'),
+]);
 // Closed square, side 10, four straight LINEs.
 const SQUARE_DXF = doc([dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0)]);
 // Open 5-segment chain along the x axis: (0,0)-(50,0), 10 units apart.
@@ -79,6 +100,7 @@ async function main() {
   await section4RealPointerFlow(s);
   await section6RealFixture(s);
   await section7ViewportZoomMatrix(s);
+  await section8InsertBlocksAndUnits(s);
 
   const errors = await s.eval('window.__dxfMeasureErrors');
   check(Array.isArray(errors) && errors.length === 0, 'no uncaught browser errors: ' + JSON.stringify(errors));
@@ -143,6 +165,262 @@ async function section7ViewportZoomMatrix(s) {
       row.width+'px @ '+row.zoom+'x keeps A/B visible in the centered review view');
   }
   console.log('PASS  section 7 (viewport/zoom matrix 3x4)');
+}
+
+// ---- Section 8: INSERT/BLOCK native resolution + unit provenance/override --
+// (ADR 0073, findings-dxf.md Findings 1+2.) Fully synthetic — must pass in
+// the public mirror with no demo/ present.
+async function section8InsertBlocksAndUnits(s) {
+  const m = 'window.__braAutoModeDebug.dxf.measure';
+
+  // 1. Translated INSERT: exact native line, exact endpoints, no Y-flip.
+  const translated = await s.eval(`${m}.parseNative(${JSON.stringify(docWithBlocks(
+    [dxfBlock('P', [dxfLine(0, 0, 10, 0)])],
+    [dxfInsert('P', 100, 50)],
+  ))})`);
+  check(translated.ok && translated.pieces.length === 1 && translated.pieces[0].segments.length === 1,
+    'translated INSERT resolves to one native segment, got ' + JSON.stringify(translated.buckets));
+  const tSeg = translated.pieces[0].segments[0];
+  check(tSeg.kind === 'straight' && near(tSeg.a.x, 100) && near(tSeg.a.y, 50) && near(tSeg.b.x, 110) && near(tSeg.b.y, 50),
+    'translated INSERT endpoints are exact, got ' + JSON.stringify(tSeg));
+
+  // 2. Rotated 90deg INSERT.
+  const rotated = await s.eval(`${m}.parseNative(${JSON.stringify(docWithBlocks(
+    [dxfBlock('P', [dxfLine(0, 0, 10, 0)])],
+    [dxfInsert('P', 0, 0, { rot: 90 })],
+  ))})`);
+  const rSeg = rotated.pieces[0].segments[0];
+  check(near(rSeg.b.x, 0, 1e-9) && near(rSeg.b.y, 10, 1e-9), '90deg-rotated INSERT maps (10,0) to (0,10), got ' + JSON.stringify(rSeg));
+
+  // 3. Uniformly scaled ARC stays an exact arc: radius and analytic length scale by |s|.
+  const scaledArc = await s.eval(`(() => {
+    const parsed = ${m}.parseNative(${JSON.stringify(docWithBlocks(
+      [dxfBlock('A', [dxfArc(0, 0, 10, 0, 180)])],
+      [dxfInsert('A', 0, 0, { sx: 2, sy: 2 })],
+    ))});
+    const seg = parsed.pieces[0].segments[0];
+    return { kind: seg.kind, radius: seg.radius, sweep: seg.sweep, length: ${m}.segmentLength(seg) };
+  })()`);
+  check(scaledArc.kind === 'arc' && near(scaledArc.radius, 20) && near(scaledArc.length, 20 * Math.PI, 1e-9),
+    '2x-scaled half-circle arc stays analytic (r=20, len=20pi), got ' + JSON.stringify(scaledArc));
+
+  // 4. Mirrored ARC (sx=-1): orientation flips (sweep negates), |length|
+  // invariant, and the transformed start point drives the new start angle.
+  const mirroredArc = await s.eval(`(() => {
+    const parsed = ${m}.parseNative(${JSON.stringify(docWithBlocks(
+      [dxfBlock('A', [dxfArc(0, 0, 10, 0, 90)])],
+      [dxfInsert('A', 0, 0, { sx: -1, sy: 1 })],
+    ))});
+    const seg = parsed.pieces[0].segments[0];
+    const start = { x: seg.center.x + seg.radius * Math.cos(seg.startAngle), y: seg.center.y + seg.radius * Math.sin(seg.startAngle) };
+    const endAngle = seg.startAngle + seg.sweep;
+    const end = { x: seg.center.x + seg.radius * Math.cos(endAngle), y: seg.center.y + seg.radius * Math.sin(endAngle) };
+    return { sweep: seg.sweep, radius: seg.radius, start, end, length: ${m}.segmentLength(seg) };
+  })()`);
+  check(mirroredArc.sweep < 0 && near(Math.abs(mirroredArc.sweep), Math.PI / 2, 1e-9),
+    'mirrored arc flips sweep sign, |sweep| unchanged, got ' + mirroredArc.sweep);
+  check(near(mirroredArc.start.x, -10, 1e-9) && near(mirroredArc.start.y, 0, 1e-9)
+    && near(mirroredArc.end.x, 0, 1e-9) && near(mirroredArc.end.y, 10, 1e-9),
+    'mirrored arc endpoints are the mirrored originals, got ' + JSON.stringify(mirroredArc));
+  check(near(mirroredArc.length, 10 * Math.PI / 2, 1e-9), 'mirror preserves arc length, got ' + mirroredArc.length);
+
+  // 5. Mirrored full CIRCLE stays within the kernel's |sweep| <= 2pi contract.
+  const mirroredCircle = await s.eval(`(() => {
+    const parsed = ${m}.parseNative(${JSON.stringify(docWithBlocks(
+      [dxfBlock('C', [dxfCircle(0, 0, 5)])],
+      [dxfInsert('C', 50, 0, { sx: -3, sy: 3 })],
+    ))});
+    const seg = parsed.pieces[0].segments[0];
+    return { sweepAbs: Math.abs(seg.sweep), radius: seg.radius, length: ${m}.segmentLength(seg), cx: seg.center.x };
+  })()`);
+  check(near(mirroredCircle.sweepAbs, 2 * Math.PI, 1e-9) && near(mirroredCircle.radius, 15)
+    && near(mirroredCircle.length, 2 * Math.PI * 15, 1e-9) && near(mirroredCircle.cx, 50, 1e-9),
+    'mirrored+scaled CIRCLE stays one analytic full-sweep arc, got ' + JSON.stringify(mirroredCircle));
+
+  // 6. ADR 0069 instance boundary: two same-position INSERTs of one block
+  // stay two pieces (a grading-nest must never fuse across instances).
+  const twoInstances = await s.eval(`${m}.parseNative(${JSON.stringify(docWithBlocks(
+    [dxfBlock('P', [dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10)])],
+    [dxfInsert('P', 0, 0), dxfInsert('P', 0, 0)],
+  ))})`);
+  check(twoInstances.ok && twoInstances.pieces.length === 2
+    && twoInstances.pieces.every(p => p.segments.length === 2),
+    'two same-position instances stay two native pieces, got ' + (twoInstances.pieces && twoInstances.pieces.length));
+
+  // 7. Nested INSERT inherits its parent's instance (one piece, both levels).
+  const nested = await s.eval(`${m}.parseNative(${JSON.stringify(docWithBlocks(
+    [dxfBlock('INNER', [dxfLine(0, 0, 10, 0)]),
+     dxfBlock('OUTER', [dxfLine(10, 0, 10, 10), dxfInsert('INNER', 0, 0)]),
+    ],
+    [dxfInsert('OUTER', 0, 0)],
+  ))})`);
+  check(nested.ok && nested.pieces.length === 1 && nested.pieces[0].segments.length === 2,
+    'nested INSERT resolves into ONE piece under the parent instance, got ' + JSON.stringify(nested.pieces && nested.pieces.map(p => p.segments.length)));
+
+  // 7b. Stacked exact-duplicate edges (real factory shape — BiancaBra's
+  // block 11_22_M traces one rectangle 4x) must not explode the route
+  // search: duplicates collapse to one representative, refs on a dropped
+  // copy remap (with t flipped on a reversed copy), and the measured length
+  // counts the path ONCE.
+  const dupLine = await s.eval(`${m}.enumerateRoutesRaw([
+    {kind:'straight', a:{x:0,y:0}, b:{x:10,y:0}},
+    {kind:'straight', a:{x:0,y:0}, b:{x:10,y:0}},
+    {kind:'straight', a:{x:10,y:0}, b:{x:0,y:0}},
+    {kind:'straight', a:{x:0,y:0}, b:{x:10,y:0}},
+  ], {segIndex:1, t:0.1}, {segIndex:2, t:0.1}, 1e-4)`);
+  check(dupLine.ok && dupLine.routes.length === 1 && near(dupLine.routes[0].length, 8, 1e-9),
+    '4x-duplicated line measures once (A on copy #2, B on the REVERSED copy, t flipped: 0.1..0.9 of 10 = 8), got '
+    + JSON.stringify({ ok: dupLine.ok, reason: dupLine.reason, len: dupLine.routes && dupLine.routes[0] && dupLine.routes[0].length }));
+  const dupSquare = await s.eval(`(() => {
+    const edge = (x1,y1,x2,y2) => ({kind:'straight', a:{x:x1,y:y1}, b:{x:x2,y:y2}});
+    const square = [edge(0,0,10,0), edge(10,0,10,10), edge(10,10,0,10), edge(0,10,0,0)];
+    const segs = [...square, ...square, ...square, ...square]; // 4 stacked copies, 16 segments
+    return ${m}.enumerateRoutesRaw(segs, {segIndex:0, t:0.5}, {segIndex:2, t:0.5}, 1e-4);
+  })()`);
+  check(dupSquare.ok && dupSquare.routes.length === 2
+    && near(dupSquare.routes[0].length + dupSquare.routes[1].length, 40, 1e-9),
+    '4x-stacked square still yields exactly the 2 complementary loop routes summing to one perimeter, got '
+    + JSON.stringify({ ok: dupSquare.ok, reason: dupSquare.reason, count: dupSquare.routes && dupSquare.routes.length }));
+  // Guard the narrowness: two DIFFERENT arcs between the same endpoints (a
+  // lens) are genuinely two paths and must both survive dedupe.
+  const lensRoutes = await s.eval(`(() => {
+    // Two mirror arcs sharing endpoints (0,0) and (10,0): bulge +1 and -1
+    // semicircle-ish arcs via the real parser, then enumerate between their
+    // midpoints — both distinct paths must survive dedupe (equal length,
+    // DIFFERENT circles).
+    const parsed = ${m}.parseNative(${JSON.stringify(doc([
+      dxfLwpolyline([[0, 0, 1], [10, 0, 0]], false),
+      dxfLwpolyline([[0, 0, -1], [10, 0, 0]], false),
+    ]))});
+    const segs = parsed.pieces[0].segments;
+    return ${m}.enumerateRoutesRaw(segs, {segIndex:0, t:0.25}, {segIndex:1, t:0.75}, 1e-4);
+  })()`);
+  check(lensRoutes.ok && lensRoutes.routes.length === 2,
+    'two equal-length but geometrically different arcs (a lens) both survive dedupe as 2 routes, got '
+    + JSON.stringify({ ok: lensRoutes.ok, count: lensRoutes.routes && lensRoutes.routes.length, reason: lensRoutes.reason }));
+
+  // 8. $INSUNITS through a real HEADER section.
+  const mmDoc = await s.eval(`${m}.parseNative(${JSON.stringify(docWithHeader(
+    [P(9, '$INSUNITS'), P(70, 4)], [dxfLine(0, 0, 10, 0)],
+  ))})`);
+  check(mmDoc.ok && near(mmDoc.unit, 1 / 25.4, 1e-12) && mmDoc.unitSource === 'dxf-header' && mmDoc.insunits === 4,
+    '$INSUNITS=4 resolves as declared mm, got ' + JSON.stringify({ unit: mmDoc.unit, unitSource: mmDoc.unitSource }));
+  const unitlessDoc = await s.eval(`${m}.parseNative(${JSON.stringify(docWithHeader(
+    [P(9, '$INSUNITS'), P(70, 0)], [dxfLine(0, 0, 10, 0)],
+  ))})`);
+  check(unitlessDoc.ok && unitlessDoc.unit === 1 && unitlessDoc.unitSource === 'unsupported-explicit-unit'
+    && unitlessDoc.unitDiagnostic && unitlessDoc.insunits === 0,
+    '$INSUNITS=0 is the flagged unsupported-explicit case, never silently "from file", got ' + JSON.stringify({ unitSource: unitlessDoc.unitSource }));
+  const noHeaderDoc = await s.eval(`${m}.parseNative(${JSON.stringify(doc([dxfLine(0, 0, 10, 0)]))})`);
+  check(noHeaderDoc.unit === 1 && noHeaderDoc.unitSource === 'default-inch',
+    'missing $INSUNITS stays the distinct default-inch case, got ' + noHeaderDoc.unitSource);
+
+  // 9. Live end-to-end: import a BLOCK-based DXF through the real file input
+  // (the Finding-1 repro shape), then exercise the unit override through the
+  // real #dxfMeasureUnitSelect (Finding 2).
+  const BLOCK_CHAIN_DXF = docWithBlocks(
+    [dxfBlock('PIECE', [dxfLine(0, 0, 40, 0)])],
+    [dxfInsert('PIECE', 0, 0)],
+  );
+  const live = await s.eval(`(async () => {
+    document.getElementById('modeManualBtn').click();
+    const dbg = window.__braAutoModeDebug;
+    const canvas = document.getElementById('boardCanvas');
+    const fire = (type, x, y) => canvas.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, button: 0 }));
+    document.getElementById('toolsMenuBtn').click();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const input = document.getElementById('dxfImportFileInput');
+    const dt = new DataTransfer();
+    dt.items.add(new File([${JSON.stringify(BLOCK_CHAIN_DXF)}], 'block.dxf', { type: 'application/octet-stream' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 20; i += 1) await new Promise(r => requestAnimationFrame(r));
+    // Earlier sections' chooser toasts can still be draining through
+    // toast.js's fair-reading queue — the import toast queues behind them
+    // rather than replacing. Poll until IT is the one displayed.
+    let toastAfterImport = '';
+    for (let i = 0; i < 100; i += 1) {
+      const t = document.querySelector('.toast');
+      toastAfterImport = t ? t.textContent : '';
+      if (toastAfterImport.indexOf('Imported') !== -1) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    const sessionAfterImport = dbg.dxf.measure.getSession();
+
+    // A real Along Path measurement on the single resolved segment.
+    document.getElementById('toolsMenuBtn').click();
+    document.getElementById('dxfMeasureAlongBtn').click();
+    const ann = dbg.getAnnotations().slice(-1)[0];
+    const view = dbg.getView();
+    const rect = canvas.getBoundingClientRect();
+    const toScreen = (w) => ({ x: rect.left + w.x * view.zoom + view.panX, y: rect.top + w.y * view.zoom + view.panY });
+    const lerp = (t) => ({ x: ann.start.x + (ann.end.x - ann.start.x) * t, y: ann.start.y + (ann.end.y - ann.start.y) * t });
+    const pA = toScreen(lerp(0.1)), pB = toScreen(lerp(0.9));
+    fire('mousedown', pA.x, pA.y); fire('mouseup', pA.x, pA.y);
+    fire('mousedown', pB.x, pB.y); fire('mouseup', pB.x, pB.y);
+    // A route/direction chooser may open even on an unambiguous path
+    // (direction is a TD choice); Enter confirms the default candidate.
+    const pending = dbg.dxf.measure.getSession().interaction;
+    if (pending && (pending.type === 'choosing-route' || pending.type === 'choosing-entity')) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    }
+    const sessionAfterMeasure = dbg.dxf.measure.getSession();
+    const measureDiag = {
+      interaction: sessionAfterMeasure.interaction && sessionAfterMeasure.interaction.type,
+      count: sessionAfterMeasure.measurementCount,
+      tool: dbg.getState().tool,
+      toastNow: document.querySelector('.toast') ? document.querySelector('.toast').textContent : '',
+      ann: { start: ann.start, end: ann.end },
+      pA, pB, view, rect: { left: rect.left, top: rect.top, w: rect.width, h: rect.height },
+    };
+    const measurementId = sessionAfterMeasure.measurements.length ? sessionAfterMeasure.measurements[0].id : null;
+    const valueBeforeOverride = measurementId != null ? dbg.dxf.measure.valueInches(measurementId) : null;
+
+    const select = document.getElementById('dxfMeasureUnitSelect');
+    const selectDisabled = select.disabled;
+    select.value = 'mm';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    const sessionAfterOverride = dbg.dxf.measure.getSession();
+    const valueAfterOverride = measurementId != null ? dbg.dxf.measure.valueInches(measurementId) : null;
+    const noteText = document.getElementById('dxfMeasureUnitNote').textContent;
+    const selectValueAfter = select.value;
+
+    // Back to a fresh state for anything after this section.
+    dbg.dxf.measure.setUnitOverride(null);
+    return {
+      toastAfterImport,
+      sessionNull: sessionAfterImport === null,
+      pieceCount: sessionAfterImport && sessionAfterImport.pieceCount,
+      unitStatusBefore: sessionAfterImport && sessionAfterImport.unitStatus,
+      measurementCount: sessionAfterMeasure.measurementCount,
+      measureDiag,
+      valueBeforeOverride, valueAfterOverride,
+      toleranceBefore: sessionAfterImport && sessionAfterImport.topologyToleranceNative,
+      toleranceAfter: sessionAfterOverride.topologyToleranceNative,
+      unitStatusAfter: sessionAfterOverride.unitStatus,
+      unitOverrideAfter: sessionAfterOverride.unitOverride,
+      selectDisabled, selectValueAfter, noteText,
+    };
+  })()`);
+  check(live.sessionNull === false && live.pieceCount === 1,
+    'Finding 1: a BLOCK/INSERT-only DXF now builds a live measure session, got ' + JSON.stringify({ sessionNull: live.sessionNull, pieceCount: live.pieceCount }));
+  check(String(live.toastAfterImport).includes('Units assumed'),
+    'import toast carries the assumed-units warning, got "' + live.toastAfterImport + '"');
+  check(live.unitStatusBefore && live.unitStatusBefore.key === 'in' && String(live.unitStatusBefore.provenance).includes('didn'),
+    'pre-override unit status is the flagged inch assumption, got ' + JSON.stringify(live.unitStatusBefore));
+  check(live.measurementCount === 1 && near(live.valueBeforeOverride, 32, 1.5),
+    'Along Path on the resolved block segment measures ~32 native units as inches, got ' + live.valueBeforeOverride
+    + ' diag=' + JSON.stringify(live.measureDiag));
+  check(near(live.valueBeforeOverride / live.valueAfterOverride, 25.4, 1e-6),
+    'mm override rescales every displayed value by exactly 25.4, got ratio ' + (live.valueBeforeOverride / live.valueAfterOverride));
+  check(near(live.toleranceBefore, 0.01 / 25.4, 1e-15) && near(live.toleranceAfter, 0.01, 1e-12),
+    'mm override recomputes the RB-4 topology tolerance (0.01mm in native units), got ' + live.toleranceBefore + ' -> ' + live.toleranceAfter);
+  check(live.unitOverrideAfter === 'mm' && live.unitStatusAfter && live.unitStatusAfter.key === 'mm'
+    && live.unitStatusAfter.provenance === 'set by you',
+    'override provenance is "set by you", got ' + JSON.stringify(live.unitStatusAfter));
+  check(live.selectDisabled === false && live.selectValueAfter === 'mm' && live.noteText === 'mm — set by you',
+    'the real select/note reflect the override, got ' + JSON.stringify({ d: live.selectDisabled, v: live.selectValueAfter, n: live.noteText }));
+  console.log('PASS  section 8 (INSERT/BLOCK native resolution + unit provenance/override)');
 }
 
 // ---- Section 1: pure kernel unit tests -------------------------------------

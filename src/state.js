@@ -110,6 +110,11 @@
     // project data, so it is absent from makeSnapshot and never round-trips
     // through undo or a saved project.
     activeStampId: null,
+    // US-106: place the armed Template mirrored left-right (a saved left
+    // wing placed as the right one). Session-only, same reasoning as
+    // activeStampId; always reset to false when a stamp is (re-)armed — see
+    // setActiveShapeStamp.
+    activeStampMirrored: false,
     // US-098: null means a placed Template selects as one group. Double-click
     // sets this to a templateGroupId so its member paths can be edited one at a
     // time. Session-only; the grouping itself lives on annotations.

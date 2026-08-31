@@ -432,6 +432,20 @@ window.__DXF = (() => {
     && Math.abs(tSeg.b.x) < 1e-6 && Math.abs(tSeg.b.y + 2) < 1e-6,
     `INSERT scale 2 + rotation 90deg on a unit +X segment must produce a length-2 segment ending at Y-flipped (0,-2), got ${JSON.stringify(tSeg)}`);
 
+  // Mirrored (negative-scale) INSERT: |sx| == |sy| passes the uniform-scale
+  // gate, and the affine point transform reflects the geometry exactly.
+  // (This claim previously lived only in dxfInsertTransformPoint's comment —
+  // ADR 0073 made the native parser share the same transform, so the board
+  // side now carries an executable proof too.)
+  const insertMirrored = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
+    [dxfBlock('P', dxfLine(0, 0, 10, 0))],
+    [dxfInsert('P', 0, 0, { sx: -1, sy: 1 })],
+  ))})`);
+  check(insertMirrored.ok === true, `a mirrored INSERT (sx=-1, sy=1) must resolve, got ${JSON.stringify(insertMirrored)}`);
+  const mSeg = insertMirrored.pieces[0][0];
+  check(Math.abs(mSeg.a.x) < 1e-6 && Math.abs(mSeg.b.x + 10) < 1e-6 && Math.abs(mSeg.b.y) < 1e-6,
+    `mirroring across Y must map (10,0) to (-10,0), got ${JSON.stringify(mSeg)}`);
+
   // Two INSERTs of the same block at different points -> two separate
   // pieces (no accidental sharing/merging of the block's own geometry).
   const insertTwice = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(

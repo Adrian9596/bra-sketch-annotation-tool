@@ -317,6 +317,11 @@
     // project data, so it is absent from makeSnapshot and never round-trips
     // through undo or a saved project.
     activeStampId: null,
+    // US-106: place the armed Template mirrored left-right (a saved left
+    // wing placed as the right one). Session-only, same reasoning as
+    // activeStampId; always reset to false when a stamp is (re-)armed — see
+    // setActiveShapeStamp.
+    activeStampMirrored: false,
     // US-098: null means a placed Template selects as one group. Double-click
     // sets this to a templateGroupId so its member paths can be edited one at a
     // time. Session-only; the grouping itself lives on annotations.
@@ -595,6 +600,9 @@
     // US-105: the Pattern Measure tool entries, inside the Tools menu.
     dxfMeasureAlongBtn: document.getElementById('dxfMeasureAlongBtn'),
     dxfMeasureOutBtn: document.getElementById('dxfMeasureOutBtn'),
+    // ADR 0073: the DXF native-unit select + provenance note beside them.
+    dxfMeasureUnitSelect: document.getElementById('dxfMeasureUnitSelect'),
+    dxfMeasureUnitNote: document.getElementById('dxfMeasureUnitNote'),
     // ADR 0070: the Pattern Pieces panel — Tools menu entry + the floating
     // panel itself, mirroring the anchorManager* refs above.
     patternPiecesBtn: document.getElementById('patternPiecesBtn'),
@@ -1948,6 +1956,73 @@
     return newNodeId;
   }
 
+  // ADR 0073: collapse EXACT-duplicate parallel edges before route search.
+  // Real factory exports draw the same contour several times over (verified
+  // raw: `BiancaBra v.A 1.0_Pattern.dxf`'s block `11_22_M` traces one small
+  // rectangle as 4 stacked POLYLINEs — 4 identical copies of every edge).
+  // Those copies land as parallel edges between the same two graph nodes,
+  // and the simple-path DFS then multiplies candidates by (copies)^(hops) —
+  // even a 16-segment piece blows straight through both search caps and
+  // Along Path reports ROUTE_SEARCH_TRUNCATED on a trivially measurable
+  // shape. A line drawn four times is still ONE path on the factory floor,
+  // so keeping a single representative is the measurement-true behavior,
+  // not a shortcut. Deliberately narrow: only edges between the SAME node
+  // pair, same kind, same length (and for arcs the same circle + |sweep|)
+  // collapse — a genuinely different second path between the same two
+  // points (e.g. the two arcs of a lens) differs in geometry and survives.
+  // Self-loop edges (nodeA === nodeB, e.g. full circles) are skipped: the
+  // node-pair key cannot express their traversal direction, and parallel
+  // self-loops never feed the DFS explosion anyway (a loop edge cannot
+  // advance a simple path).
+  //
+  // `refs` (the A/B point references, in segIndex space) are remapped in
+  // place when their own segment's edge was one of the dropped copies —
+  // onto the kept representative, with t flipped when the copy was authored
+  // in the opposite direction (for a straight or an arc with equal |sweep|,
+  // the point at t on the reversed copy is the point at 1-t on the kept one,
+  // exactly).
+  function dxfCollapseDuplicateParallelEdges(work, refs, tol) {
+    const groups = new Map();
+    const kept = [];
+    const remap = new Map();
+    let collapsed = 0;
+    for (const e of work.edges) {
+      if (e.nodeA === e.nodeB) { kept.push(e); continue; }
+      const pairKey = e.nodeA < e.nodeB ? e.nodeA + '|' + e.nodeB : e.nodeB + '|' + e.nodeA;
+      const lenEps = Math.max(tol, Math.abs(e.length) * 1e-9);
+      const group = groups.get(pairKey) || [];
+      // The geometric midpoint pins the path itself, independent of
+      // traversal direction (a curve's own middle is the same point walked
+      // either way) — it is what separates a genuine duplicate from, say,
+      // the upper and lower halves of one circle between the same two
+      // endpoints (same circle, same |sweep|, same length — different arcs).
+      const eMid = dxfPointOnSegment(e.seg, 0.5);
+      const match = group.find(g => {
+        if (g.seg.kind !== e.seg.kind) return false;
+        if (Math.abs(g.length - e.length) > lenEps) return false;
+        return distance(dxfPointOnSegment(g.seg, 0.5), eMid) <= tol;
+      });
+      if (match) {
+        remap.set(e.segIndex, { segIndex: match.segIndex, flipped: e.nodeA !== match.nodeA });
+        collapsed += 1;
+        continue;
+      }
+      group.push(e);
+      groups.set(pairKey, group);
+      kept.push(e);
+    }
+    if (!collapsed) return 0;
+    work.edges = kept;
+    for (const ref of refs) {
+      const m = remap.get(ref.segIndex);
+      if (m) {
+        ref.segIndex = m.segIndex;
+        if (m.flipped) ref.t = 1 - ref.t;
+      }
+    }
+    return collapsed;
+  }
+
   // Every simple (no-repeated-node) path from startNode to endNode, as
   // ordered {edge, forward} steps. Depth/route-count budgeted: real garment
   // pattern graphs are sparse (a traced outline is degree <= 2 almost
@@ -2017,8 +2092,16 @@
       nextNodeId: graph.nodes.length,
       nextEdgeId: graph.edges.length,
     };
-    const nodeA = dxfInsertPointRefIntoGraph(work, { segIndex: refA.segIndex, t: clamp(refA.t, 0, 1) });
-    const nodeB = dxfInsertPointRefIntoGraph(work, { segIndex: refB.segIndex, t: clamp(refB.t, 0, 1) });
+    // ADR 0073: drop stacked exact-duplicate copies (and remap A/B onto the
+    // kept representative) BEFORE inserting the point refs — inserting first
+    // would split only the clicked copy, turning its un-split duplicates
+    // into node-skipping bypass edges instead of recognizable parallels.
+    const workRefA = { segIndex: refA.segIndex, t: clamp(refA.t, 0, 1) };
+    const workRefB = { segIndex: refB.segIndex, t: clamp(refB.t, 0, 1) };
+    const tolUsed = Number.isFinite(nodeTolerance) && nodeTolerance > 0 ? nodeTolerance : dxfDefaultTopologyTolerance(segments);
+    dxfCollapseDuplicateParallelEdges(work, [workRefA, workRefB], tolUsed);
+    const nodeA = dxfInsertPointRefIntoGraph(work, workRefA);
+    const nodeB = dxfInsertPointRefIntoGraph(work, workRefB);
     if (nodeA == null || nodeB == null) {
       return { ok: false, reason: DXF_MEASURE_REASON.NON_FINITE_GEOMETRY, routes: [], truncated: false };
     }
@@ -18566,6 +18649,19 @@ const BOM_MATERIAL_LIBRARY = [
   function bindDxfMeasurePanel() {
     if (el.dxfMeasureAlongBtn) el.dxfMeasureAlongBtn.addEventListener('click', () => setDxfMeasureMode('along-path'));
     if (el.dxfMeasureOutBtn) el.dxfMeasureOutBtn.addEventListener('click', () => setDxfMeasureMode('out-of-path'));
+    // ADR 0073: picking a unit is an explicit override even when it matches
+    // the parser's guess — "the TD confirmed in" and "the parser assumed in"
+    // are different provenance states, and the note reflects that.
+    if (el.dxfMeasureUnitSelect) {
+      el.dxfMeasureUnitSelect.addEventListener('change', () => {
+        const session = state.dxfMeasureSession;
+        if (!session) return;
+        dxfMeasureSetUnitOverride(session, el.dxfMeasureUnitSelect.value);
+      });
+      // The Tools menu closes itself on stray clicks; a click that is just
+      // opening the select's dropdown must not bubble into that handler.
+      el.dxfMeasureUnitSelect.addEventListener('click', (event) => event.stopPropagation());
+    }
   }
 
   // ---- src/manual/simplify-piece.js ----
@@ -27112,8 +27208,17 @@ function onWheel(e) {
         + (parsed.skippedOversizedPieces === 1 ? '' : 's') + ' (over ' + DXF_PER_PIECE_CAP + ' lines each).');
     }
     const skipMsg = skipParts.filter(Boolean).join(' ');
+    // ADR 0073: a guessed unit rides on the import toast itself, not a
+    // separate earlier toast — toast.js's fair-reading queue would swap a
+    // separate warning away after ~900ms in favor of this success message.
+    // Guarded: startDxfMeasureSession can fail and leave the session null
+    // (it shows its own explanation in that case).
+    const measureSession = state.dxfMeasureSession;
+    const unitWarning = (measureSession && measureSession.source.unitSource !== 'dxf-header')
+      ? ' Units assumed (in) — set them under Tools ▸ Pattern Measure if the file is mm/cm.'
+      : '';
     showToast('Imported ' + pieceCount + ' ' + pieceWord + ' (' + allNewIds.length + ' ' + lineWord + ').'
-      + (skipMsg ? ' ' + skipMsg : ''));
+      + (skipMsg ? ' ' + skipMsg : '') + unitWarning);
     // ADR 0070: a grading-nest file places every chosen size's piece at the
     // same board position (see ADR 0069's Context) — more than one piece
     // means the TD likely just imported an overlapping stack of sizes and
@@ -27341,6 +27446,103 @@ function onWheel(e) {
     return { ok: true, segments: converted.segments, rejectedDegenerateSegments: converted.rejectedDegenerateSegments };
   }
 
+  // ---- INSERT -> BLOCK resolution (ADR 0073, reversing ADR 0068 item 1) ----
+  //
+  // Same real-world motivation as dxf-import.js's dxfConvertInsertEntity:
+  // 36/44 real factory files in the demo corpus keep every piece's geometry
+  // inside a named BLOCK and reference it once via INSERT — without resolving
+  // that here, Pattern Measure was structurally dead on all of them (the
+  // board displayed the pieces, this parser returned reason:'empty'; see
+  // findings-dxf.md Finding 1). Gates and reason strings mirror the board
+  // converter byte-for-byte so the two parses never disagree about WHICH
+  // entities are acceptable — only about the shape of the accepted geometry.
+
+  // Exact similarity transform of a native segment. Unlike the board's
+  // dxfApplyInsertTransformToSegment (straight/curve only — the board never
+  // has an 'arc' kind at INSERT time), this must map an exact arc to an
+  // exact arc: the INSERT gate below enforces |sx| == |sy|, so the linear
+  // part R(angle)·diag(sx,sy) is a similarity — circles map to circles with
+  // radius scaled by |sx|. The new start angle is derived from the
+  // TRANSFORMED start point (not analytic angle arithmetic), which is exact
+  // and uniform across all four sign combinations of (sx, sy); a mirrored
+  // instance (sx·sy < 0) flips traversal orientation, so the sweep sign
+  // flips — |sweep| is unchanged, so a full-circle CIRCLE arc (sweep 2π)
+  // stays within the kernel's |sweep| <= 2π contract.
+  //
+  // Object.assign clone, not a rebuilt object: native segments already carry
+  // provenance (layer/handle/entityOrder/partIndex, stamped by
+  // dxfNativeConvertEntity below) that must survive the transform — the
+  // board's transform rebuilds bare objects only because the board stamps
+  // nothing at that stage.
+  function dxfNativeApplyInsertTransformToSegment(seg, ins) {
+    if (seg.kind === 'straight') {
+      return Object.assign({}, seg, {
+        a: dxfInsertTransformPoint(seg.a, ins),
+        b: dxfInsertTransformPoint(seg.b, ins),
+      });
+    }
+    const center = dxfInsertTransformPoint(seg.center, ins);
+    const radius = seg.radius * Math.abs(ins.sx);
+    const start = dxfInsertTransformPoint(dxfPointOnArcSegment(seg, 0), ins);
+    const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+    const sweep = ins.sx * ins.sy < 0 ? -seg.sweep : seg.sweep;
+    return Object.assign({}, seg, { center, radius, startAngle, sweep });
+  }
+
+  // `order` is the TOP-LEVEL entity index — every segment resolved out of a
+  // block (however deeply nested) inherits the placing INSERT's own order,
+  // while keeping the child entity's layer/handle (nothing downstream
+  // consumes entityOrder today; it stays pure provenance).
+  function dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order) {
+    const p = dxfInsertParams(rec);
+    if (p.blockName == null) return dxfMalformed('INSERT missing block name (group 2)');
+    if (![p.ix, p.iy, p.sx, p.sy, p.angleRad].every(Number.isFinite)) return dxfMalformed('INSERT has a non-finite placement field');
+    if (Math.abs(p.sx) < 1e-9 || Math.abs(p.sy) < 1e-9) return dxfMalformed('INSERT has a zero scale factor');
+    if (Math.abs(Math.abs(p.sx) - Math.abs(p.sy)) > 1e-6) {
+      return dxfUnsupportedType('INSERT has non-uniform scale (X and Y scale differ), not supported');
+    }
+    if ((p.colCount && p.colCount !== 1) || (p.rowCount && p.rowCount !== 1)) {
+      return dxfUnsupportedType('INSERT is a rectangular array (MINSERT), not supported');
+    }
+    const blockRecords = blocks.get(p.blockName);
+    if (!blockRecords) return dxfMalformed('INSERT references an undefined block "' + p.blockName + '"');
+    if (depth >= DXF_INSERT_MAX_DEPTH) return dxfMalformed('INSERT nesting is too deep (possible circular BLOCK reference)');
+    const segments = [];
+    let rejectedDegenerateSegments = 0;
+    for (const childRec of blockRecords) {
+      const result = dxfNativeConvertEntityResolvingBlocks(childRec, blocks, depth + 1, buckets, instance, order);
+      if (!result.ok) { buckets[result.bucket] += 1; continue; }
+      rejectedDegenerateSegments += result.rejectedDegenerateSegments || 0;
+      segments.push(...result.segments);
+    }
+    if (!segments.length) return dxfMalformed('INSERT\'s block "' + p.blockName + '" has no supported geometry');
+    return {
+      ok: true,
+      segments: segments.map(seg => dxfNativeApplyInsertTransformToSegment(seg, p)),
+      rejectedDegenerateSegments,
+    };
+  }
+
+  // Dispatch + `instance` stamp (ADR 0069: piece detection must never union
+  // segments from different placed instances — without this, a grading-nest
+  // file's overlapping sizes fuse on the native side and the piece list
+  // diverges from the board's, nulling every pieceAnchor in
+  // makeDxfMeasureSession). NOTE this wrapper deliberately does NOT copy the
+  // board wrapper's `{ok, segments}`-only return shape: this parser's
+  // converters also report `rejectedDegenerateSegments` (RB-4), and dropping
+  // that field here would silently zero the bucket for every entity.
+  function dxfNativeConvertEntityResolvingBlocks(rec, blocks, depth, buckets, instance, order) {
+    const result = rec.type === 'INSERT'
+      ? dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order)
+      : dxfNativeConvertEntity(rec, order);
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      segments: result.segments.map(seg => Object.assign({}, seg, { instance })),
+      rejectedDegenerateSegments: result.rejectedDegenerateSegments || 0,
+    };
+  }
+
   // Dispatch, then stamp provenance (layer, handle when present, and the
   // entity's own order in the file) onto every segment the entity produced —
   // "original entity order and direction" per the checklist, kept on the
@@ -27398,8 +27600,15 @@ function onWheel(e) {
     const unitInfo = dxfResolveNativeToInch(insunits);
     const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, rejectedDegenerateSegments: 0 };
     const acceptedSegments = [];
+    // ADR 0073: same instance-id scheme as parseDxfDocument (ADR 0069) —
+    // instance 0 for every directly-placed entity, a fresh id per top-level
+    // INSERT (nested INSERTs inherit their parent's) — so dxfBuildPieces
+    // groups the native pieces exactly the way it groups the board's,
+    // keeping makeDxfMeasureSession's count-based pieceAnchors pairing alive.
+    let nativeNextInstanceId = 1;
     scan.entityRecords.forEach((rec, order) => {
-      const result = dxfNativeConvertEntity(rec, order);
+      const instance = rec.type === 'INSERT' ? nativeNextInstanceId++ : 0;
+      const result = dxfNativeConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, order);
       if (!result.ok) { buckets[result.bucket] += 1; return; }
       buckets.rejectedDegenerateSegments += result.rejectedDegenerateSegments || 0;
       acceptedSegments.push(...result.segments);
@@ -27599,6 +27808,12 @@ function onWheel(e) {
       pieceBounds: nativeModel.pieces.map(piece => dxfBoundsOfSegments(piece.segments)),
       pieceAnchors,
       transforms: { bounds: clone(bounds), placement: clone(transform) },
+      // ADR 0073: the TD's explicit "this file's native unit is …" choice
+      // ('in' | 'mm' | 'cm', null = trust source.unit). Session-level display
+      // setting, deliberately OUTSIDE the measure-undo fingerprint (see
+      // dxfMeasureSnapshot) — undoing a measurement must not silently revert
+      // a unit correction.
+      unitOverride: null,
       measurements: [],
       interaction: null,
       selectedMeasurementId: null,
@@ -27812,11 +28027,73 @@ function onWheel(e) {
     return true;
   }
 
+  // ---- Units (ADR 0073) --------------------------------------------------------
+
+  // Real factory files routinely omit $INSUNITS (or set it to 0, "Unitless")
+  // while being authored in mm — the parser's inch default is a GUESS
+  // (findings-dxf.md Finding 2). These three functions make that guess
+  // visible and correctable: the effective native→inch factor is the TD's
+  // explicit override when set, else the parser's resolution.
+  function dxfMeasureUnitKeyFactor(key) {
+    if (key === 'mm') return 1 / 25.4;
+    if (key === 'cm') return 1 / 2.54;
+    if (key === 'in') return 1;
+    return null;
+  }
+
+  function dxfMeasureEffectiveUnitFactor(session) {
+    if (!session) return null;
+    const overrideFactor = dxfMeasureUnitKeyFactor(session.unitOverride);
+    return overrideFactor != null ? overrideFactor : session.source.unit;
+  }
+
+  // Changing the unit changes the RB-4 topology tolerance too (0.01mm
+  // expressed in native units — see makeDxfMeasureSession) so future route
+  // enumeration stays inside the kernel's mm budget under the corrected
+  // unit. Existing measurements need no touch: values are converted on
+  // demand from stored native lengths, so every displayed number updates on
+  // the next paint.
+  function dxfMeasureSetUnitOverride(session, key) {
+    if (!session) return false;
+    const normalized = dxfMeasureUnitKeyFactor(key) != null ? key : null;
+    if (session.unitOverride === normalized) return false;
+    session.unitOverride = normalized;
+    session.topologyToleranceNative = 0.01 / (25.4 * (dxfMeasureEffectiveUnitFactor(session) || 1));
+    if (typeof updateUI === 'function') updateUI();
+    if (typeof requestRender === 'function') requestRender();
+    return true;
+  }
+
+  // The unit key + provenance the UI shows. Three DISTINCT non-override
+  // states, per the kernel's RB-4 comment: "no header" (default-inch) and
+  // "explicit but unrecognized code" (unsupported-explicit-unit) must never
+  // be folded into one "assumed" — the second names the code so a TD can
+  // tell the file DID declare something.
+  function dxfMeasureUnitStatus(session) {
+    if (!session) return null;
+    if (session.unitOverride) {
+      return { key: session.unitOverride, provenance: 'set by you' };
+    }
+    const source = session.source;
+    if (source.unitSource === 'dxf-header') {
+      // Name the declared unit by its $INSUNITS code; the header can
+      // legitimately declare units the override select doesn't offer
+      // (ft, m, US survey ft), so this maps the code, not the option list.
+      const names = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm', 21: 'us-ft' };
+      return { key: names[source.insunits] || 'in', provenance: 'from file' };
+    }
+    if (source.unitSource === 'unsupported-explicit-unit') {
+      const code = source.unitDiagnostic && source.unitDiagnostic.code;
+      return { key: 'in', provenance: 'assumed — file declares unsupported unit code ' + (code != null ? code : '?') };
+    }
+    return { key: 'in', provenance: 'assumed — file didn\'t declare units' };
+  }
+
   // ---- Value / formatting -----------------------------------------------------
 
   function dxfMeasureValueInches(session, measurement) {
     if (!session || !measurement) return null;
-    const factor = session.source.unit;
+    const factor = dxfMeasureEffectiveUnitFactor(session);
     let nativeLength = null;
     if (measurement.mode === 'out-of-path') {
       nativeLength = dxfDirectDistance(measurement.a.native, measurement.b.native);
@@ -28047,7 +28324,7 @@ function onWheel(e) {
   function dxfMeasureDisplayValueInches(session, measurement) {
     const preview = dxfMeasureDragPreviewFor(session, measurement.id);
     if (preview && preview.status === 'ok') {
-      const factor = session.source.unit;
+      const factor = dxfMeasureEffectiveUnitFactor(session);
       let nativeLength = null;
       if (measurement.mode === 'out-of-path') {
         const which = session.interaction.which;
@@ -29295,6 +29572,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       } else {
         toolText = 'Pattern Measure (' + modeLabel + ') – Click the first point on the pattern.';
       }
+      // ADR 0073: the unit and where it came from ride along on every
+      // Pattern Measure status line — a guessed unit must never be invisible
+      // while the TD is actively reading measured numbers.
+      const unitStatus = dxfMeasureUnitStatus(measureSession);
+      if (unitStatus) toolText += ' · Units: ' + unitStatus.key + ' (' + unitStatus.provenance + ')';
     } else {
       toolText = imageCount === 0
         ? 'Eraser – Paste or import an image first, then drag to paint white over unwanted lines.'
@@ -29394,6 +29676,27 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       el.dxfMeasureOutBtn.title = hasSession ? 'Measure the direct straight-line distance between two points' : 'Import a DXF file first';
       el.dxfMeasureOutBtn.classList.toggle('active', state.tool === 'pattern-measure'
         && hasSession && state.dxfMeasureSession.pendingMode === 'out-of-path');
+    }
+    // ADR 0073: the native-unit select + provenance note. The select mirrors
+    // the session's EFFECTIVE unit; the activeElement guard is the
+    // brushSizeInput pattern above — never fight the TD mid-interaction.
+    if (el.dxfMeasureUnitSelect) {
+      const measureSession = state.dxfMeasureSession;
+      const unitStatus = measureSession ? dxfMeasureUnitStatus(measureSession) : null;
+      el.dxfMeasureUnitSelect.disabled = !measureSession;
+      el.dxfMeasureUnitSelect.title = measureSession
+        ? 'The unit the DXF file\'s own coordinates are in'
+        : 'Import a DXF file first';
+      if (measureSession && document.activeElement !== el.dxfMeasureUnitSelect) {
+        // A file-declared ft/m/us-ft has no matching option; leave the
+        // select showing its current value — the note names the real unit.
+        if (['in', 'mm', 'cm'].includes(unitStatus.key)) el.dxfMeasureUnitSelect.value = unitStatus.key;
+      }
+      if (el.dxfMeasureUnitNote) {
+        el.dxfMeasureUnitNote.textContent = unitStatus
+          ? unitStatus.key + ' — ' + unitStatus.provenance
+          : '';
+      }
     }
     el.toggleLabelsBtn.textContent = state.showLabels ? 'Hide Numbers' : 'Show Numbers';
     el.toggleLabelsBtn.classList.toggle('active', !state.showLabels);
@@ -44737,6 +45040,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
               pieceCount: session.pieces.length,
               pieceSegmentCounts: session.pieces.map(p => p.segments.length),
               source: clone(session.source),
+              // ADR 0073: the TD's unit override + the resolved status the
+              // UI note/status chip renders from.
+              unitOverride: session.unitOverride || null,
+              unitStatus: (typeof dxfMeasureUnitStatus === 'function') ? clone(dxfMeasureUnitStatus(session)) : null,
               topologyToleranceNative: session.topologyToleranceNative,
               measurementCount: session.measurements.length,
               measurements: clone(session.measurements),
@@ -44829,6 +45136,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           },
           deleteMeasurement: (id) => (typeof dxfMeasureDeleteMeasurement === 'function'
             ? dxfMeasureDeleteMeasurement(state.dxfMeasureSession, id) : false),
+          // ADR 0073: the TD unit override — same function the real
+          // #dxfMeasureUnitSelect change handler calls.
+          setUnitOverride: (key) => (typeof dxfMeasureSetUnitOverride === 'function'
+            ? dxfMeasureSetUnitOverride(state.dxfMeasureSession, key) : false),
           undo: () => (typeof dxfMeasureUndo === 'function' ? dxfMeasureUndo() : false),
           redo: () => (typeof dxfMeasureRedo === 'function' ? dxfMeasureRedo() : false),
         },

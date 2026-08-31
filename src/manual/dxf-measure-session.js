@@ -146,6 +146,12 @@
       pieceBounds: nativeModel.pieces.map(piece => dxfBoundsOfSegments(piece.segments)),
       pieceAnchors,
       transforms: { bounds: clone(bounds), placement: clone(transform) },
+      // ADR 0073: the TD's explicit "this file's native unit is …" choice
+      // ('in' | 'mm' | 'cm', null = trust source.unit). Session-level display
+      // setting, deliberately OUTSIDE the measure-undo fingerprint (see
+      // dxfMeasureSnapshot) — undoing a measurement must not silently revert
+      // a unit correction.
+      unitOverride: null,
       measurements: [],
       interaction: null,
       selectedMeasurementId: null,
@@ -359,11 +365,73 @@
     return true;
   }
 
+  // ---- Units (ADR 0073) --------------------------------------------------------
+
+  // Real factory files routinely omit $INSUNITS (or set it to 0, "Unitless")
+  // while being authored in mm — the parser's inch default is a GUESS
+  // (findings-dxf.md Finding 2). These three functions make that guess
+  // visible and correctable: the effective native→inch factor is the TD's
+  // explicit override when set, else the parser's resolution.
+  function dxfMeasureUnitKeyFactor(key) {
+    if (key === 'mm') return 1 / 25.4;
+    if (key === 'cm') return 1 / 2.54;
+    if (key === 'in') return 1;
+    return null;
+  }
+
+  function dxfMeasureEffectiveUnitFactor(session) {
+    if (!session) return null;
+    const overrideFactor = dxfMeasureUnitKeyFactor(session.unitOverride);
+    return overrideFactor != null ? overrideFactor : session.source.unit;
+  }
+
+  // Changing the unit changes the RB-4 topology tolerance too (0.01mm
+  // expressed in native units — see makeDxfMeasureSession) so future route
+  // enumeration stays inside the kernel's mm budget under the corrected
+  // unit. Existing measurements need no touch: values are converted on
+  // demand from stored native lengths, so every displayed number updates on
+  // the next paint.
+  function dxfMeasureSetUnitOverride(session, key) {
+    if (!session) return false;
+    const normalized = dxfMeasureUnitKeyFactor(key) != null ? key : null;
+    if (session.unitOverride === normalized) return false;
+    session.unitOverride = normalized;
+    session.topologyToleranceNative = 0.01 / (25.4 * (dxfMeasureEffectiveUnitFactor(session) || 1));
+    if (typeof updateUI === 'function') updateUI();
+    if (typeof requestRender === 'function') requestRender();
+    return true;
+  }
+
+  // The unit key + provenance the UI shows. Three DISTINCT non-override
+  // states, per the kernel's RB-4 comment: "no header" (default-inch) and
+  // "explicit but unrecognized code" (unsupported-explicit-unit) must never
+  // be folded into one "assumed" — the second names the code so a TD can
+  // tell the file DID declare something.
+  function dxfMeasureUnitStatus(session) {
+    if (!session) return null;
+    if (session.unitOverride) {
+      return { key: session.unitOverride, provenance: 'set by you' };
+    }
+    const source = session.source;
+    if (source.unitSource === 'dxf-header') {
+      // Name the declared unit by its $INSUNITS code; the header can
+      // legitimately declare units the override select doesn't offer
+      // (ft, m, US survey ft), so this maps the code, not the option list.
+      const names = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm', 21: 'us-ft' };
+      return { key: names[source.insunits] || 'in', provenance: 'from file' };
+    }
+    if (source.unitSource === 'unsupported-explicit-unit') {
+      const code = source.unitDiagnostic && source.unitDiagnostic.code;
+      return { key: 'in', provenance: 'assumed — file declares unsupported unit code ' + (code != null ? code : '?') };
+    }
+    return { key: 'in', provenance: 'assumed — file didn\'t declare units' };
+  }
+
   // ---- Value / formatting -----------------------------------------------------
 
   function dxfMeasureValueInches(session, measurement) {
     if (!session || !measurement) return null;
-    const factor = session.source.unit;
+    const factor = dxfMeasureEffectiveUnitFactor(session);
     let nativeLength = null;
     if (measurement.mode === 'out-of-path') {
       nativeLength = dxfDirectDistance(measurement.a.native, measurement.b.native);
