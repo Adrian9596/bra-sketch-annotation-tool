@@ -28446,6 +28446,19 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       toolText = 'Add Point – Click the selected curve to add a bend point there. <span class="kbd">Alt</span> while dragging a handle moves it alone.';
     } else if (['rectangle','circle','hexagon'].includes(state.tool)) {
       toolText = TOOL_MENU_LABELS[state.tool] + ' – Drag a bounding box. Shift locks ratio; Alt/Option draws from centre.';
+    } else if (dxfMeasureIsActiveTool()) {
+      const measureSession = state.dxfMeasureSession;
+      const modeLabel = measureSession.pendingMode === 'out-of-path' ? 'Out of Path' : 'Along Path';
+      const interaction = measureSession.interaction;
+      if (interaction && interaction.type === 'awaiting-b') {
+        toolText = 'Pattern Measure (' + modeLabel + ') – Click the second point to finish.';
+      } else if (interaction && interaction.type === 'choosing-entity') {
+        toolText = 'Pattern Measure – Multiple entities near your click. <span class="kbd">Tab</span> cycles, <span class="kbd">Enter</span> confirms.';
+      } else if (interaction && interaction.type === 'choosing-route') {
+        toolText = 'Pattern Measure – Choose a route/direction. <span class="kbd">Tab</span> cycles, <span class="kbd">Enter</span> confirms.';
+      } else {
+        toolText = 'Pattern Measure (' + modeLabel + ') – Click the first point on the pattern.';
+      }
     } else {
       toolText = imageCount === 0
         ? 'Eraser – Paste or import an image first, then drag to paint white over unwanted lines.'
