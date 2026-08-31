@@ -101,6 +101,7 @@ async function main() {
   await section6RealFixture(s);
   await section7ViewportZoomMatrix(s);
   await section8InsertBlocksAndUnits(s);
+  await section9PieceEditInvalidation(s);
 
   const errors = await s.eval('window.__dxfMeasureErrors');
   check(Array.isArray(errors) && errors.length === 0, 'no uncaught browser errors: ' + JSON.stringify(errors));
@@ -421,6 +422,126 @@ async function section8InsertBlocksAndUnits(s) {
   check(live.selectDisabled === false && live.selectValueAfter === 'mm' && live.noteText === 'mm — set by you',
     'the real select/note reflect the override, got ' + JSON.stringify({ d: live.selectDisabled, v: live.selectValueAfter, n: live.noteText }));
   console.log('PASS  section 8 (INSERT/BLOCK native resolution + unit provenance/override)');
+}
+
+// ---- Section 9: piece edit invalidation (findings-dxf.md Finding 7) --------
+// Removing or Simplifying a piece from the Pattern Pieces panel must never
+// leave the measure session pointing at deleted or renumbered board
+// geometry — it must invalidate (session -> null), not go stale.
+async function section9PieceEditInvalidation(s) {
+  // Two independent pieces: a plain 2-segment corner (left alone) and a
+  // 4-collinear-segment run (Simplify merges it into 1, changing its
+  // annotation id — exactly the case that used to detach the session).
+  const TWO_PIECE_DXF = doc([
+    dxfLine(0, 0, 0, 50), dxfLine(0, 50, 50, 50),
+    dxfLine(1000, 0, 1100, 0), dxfLine(1100, 0, 1200, 0), dxfLine(1200, 0, 1300, 0), dxfLine(1300, 0, 1400, 0),
+  ]);
+
+  const result = await s.eval(`(async () => {
+    document.getElementById('modeManualBtn').click();
+    const dbg = window.__braAutoModeDebug;
+    // This section runs after 5 prior sections' own imports/fixtures, all
+    // additive in this one continuous browser session — a bare board reset
+    // (empty annotations/images) is required so the count-based row lookups
+    // below can't collide with leftover pieces of the same segment count.
+    const resetBoard = async () => {
+      const p = dbg.exportProject();
+      p.state.annotations = []; p.state.images = [];
+      await dbg.loadProject(p);
+      document.getElementById('modeManualBtn').click();
+      if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    };
+    const importFixture = async (text) => {
+      document.getElementById('toolsMenuBtn').click();
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const input = document.getElementById('dxfImportFileInput');
+      const dt = new DataTransfer();
+      dt.items.add(new File([text], 'twopiece.dxf', { type: 'application/octet-stream' }));
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      for (let i = 0; i < 20; i += 1) await new Promise(r => requestAnimationFrame(r));
+    };
+    const openPanelAndFindRow = (predicate) => {
+      dbg.dxf.patternPieces.open();
+      const rows = Array.from(document.querySelectorAll('#patternPiecesBody .pattern-piece-row'));
+      return rows.find(predicate);
+    };
+
+    // --- Simplify invalidates ---
+    await resetBoard();
+    await importFixture(${JSON.stringify(TWO_PIECE_DXF)});
+    const sessionBeforeSimplify = dbg.dxf.measure.getSession();
+    const groupsBeforeSimplify = dbg.dxf.patternPieces.groups();
+    const annsBeforeSimplify = dbg.getAnnotations().length;
+    const runRow = openPanelAndFindRow(r => parseInt(r.querySelector('.pattern-piece-count').textContent, 10) === 4);
+    const simplifyBtn = runRow ? Array.from(runRow.querySelectorAll('.pattern-piece-mini-btn')).find(b => b.textContent === 'Simplify') : null;
+    if (simplifyBtn) simplifyBtn.click();
+    const sessionAfterSimplify = dbg.dxf.measure.getSession();
+    const annsAfterSimplify = dbg.getAnnotations().length;
+    // Earlier sections' own toasts may still be draining through toast.js's
+    // fair-reading queue (TOAST_MIN_VISIBLE_MS=900) — poll until THIS click's
+    // own toast is the one displayed, same discipline as section 8.
+    let toastAfterSimplify = '';
+    for (let i = 0; i < 30; i += 1) {
+      const t = document.querySelector('.toast');
+      toastAfterSimplify = t ? t.textContent : '';
+      if (toastAfterSimplify.indexOf('Pattern Measure cleared') !== -1 || toastAfterSimplify.indexOf('Simplified') !== -1) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    // --- Remove unchecked invalidates ---
+    await resetBoard();
+    await importFixture(${JSON.stringify(TWO_PIECE_DXF)});
+    const sessionBeforeRemove = dbg.dxf.measure.getSession();
+    const rowToRemove = openPanelAndFindRow(r => parseInt(r.querySelector('.pattern-piece-count').textContent, 10) === 4);
+    rowToRemove.querySelector('.pattern-piece-checkbox').click();
+    document.getElementById('patternPiecesApplyBtn').click();
+    const sessionAfterRemove = dbg.dxf.measure.getSession();
+    let toastAfterRemove = '';
+    for (let i = 0; i < 20; i += 1) {
+      const t = document.querySelector('.toast');
+      toastAfterRemove = t ? t.textContent : '';
+      if (toastAfterRemove.indexOf('Pattern Measure cleared') !== -1) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    // --- Control: removing a piece with NO active session stays quiet ---
+    await resetBoard();
+    await importFixture(${JSON.stringify(TWO_PIECE_DXF)});
+    // Switch to Auto Mode and back to Manual to clear the session (US-105's
+    // existing mode-switch reset) before touching Pattern Pieces again.
+    document.getElementById('modeAutoBtn').click();
+    document.getElementById('modeManualBtn').click();
+    const sessionAlreadyNull = dbg.dxf.measure.getSession();
+    const quietRow = openPanelAndFindRow(r => parseInt(r.querySelector('.pattern-piece-count').textContent, 10) === 2);
+    quietRow.querySelector('.pattern-piece-checkbox').click();
+    document.getElementById('patternPiecesApplyBtn').click();
+    let toastAfterQuietRemove = '';
+    for (let i = 0; i < 30; i += 1) {
+      const t = document.querySelector('.toast');
+      toastAfterQuietRemove = t ? t.textContent : '';
+      if (toastAfterQuietRemove.indexOf('Removed') !== -1) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    return {
+      sessionBeforeSimplify: !!sessionBeforeSimplify, sessionAfterSimplify, toastAfterSimplify,
+      groupsBeforeSimplify, annsBeforeSimplify, annsAfterSimplify, foundRunRow: !!runRow, foundSimplifyBtn: !!simplifyBtn,
+      sessionBeforeRemove: !!sessionBeforeRemove, sessionAfterRemove, toastAfterRemove,
+      sessionAlreadyNull, toastAfterQuietRemove,
+    };
+  })()`);
+
+  check(result.sessionBeforeSimplify === true, 'a fresh 2-piece import has a live measure session before Simplify');
+  check(result.sessionAfterSimplify === null, 'Simplify invalidates the measure session, got ' + JSON.stringify(result.sessionAfterSimplify)
+    + ' diag=' + JSON.stringify({ groups: result.groupsBeforeSimplify, annsBefore: result.annsBeforeSimplify, annsAfter: result.annsAfterSimplify, foundRunRow: result.foundRunRow, foundSimplifyBtn: result.foundSimplifyBtn }));
+  check(result.toastAfterSimplify.indexOf('Pattern Measure cleared') !== -1, 'Simplify shows the invalidation toast, got "' + result.toastAfterSimplify + '"');
+  check(result.sessionBeforeRemove === true, 'a fresh 2-piece import has a live measure session before Remove');
+  check(result.sessionAfterRemove === null, 'Remove unchecked invalidates the measure session, got ' + JSON.stringify(result.sessionAfterRemove));
+  check(result.toastAfterRemove.indexOf('Pattern Measure cleared') !== -1, 'Remove unchecked shows the invalidation toast, got "' + result.toastAfterRemove + '"');
+  check(result.sessionAlreadyNull === null, 'control: mode-switch already cleared the session before this Remove');
+  check(result.toastAfterQuietRemove.indexOf('Pattern Measure cleared') === -1, 'control: removing a piece with no active session stays quiet, got "' + result.toastAfterQuietRemove + '"');
+  console.log('PASS  section 9 (piece-edit invalidation — Finding 7)');
 }
 
 // ---- Section 1: pure kernel unit tests -------------------------------------

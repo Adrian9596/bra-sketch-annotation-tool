@@ -18773,6 +18773,14 @@ const BOM_MATERIAL_LIBRARY = [
       state.annotations.push(replacement);
       removed += run.sourceIds.size - 1;
     }
+    // findings-dxf.md Finding 7: a merged run can consume the piece's
+    // measure-session anchor annotation id, silently detaching the Pattern
+    // Measure overlay from the piece's real position (dxfMeasureCurrentPieceOffset
+    // falls back to {0,0} for a missing anchor rather than flagging it stale).
+    // Placed here (not the caller) so any future caller of this mutator —
+    // debug hook included — gets the same guarantee removePatternPieceGroups
+    // already has.
+    if (typeof dxfMeasureInvalidateOnPieceEdit === 'function') dxfMeasureInvalidateOnPieceEdit();
     return { chains: runs.length, removed };
   }
 
@@ -18868,6 +18876,9 @@ const BOM_MATERIAL_LIBRARY = [
     state.selectedAnnotationIds = (state.selectedAnnotationIds || [])
       .filter(id => state.annotations.some(a => a.id === id));
     if (kill.has(state.templateGroupEditId)) state.templateGroupEditId = null;
+    // findings-dxf.md Finding 7: a removed piece must not stay measurable at
+    // its old, now-invisible position.
+    if (typeof dxfMeasureInvalidateOnPieceEdit === 'function') dxfMeasureInvalidateOnPieceEdit();
     pushHistoryIfChanged();
     if (typeof updateUI === 'function') updateUI();
     if (typeof requestRender === 'function') requestRender();
@@ -27859,6 +27870,28 @@ function onWheel(e) {
   // this so no measurement overlay can outlive the geometry it describes.
   function resetDxfMeasureSession() {
     state.dxfMeasureSession = null;
+  }
+
+  // findings-dxf.md Finding 7: Pattern Pieces panel mutations (Remove
+  // unchecked, Simplify) rewrite `state.annotations` — the board geometry the
+  // session's `pieceAnchors`/board-group ids were built against — without
+  // touching `state.dxfMeasureSession` at all. Left alone, that lets the
+  // session point at deleted geometry (a removed piece stays hit-testable and
+  // measurable at its old position) or silently detach from moved geometry
+  // (a Simplify-replaced anchor annotation makes `dxfMeasureCurrentPieceOffset`
+  // fall back to {0,0} instead of tracking the piece). Per the cross-cutting
+  // note this story left open: either remap the session or invalidate it —
+  // remapping would need every piece's native segments re-associated with
+  // whatever new/renumbered annotation ids resulted from an arbitrary,
+  // TD-driven structural edit, which is exactly the kind of ad hoc
+  // re-derivation ADR 0062 keeps this session simple by avoiding. Invalidating
+  // is the safe choice: a fresh DXF import (or Undo, which restores the prior
+  // annotations) is already how a TD gets a session in the first place, so
+  // losing it here costs a re-import, not lost work.
+  function dxfMeasureInvalidateOnPieceEdit() {
+    if (!state.dxfMeasureSession) return;
+    resetDxfMeasureSession();
+    showToast('Pattern Measure cleared — this piece edit changed the board geometry it was reading. Re-import the DXF to measure again.');
   }
 
   // ---- Hit-testing a board click against native geometry --------------------

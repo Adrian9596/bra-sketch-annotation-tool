@@ -89,6 +89,9 @@
     state.selectedAnnotationIds = (state.selectedAnnotationIds || [])
       .filter(id => state.annotations.some(a => a.id === id));
     if (kill.has(state.templateGroupEditId)) state.templateGroupEditId = null;
+    // findings-dxf.md Finding 7: a removed piece must not stay measurable at
+    // its old, now-invisible position.
+    if (typeof dxfMeasureInvalidateOnPieceEdit === 'function') dxfMeasureInvalidateOnPieceEdit();
     pushHistoryIfChanged();
     if (typeof updateUI === 'function') updateUI();
     if (typeof requestRender === 'function') requestRender();

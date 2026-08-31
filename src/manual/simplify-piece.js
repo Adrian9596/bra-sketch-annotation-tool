@@ -106,5 +106,13 @@
       state.annotations.push(replacement);
       removed += run.sourceIds.size - 1;
     }
+    // findings-dxf.md Finding 7: a merged run can consume the piece's
+    // measure-session anchor annotation id, silently detaching the Pattern
+    // Measure overlay from the piece's real position (dxfMeasureCurrentPieceOffset
+    // falls back to {0,0} for a missing anchor rather than flagging it stale).
+    // Placed here (not the caller) so any future caller of this mutator —
+    // debug hook included — gets the same guarantee removePatternPieceGroups
+    // already has.
+    if (typeof dxfMeasureInvalidateOnPieceEdit === 'function') dxfMeasureInvalidateOnPieceEdit();
     return { chains: runs.length, removed };
   }
