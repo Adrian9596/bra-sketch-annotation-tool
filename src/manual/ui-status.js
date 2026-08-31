@@ -93,6 +93,7 @@
     const soloAnnotationSelected = !!selectedAnnotation && !scaleGroupSelected;
     const selectedImage = getSelectedImage();
     const selectedNote = getSelectedNote();
+    const selectedNotch = getSelectedNotch();
     const selectedGraphic = getSelectedBoardGraphic();
     const noteContext = !!selectedNote || state.tool === 'text';
     el.lineStyleControl.hidden = state.tool === 'eraser' || noteContext;
@@ -169,6 +170,8 @@
     let lengthChipHtml = '';
     if (state.tool === 'text') {
       toolText = 'Text – Click the board to write a note. New notes use the active Note appearance and colours. <span class="kbd">Enter</span> makes a new line; <span class="kbd">⌘/Ctrl</span>+<span class="kbd">Enter</span> or a click on the board finishes it.';
+    } else if (state.tool === 'notch') {
+      toolText = 'Notch – Click near a line to place a small perpendicular notch mark there. <span class="kbd">Esc</span> returns to Select.';
     } else if (state.tool === 'stamp') {
       const stamp = (typeof getActiveShapeStamp === 'function') ? getActiveShapeStamp() : null;
       toolText = stamp
@@ -181,10 +184,20 @@
         toolText = selectedNote.leaders && selectedNote.leaders.length
           ? 'Select – Drag the note, its right-edge width handle, or an arrow tip; double-click a tip to remove that arrow, double-click the text to edit it, <span class="kbd">⌫</span> deletes the note.'
           : 'Select – Drag the note to move it, drag the right-edge handle to change wrap width, drag <strong>+</strong> to add an arrow, double-click to edit the text, <span class="kbd">⌫</span> deletes it.';
+      } else if (selectedNotch) {
+        // v1 has no drag (ADR 0071) — delete and re-place is the only edit.
+        toolText = 'Select – This notch has no drag yet; <span class="kbd">⌫</span> deletes it and place a new one where you meant.';
       } else if (selectedAnnotation) {
-        toolText = 'Select – Drag line, endpoints, curve shape handle, or label. Smart Align is '
-          + (state.smartAlignEnabled ? 'on; hold <span class="kbd">Alt/Option</span> to bypass it. ' : 'off. ')
-          + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
+        // Mirrors the selectedGraphic branch below: state.templateGroupEditId
+        // means dragging THIS line moves only it, not the whole piece — the
+        // exact "move piece only moves one segment" confusion a TD hits with
+        // no visible cue otherwise (the toast from entering this mode fades).
+        toolText = (state.templateGroupEditId != null && state.templateGroupEditId === selectedAnnotation.templateGroupId)
+          ? 'Editing one line of this piece – dragging moves just this line. Click another line in it to switch, or '
+            + '<span class="kbd">Esc</span> to select the whole piece again.'
+          : 'Select – Drag line, endpoints, curve shape handle, or label. Smart Align is '
+            + (state.smartAlignEnabled ? 'on; hold <span class="kbd">Alt/Option</span> to bypass it. ' : 'off. ')
+            + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
         lengthChipHtml = sketchSelectionLengthReadout();
       } else if (selectedGraphic) {
         toolText = state.graphicEdit

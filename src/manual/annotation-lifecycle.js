@@ -94,6 +94,13 @@
       const before = (state.notes || []).length;
       state.notes = (state.notes || []).filter(note => note.id !== state.selection.id);
       if (state.notes.length === before) return;
+    } else if (state.selection.kind === 'notch') {
+      // ADR-0071: same reasoning as the note branch above — a notch is a
+      // pattern-construction mark, not a measurement, so it needs no
+      // deletedPomKeys/evidence bookkeeping either.
+      const before = (state.notches || []).length;
+      state.notches = (state.notches || []).filter(notch => notch.id !== state.selection.id);
+      if (state.notches.length === before) return;
     } else if (state.selection.kind === 'graphic') {
       const before = (state.graphics || []).length;
       state.graphics = (state.graphics || []).filter(graphic => graphic.id !== state.selection.id);

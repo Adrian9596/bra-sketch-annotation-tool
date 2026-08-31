@@ -156,6 +156,8 @@
 
       state.annotations = clone(s.annotations || []);
       state.annotations.forEach(ensureCurveControls);
+      // ADR 0071: additive — a file saved before this existed has no key.
+      state.notches = Array.isArray(s.notches) ? s.notches.map(normalizeNotch).filter(Boolean) : [];
       // ADR 0070: additive — a file saved before this existed has no key.
       state.templateGroupLabels = (s.templateGroupLabels && typeof s.templateGroupLabels === 'object')
         ? clone(s.templateGroupLabels) : {};

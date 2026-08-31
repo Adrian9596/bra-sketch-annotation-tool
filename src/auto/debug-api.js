@@ -105,6 +105,8 @@
         };
       },
       getAnnotations: () => clone(state.annotations),
+      // ADR 0071.
+      getNotches: () => clone(state.notches || []),
       // US-095 focused browser proof. The mutation seams call the same model
       // functions as the toolbar/pointer paths and keep measurement state out.
       getGraphics: () => clone(state.graphics || []),
@@ -349,6 +351,8 @@
         patternPieces: {
           groups: () => (typeof patternPieceGroups === 'function' ? clone(patternPieceGroups()) : null),
           remove: (groupIds) => { if (typeof removePatternPieceGroups === 'function') removePatternPieceGroups(groupIds); },
+          // ADR 0072.
+          simplify: (groupId) => (typeof simplifyPieceGroup === 'function' ? clone(simplifyPieceGroup(groupId)) : null),
           isOpen: () => (typeof isPatternPiecesPanelOpen === 'function' ? isPatternPiecesPanelOpen() : null),
           open: () => { if (typeof openPatternPiecesPanel === 'function') openPatternPiecesPanel(); },
           close: () => { if (typeof closePatternPiecesPanel === 'function') closePatternPiecesPanel(); },

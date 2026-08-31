@@ -13,6 +13,8 @@
       savedAt: new Date().toISOString(),
       state: {
         annotations: clone(state.annotations),
+        // ADR 0071: additive — files saved before this existed have no key.
+        notches: clone(state.notches || []),
         // ADR 0070: sparse groupId -> label map (DXF block names). Additive —
         // files saved before this existed have no key and default to {}.
         templateGroupLabels: clone(state.templateGroupLabels || {}),

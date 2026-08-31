@@ -1527,6 +1527,247 @@ window.__DXF = (() => {
   check(patternPieces.afterDomRemoveLen === 1,
     `unchecking one row and clicking "Remove unchecked" through the REAL DOM (not the debug hook) must remove exactly that piece, got ${patternPieces.afterDomRemoveLen} annotations left`);
 
+  // ===========================================================================
+  // 13. TD-reported bug: "Move piece only moves one segment." Double-clicking
+  //     a piece member enters templateGroupEditId (per-member edit) with no
+  //     keyboard exit before this fix — a TD who forgot they were in it would
+  //     drag one line expecting the whole piece to move. Escape now exits it
+  //     (mirrors bgExitEdit's own Escape priority), and the tool-status text
+  //     names the mode so it isn't silently forgotten once the entry toast
+  //     fades.
+  // ===========================================================================
+
+  const memberEdit = await s.eval(`(async () => {
+    const h = window.__DXF, d = window.__braAutoModeDebug;
+    await d.loadProject(await (async () => {
+      const p = d.exportProject(); p.state.annotations = []; p.state.images = []; return p;
+    })());
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+
+    await h.importViaRealInput(${JSON.stringify(doc([dxfChain(3, 100)]))});
+    const anns = d.getAnnotations();
+    const groupId = anns[0].templateGroupId;
+    const mid = (a) => ({ x: (a.start.x + a.end.x) / 2, y: (a.start.y + a.end.y) / 2 });
+    const middle = anns[1]; // the shared-interior segment of the 3-piece chain
+    const midPt = mid(middle);
+
+    await h.click(-9999, -9999);
+    await h.click(midPt.x, midPt.y);
+    const wholeGroupSelected = d.getState().selectedAnnotationIds.length;
+
+    h.mouse('mousedown', midPt.x, midPt.y);
+    h.mouse('mouseup', midPt.x, midPt.y);
+    h.mouse('dblclick', midPt.x, midPt.y);
+    await h.settle();
+    const editIdAfterDblclick = d.getState().templateGroupEditId;
+    const soloSelectedAfterDblclick = d.getState().selectedAnnotationIds.length;
+    const statusDuringEdit = document.getElementById('toolStatus').textContent;
+
+    const beforeStuckDrag = d.getAnnotations().map(a => ({ id: a.id, start: a.start, end: a.end }));
+    await h.drag(midPt.x, midPt.y, 30, 30);
+    const afterStuckDrag = d.getAnnotations().map(a => ({ id: a.id, start: a.start, end: a.end }));
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await h.settle();
+    const editIdAfterEscape = d.getState().templateGroupEditId;
+    const selectedAfterEscape = d.getState().selectedAnnotationIds.slice().sort();
+    const statusAfterEscape = document.getElementById('toolStatus').textContent;
+
+    // The stuck drag above physically moved segment[1] away from midPt (that
+    // was the bug) — dragging from midPt again would now miss it entirely.
+    // segment[0] never moved, so its CURRENT midpoint is still a real point
+    // on the piece; the whole-piece-selection contract this proves does not
+    // care which member the drag starts from.
+    const first = d.getAnnotations().find(a => a.id === anns[0].id);
+    const freshMidPt = mid(first);
+    const beforeWholeDrag = d.getAnnotations().map(a => ({ id: a.id, start: a.start, end: a.end }));
+    await h.drag(freshMidPt.x, freshMidPt.y, -20, 15);
+    const afterWholeDrag = d.getAnnotations().map(a => ({ id: a.id, start: a.start, end: a.end }));
+
+    return {
+      groupId, wholeGroupSelected, editIdAfterDblclick, soloSelectedAfterDblclick, statusDuringEdit,
+      beforeStuckDrag, afterStuckDrag, editIdAfterEscape, selectedAfterEscape, statusAfterEscape,
+      allIds: anns.map(a => a.id).sort(), beforeWholeDrag, afterWholeDrag,
+    };
+  })()`);
+
+  check(memberEdit.wholeGroupSelected === 3, `precondition: a plain click on a 3-segment chain piece must select the whole group, got ${memberEdit.wholeGroupSelected}`);
+  check(memberEdit.editIdAfterDblclick === memberEdit.groupId && memberEdit.soloSelectedAfterDblclick === 1,
+    `double-clicking a piece member must enter templateGroupEditId and narrow to a solo selection, got ${JSON.stringify({ editId: memberEdit.editIdAfterDblclick, solo: memberEdit.soloSelectedAfterDblclick })}`);
+  check(/editing one line of this piece/i.test(memberEdit.statusDuringEdit) && /Esc/.test(memberEdit.statusDuringEdit),
+    `the tool-status sentence must name member-edit mode and mention Esc while it is active, got ${JSON.stringify(memberEdit.statusDuringEdit)}`);
+  {
+    const movedIds = memberEdit.afterStuckDrag.filter(a => {
+      const b = memberEdit.beforeStuckDrag.find(x => x.id === a.id);
+      return Math.abs(a.start.x - b.start.x) > 0.5 || Math.abs(a.start.y - b.start.y) > 0.5;
+    }).map(a => a.id);
+    check(movedIds.length === 1,
+      `reproduces the TD-reported bug: dragging while stuck in member-edit mode must move exactly ONE segment, not the whole piece, got moved=${JSON.stringify(movedIds)}`);
+  }
+  check(memberEdit.editIdAfterEscape === null,
+    `Escape must clear templateGroupEditId, got ${memberEdit.editIdAfterEscape}`);
+  check(JSON.stringify(memberEdit.selectedAfterEscape) === JSON.stringify(memberEdit.allIds),
+    `Escape must re-select the WHOLE piece (the fix's actual payoff), got ${JSON.stringify(memberEdit.selectedAfterEscape)} vs all ids ${JSON.stringify(memberEdit.allIds)}`);
+  check(!/editing one line of this piece/i.test(memberEdit.statusAfterEscape),
+    `the tool-status sentence must return to the normal Select text once member-edit mode is exited, got ${JSON.stringify(memberEdit.statusAfterEscape)}`);
+  for (const b of memberEdit.beforeWholeDrag) {
+    const a = memberEdit.afterWholeDrag.find(x => x.id === b.id);
+    check(Math.abs((a.start.x - b.start.x) + 20) < 0.5 && Math.abs((a.start.y - b.start.y) - 15) < 0.5,
+      `the fix's payoff: after Escape, dragging must move EVERY segment of the piece by the same delta, id=${b.id} moved by (${a.start.x - b.start.x}, ${a.start.y - b.start.y})`);
+  }
+
+  // ===========================================================================
+  // 14. ADR 0071: the Notch tool. Click near a piece's outline to drop a small
+  //     perpendicular tick mark there — a garment-pattern alignment notch.
+  //     Driven through the REAL Tools-menu button and real mouse/keyboard
+  //     dispatch throughout, not the internal placeNotchAt function directly.
+  // ===========================================================================
+
+  const notchTool = await s.eval(`(async () => {
+    const h = window.__DXF, d = window.__braAutoModeDebug;
+    await d.loadProject(await (async () => {
+      const p = d.exportProject(); p.state.annotations = []; p.state.images = []; return p;
+    })());
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+
+    // A single horizontal LINE piece — its tangent is along X, so the notch
+    // perpendicular must land along Y (angle near ±90°), an easy exact check.
+    await h.importViaRealInput(${JSON.stringify(doc([dxfLine(0, 0, 200, 0)]))});
+    const line = d.getAnnotations()[0];
+    const mid = { x: (line.start.x + line.end.x) / 2, y: (line.start.y + line.end.y) / 2 };
+
+    document.getElementById('toolsMenuBtn').click();
+    document.getElementById('notchToolBtn').click();
+    const toolAfterArm = d.getState().tool;
+
+    await h.click(mid.x, mid.y);
+    const afterPlace = { notches: d.getNotches(), tool: d.getState().tool, selection: d.getState().selection };
+
+    // Far from any line: no notch, no crash — just a toast.
+    await h.click(mid.x, mid.y - 5000);
+    const afterMiss = d.getNotches().length;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    const toolAfterEscape = d.getState().tool;
+
+    const placed = afterPlace.notches[0];
+    await h.click(placed.x, placed.y);
+    const selectionAfterClick = d.getState().selection;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    const afterDelete = d.getNotches().length;
+
+    document.getElementById('undoBtn').click();
+    const afterUndo = d.getNotches();
+
+    const exported = d.exportProject();
+    await d.loadProject(exported);
+    const afterReload = d.getNotches();
+
+    return { toolAfterArm, afterPlace, mid, afterMiss, toolAfterEscape, placed, selectionAfterClick, afterDelete, afterUndo, afterReload };
+  })()`);
+
+  check(notchTool.toolAfterArm === 'notch', `clicking the Tools-menu Notch button must arm state.tool='notch', got ${notchTool.toolAfterArm}`);
+  check(notchTool.afterPlace.notches.length === 1, `clicking near the line must place exactly one notch, got ${notchTool.afterPlace.notches.length}`);
+  check(Math.hypot(notchTool.afterPlace.notches[0].x - notchTool.mid.x, notchTool.afterPlace.notches[0].y - notchTool.mid.y) < 1,
+    `the notch must land at the nearest point on the line (the click's own midpoint here), got ${JSON.stringify(notchTool.afterPlace.notches[0])} vs mid ${JSON.stringify(notchTool.mid)}`);
+  {
+    const deg = Math.abs((notchTool.afterPlace.notches[0].angle * 180 / Math.PI) % 180);
+    check(Math.abs(deg - 90) < 1, `a notch on a horizontal line must point perpendicular to it (~90°), got ${deg}°`);
+  }
+  check(notchTool.afterPlace.tool === 'notch', 'the Notch tool must stay armed after placing one (like Text/drawing tools), not revert to Select');
+  check(notchTool.afterPlace.selection.kind === 'notch' && notchTool.afterPlace.selection.id === notchTool.afterPlace.notches[0].id,
+    `placing a notch must select it, got ${JSON.stringify(notchTool.afterPlace.selection)}`);
+  check(notchTool.afterMiss === 1, `clicking 5000 units from any line must place NO notch (still just the first one), got ${notchTool.afterMiss}`);
+  check(notchTool.toolAfterEscape === 'select', `Escape must exit the Notch tool back to Select, got ${notchTool.toolAfterEscape}`);
+  check(notchTool.selectionAfterClick.kind === 'notch' && notchTool.selectionAfterClick.id === notchTool.placed.id,
+    `clicking an existing notch with the Select tool must select it, got ${JSON.stringify(notchTool.selectionAfterClick)}`);
+  check(notchTool.afterDelete === 0, `Delete with a notch selected must remove it, got ${notchTool.afterDelete} left`);
+  check(notchTool.afterUndo.length === 1 && notchTool.afterUndo[0].id === notchTool.placed.id,
+    `Undo must restore the deleted notch (history.js makeSnapshot/restoreSnapshot), got ${JSON.stringify(notchTool.afterUndo)}`);
+  check(notchTool.afterReload.length === 1 && notchTool.afterReload[0].id === notchTool.placed.id,
+    `state.notches must round-trip through exportProject/loadProject, got ${JSON.stringify(notchTool.afterReload)}`);
+
+  // ===========================================================================
+  // 15. ADR 0072: "Simplify" a piece's redundant collinear points — a TD
+  //     reported many unnecessary points left over after DXF import. Merges
+  //     runs of near-perfectly-collinear straight segments into one; a real
+  //     corner (a genuine angle change) always stays a separate segment.
+  // ===========================================================================
+
+  const simplify = await s.eval(`(async () => {
+    const h = window.__DXF, d = window.__braAutoModeDebug;
+    await d.loadProject(await (async () => {
+      const p = d.exportProject(); p.state.annotations = []; p.state.images = []; return p;
+    })());
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+
+    // 5 collinear segments along y=0 from x=0 to x=500, then a real 90°
+    // corner up to (500, 100) — the corner must survive as its own segment.
+    await h.importViaRealInput(${JSON.stringify(doc([
+      dxfLine(0, 0, 100, 0), dxfLine(100, 0, 200, 0), dxfLine(200, 0, 300, 0),
+      dxfLine(300, 0, 400, 0), dxfLine(400, 0, 500, 0), dxfLine(500, 0, 500, 100),
+    ]))});
+    const before = d.getAnnotations();
+    const groupId = before[0].templateGroupId;
+    const runResult = d.dxf.patternPieces.simplify(groupId);
+    const after = d.getAnnotations();
+
+    // A no-op case: a single straight line has nothing to merge.
+    await d.loadProject(await (async () => {
+      const p = d.exportProject(); p.state.annotations = []; p.state.images = []; return p;
+    })());
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    await h.importViaRealInput(${JSON.stringify(doc([dxfLine(0, 0, 10, 0)]))});
+    const soloBefore = d.getAnnotations();
+    const soloGroupId = soloBefore[0].templateGroupId;
+    const noopResult = d.dxf.patternPieces.simplify(soloGroupId);
+    const soloAfter = d.getAnnotations();
+
+    // Real DOM: open the panel, click THIS row's Simplify button.
+    await d.loadProject(await (async () => {
+      const p = d.exportProject(); p.state.annotations = []; p.state.images = []; return p;
+    })());
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    await h.importViaRealInput(${JSON.stringify(doc([
+      dxfLine(0, 0, 100, 0), dxfLine(100, 0, 200, 0), dxfLine(200, 0, 500, 0),
+    ]))});
+    d.dxf.patternPieces.open();
+    const rowsBefore = Array.from(document.querySelectorAll('#patternPiecesBody .pattern-piece-row'));
+    const simplifyBtn = Array.from(rowsBefore[0].querySelectorAll('.pattern-piece-mini-btn')).find(b => b.textContent === 'Simplify');
+    simplifyBtn.click();
+    const annsAfterDomClick = d.getAnnotations();
+
+    return { before, runResult, after, noopResult, soloBefore, soloAfter, annsAfterDomClick };
+  })()`);
+
+  check(simplify.runResult.chains === 1 && simplify.runResult.removed === 4,
+    `5 collinear segments must merge into 1 run (removing 4 annotations), got ${JSON.stringify(simplify.runResult)}`);
+  check(simplify.after.length === 2, `the piece must end with exactly 2 annotations (the merged run + the untouched corner), got ${simplify.after.length}`);
+  {
+    const merged = simplify.after.find(a => Math.abs(a.start.y - a.end.y) < 0.01 && Math.abs(a.start.x - a.end.x) > 400);
+    check(!!merged, `the merged annotation must span the full collinear run, got ${JSON.stringify(simplify.after)}`);
+    const firstStart = simplify.before[0].start, lastOfRunEnd = simplify.before[4].end;
+    check(Math.hypot(merged.start.x - firstStart.x, merged.start.y - firstStart.y) < 0.5
+      && Math.hypot(merged.end.x - lastOfRunEnd.x, merged.end.y - lastOfRunEnd.y) < 0.5,
+      `the merged annotation's endpoints must exactly match the run's true first start and last end, got ${JSON.stringify(merged)} vs expected start ${JSON.stringify(firstStart)} end ${JSON.stringify(lastOfRunEnd)}`);
+    const corner = simplify.before[5];
+    const cornerStill = simplify.after.find(a => Math.hypot(a.start.x - corner.start.x, a.start.y - corner.start.y) < 0.5
+      && Math.hypot(a.end.x - corner.end.x, a.end.y - corner.end.y) < 0.5);
+    check(!!cornerStill, `the real 90° corner segment must survive completely untouched, got ${JSON.stringify(simplify.after)}`);
+  }
+  check(simplify.noopResult.chains === 0 && simplify.noopResult.removed === 0,
+    `a single-segment piece has nothing to merge, got ${JSON.stringify(simplify.noopResult)}`);
+  check(simplify.soloAfter.length === simplify.soloBefore.length,
+    'a no-op simplify must leave the annotation count unchanged');
+  check(simplify.annsAfterDomClick.length === 1,
+    `clicking the REAL "Simplify" button in the Pattern Pieces panel must merge the 3-segment collinear piece down to 1 annotation, got ${simplify.annsAfterDomClick.length}`);
+
   const errors = await s.eval('window.__dxfErrors || []');
   check(errors.length === 0, 'browser console errors: ' + errors.join(' | '));
   await s.close();

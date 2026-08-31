@@ -68,6 +68,12 @@
     noteTextColor: 'black',
     noteLeaderColor: 'red',
     annotations: [],
+    // ADR 0071: small perpendicular tick marks placed near a line (garment-
+    // pattern alignment notches). Plain WORLD coordinates, like graphics/
+    // notes below — not normalized to an owning image, since a piece can sit
+    // in blank Scratch Area space with nothing to normalize against. Carries
+    // no POM identity; never a measurement (see isMeasurementAnnotation).
+    notches: [],
     // ADR 0070: templateGroupId -> human label (a DXF INSERT's block name,
     // e.g. "CUP_36C"), for the Pattern Pieces panel only. Sparse — only DXF
     // import writes an entry, and only when the source block had a name; a

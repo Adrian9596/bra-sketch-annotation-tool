@@ -156,6 +156,14 @@
       return;
     }
 
+    // ADR 0071: the Notch tool. Same "stays active afterwards" shape as Text
+    // above — a TD marking up a piece needs several notches in a row, not a
+    // trip back to the toolbar after each one.
+    if (state.tool === 'notch') {
+      placeNotchAt(world);
+      return;
+    }
+
     // US-097 / ADR 0056: place a saved shape. Same interaction shape as
     // draw-graphic below — press, drag the box, release — because it is the
     // same gesture and the preview/commit plumbing is already proven.
@@ -288,6 +296,19 @@
       if (noteHit) {
         setSelection('note', noteHit.id);
         startNoteDrag(noteHit.id, world);
+        return;
+      }
+    }
+
+    // ADR 0071: a notch, same priority tier as a note above (a small mark
+    // that would otherwise be indistinguishable from the outline body under
+    // it). v1 has no drag — select it here (Delete removes it) rather than
+    // starting an interaction the rest of the pointer-move pipeline does not
+    // know how to continue.
+    if (!e.shiftKey) {
+      const notchHit = hitTestNotches(world);
+      if (notchHit) {
+        setSelection('notch', notchHit.id);
         return;
       }
     }

@@ -147,6 +147,21 @@
 
       row.appendChild(patternPieceMiniBtn('Select', 'Highlight this piece on the board',
         () => selectPatternPieceGroup(g.ids)));
+      // ADR 0072: merges redundant collinear points within this piece's
+      // straight segments — same outline, fewer annotations. Re-renders
+      // (not just updates the count span) because the merge changes which
+      // annotation ids belong to this row's "Select" button.
+      row.appendChild(patternPieceMiniBtn('Simplify', 'Merge redundant collinear points in this piece’s straight lines — same outline, fewer segments',
+        () => {
+          const result = simplifyPieceGroup(g.groupId);
+          if (!result.chains) { showToast('Nothing to simplify — no redundant collinear points found.'); return; }
+          pushHistoryIfChanged();
+          if (typeof updateUI === 'function') updateUI();
+          if (typeof requestRender === 'function') requestRender();
+          showToast('Simplified ' + result.chains + (result.chains === 1 ? ' run' : ' runs')
+            + ', removed ' + result.removed + (result.removed === 1 ? ' point.' : ' points.'));
+          renderPatternPiecesPanel();
+        }));
       body.appendChild(row);
     }
 

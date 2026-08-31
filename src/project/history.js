@@ -24,6 +24,13 @@
       noteTextColor: state.noteTextColor,
       noteLeaderColor: state.noteLeaderColor,
       annotations: clone(state.annotations),
+      // ADR 0070: without this, undoing a Pattern Pieces "Remove unchecked"
+      // restores the deleted annotations but leaves their block-name labels
+      // gone — the panel would show a positional "Piece N" fallback for a
+      // piece that still has a real name.
+      templateGroupLabels: clone(state.templateGroupLabels || {}),
+      // ADR 0071.
+      notches: clone(state.notches || []),
       graphics: clone(state.graphics || []),
       images: state.images.map(stripImageForSnapshot),
       eraseStrokes: clone(state.eraseStrokes),
@@ -108,6 +115,9 @@
     state.noteLeaderColor = normalizeColorKey(snapshot.noteLeaderColor || 'red');
     state.annotations = clone(snapshot.annotations || []);
     state.annotations.forEach(ensureCurveControls);
+    state.templateGroupLabels = (snapshot.templateGroupLabels && typeof snapshot.templateGroupLabels === 'object')
+      ? clone(snapshot.templateGroupLabels) : {};
+    state.notches = (snapshot.notches || []).map(normalizeNotch).filter(Boolean);
     state.graphics = normalizeBoardGraphics(snapshot.graphics || []);
     state.graphicEdit = null;
     state.eraseStrokes = clone(snapshot.eraseStrokes || []);
@@ -149,6 +159,9 @@
       state.selection = { kind: null, id: null };
     }
     if (state.selection.kind === 'note' && !state.notes.some(n => n.id === state.selection.id)) {
+      state.selection = { kind: null, id: null };
+    }
+    if (state.selection.kind === 'notch' && !state.notches.some(n => n.id === state.selection.id)) {
       state.selection = { kind: null, id: null };
     }
 

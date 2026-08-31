@@ -14,6 +14,8 @@
     el.toolEraser.addEventListener('click', () => setTool('eraser'));
     el.toolText.addEventListener('click', () => setTool('text'));
     el.toolRectangle.addEventListener('click', () => setTool('rectangle'));
+    // ADR 0071.
+    if (el.notchToolBtn) el.notchToolBtn.addEventListener('click', () => setTool('notch'));
     el.toolCircle.addEventListener('click', () => setTool('circle'));
     el.toolHexagon.addEventListener('click', () => setTool('hexagon'));
     if (el.smartAlignToggleBtn) el.smartAlignToggleBtn.addEventListener('click', toggleSmartAlign);

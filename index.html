@@ -3266,6 +3266,13 @@
             <div class="preset-menu-actions sketch-mode-only">
               <button id="patternPiecesBtn" type="button" role="menuitem" title="List every sketch-element piece on the board (e.g. one per grading-nest size) so you can keep only the ones you want">Pattern pieces…</button>
             </div>
+            <!-- ADR 0071: place a small alignment-notch tick on a piece's
+                 outline. Stays armed after each click, like the drawing
+                 tools above — see src/manual/notches.js. -->
+            <div class="preset-divider sketch-mode-only" role="separator">Mark</div>
+            <div class="preset-menu-actions sketch-mode-only">
+              <button id="notchToolBtn" type="button" role="menuitem" title="Click near a line to place a small perpendicular notch mark there">Notch</button>
+            </div>
             <!-- US-104 round 8: "Set Scale" itself is unchanged (still the
                  same #setScaleBtn/#clearScaleBtn handlers, src/ui/bindings.js)
                  — the More menu that houses it is Sketch-Focus-hidden
@@ -3771,6 +3778,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=acc40897024c"></script>
+<script src="app.js?v=2a4e8676a65a"></script>
 </body>
 </html>

@@ -269,6 +269,12 @@
       page: 'board', mode: 'manual', target: '#patternPiecesBtn',
       when: () => state.sketchMode ? true : 'Available in Sketch Focus',
       action: () => appCommandClick('#patternPiecesBtn') }),
+    // ADR 0071: same Sketch-Focus gate as the two commands above — a notch
+    // only ever marks pattern-piece geometry.
+    appCommand({ id: 'board.tool.notch', label: 'Notch Tool', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#notchToolBtn',
+      when: () => state.sketchMode ? true : 'Available in Sketch Focus',
+      action: () => appCommandClick('#notchToolBtn') }),
     // US-107: the unified Library dialog replaces board.presets.open,
     // board.shapes.open, and the old Template-only board.template.open-library
     // with ONE command — Templates, Line Treatments, and saved Projects are

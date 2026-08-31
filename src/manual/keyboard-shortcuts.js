@@ -364,13 +364,27 @@
         // "still deciding what to place" session.
         dxfMeasureCancelInteraction();
       } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'add-point'
-                 || state.tool === 'eraser' || state.tool === 'text'
+                 || state.tool === 'eraser' || state.tool === 'text' || state.tool === 'notch'
                  || state.tool === 'stamp' || state.tool === 'pattern-measure'
                  || ['rectangle','circle','hexagon'].includes(state.tool)) {
         // US-097: setTool('select') also disarms the chosen shape.
         setTool('select');
       } else if (state.selection.kind === 'graphic' && state.graphicEdit) {
         bgExitEdit();
+      } else if (state.templateGroupEditId != null) {
+        // A DXF/Template piece's member-edit mode (entered via double-click,
+        // enterTemplateGroupForAnnotation) had no keyboard exit before this —
+        // a TD who forgot they were in it would drag one line expecting the
+        // whole piece to move. Mirrors bgExitEdit's Escape priority above.
+        // Re-selecting the SAME annotation AFTER clearing templateGroupEditId
+        // is required, not cosmetic: setSelection only widens to the whole
+        // group when templateGroupEditId is already null for that group
+        // (selection.js) — calling it first would be a no-op.
+        const reselectId = state.selection.kind === 'annotation' ? state.selection.id : null;
+        state.templateGroupEditId = null;
+        if (reselectId != null) setSelection('annotation', reselectId);
+        else { updateUI(); requestRender(); }
+        showToast('Exited piece-member edit — the whole piece is selected again.');
       } else if (state.selection.kind === 'annotation' && state.selection.part) {
         // First Escape drops back to whole-line nudging; the next one
         // clears the selection itself.

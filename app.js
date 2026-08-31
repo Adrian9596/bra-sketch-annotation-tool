@@ -275,6 +275,12 @@
     noteTextColor: 'black',
     noteLeaderColor: 'red',
     annotations: [],
+    // ADR 0071: small perpendicular tick marks placed near a line (garment-
+    // pattern alignment notches). Plain WORLD coordinates, like graphics/
+    // notes below — not normalized to an owning image, since a piece can sit
+    // in blank Scratch Area space with nothing to normalize against. Carries
+    // no POM identity; never a measurement (see isMeasurementAnnotation).
+    notches: [],
     // ADR 0070: templateGroupId -> human label (a DXF INSERT's block name,
     // e.g. "CUP_36C"), for the Pattern Pieces panel only. Sparse — only DXF
     // import writes an entry, and only when the source block had a name; a
@@ -597,6 +603,8 @@
     patternPiecesCount: document.getElementById('patternPiecesCount'),
     patternPiecesBody: document.getElementById('patternPiecesBody'),
     patternPiecesApplyBtn: document.getElementById('patternPiecesApplyBtn'),
+    // ADR 0071: the Notch tool's Tools-menu entry.
+    notchToolBtn: document.getElementById('notchToolBtn'),
     lineWidthChip: document.getElementById('lineWidthChip'),
     lineWidthInput: document.getElementById('lineWidthInput'),
     fontSizeChip: document.getElementById('fontSizeChip'),
@@ -17251,6 +17259,12 @@ const BOM_MATERIAL_LIBRARY = [
       page: 'board', mode: 'manual', target: '#patternPiecesBtn',
       when: () => state.sketchMode ? true : 'Available in Sketch Focus',
       action: () => appCommandClick('#patternPiecesBtn') }),
+    // ADR 0071: same Sketch-Focus gate as the two commands above — a notch
+    // only ever marks pattern-piece geometry.
+    appCommand({ id: 'board.tool.notch', label: 'Notch Tool', category: 'Board · Style',
+      page: 'board', mode: 'manual', target: '#notchToolBtn',
+      when: () => state.sketchMode ? true : 'Available in Sketch Focus',
+      action: () => appCommandClick('#notchToolBtn') }),
     // US-107: the unified Library dialog replaces board.presets.open,
     // board.shapes.open, and the old Template-only board.template.open-library
     // with ONE command — Templates, Line Treatments, and saved Projects are
@@ -18554,6 +18568,118 @@ const BOM_MATERIAL_LIBRARY = [
     if (el.dxfMeasureOutBtn) el.dxfMeasureOutBtn.addEventListener('click', () => setDxfMeasureMode('out-of-path'));
   }
 
+  // ---- src/manual/simplify-piece.js ----
+// ADR 0072: "Simplify piece" — merges redundant, near-perfectly-collinear
+// runs of a piece's STRAIGHT segments into fewer, longer ones. A TD reported
+// "trong piece còn nhiều điểm rác không cần thiết" (still many unnecessary
+// junk points in the piece) after DXF import: a truly straight edge is often
+// exported as many short collinear segments back-to-back. This does not
+// change the piece's visible outline — only how many separate annotations
+// draw it. Curved annotations are never touched: a DXF bulge/arc already
+// becomes ONE cubic Bézier at import time (dxf-import.js), so there is no
+// equivalent "many redundant points" problem on the curve side to solve here.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Deliberately conservative: only segments within
+// SIMPLIFY_COLLINEAR_ANGLE_DEG of perfectly straight-through are merged, and
+// only through a point where EXACTLY one continuing segment exists (a real
+// junction — 0, or 2+ other segments meeting there — always stops a chain).
+// A genuine polygon corner is never smoothed away by this.
+
+  const SIMPLIFY_COLLINEAR_ANGLE_DEG = 1;
+  // 0.01 world-unit coincidence tolerance for "these are the same point" —
+  // DXF-imported segments that share a real vertex land on it near-exactly
+  // (same source coordinate, just Y-flipped/transformed identically), unlike
+  // dxfConnectedComponents' much looser touch tolerance, which exists to
+  // catch segments that only ALMOST meet.
+  const SIMPLIFY_POINT_SCALE = 100;
+
+  function simplifyPointKey(p) {
+    return Math.round(p.x * SIMPLIFY_POINT_SCALE) + ',' + Math.round(p.y * SIMPLIFY_POINT_SCALE);
+  }
+
+  function simplifyAngleDeg(a, b) {
+    return Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+  }
+
+  function simplifyAngleDiffDeg(a, b) {
+    let d = Math.abs(a - b) % 360;
+    if (d > 180) d = 360 - d;
+    return d;
+  }
+
+  // Merges one piece's collinear straight-segment runs in place. Returns
+  // {chains, removed} — chains merged, and how many annotations that freed
+  // up (each N-segment run becomes 1, so removed = sum(N) - chains).
+  function simplifyPieceGroup(groupId) {
+    const straights = state.annotations.filter(a => a.templateGroupId === groupId && a.type === 'straight');
+    if (straights.length < 2) return { chains: 0, removed: 0 };
+
+    // endpoint key -> every {segId, other} touching that point
+    const atPoint = new Map();
+    const addEndpoint = (p, other, segId) => {
+      const k = simplifyPointKey(p);
+      if (!atPoint.has(k)) atPoint.set(k, []);
+      atPoint.get(k).push({ segId, other });
+    };
+    for (const s of straights) {
+      addEndpoint(s.start, s.end, s.id);
+      addEndpoint(s.end, s.start, s.id);
+    }
+
+    const used = new Set();
+    const neighborsAt = (k, excludeId) => (atPoint.get(k) || [])
+      .filter(c => c.segId !== excludeId && !used.has(c.segId));
+
+    const runs = [];
+    for (const seg of straights) {
+      if (used.has(seg.id)) continue;
+      // Skip this segment as a chain START if it continues BACKWARD into
+      // exactly one collinear neighbor — that neighbor's own walk (or an
+      // earlier segment further back in the same run) will reach it.
+      const backNeighbors = neighborsAt(simplifyPointKey(seg.start), seg.id);
+      if (backNeighbors.length === 1) {
+        const backDir = simplifyAngleDeg(seg.end, seg.start);
+        const nDir = simplifyAngleDeg(seg.start, backNeighbors[0].other);
+        if (simplifyAngleDiffDeg(backDir, nDir) <= SIMPLIFY_COLLINEAR_ANGLE_DEG) continue;
+      }
+
+      used.add(seg.id);
+      const sourceIds = new Set([seg.id]);
+      const points = [seg.start, seg.end];
+      let currentDir = simplifyAngleDeg(seg.start, seg.end);
+      let tail = seg.end;
+      for (;;) {
+        const fwd = neighborsAt(simplifyPointKey(tail), null);
+        if (fwd.length !== 1) break;
+        const nDir = simplifyAngleDeg(tail, fwd[0].other);
+        if (simplifyAngleDiffDeg(currentDir, nDir) > SIMPLIFY_COLLINEAR_ANGLE_DEG) break;
+        used.add(fwd[0].segId);
+        sourceIds.add(fwd[0].segId);
+        points.push(fwd[0].other);
+        tail = fwd[0].other;
+        currentDir = nDir;
+      }
+      if (points.length > 2) runs.push({ points, sourceIds, template: seg });
+    }
+
+    if (!runs.length) return { chains: 0, removed: 0 };
+
+    let removed = 0;
+    for (const run of runs) {
+      const replacement = Object.assign({}, run.template, {
+        id: state.idCounter++,
+        start: run.points[0],
+        end: run.points[run.points.length - 1],
+      });
+      replacement.label = computeDefaultLabelPosition(replacement);
+      state.annotations = state.annotations.filter(a => !run.sourceIds.has(a.id));
+      state.annotations.push(replacement);
+      removed += run.sourceIds.size - 1;
+    }
+    return { chains: runs.length, removed };
+  }
+
   // ---- src/ui/pattern-pieces-panel.js ----
 // ADR 0070: the Pattern Pieces panel — a floating, non-modal list of every
 // templateGroupId group on the board (DXF-imported grading-nest pieces, and
@@ -18704,6 +18830,21 @@ const BOM_MATERIAL_LIBRARY = [
 
       row.appendChild(patternPieceMiniBtn('Select', 'Highlight this piece on the board',
         () => selectPatternPieceGroup(g.ids)));
+      // ADR 0072: merges redundant collinear points within this piece's
+      // straight segments — same outline, fewer annotations. Re-renders
+      // (not just updates the count span) because the merge changes which
+      // annotation ids belong to this row's "Select" button.
+      row.appendChild(patternPieceMiniBtn('Simplify', 'Merge redundant collinear points in this piece’s straight lines — same outline, fewer segments',
+        () => {
+          const result = simplifyPieceGroup(g.groupId);
+          if (!result.chains) { showToast('Nothing to simplify — no redundant collinear points found.'); return; }
+          pushHistoryIfChanged();
+          if (typeof updateUI === 'function') updateUI();
+          if (typeof requestRender === 'function') requestRender();
+          showToast('Simplified ' + result.chains + (result.chains === 1 ? ' run' : ' runs')
+            + ', removed ' + result.removed + (result.removed === 1 ? ' point.' : ' points.'));
+          renderPatternPiecesPanel();
+        }));
       body.appendChild(row);
     }
 
@@ -18746,6 +18887,8 @@ const BOM_MATERIAL_LIBRARY = [
     el.toolEraser.addEventListener('click', () => setTool('eraser'));
     el.toolText.addEventListener('click', () => setTool('text'));
     el.toolRectangle.addEventListener('click', () => setTool('rectangle'));
+    // ADR 0071.
+    if (el.notchToolBtn) el.notchToolBtn.addEventListener('click', () => setTool('notch'));
     el.toolCircle.addEventListener('click', () => setTool('circle'));
     el.toolHexagon.addEventListener('click', () => setTool('hexagon'));
     if (el.smartAlignToggleBtn) el.smartAlignToggleBtn.addEventListener('click', toggleSmartAlign);
@@ -19313,6 +19456,13 @@ const BOM_MATERIAL_LIBRARY = [
       noteTextColor: state.noteTextColor,
       noteLeaderColor: state.noteLeaderColor,
       annotations: clone(state.annotations),
+      // ADR 0070: without this, undoing a Pattern Pieces "Remove unchecked"
+      // restores the deleted annotations but leaves their block-name labels
+      // gone — the panel would show a positional "Piece N" fallback for a
+      // piece that still has a real name.
+      templateGroupLabels: clone(state.templateGroupLabels || {}),
+      // ADR 0071.
+      notches: clone(state.notches || []),
       graphics: clone(state.graphics || []),
       images: state.images.map(stripImageForSnapshot),
       eraseStrokes: clone(state.eraseStrokes),
@@ -19397,6 +19547,9 @@ const BOM_MATERIAL_LIBRARY = [
     state.noteLeaderColor = normalizeColorKey(snapshot.noteLeaderColor || 'red');
     state.annotations = clone(snapshot.annotations || []);
     state.annotations.forEach(ensureCurveControls);
+    state.templateGroupLabels = (snapshot.templateGroupLabels && typeof snapshot.templateGroupLabels === 'object')
+      ? clone(snapshot.templateGroupLabels) : {};
+    state.notches = (snapshot.notches || []).map(normalizeNotch).filter(Boolean);
     state.graphics = normalizeBoardGraphics(snapshot.graphics || []);
     state.graphicEdit = null;
     state.eraseStrokes = clone(snapshot.eraseStrokes || []);
@@ -19438,6 +19591,9 @@ const BOM_MATERIAL_LIBRARY = [
       state.selection = { kind: null, id: null };
     }
     if (state.selection.kind === 'note' && !state.notes.some(n => n.id === state.selection.id)) {
+      state.selection = { kind: null, id: null };
+    }
+    if (state.selection.kind === 'notch' && !state.notches.some(n => n.id === state.selection.id)) {
       state.selection = { kind: null, id: null };
     }
 
@@ -19495,6 +19651,8 @@ const BOM_MATERIAL_LIBRARY = [
       savedAt: new Date().toISOString(),
       state: {
         annotations: clone(state.annotations),
+        // ADR 0071: additive — files saved before this existed have no key.
+        notches: clone(state.notches || []),
         // ADR 0070: sparse groupId -> label map (DXF block names). Additive —
         // files saved before this existed have no key and default to {}.
         templateGroupLabels: clone(state.templateGroupLabels || {}),
@@ -19802,6 +19960,8 @@ const BOM_MATERIAL_LIBRARY = [
 
       state.annotations = clone(s.annotations || []);
       state.annotations.forEach(ensureCurveControls);
+      // ADR 0071: additive — a file saved before this existed has no key.
+      state.notches = Array.isArray(s.notches) ? s.notches.map(normalizeNotch).filter(Boolean) : [];
       // ADR 0070: additive — a file saved before this existed has no key.
       state.templateGroupLabels = (s.templateGroupLabels && typeof s.templateGroupLabels === 'object')
         ? clone(s.templateGroupLabels) : {};
@@ -21225,6 +21385,13 @@ const BOM_MATERIAL_LIBRARY = [
       const before = (state.notes || []).length;
       state.notes = (state.notes || []).filter(note => note.id !== state.selection.id);
       if (state.notes.length === before) return;
+    } else if (state.selection.kind === 'notch') {
+      // ADR-0071: same reasoning as the note branch above — a notch is a
+      // pattern-construction mark, not a measurement, so it needs no
+      // deletedPomKeys/evidence bookkeeping either.
+      const before = (state.notches || []).length;
+      state.notches = (state.notches || []).filter(notch => notch.id !== state.selection.id);
+      if (state.notches.length === before) return;
     } else if (state.selection.kind === 'graphic') {
       const before = (state.graphics || []).length;
       state.graphics = (state.graphics || []).filter(graphic => graphic.id !== state.selection.id);
@@ -21822,6 +21989,11 @@ function setSelection(kind, id) {
     return state.selection.kind === 'note' ? getNoteById(state.selection.id) : null;
   }
 
+  // ADR 0071: same shape as getSelectedNote above — no multi-selection either.
+  function getSelectedNotch() {
+    return state.selection.kind === 'notch' ? getNotchById(state.selection.id) : null;
+  }
+
   function getSelectedImage() {
     return state.selection.kind === 'image'
       ? state.images.find(image => image.id === state.selection.id) || null
@@ -22167,6 +22339,14 @@ function setSelection(kind, id) {
       return;
     }
 
+    // ADR 0071: the Notch tool. Same "stays active afterwards" shape as Text
+    // above — a TD marking up a piece needs several notches in a row, not a
+    // trip back to the toolbar after each one.
+    if (state.tool === 'notch') {
+      placeNotchAt(world);
+      return;
+    }
+
     // US-097 / ADR 0056: place a saved shape. Same interaction shape as
     // draw-graphic below — press, drag the box, release — because it is the
     // same gesture and the preview/commit plumbing is already proven.
@@ -22299,6 +22479,19 @@ function setSelection(kind, id) {
       if (noteHit) {
         setSelection('note', noteHit.id);
         startNoteDrag(noteHit.id, world);
+        return;
+      }
+    }
+
+    // ADR 0071: a notch, same priority tier as a note above (a small mark
+    // that would otherwise be indistinguishable from the outline body under
+    // it). v1 has no drag — select it here (Delete removes it) rather than
+    // starting an interaction the rest of the pointer-move pipeline does not
+    // know how to continue.
+    if (!e.shiftKey) {
+      const notchHit = hitTestNotches(world);
+      if (notchHit) {
+        setSelection('notch', notchHit.id);
         return;
       }
     }
@@ -24132,13 +24325,27 @@ function onWheel(e) {
         // "still deciding what to place" session.
         dxfMeasureCancelInteraction();
       } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'add-point'
-                 || state.tool === 'eraser' || state.tool === 'text'
+                 || state.tool === 'eraser' || state.tool === 'text' || state.tool === 'notch'
                  || state.tool === 'stamp' || state.tool === 'pattern-measure'
                  || ['rectangle','circle','hexagon'].includes(state.tool)) {
         // US-097: setTool('select') also disarms the chosen shape.
         setTool('select');
       } else if (state.selection.kind === 'graphic' && state.graphicEdit) {
         bgExitEdit();
+      } else if (state.templateGroupEditId != null) {
+        // A DXF/Template piece's member-edit mode (entered via double-click,
+        // enterTemplateGroupForAnnotation) had no keyboard exit before this —
+        // a TD who forgot they were in it would drag one line expecting the
+        // whole piece to move. Mirrors bgExitEdit's Escape priority above.
+        // Re-selecting the SAME annotation AFTER clearing templateGroupEditId
+        // is required, not cosmetic: setSelection only widens to the whole
+        // group when templateGroupEditId is already null for that group
+        // (selection.js) — calling it first would be a no-op.
+        const reselectId = state.selection.kind === 'annotation' ? state.selection.id : null;
+        state.templateGroupEditId = null;
+        if (reselectId != null) setSelection('annotation', reselectId);
+        else { updateUI(); requestRender(); }
+        showToast('Exited piece-member edit — the whole piece is selected again.');
       } else if (state.selection.kind === 'annotation' && state.selection.part) {
         // First Escape drops back to whole-line nudging; the next one
         // clears the selection itself.
@@ -28946,6 +29153,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     const soloAnnotationSelected = !!selectedAnnotation && !scaleGroupSelected;
     const selectedImage = getSelectedImage();
     const selectedNote = getSelectedNote();
+    const selectedNotch = getSelectedNotch();
     const selectedGraphic = getSelectedBoardGraphic();
     const noteContext = !!selectedNote || state.tool === 'text';
     el.lineStyleControl.hidden = state.tool === 'eraser' || noteContext;
@@ -29022,6 +29230,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     let lengthChipHtml = '';
     if (state.tool === 'text') {
       toolText = 'Text – Click the board to write a note. New notes use the active Note appearance and colours. <span class="kbd">Enter</span> makes a new line; <span class="kbd">⌘/Ctrl</span>+<span class="kbd">Enter</span> or a click on the board finishes it.';
+    } else if (state.tool === 'notch') {
+      toolText = 'Notch – Click near a line to place a small perpendicular notch mark there. <span class="kbd">Esc</span> returns to Select.';
     } else if (state.tool === 'stamp') {
       const stamp = (typeof getActiveShapeStamp === 'function') ? getActiveShapeStamp() : null;
       toolText = stamp
@@ -29034,10 +29244,20 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         toolText = selectedNote.leaders && selectedNote.leaders.length
           ? 'Select – Drag the note, its right-edge width handle, or an arrow tip; double-click a tip to remove that arrow, double-click the text to edit it, <span class="kbd">⌫</span> deletes the note.'
           : 'Select – Drag the note to move it, drag the right-edge handle to change wrap width, drag <strong>+</strong> to add an arrow, double-click to edit the text, <span class="kbd">⌫</span> deletes it.';
+      } else if (selectedNotch) {
+        // v1 has no drag (ADR 0071) — delete and re-place is the only edit.
+        toolText = 'Select – This notch has no drag yet; <span class="kbd">⌫</span> deletes it and place a new one where you meant.';
       } else if (selectedAnnotation) {
-        toolText = 'Select – Drag line, endpoints, curve shape handle, or label. Smart Align is '
-          + (state.smartAlignEnabled ? 'on; hold <span class="kbd">Alt/Option</span> to bypass it. ' : 'off. ')
-          + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
+        // Mirrors the selectedGraphic branch below: state.templateGroupEditId
+        // means dragging THIS line moves only it, not the whole piece — the
+        // exact "move piece only moves one segment" confusion a TD hits with
+        // no visible cue otherwise (the toast from entering this mode fades).
+        toolText = (state.templateGroupEditId != null && state.templateGroupEditId === selectedAnnotation.templateGroupId)
+          ? 'Editing one line of this piece – dragging moves just this line. Click another line in it to switch, or '
+            + '<span class="kbd">Esc</span> to select the whole piece again.'
+          : 'Select – Drag line, endpoints, curve shape handle, or label. Smart Align is '
+            + (state.smartAlignEnabled ? 'on; hold <span class="kbd">Alt/Option</span> to bypass it. ' : 'off. ')
+            + '<span class="kbd">Tab</span> picks a point, arrow keys nudge it (<span class="kbd">⇧</span> = 10 px).';
         lengthChipHtml = sketchSelectionLengthReadout();
       } else if (selectedGraphic) {
         toolText = state.graphicEdit
@@ -30069,6 +30289,161 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     }
     note.fontSize = normalizeNoteFontSize(note.fontSize * factor);
     note.boxWidth = normalizeNoteBoxWidth(note.boxWidth * factor);
+  }
+
+  // ---- src/manual/notches.js ----
+// ADR 0071: the Notch tool. A garment-pattern notch is a small alignment mark
+// cut into a piece's outline, used to match up two pieces while sewing. The
+// TD clicks near an existing line (most often a DXF-imported piece's
+// outline); this drops a short tick mark AT the nearest point on that line,
+// oriented perpendicular to it there. `state.notches` is a new, standalone
+// collection — plain WORLD coordinates (like state.graphics/state.notes, not
+// normalized to an owning image: a piece can sit in blank Scratch Area space
+// with no image to normalize against). A notch carries no POM identity and
+// is never a measurement, mirroring how a Board text note is handled.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// v1 scope, deliberately: place + select + delete. No drag-to-reposition
+// (delete and re-place instead) and no length/angle editing UI — the tick's
+// direction and length are fully derived at placement time from the nearest
+// line there. Revisit if a real workflow need for repositioning shows up.
+
+  const NOTCH_TOLERANCE_PX = 16; // same order as other click tolerances (e.g. endpointRadiusPx: 14)
+  const NOTCH_LENGTH_PX = 16; // desired ON-SCREEN tick length at the moment it is placed
+  const NOTCH_CURVE_SAMPLES = 48; // dense enough that the nearest-sample error is sub-pixel at typical zoom
+
+  // The closest point on a single straight or curved annotation to `p`, plus
+  // the curve/line's own tangent direction there (for the perpendicular tick
+  // angle) and the distance (for the click-tolerance gate). Curved segments
+  // are sampled rather than solved in closed form — this mirrors how the
+  // board already tessellates a curve for hit-testing/length elsewhere; a
+  // notch's placement accuracy does not need to beat that.
+  function nearestPointOnAnnotation(ann, p) {
+    if (ann.type === 'straight') {
+      const a = ann.start, b = ann.end;
+      const abx = b.x - a.x, aby = b.y - a.y;
+      const lenSq = abx * abx + aby * aby;
+      let t = lenSq > 1e-9 ? ((p.x - a.x) * abx + (p.y - a.y) * aby) / lenSq : 0;
+      t = Math.max(0, Math.min(1, t));
+      const point = { x: a.x + abx * t, y: a.y + aby * t };
+      return { point, tangent: { x: abx, y: aby }, dist: distance(point, p) };
+    }
+    let best = null;
+    for (const seg of getCurveBeziers(ann)) {
+      for (let i = 0; i <= NOTCH_CURVE_SAMPLES; i += 1) {
+        const t = i / NOTCH_CURVE_SAMPLES;
+        const point = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t);
+        const dist = distance(point, p);
+        if (!best || dist < best.dist) best = { point, tangent: bezierTangent(seg.p0, seg.p1, seg.p2, seg.p3, t), dist };
+      }
+    }
+    return best;
+  }
+
+  // The closest point across EVERY annotation on the board — a notch may sit
+  // on any line, not only a DXF piece's, since nothing about the mark itself
+  // is DXF-specific.
+  function nearestPointOnBoard(p) {
+    let best = null;
+    for (const ann of state.annotations) {
+      const hit = nearestPointOnAnnotation(ann, p);
+      if (hit && (!best || hit.dist < best.dist)) best = hit;
+    }
+    return best;
+  }
+
+  // Click too far from any line: do nothing rather than guess a direction
+  // for a mark that would not actually sit on the pattern's edge.
+  function placeNotchAt(world) {
+    const hit = nearestPointOnBoard(world);
+    const tolWorld = NOTCH_TOLERANCE_PX / Math.max(0.0001, state.zoom);
+    if (!hit || hit.dist > tolWorld) {
+      showToast('Click closer to a line to place a notch.');
+      return;
+    }
+    const tangentLen = Math.hypot(hit.tangent.x, hit.tangent.y) || 1;
+    // Rotate the tangent 90°; either perpendicular direction draws the same
+    // symmetric tick, so no "which side" choice is needed.
+    const angle = Math.atan2(-hit.tangent.x / tangentLen, hit.tangent.y / tangentLen);
+    const notch = {
+      id: state.idCounter++,
+      x: hit.point.x,
+      y: hit.point.y,
+      angle,
+      length: NOTCH_LENGTH_PX / Math.max(0.0001, state.zoom),
+      color: 'black',
+    };
+    if (!Array.isArray(state.notches)) state.notches = [];
+    state.notches.push(notch);
+    setSelection('notch', notch.id);
+    pushHistoryIfChanged();
+    showToast('Notch placed.');
+  }
+
+  function getNotchById(id) {
+    return (state.notches || []).find(n => n.id === id) || null;
+  }
+
+  // Mirrors normalizeNote's own defensiveness (src/manual/note-model.js): a
+  // record whose position isn't finite is dropped rather than crashing the
+  // load or drawing garbage at (NaN, NaN).
+  function normalizeNotch(raw) {
+    if (!raw || !Number.isFinite(raw.x) || !Number.isFinite(raw.y)) return null;
+    return {
+      id: raw.id,
+      x: raw.x,
+      y: raw.y,
+      angle: Number.isFinite(raw.angle) ? raw.angle : 0,
+      length: Number.isFinite(raw.length) && raw.length > 0 ? raw.length : NOTCH_LENGTH_PX,
+      color: normalizeColorKey(raw.color || 'black'),
+    };
+  }
+
+  // Endpoints of the tick, for both rendering and hit-testing — a notch is
+  // drawn straddling its anchor point, half each side along its own angle.
+  function notchEndpoints(notch) {
+    const half = notch.length / 2;
+    const dx = Math.cos(notch.angle) * half, dy = Math.sin(notch.angle) * half;
+    return { a: { x: notch.x - dx, y: notch.y - dy }, b: { x: notch.x + dx, y: notch.y + dy } };
+  }
+
+  // A fixed WORLD length (set once at placement — see placeNotchAt), unlike
+  // a "feature size" (stroke width, handles) that stays a constant SCREEN
+  // size at every zoom: a notch is a real mark on the pattern, so it should
+  // visually grow/shrink with the piece exactly like the outline it sits on.
+  // Only the STROKE THICKNESS is a feature size, so a notch stays legible
+  // whether the piece is tiny or filling the whole board.
+  function drawNotch(notch) {
+    const { a, b } = notchEndpoints(notch);
+    ctx.save();
+    ctx.strokeStyle = getAnnotationColor({ color: notch.color });
+    ctx.lineWidth = 3 / featureZoom();
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    if (state.selection.kind === 'notch' && state.selection.id === notch.id) {
+      ctx.beginPath();
+      ctx.fillStyle = SELECT_COLOR;
+      ctx.arc(notch.x, notch.y, 4 / featureZoom(), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Radius-based, like an endpoint handle — a notch is a short tick, not an
+  // area with an interior, so there is no reason to hit-test along its whole
+  // length versus just how close the click landed to it.
+  function hitTestNotches(world) {
+    const notches = state.notches || [];
+    const tolWorld = NOTCH_TOLERANCE_PX / Math.max(0.0001, state.zoom);
+    for (let i = notches.length - 1; i >= 0; i -= 1) {
+      const notch = notches[i];
+      const { a, b } = notchEndpoints(notch);
+      if (pointToSegmentDistance(world, a, b) <= tolWorld) return { id: notch.id };
+    }
+    return null;
   }
 
   // ---- src/auto/mode.js ----
@@ -44075,6 +44450,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         };
       },
       getAnnotations: () => clone(state.annotations),
+      // ADR 0071.
+      getNotches: () => clone(state.notches || []),
       // US-095 focused browser proof. The mutation seams call the same model
       // functions as the toolbar/pointer paths and keep measurement state out.
       getGraphics: () => clone(state.graphics || []),
@@ -44319,6 +44696,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         patternPieces: {
           groups: () => (typeof patternPieceGroups === 'function' ? clone(patternPieceGroups()) : null),
           remove: (groupIds) => { if (typeof removePatternPieceGroups === 'function') removePatternPieceGroups(groupIds); },
+          // ADR 0072.
+          simplify: (groupId) => (typeof simplifyPieceGroup === 'function' ? clone(simplifyPieceGroup(groupId)) : null),
           isOpen: () => (typeof isPatternPiecesPanelOpen === 'function' ? isPatternPiecesPanelOpen() : null),
           open: () => { if (typeof openPatternPiecesPanel === 'function') openPatternPiecesPanel(); },
           close: () => { if (typeof closePatternPiecesPanel === 'function') closePatternPiecesPanel(); },
@@ -49240,6 +49619,13 @@ function requestRender() {
     for (const note of (state.notes || [])) {
       if (note.id === editingNoteId) drawNoteLeadersOnly(note);
       else drawNote(note);
+    }
+
+    // ADR 0071: notches sit above line bodies (a mark drawn ON the outline
+    // must not disappear underneath it) but below the anchor layer, same
+    // reasoning as notes just above.
+    for (const notch of (state.notches || [])) {
+      drawNotch(notch);
     }
 
     // Anchors render above drafts so they always stay grabbable.

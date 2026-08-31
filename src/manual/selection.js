@@ -318,6 +318,11 @@ function setSelection(kind, id) {
     return state.selection.kind === 'note' ? getNoteById(state.selection.id) : null;
   }
 
+  // ADR 0071: same shape as getSelectedNote above — no multi-selection either.
+  function getSelectedNotch() {
+    return state.selection.kind === 'notch' ? getNotchById(state.selection.id) : null;
+  }
+
   function getSelectedImage() {
     return state.selection.kind === 'image'
       ? state.images.find(image => image.id === state.selection.id) || null

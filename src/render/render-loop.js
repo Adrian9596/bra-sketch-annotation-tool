@@ -137,6 +137,13 @@ function requestRender() {
       else drawNote(note);
     }
 
+    // ADR 0071: notches sit above line bodies (a mark drawn ON the outline
+    // must not disappear underneath it) but below the anchor layer, same
+    // reasoning as notes just above.
+    for (const notch of (state.notches || [])) {
+      drawNotch(notch);
+    }
+
     // Anchors render above drafts so they always stay grabbable.
     if (state.appMode === 'auto') {
       drawAnchors();

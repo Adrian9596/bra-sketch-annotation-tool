@@ -53,6 +53,8 @@
     patternPiecesCount: document.getElementById('patternPiecesCount'),
     patternPiecesBody: document.getElementById('patternPiecesBody'),
     patternPiecesApplyBtn: document.getElementById('patternPiecesApplyBtn'),
+    // ADR 0071: the Notch tool's Tools-menu entry.
+    notchToolBtn: document.getElementById('notchToolBtn'),
     lineWidthChip: document.getElementById('lineWidthChip'),
     lineWidthInput: document.getElementById('lineWidthInput'),
     fontSizeChip: document.getElementById('fontSizeChip'),
