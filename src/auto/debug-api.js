@@ -402,7 +402,23 @@
             ? clone(dxfMeasureEnsurePieceIntersectionIndex(state.dxfMeasureSession, pieceIndex)) : null),
           snapCandidate: (world) => (typeof dxfMeasureSnapCandidate === 'function'
             ? clone(dxfMeasureSnapCandidate(state.dxfMeasureSession, world)) : null),
+          // US-114: every within-tolerance candidate, and the near-tie subset
+          // dxfMeasureSnapEntityHitsForClick actually resolves a click
+          // against — exposed separately so a test can assert both "how many
+          // candidates exist at all" and "how many count as a genuine tie".
+          snapCandidates: (world) => (typeof dxfMeasureSnapCandidates === 'function'
+            ? clone(dxfMeasureSnapCandidates(state.dxfMeasureSession, world)) : null),
+          snapTieCandidates: (world) => (typeof dxfMeasureSnapTieCandidates === 'function'
+            ? clone(dxfMeasureSnapTieCandidates(state.dxfMeasureSession, world)) : null),
           snapEnabled: () => ({ endpoint: !!state.dxfMeasureSnapEndpoint, midpoint: !!state.dxfMeasureSnapMidpoint, intersection: !!state.dxfMeasureSnapIntersection }),
+          // US-114: the Pattern-Measure-only size filter. Read-only by design
+          // (see this file's own header on why a real UI action is never
+          // exposed as a debug shortcut) — a test drives the real
+          // #dxfMeasureSizeSelect element, same as every other real control.
+          pieceSizeLabel: (pieceIndex) => (typeof dxfMeasurePieceSizeLabel === 'function' && state.dxfMeasureSession
+            ? dxfMeasurePieceSizeLabel(state.dxfMeasureSession, pieceIndex) : null),
+          availableSizeLabels: () => (typeof dxfMeasureAvailableSizeLabels === 'function' && state.dxfMeasureSession
+            ? clone(dxfMeasureAvailableSizeLabels(state.dxfMeasureSession)) : []),
           enumerateRoutesRaw: (segments, refA, refB, tolerance) => (typeof dxfEnumerateRoutes === 'function'
             ? clone(dxfEnumerateRoutes(segments, refA, refB, tolerance)) : null),
           reverseRoute: (route) => (typeof dxfReverseRoute === 'function' ? clone(dxfReverseRoute(route)) : null),
@@ -440,6 +456,10 @@
               // US-112: read-only, for diagnosing the hover-driven snap preview.
               hoverWorld: clone(session.hoverWorld),
               hoverAltKey: !!session.hoverAltKey,
+              // US-114: the active-size filter + what's actually selectable.
+              activeSizeLabel: session.activeSizeLabel || null,
+              availableSizeLabels: (typeof dxfMeasureAvailableSizeLabels === 'function')
+                ? clone(dxfMeasureAvailableSizeLabels(session)) : [],
             };
           },
           pieceSegments: (pieceIndex) => {

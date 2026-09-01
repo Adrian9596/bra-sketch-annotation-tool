@@ -71,6 +71,46 @@ const docWithHeader = (headerPairs, entityArrays) => pairsToText([
 const SQUARE_DXF = doc([dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0)]);
 // Open 5-segment chain along the x axis: (0,0)-(50,0), 10 units apart.
 const CHAIN_DXF = doc(Array.from({ length: 5 }, (_, i) => dxfLine(i * 10, 0, (i + 1) * 10, 0)));
+// US-114: two DIFFERENT-sized blocks ("PIECE_S"/"PIECE_M", 10x10 and 12x12
+// squares) both INSERTed at the exact same point (0,0) — the real-world
+// grading-nest convention (ADR 0069/0070: every chosen size's piece placed
+// at the same board position) taken to its most deterministic extreme: their
+// (0,0) corners aren't just close, they're EXACTLY coincident in board space
+// (distance 0, not merely "within the tie band"). Proves both the near-tie
+// snap fix (section 14) and the size filter (also section 14) against one
+// fixture — a real factory file that exhibits this is `demo/DXF file/
+// 3708.dxf`, confirmed there at 0.06 native units apart, not exactly 0; this
+// fixture is the deterministic, hand-computable stand-in.
+const SIZE_FILTER_DXF = docWithBlocks(
+  [
+    dxfBlock('PIECE_S', [dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0)]),
+    dxfBlock('PIECE_M', [dxfLine(0, 0, 12, 0), dxfLine(12, 0, 12, 12), dxfLine(12, 12, 0, 12), dxfLine(0, 12, 0, 0)]),
+  ],
+  [dxfInsert('PIECE_S', 0, 0), dxfInsert('PIECE_M', 0, 0)],
+);
+// Found 2026-09-01 on a real single-size factory file (2984-SONASHAPE.dxf):
+// 2+ distinct block-name labels is NOT the same signal as a grading nest —
+// these two blocks are different, ordinary garment pieces placed side by
+// side (never overlapping), the opposite of SIZE_FILTER_DXF above. The
+// filter must not activate for this shape at all.
+const NON_OVERLAPPING_PIECES_DXF = docWithBlocks(
+  [
+    dxfBlock('PIECE_A', [dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0)]),
+    dxfBlock('PIECE_B', [dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0)]),
+  ],
+  [dxfInsert('PIECE_A', 0, 0), dxfInsert('PIECE_B', 100, 100)],
+);
+// Found 2026-09-01 on a real factory file (3380.dxf): every piece authored
+// as two back-to-back, byte-identical closed outlines. ADR 0073's route-
+// search dedupe never reached point-PLACEMENT, so a click near one of these
+// segments' shared midpoint hit both copies and forced a pointless Tab/Enter
+// choice between two options that measure identically. One flat piece
+// (no BLOCK/INSERT, like the real file), 4 unique edges then the exact same
+// 4 edges again.
+const DUPLICATE_SEGMENT_DXF = doc([
+  dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0),
+  dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0),
+]);
 
 async function main() {
   const started = await startStaticServer(appDir);
@@ -106,6 +146,8 @@ async function main() {
   await section11MeasurementsPanel(s);
   await section12SeamMatch(s);
   await section13DraggablePanels(s);
+  await section14SnapTiesAndSizeFilter(s);
+  await section15SizeFilterOverlapGateAndDuplicateSegments(s);
 
   const errors = await s.eval('window.__dxfMeasureErrors');
   check(Array.isArray(errors) && errors.length === 0, 'no uncaught browser errors: ' + JSON.stringify(errors));
@@ -724,6 +766,78 @@ async function section10Snap(s) {
   check(perf.perCallMs < 8, '300 hover mousemoves over the 6-piece fixture with all 3 snap kinds on average under 8ms/call, got '
     + perf.perCallMs.toFixed(3) + 'ms/call (total ' + perf.elapsedMs.toFixed(1) + 'ms)');
   console.log('PASS  section 10.3 (snap perf guard on the real 6-piece fixture): ' + perf.perCallMs.toFixed(3) + 'ms/call');
+
+  // 10.4 — ADR 0077's own regression guard: 10.3's 6-piece fixture (3380.dxf)
+  // is far too small to have ever exercised the bug ADR 0077 fixed
+  // (dxfMeasureCurrentPieceOffset's O(n)-in-state.annotations cost, paid
+  // once per SNAP POINT instead of once per piece — invisible until a file
+  // has enough pieces/annotations to make that multiplier matter). Calls
+  // dbg.dxf.measure.snapCandidates(world) DIRECTLY in a tight loop rather
+  // than dispatching mousemove and hoping a render happens in between (the
+  // mousemove handler only records hoverWorld; the actual snap lookup runs
+  // inside the CANVAS PAINT, drawDxfMeasureSnapHover — a real risk in any
+  // headless/backgrounded context where rAF may be throttled or never fire,
+  // see [[browser-pane-visibilitystate-hidden]]) — this calls the exact
+  // function ADR 0077 fixed, directly, so the result is never in question.
+  let largeFixtureText;
+  try {
+    largeFixtureText = await readFile(path.join(appDir, 'demo/DXF file/BiancaBra v.A 1.0_Pattern.dxf'), 'utf8');
+  } catch {
+    console.log('SKIP  dxf-measurement-check   demo/DXF file/BiancaBra v.A 1.0_Pattern.dxf not present (public mirror) — section 10.4 skipped');
+    return;
+  }
+  const largePerf = await s.eval(`(async () => {
+    document.getElementById('modeManualBtn').click();
+    const dbg = window.__braAutoModeDebug;
+    const p = dbg.exportProject();
+    p.state.annotations = []; p.state.images = [];
+    await dbg.loadProject(p);
+    document.getElementById('modeManualBtn').click();
+    if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    document.getElementById('toolsMenuBtn').click();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const input = document.getElementById('dxfImportFileInput');
+    const dt = new DataTransfer();
+    dt.items.add(new File([${JSON.stringify(largeFixtureText)}], 'bianca.dxf', { type: 'application/octet-stream' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 40; i += 1) await new Promise(r => requestAnimationFrame(r));
+
+    const setSnap3 = (endpoint, midpoint, intersection) => {
+      const current = dbg.dxf.measure.snapEnabled();
+      if (current.endpoint !== endpoint) document.getElementById('dxfMeasureSnapEndpointBtn').click();
+      if (current.midpoint !== midpoint) document.getElementById('dxfMeasureSnapMidpointBtn').click();
+      if (current.intersection !== intersection) document.getElementById('dxfMeasureSnapIntersectionBtn').click();
+    };
+    setSnap3(true, true, true);
+    const N = 15;
+    const worldPoints = Array.from({length: N}, (_, i) => ({ x: (i * 137) % 2000, y: (i * 211) % 2000 }));
+    // The FIRST call pays a real, expected one-time cost (building every
+    // piece's lazy snap+intersection index) — timed separately so a single
+    // warm-up outlier can never masquerade as steady-state per-call cost,
+    // and never accidentally hide a regression by diluting it into an
+    // average over just 15 samples.
+    const warmup0 = performance.now();
+    dbg.dxf.measure.snapCandidates(worldPoints[0]);
+    const warmupMs = performance.now() - warmup0;
+    const t0 = performance.now();
+    for (let i = 1; i < N; i += 1) dbg.dxf.measure.snapCandidates(worldPoints[i]);
+    const elapsedMs = performance.now() - t0;
+    setSnap3(true, true, false);
+    document.getElementById('toolSelect').click();
+    return { warmupMs, elapsedMs, perCallMs: elapsedMs / (N - 1), pieceCount: dbg.dxf.measure.getSession().pieceCount };
+  })()`);
+  check(largePerf.pieceCount > 50, 'perf guard ran against the large real fixture (100+ pieces), got ' + largePerf.pieceCount + ' pieces');
+  // The regression this guards: measured ~525-611ms/call interactively, and
+  // ~40ms/call in this same headless harness with just ONE of ADR 0077's
+  // three hoisted call sites reverted (mutation-tested) — the fixed
+  // steady-state measures ~1-2ms/call here, so 15ms leaves ample margin
+  // above real variance while still catching that mutation cleanly (a 50ms
+  // threshold measured too close to the 40ms reverted case in this
+  // environment to be a reliable guard).
+  check(largePerf.perCallMs < 15, 'steady-state snapCandidates() on the ' + largePerf.pieceCount + '-piece/21000+-annotation fixture stays under 15ms/call after the one-time index warm-up, got '
+    + largePerf.perCallMs.toFixed(3) + 'ms/call (warm-up call alone: ' + largePerf.warmupMs.toFixed(1) + 'ms)');
+  console.log('PASS  section 10.4 (large-file snap perf guard, ADR 0077): ' + largePerf.perCallMs.toFixed(3) + 'ms/call steady-state');
 }
 
 // ---- Section 11: US-113 measurements list panel -----------------------------
@@ -1319,6 +1433,256 @@ async function section13DraggablePanels(s) {
     'shrinking the window (1366x900 -> 700x500) re-clamps an already-parked panel back inside the smaller board card instead of leaving it — and its header — stranded under `overflow:hidden`, got '
     + JSON.stringify(result.afterShrink));
   console.log('PASS  section 13 (draggable Pattern Measurements + Pattern Pieces panels)');
+}
+
+// ---- Section 14: US-114 snap near-tie disambiguation + Pattern-Measure-only
+// size filter ------------------------------------------------------------
+// Found via live bug-hunting on a real 85-piece grading-nest export
+// (demo/DXF file/3708.dxf, not committed to this repo): with default snap
+// on, two DIFFERENT sizes' matching vertices only 0.06 native units apart
+// silently resolved to whichever was a hair closer — no ambiguity toast, no
+// Tab option — even though the SAME click held with Alt (bypassing snap)
+// correctly surfaced all 8 overlapping sizes as Tab-cycleable candidates.
+// SIZE_FILTER_DXF reproduces the same shape deterministically: two blocks
+// inserted at the exact same point, so their (0,0) corners are exactly
+// coincident (distance 0) rather than merely close.
+async function section14SnapTiesAndSizeFilter(s) {
+  const result = await s.eval(`(async () => {
+    document.getElementById('modeManualBtn').click();
+    const dbg = window.__braAutoModeDebug;
+    const p = dbg.exportProject();
+    p.state.annotations = []; p.state.images = [];
+    await dbg.loadProject(p);
+    document.getElementById('modeManualBtn').click();
+    if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    document.getElementById('toolsMenuBtn').click();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    const importDxf = async (text, name) => {
+      const input = document.getElementById('dxfImportFileInput');
+      const dt = new DataTransfer();
+      dt.items.add(new File([text], name, { type: 'application/octet-stream' }));
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      for (let i = 0; i < 20; i += 1) await new Promise(r => requestAnimationFrame(r));
+    };
+
+    // US-112's own restore-defaults convention — do not trust an earlier
+    // section's leftover toggle state.
+    const setSnap = (endpoint, midpoint) => {
+      const current = dbg.dxf.measure.snapEnabled();
+      if (current.endpoint !== endpoint) document.getElementById('dxfMeasureSnapEndpointBtn').click();
+      if (current.midpoint !== midpoint) document.getElementById('dxfMeasureSnapMidpointBtn').click();
+    };
+    setSnap(true, true);
+
+    // --- 1. A plain single-piece import: the Size control must stay hidden
+    // (nothing to filter) — dxfMeasureAvailableSizeLabels' own "fewer than 2
+    // distinct labels" rule.
+    await importDxf(${JSON.stringify(SQUARE_DXF)}, 'plain.dxf');
+    const sizeWrapHiddenForPlainFile = document.getElementById('dxfMeasureSizeWrap').hidden;
+    const availableLabelsForPlainFile = dbg.dxf.measure.availableSizeLabels();
+
+    // --- 2. The grading-nest fixture: two sizes inserted at the same point.
+    await importDxf(${JSON.stringify(SIZE_FILTER_DXF)}, 'sizefilter.dxf');
+    const availableLabels = dbg.dxf.measure.availableSizeLabels();
+    const sizeWrapVisible = !document.getElementById('dxfMeasureSizeWrap').hidden;
+    const sizeSelectOptions = Array.from(document.getElementById('dxfMeasureSizeSelect').options).map(o => o.value);
+    const pieceLabels = [0, 1].map(i => dbg.dxf.measure.pieceSizeLabel(i));
+
+    const canvas = document.getElementById('boardCanvas');
+    // US-112's own gotcha, rediscovered here: rect/view must be re-read on
+    // EVERY call, never captured once outside — arming Pattern Measure grows
+    // the status-bar text (wraps a line), which shifts the canvas's own
+    // rect.top out from under a stale capture. Same shape as section 10.2's
+    // toScreen, deliberately.
+    const toScreen = world => { const rect = canvas.getBoundingClientRect(), view = dbg.getView(); return { x: rect.left + world.x * view.zoom + view.panX, y: rect.top + world.y * view.zoom + view.panY }; };
+    const fireWorld = (type, world, extra={}) => { const sp = toScreen(world); canvas.dispatchEvent(new MouseEvent(type, Object.assign({clientX:sp.x,clientY:sp.y,bubbles:true,button:0}, extra))); };
+    const clickWorld = (world, extra={}) => { fireWorld('mousedown', world, extra); fireWorld('mouseup', world, extra); };
+    const corner = dbg.dxf.measure.nativeToBoardLive({ x: 0, y: 0 }, 0);
+    // A few px off the shared corner, same "diagonally outside" convention
+    // section 10.2 uses — never test with the raw exact point, since a real
+    // TD's click never lands pixel-perfect either.
+    const off = 6 / dbg.getView().zoom / Math.SQRT2;
+    const nearCorner = { x: corner.x - off, y: corner.y - off };
+
+    // --- 3. Unfiltered: both sizes' snap candidates exist at the exact same
+    // point, and the click resolves against BOTH (never a silent pick).
+    const candidatesUnfiltered = dbg.dxf.measure.snapCandidates(corner);
+    const tieCandidatesUnfiltered = dbg.dxf.measure.snapTieCandidates(nearCorner);
+    document.getElementById('dxfMeasureAlongBtn').click();
+    clickWorld(nearCorner);
+    const interactionUnfiltered = dbg.dxf.measure.getSession().interaction;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+    // --- 4. Filter to PIECE_S via the REAL <select> — the change event is
+    // the only sanctioned way to drive this (no debug setter exists, same
+    // "no mutating shortcuts for a real UI path" rule as every other
+    // TD-facing control in this file).
+    document.getElementById('dxfMeasureAlongBtn').click();
+    const sizeSelect = document.getElementById('dxfMeasureSizeSelect');
+    sizeSelect.value = 'PIECE_S';
+    sizeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    const activeAfterFilter = dbg.dxf.measure.getSession().activeSizeLabel;
+    const candidatesFiltered = dbg.dxf.measure.snapCandidates(corner);
+    clickWorld(nearCorner);
+    const interactionFiltered = dbg.dxf.measure.getSession().interaction;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+    // --- 5. Switching the filter mid-placement drops the stale interaction
+    // (its refs may point at a now-hidden piece).
+    document.getElementById('dxfMeasureAlongBtn').click();
+    clickWorld(nearCorner);
+    const midPlacementBeforeSwitch = dbg.dxf.measure.getSession().interaction;
+    sizeSelect.value = '';
+    sizeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    const midPlacementAfterSwitch = dbg.dxf.measure.getSession().interaction;
+    const activeAfterReset = dbg.dxf.measure.getSession().activeSizeLabel;
+
+    document.getElementById('toolSelect').click();
+    return {
+      sizeWrapHiddenForPlainFile, availableLabelsForPlainFile,
+      availableLabels, sizeWrapVisible, sizeSelectOptions, pieceLabels,
+      candidatesUnfiltered, tieCandidatesUnfiltered, interactionUnfiltered,
+      activeAfterFilter, candidatesFiltered, interactionFiltered,
+      midPlacementBeforeSwitch, midPlacementAfterSwitch, activeAfterReset,
+    };
+  })()`);
+
+  check(result.sizeWrapHiddenForPlainFile === true, 'Size control stays hidden for a plain single-piece import, got hidden=' + result.sizeWrapHiddenForPlainFile);
+  check(Array.isArray(result.availableLabelsForPlainFile) && result.availableLabelsForPlainFile.length === 0,
+    'no size labels detected for a plain (no-BLOCK) import, got ' + JSON.stringify(result.availableLabelsForPlainFile));
+
+  check(JSON.stringify(result.availableLabels) === JSON.stringify(['PIECE_S', 'PIECE_M']),
+    'both INSERTed block names are detected, in piece order, got ' + JSON.stringify(result.availableLabels));
+  check(result.sizeWrapVisible === true, 'Size control becomes visible once 2+ sizes are detected');
+  check(JSON.stringify(result.sizeSelectOptions) === JSON.stringify(['', 'PIECE_S', 'PIECE_M']),
+    'the real <select> is populated with "All sizes" + both detected labels, got ' + JSON.stringify(result.sizeSelectOptions));
+  check(JSON.stringify(result.pieceLabels) === JSON.stringify(['PIECE_S', 'PIECE_M']),
+    'each piece\'s own label matches the block it came from, got ' + JSON.stringify(result.pieceLabels));
+
+  check(result.candidatesUnfiltered.length >= 2 && new Set(result.candidatesUnfiltered.map(c => c.pieceIndex)).size === 2,
+    'two different pieces both have a snap candidate at the exact same point, got ' + JSON.stringify(result.candidatesUnfiltered));
+  check(result.candidatesUnfiltered.every(c => c.distance < 1e-6),
+    'both candidates sit at distance 0 from that exact point (this fixture inserts both blocks at the same point on purpose), got '
+    + JSON.stringify(result.candidatesUnfiltered.map(c => c.distance)));
+  check(result.tieCandidatesUnfiltered.length === 2 && new Set(result.tieCandidatesUnfiltered.map(c => c.pieceIndex)).size === 2,
+    'the near-tie set (one candidate per tied piece) includes BOTH pieces, got ' + JSON.stringify(result.tieCandidatesUnfiltered));
+  check(result.interactionUnfiltered && result.interactionUnfiltered.type === 'choosing-entity'
+    && result.interactionUnfiltered.hits.length === 4 && new Set(result.interactionUnfiltered.hits.map(h => h.pieceIndex)).size === 2,
+    'an unfiltered click at the tied point enters choosing-entity with all 4 hits (2 pieces x 2 adjacent segments each) — never a silent pick, got '
+    + JSON.stringify(result.interactionUnfiltered));
+
+  check(result.activeAfterFilter === 'PIECE_S', 'the real <select> change event sets activeSizeLabel, got ' + JSON.stringify(result.activeAfterFilter));
+  check(result.candidatesFiltered.length >= 1 && result.candidatesFiltered.every(c => c.pieceIndex === 0),
+    'once filtered to PIECE_S, every remaining candidate at that point belongs to piece 0 only, got ' + JSON.stringify(result.candidatesFiltered));
+  check(result.interactionFiltered && result.interactionFiltered.type === 'choosing-entity'
+    && result.interactionFiltered.hits.every(h => h.pieceIndex === 0),
+    'once filtered, the SAME click only ever resolves against the selected size — PIECE_M is invisible to it, got '
+    + JSON.stringify(result.interactionFiltered));
+
+  check(result.midPlacementBeforeSwitch != null, 'sanity: a placement really was in flight before switching the filter');
+  check(result.midPlacementAfterSwitch === null, 'switching the active size drops a stale in-flight interaction rather than leaving refs into a now-hidden piece, got '
+    + JSON.stringify(result.midPlacementAfterSwitch));
+  check(result.activeAfterReset === null, 'resetting the select to "All sizes" clears the filter, got ' + JSON.stringify(result.activeAfterReset));
+
+  console.log('PASS  section 14 (US-114 snap near-tie disambiguation + Pattern-Measure-only size filter)');
+}
+
+// Found 2026-09-01 testing real production files (2984-SONASHAPE.dxf,
+// 3380.dxf) — two gaps in the US-114 machinery this section's own fixtures
+// never exercised: (1) the Size filter activating for files whose 2+
+// distinct block labels are ordinary side-by-side pieces, not a genuine
+// grading-nest overlap (ADR 0078-adjacent fix in dxfMeasureAvailableSizeLabels,
+// dxf-measure-session.js); (2) a piece authored as exact duplicate segments
+// forcing a pointless Tab/Enter choice between two options that measure
+// identically (fix: dxfMeasureCollapseDuplicateSegmentHits, dxf-measure-snap.js).
+async function section15SizeFilterOverlapGateAndDuplicateSegments(s) {
+  const result = await s.eval(`(async () => {
+    document.getElementById('modeManualBtn').click();
+    const dbg = window.__braAutoModeDebug;
+    const p = dbg.exportProject();
+    p.state.annotations = []; p.state.images = [];
+    await dbg.loadProject(p);
+    document.getElementById('modeManualBtn').click();
+    if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    document.getElementById('toolsMenuBtn').click();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    const importDxf = async (text, name) => {
+      const input = document.getElementById('dxfImportFileInput');
+      const dt = new DataTransfer();
+      dt.items.add(new File([text], name, { type: 'application/octet-stream' }));
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      for (let i = 0; i < 20; i += 1) await new Promise(r => requestAnimationFrame(r));
+    };
+    const setSnap = (endpoint, midpoint) => {
+      const current = dbg.dxf.measure.snapEnabled();
+      if (current.endpoint !== endpoint) document.getElementById('dxfMeasureSnapEndpointBtn').click();
+      if (current.midpoint !== midpoint) document.getElementById('dxfMeasureSnapMidpointBtn').click();
+    };
+    setSnap(true, true);
+
+    // --- 1. Two distinct block labels that never overlap: the real gap
+    // found on 2984-SONASHAPE.dxf (5 different garment pieces, one BLOCK
+    // each) — the Size control must stay hidden, not offer a filter that
+    // would silently hide 4 of the 5 pieces with nothing genuinely ambiguous
+    // to resolve.
+    await importDxf(${JSON.stringify(NON_OVERLAPPING_PIECES_DXF)}, 'nonoverlap.dxf');
+    const nonOverlapLabels = dbg.dxf.measure.availableSizeLabels();
+    const nonOverlapWrapHidden = document.getElementById('dxfMeasureSizeWrap').hidden;
+
+    // --- 2. Regression: the genuine grading-nest fixture from section 14
+    // (same-position overlap) must still activate the filter.
+    await importDxf(${JSON.stringify(SIZE_FILTER_DXF)}, 'sizefilter2.dxf');
+    const overlapLabels = dbg.dxf.measure.availableSizeLabels();
+    const overlapWrapHidden = document.getElementById('dxfMeasureSizeWrap').hidden;
+
+    // --- 3. A piece authored as two exact-duplicate closed outlines (the
+    // real shape found on 3380.dxf): a click at the shared midpoint of a
+    // duplicated edge must resolve unambiguously, not open choosing-entity
+    // for two options that measure identically.
+    await importDxf(${JSON.stringify(DUPLICATE_SEGMENT_DXF)}, 'dupseg.dxf');
+    const segCount = dbg.dxf.measure.pieceSegments(0).length;
+    const nativeMid = { x: 5, y: 0 }; // midpoint of both dxfLine(0,0,10,0) copies (segments 0 and 4)
+    const boardMid = dbg.dxf.measure.nativeToBoardLive(nativeMid, 0);
+    const rawCandidatesAtMidpoint = dbg.dxf.measure.snapCandidates(boardMid);
+
+    const canvas = document.getElementById('boardCanvas');
+    const toScreen = world => { const rect = canvas.getBoundingClientRect(), view = dbg.getView(); return { x: rect.left + world.x * view.zoom + view.panX, y: rect.top + world.y * view.zoom + view.panY }; };
+    const fireWorld = (type, world, extra={}) => { const sp = toScreen(world); canvas.dispatchEvent(new MouseEvent(type, Object.assign({clientX:sp.x,clientY:sp.y,bubbles:true,button:0}, extra))); };
+    const clickWorld = (world, extra={}) => { fireWorld('mousedown', world, extra); fireWorld('mouseup', world, extra); };
+
+    document.getElementById('dxfMeasureAlongBtn').click();
+    clickWorld(boardMid);
+    const interactionAtDuplicateMidpoint = dbg.dxf.measure.getSession().interaction;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+    document.getElementById('toolSelect').click();
+    return {
+      nonOverlapLabels, nonOverlapWrapHidden, overlapLabels, overlapWrapHidden,
+      segCount, rawCandidatesAtMidpoint, interactionAtDuplicateMidpoint,
+    };
+  })()`);
+
+  check(Array.isArray(result.nonOverlapLabels) && result.nonOverlapLabels.length === 0,
+    'the Size filter must not activate for 2+ distinct block labels that never overlap (ordinary side-by-side pieces), got ' + JSON.stringify(result.nonOverlapLabels));
+  check(result.nonOverlapWrapHidden === true, 'the Size control stays hidden for non-overlapping distinct pieces');
+
+  check(JSON.stringify(result.overlapLabels) === JSON.stringify(['PIECE_S', 'PIECE_M']),
+    'regression: the genuine same-position grading-nest fixture must still activate the filter, got ' + JSON.stringify(result.overlapLabels));
+  check(result.overlapWrapHidden === false, 'regression: the Size control stays visible for a genuine overlapping grading nest');
+
+  check(result.segCount === 8, 'sanity: the duplicate-segment fixture really does carry 8 raw segments (4 unique edges authored twice), got ' + result.segCount);
+  check(result.rawCandidatesAtMidpoint.length >= 2,
+    'sanity: BEFORE collapsing, the two duplicate segments really do each contribute their own unclustered midpoint candidate at the same point, got '
+    + JSON.stringify(result.rawCandidatesAtMidpoint));
+  check(result.interactionAtDuplicateMidpoint && result.interactionAtDuplicateMidpoint.type === 'awaiting-b',
+    'a click at a duplicated edge\'s shared midpoint must resolve unambiguously (hits collapsed to 1, no Tab/Enter choice between two options that measure identically), got '
+    + JSON.stringify(result.interactionAtDuplicateMidpoint));
+
+  console.log('PASS  section 15 (Size filter overlap gate + duplicate-segment hit collapsing)');
 }
 
 // ---- Section 1: pure kernel unit tests -------------------------------------

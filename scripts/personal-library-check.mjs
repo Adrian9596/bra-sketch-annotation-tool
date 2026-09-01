@@ -322,6 +322,52 @@ async function main() {
     check(handleSnap.guides.some(g=>g.type==='intersection'),
       'dragging an endpoint onto an intersection must show the intersection guide, not just move silently');
 
+    // Found 2026-09-01 testing Pattern Measure on a real 6432-line
+    // grading-nest DXF import: nearestLineIntersectionSnap paired EVERY
+    // straight reference line against every other one with no spatial
+    // pre-filter, called once per moving endpoint. A whole-piece drag (a
+    // ~230-line group, each endpoint checked against ~6200 board lines) took
+    // over a MINUTE per mousemove. Reproduce both factors — a large board
+    // AND a large moving group, since either alone stays fast enough in a
+    // headless V8 to hide the bug — so an unfiltered O(n^2) pass is
+    // unambiguously (by two orders of magnitude) slower than the fixed
+    // bounding-box pre-filter, with enough margin to not flake on a slower
+    // CI host.
+    const perfGuard = await session.eval(`(() => {
+      const d=window.__braAutoModeDebug;
+      for (let i = 0; i < 6000; i += 1) {
+        const bx = (i * 37) % 20000, by = (i * 53) % 20000;
+        d.styleEvidence.pushAnnotation({id:30000+i,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:bx,y:by},end:{x:bx+40,y:by+10},control1:null,control2:null,points:[],label:{x:bx+20,y:by-10},labelManual:false});
+      }
+      const refA={id:39001,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:10000,y:9900},end:{x:10000,y:10100},control1:null,control2:null,points:[],label:{x:10020,y:10000},labelManual:false};
+      const refB={id:39002,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:9900,y:10000},end:{x:10100,y:10000},control1:null,control2:null,points:[],label:{x:10000,y:10020},labelManual:false};
+      const hot={id:39003,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:10000,y:9800},end:{x:10000,y:9950},control1:null,control2:null,points:[],label:{x:10020,y:9875},labelManual:false};
+      d.styleEvidence.pushAnnotation(refA); d.styleEvidence.pushAnnotation(refB); d.styleEvidence.pushAnnotation(hot);
+      // Filler moving lines: parallel to each other (never cross among
+      // themselves) and off in their own corner of the board (x 50000+, no
+      // x-overlap with any noise/ref/hot line), so they cannot produce a
+      // spurious hit — they exist purely to multiply the per-mousemove call
+      // count the way a real ~230-line piece-drag group does.
+      const movingIds = [39003];
+      for (let i = 0; i < 100; i += 1) {
+        const id = 40000 + i;
+        d.styleEvidence.pushAnnotation({id,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:50000,y:50000+i*20},end:{x:50100,y:50000+i*20},control1:null,control2:null,points:[],label:{x:50050,y:49990+i*20},labelManual:false});
+        movingIds.push(id);
+      }
+      d.setSmartAlignEnabled(true);
+      const t0 = performance.now();
+      const result = d.previewSmartAlignment(movingIds, 0, 50, false);
+      const t1 = performance.now();
+      return { ms: t1 - t0, result };
+    })()`);
+    check(perfGuard.ms < 2000,
+      'Smart Align intersection snap must stay fast with a large moving group on a board with thousands of reference lines (took '
+      + perfGuard.ms.toFixed(1) + 'ms)');
+    check(Math.abs(perfGuard.result.dx) < 0.01 && Math.abs(perfGuard.result.dy - 50) < 0.01,
+      'the perf-guard board must still resolve the correct intersection snap, not just run fast');
+    check(perfGuard.result.guides.some(g => g.type === 'intersection'),
+      'the perf-guard intersection guide must still be reported at scale');
+
     // US-102: POM Focus forces Smart Align off, but it must not CLEAR the
     // TD's own preference — toggling Sketch Focus off then back on must
     // restore exactly what they chose. Currently in Sketch Focus (from the

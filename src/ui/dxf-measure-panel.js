@@ -42,4 +42,45 @@
       // opening the select's dropdown must not bubble into that handler.
       el.dxfMeasureUnitSelect.addEventListener('click', (event) => event.stopPropagation());
     }
+    // US-114: the active-size filter — same stray-click guard as the unit
+    // select above, same reasoning.
+    if (el.dxfMeasureSizeSelect) {
+      el.dxfMeasureSizeSelect.addEventListener('change', () => {
+        const session = state.dxfMeasureSession;
+        if (session) dxfMeasureSetActiveSizeLabel(session, el.dxfMeasureSizeSelect.value);
+      });
+      el.dxfMeasureSizeSelect.addEventListener('click', (event) => event.stopPropagation());
+    }
+  }
+
+  // Rebuilds the Size dropdown's <option>s only when the SET of detected
+  // labels actually changes (a fresh import) — same fingerprint-gated-
+  // rebuild shape as renderDxfMeasurementsPanel, so a TD mid-selection is
+  // never fought. Hidden entirely when fewer than 2 sizes are detected
+  // (dxfMeasureAvailableSizeLabels already encodes that "nothing to filter"
+  // rule) rather than shown-but-empty.
+  function renderDxfMeasureSizeSelect() {
+    if (!el.dxfMeasureSizeWrap || !el.dxfMeasureSizeSelect) return;
+    const session = state.dxfMeasureSession;
+    const labels = session ? dxfMeasureAvailableSizeLabels(session) : [];
+    el.dxfMeasureSizeWrap.hidden = labels.length < 2;
+    if (labels.length < 2) return;
+    const fingerprint = JSON.stringify(labels);
+    if (el.dxfMeasureSizeSelect.dataset.fingerprint !== fingerprint) {
+      el.dxfMeasureSizeSelect.dataset.fingerprint = fingerprint;
+      el.dxfMeasureSizeSelect.replaceChildren();
+      const allOption = document.createElement('option');
+      allOption.value = '';
+      allOption.textContent = 'All sizes';
+      el.dxfMeasureSizeSelect.appendChild(allOption);
+      for (const label of labels) {
+        const opt = document.createElement('option');
+        opt.value = label;
+        opt.textContent = label;
+        el.dxfMeasureSizeSelect.appendChild(opt);
+      }
+    }
+    if (document.activeElement !== el.dxfMeasureSizeSelect) {
+      el.dxfMeasureSizeSelect.value = session.activeSizeLabel || '';
+    }
   }

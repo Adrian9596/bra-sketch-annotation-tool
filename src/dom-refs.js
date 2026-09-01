@@ -49,6 +49,9 @@
     dxfMeasureSnapEndpointBtn: document.getElementById('dxfMeasureSnapEndpointBtn'),
     dxfMeasureSnapMidpointBtn: document.getElementById('dxfMeasureSnapMidpointBtn'),
     dxfMeasureSnapIntersectionBtn: document.getElementById('dxfMeasureSnapIntersectionBtn'),
+    // US-114: the Pattern-Measure-only active-size filter, same menu.
+    dxfMeasureSizeWrap: document.getElementById('dxfMeasureSizeWrap'),
+    dxfMeasureSizeSelect: document.getElementById('dxfMeasureSizeSelect'),
     // ADR 0073: the DXF native-unit select + provenance note beside them.
     dxfMeasureUnitSelect: document.getElementById('dxfMeasureUnitSelect'),
     dxfMeasureUnitNote: document.getElementById('dxfMeasureUnitNote'),

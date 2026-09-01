@@ -372,6 +372,9 @@
       el.dxfMeasurementsListBtn.classList.toggle('active', isDxfMeasurementsPanelOpen());
     }
     if (typeof renderDxfMeasurementsPanel === 'function') renderDxfMeasurementsPanel();
+    // US-114: the active-size filter — hidden entirely unless the current
+    // import actually carries 2+ distinct size labels.
+    if (typeof renderDxfMeasureSizeSelect === 'function') renderDxfMeasureSizeSelect();
     // ADR 0073: the native-unit select + provenance note. The select mirrors
     // the session's EFFECTIVE unit; the activeElement guard is the
     // brushSizeInput pattern above — never fight the TD mid-interaction.

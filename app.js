@@ -611,6 +611,9 @@
     dxfMeasureSnapEndpointBtn: document.getElementById('dxfMeasureSnapEndpointBtn'),
     dxfMeasureSnapMidpointBtn: document.getElementById('dxfMeasureSnapMidpointBtn'),
     dxfMeasureSnapIntersectionBtn: document.getElementById('dxfMeasureSnapIntersectionBtn'),
+    // US-114: the Pattern-Measure-only active-size filter, same menu.
+    dxfMeasureSizeWrap: document.getElementById('dxfMeasureSizeWrap'),
+    dxfMeasureSizeSelect: document.getElementById('dxfMeasureSizeSelect'),
     // ADR 0073: the DXF native-unit select + provenance note beside them.
     dxfMeasureUnitSelect: document.getElementById('dxfMeasureUnitSelect'),
     dxfMeasureUnitNote: document.getElementById('dxfMeasureUnitNote'),
@@ -18895,6 +18898,47 @@ const BOM_MATERIAL_LIBRARY = [
       // opening the select's dropdown must not bubble into that handler.
       el.dxfMeasureUnitSelect.addEventListener('click', (event) => event.stopPropagation());
     }
+    // US-114: the active-size filter — same stray-click guard as the unit
+    // select above, same reasoning.
+    if (el.dxfMeasureSizeSelect) {
+      el.dxfMeasureSizeSelect.addEventListener('change', () => {
+        const session = state.dxfMeasureSession;
+        if (session) dxfMeasureSetActiveSizeLabel(session, el.dxfMeasureSizeSelect.value);
+      });
+      el.dxfMeasureSizeSelect.addEventListener('click', (event) => event.stopPropagation());
+    }
+  }
+
+  // Rebuilds the Size dropdown's <option>s only when the SET of detected
+  // labels actually changes (a fresh import) — same fingerprint-gated-
+  // rebuild shape as renderDxfMeasurementsPanel, so a TD mid-selection is
+  // never fought. Hidden entirely when fewer than 2 sizes are detected
+  // (dxfMeasureAvailableSizeLabels already encodes that "nothing to filter"
+  // rule) rather than shown-but-empty.
+  function renderDxfMeasureSizeSelect() {
+    if (!el.dxfMeasureSizeWrap || !el.dxfMeasureSizeSelect) return;
+    const session = state.dxfMeasureSession;
+    const labels = session ? dxfMeasureAvailableSizeLabels(session) : [];
+    el.dxfMeasureSizeWrap.hidden = labels.length < 2;
+    if (labels.length < 2) return;
+    const fingerprint = JSON.stringify(labels);
+    if (el.dxfMeasureSizeSelect.dataset.fingerprint !== fingerprint) {
+      el.dxfMeasureSizeSelect.dataset.fingerprint = fingerprint;
+      el.dxfMeasureSizeSelect.replaceChildren();
+      const allOption = document.createElement('option');
+      allOption.value = '';
+      allOption.textContent = 'All sizes';
+      el.dxfMeasureSizeSelect.appendChild(allOption);
+      for (const label of labels) {
+        const opt = document.createElement('option');
+        opt.value = label;
+        opt.textContent = label;
+        el.dxfMeasureSizeSelect.appendChild(opt);
+      }
+    }
+    if (document.activeElement !== el.dxfMeasureSizeSelect) {
+      el.dxfMeasureSizeSelect.value = session.activeSizeLabel || '';
+    }
   }
 
   // ---- src/manual/simplify-piece.js ----
@@ -22737,6 +22781,12 @@ function setSelection(kind, id) {
 
   // ---- src/manual/smart-align.js ----
 // US-099: translation-only Smart Align for lines and Template groups.
+// computeSmartIntersectionSnapForHandle is a separate, later addition: it
+// snaps a SINGLE dragged straight-line endpoint onto the crossing point of
+// two OTHER straight reference lines — the one gesture a TD actually uses to
+// place a POM line's end at a seam junction. It deliberately shares this
+// file's tolerance conventions and the same Smart Align on/off + Alt-bypass
+// switch rather than inventing a second setting.
 // Source part for app.js. Run `npm run build` after editing.
 
   function setSmartAlignEnabled(enabled, announce) {
@@ -22780,6 +22830,47 @@ function setSelection(kind, id) {
     return { dx, dy, guides: Array.isArray(guides) ? guides : [] };
   }
 
+  // A segment can only contribute a crossing point within `limit` of `point`
+  // if some point ON the segment is within `limit` of `point` — and every
+  // such point lies inside the segment's own bounding box, so a segment
+  // whose bbox (expanded by `limit`) misses `point` can be dropped before
+  // the pairwise check below. Bbox is a cheap over-approximation (some
+  // false positives, never a false negative), so this never changes the
+  // result — only how many candidates reach the O(n^2) pass.
+  function lineBoundsNearPoint(line, point, limit) {
+    const minX = Math.min(line.start.x, line.end.x) - limit;
+    const maxX = Math.max(line.start.x, line.end.x) + limit;
+    if (point.x < minX || point.x > maxX) return false;
+    const minY = Math.min(line.start.y, line.end.y) - limit;
+    const maxY = Math.max(line.start.y, line.end.y) + limit;
+    return point.y >= minY && point.y <= maxY;
+  }
+
+  // Nearest point, within `limit`, where two DIFFERENT straight lines in
+  // `lines` actually cross (segment bounds, not their infinite extension —
+  // see segmentIntersection). The pairwise check is O(n^2), so `lines` is
+  // first narrowed to candidates whose bounding box reaches `point` — on a
+  // real grading-nest DXF import a board can carry thousands of reference
+  // lines, and squaring that directly (this used to run unfiltered) is the
+  // difference between a snap check costing low-single-digit milliseconds
+  // and one costing tens of seconds.
+  function nearestLineIntersectionSnap(point, lines, limit) {
+    const candidates = lines.filter(line => lineBoundsNearPoint(line, point, limit));
+    let best = null;
+    for (let i = 0; i < candidates.length; i += 1) {
+      for (let j = i + 1; j < candidates.length; j += 1) {
+        const a = candidates[i], b = candidates[j];
+        const hit = segmentIntersection(a.start, a.end, b.start, b.end);
+        if (!hit) continue;
+        const dist = distance(point, hit);
+        if (dist <= limit && (!best || dist < best.dist)) {
+          best = { dist, point: hit, referenceIds: [a.id, b.id] };
+        }
+      }
+    }
+    return best;
+  }
+
   function computeSmartAlignment(startAnnotations, movingIds, rawDx, rawDy, bypass) {
     const dx = Number(rawDx) || 0, dy = Number(rawDy) || 0;
     // US-102: Smart Align is Sketch-Focus-only — its own on/off preference
@@ -22795,6 +22886,7 @@ function setSelection(kind, id) {
 
     const z = Math.max(0.0001, state.zoom);
     const endpointLimit = 10 / z;
+    const straightReferences = references.filter(reference => reference.type === 'straight');
     let bestEndpoint = null;
     for (const source of moving) {
       for (const movingPoint of [source.start, source.end]) {
@@ -22811,6 +22903,18 @@ function setSelection(kind, id) {
               };
             }
           }
+        }
+        // Same tier, same tolerance: the crossing point of two OTHER
+        // reference lines is exactly as valid a snap target as either
+        // reference's own endpoint — closest candidate wins either way.
+        const hit = nearestLineIntersectionSnap(proposed, straightReferences, endpointLimit);
+        if (hit && (!bestEndpoint || hit.dist < bestEndpoint.dist)) {
+          bestEndpoint = {
+            dist: hit.dist,
+            dx: dx + hit.point.x - proposed.x,
+            dy: dy + hit.point.y - proposed.y,
+            guide: { type: 'intersection', point: clonePoint(hit.point), referenceIds: hit.referenceIds },
+          };
         }
       }
     }
@@ -22873,6 +22977,33 @@ function setSelection(kind, id) {
     return bestLine
       ? smartAlignResult(bestLine.dx, bestLine.dy, [bestLine.guide])
       : smartAlignResult(dx, dy, []);
+  }
+
+  // Single-endpoint drag (drag-handle in pointer-events.js) gets NO snap
+  // support otherwise — computeSmartAlignment above only ever fires for a
+  // whole-annotation body drag. This is deliberately narrower than that
+  // function: only a STRAIGHT line's own start/end (never a curve's anchors
+  // or handles, never midPoint) and only intersection-with-other-lines, not
+  // endpoint-to-endpoint — the latter would be a separate, unrequested
+  // feature. Returns the point unchanged (guide: null) whenever Smart Align
+  // is off, bypassed, or the part/type isn't eligible, so callers can apply
+  // the result unconditionally.
+  function computeSmartIntersectionSnapForHandle(ann, part, point, bypass) {
+    // US-102: same hard POM-Focus-off rule as computeSmartAlignment above.
+    if (!state.smartAlignEnabled || !state.sketchMode || bypass || !ann || ann.type !== 'straight'
+        || (part !== 'start' && part !== 'end')) {
+      return { point: clonePoint(point), guide: null };
+    }
+    const z = Math.max(0.0001, state.zoom);
+    const limit = 10 / z;
+    const references = state.annotations.filter(other => other.id !== ann.id
+      && other.type === 'straight' && !isAnnHidden(other.id));
+    const hit = nearestLineIntersectionSnap(point, references, limit);
+    if (!hit) return { point: clonePoint(point), guide: null };
+    return {
+      point: clonePoint(hit.point),
+      guide: { type: 'intersection', point: clonePoint(hit.point), referenceIds: hit.referenceIds },
+    };
   }
 
   function restoreAnnotationMoveGeometry(ann, source) {
@@ -28328,16 +28459,28 @@ function onWheel(e) {
     return { x: ann.start.x - importBoardPoint.x, y: ann.start.y - importBoardPoint.y };
   }
 
-  function dxfMeasureNativeToBoardLive(nativePoint, session, pieceIndex) {
+  // `precomputedOffset` (optional): dxfMeasureCurrentPieceOffset is O(n) in
+  // `state.annotations` (getAnnotationById does a linear `.find()`) — cheap
+  // for an occasional single-point call, but a real cost multiplier for a
+  // caller invoking this once per SNAP POINT or per ROUTE SAMPLE within one
+  // piece (thousands of calls, same piece, same offset every time). Found on
+  // a real 108-piece/21211-annotation file: dxfMeasureSnapCandidates was
+  // taking ~525-611ms per call — consistently, not a one-time cache miss —
+  // because it recomputed this offset from scratch for every one of a
+  // piece's endpoints/midpoints instead of once for the whole piece. Any
+  // hot loop that already knows it's staying within one pieceIndex across
+  // many calls should compute the offset ONCE (dxfMeasureCurrentPieceOffset
+  // directly) and pass it here instead of paying that scan again per point.
+  function dxfMeasureNativeToBoardLive(nativePoint, session, pieceIndex, precomputedOffset) {
     const base = dxfMeasureNativeToBoard(nativePoint, session);
     if (!base) return null;
-    const offset = dxfMeasureCurrentPieceOffset(session, pieceIndex);
+    const offset = precomputedOffset || dxfMeasureCurrentPieceOffset(session, pieceIndex);
     return { x: base.x + offset.x, y: base.y + offset.y };
   }
 
-  function dxfMeasureBoardToNativeLive(boardPoint, session, pieceIndex) {
+  function dxfMeasureBoardToNativeLive(boardPoint, session, pieceIndex, precomputedOffset) {
     if (!boardPoint) return null;
-    const offset = dxfMeasureCurrentPieceOffset(session, pieceIndex);
+    const offset = precomputedOffset || dxfMeasureCurrentPieceOffset(session, pieceIndex);
     return dxfMeasureBoardToNative({ x: boardPoint.x - offset.x, y: boardPoint.y - offset.y }, session);
   }
 
@@ -28359,6 +28502,7 @@ function onWheel(e) {
     }
     const containing = [];
     session.pieceBounds.forEach((bounds, pieceIndex) => {
+      if (!dxfMeasurePieceIsActive(session, pieceIndex)) return;
       const native = dxfMeasureBoardToNativeLive(boardPoint, session, pieceIndex);
       if (native && native.x >= bounds.x && native.x <= bounds.x + bounds.width
         && native.y >= bounds.y && native.y <= bounds.y + bounds.height) {
@@ -28454,7 +28598,130 @@ function onWheel(e) {
       // `interaction`; never part of the undo snapshot.
       hoverWorld: null,
       hoverAltKey: false,
+      // US-114: Pattern-Measure-only active-size filter — see
+      // dxfMeasurePieceIsActive below. Session-scoped (unlike the snap kind
+      // toggles) because the choices themselves are file-specific; a fresh
+      // import always starts unfiltered.
+      activeSizeLabel: null,
     };
+  }
+
+  // ---- US-114: size filter (grading-nest disambiguation) --------------------
+  //
+  // A raw grading-nest import places every detected size's pieces at the
+  // same board position (ADR 0069/0070, deliberately — it's what keeps
+  // Pattern Pieces' "keep only these sizes" possible after the fact). That
+  // overlap is exactly what makes Pattern Measure's own click/snap
+  // resolution genuinely ambiguous between two different sizes' near-
+  // identical points (confirmed on a real factory file: two different
+  // sizes' matching vertices only 0.06 native units apart). Rather than
+  // build US-110's own full import-time size picker (a separate, not-yet-
+  // built high-risk story), this is a narrower, Pattern-Measure-only,
+  // NON-destructive preference: scope every piece-search to one size at a
+  // time, using the SAME block-name-per-piece data the Pattern Pieces panel
+  // already shows — never a new naming heuristic, never re-derived.
+
+  // The piece's own INSERT block name, exactly as the Pattern Pieces panel
+  // shows it (mojibake and all) — reached via the SAME anchor-annotation
+  // chain dxfMeasureCurrentPieceOffset above already uses. Null for a piece
+  // with no anchor (dxf-import.js couldn't pair native/board piece counts)
+  // or one that came from direct ENTITIES rather than an INSERT/BLOCK (no
+  // block name to have).
+  function dxfMeasurePieceSizeLabel(session, pieceIndex) {
+    const anchor = session && session.pieceAnchors && session.pieceAnchors[pieceIndex];
+    if (!anchor) return null;
+    const ann = getAnnotationById(anchor.annotationId);
+    const groupId = ann && ann.templateGroupId;
+    if (!groupId) return null;
+    return (state.templateGroupLabels && state.templateGroupLabels[groupId]) || null;
+  }
+
+  // Fraction of the SMALLER of the two boxes' own area that the two boxes'
+  // intersection covers — 0 for no overlap, up to 1 for one box wholly
+  // containing the other. A plain "do their bounding boxes touch at all"
+  // test is too permissive: real multi-piece layouts often have two
+  // unrelated pieces sharing/crossing a cut edge, which is a thin sliver of
+  // incidental AABB overlap, not the SAME-position stacking a grading nest
+  // creates (ADR 0069/0070 places every size at the same board position, so
+  // a real size pair's bounds are almost entirely coincident, not merely
+  // touching).
+  function dxfMeasureBoundsOverlapRatio(a, b) {
+    if (!a || !b) return 0;
+    const ix0 = Math.max(a.x, b.x), iy0 = Math.max(a.y, b.y);
+    const ix1 = Math.min(a.x + a.width, b.x + b.width), iy1 = Math.min(a.y + a.height, b.y + b.height);
+    const iw = ix1 - ix0, iy = iy1 - iy0;
+    if (iw <= 0 || iy <= 0) return 0;
+    const smallerArea = Math.min(Math.max(a.width * a.height, 1e-12), Math.max(b.width * b.height, 1e-12));
+    return (iw * iy) / smallerArea;
+  }
+
+  // How much of the smaller piece's bounds the overlap must cover to count
+  // as "the same piece stacked at another size" rather than incidental
+  // adjacency — see dxfMeasureBoundsOverlapRatio. A genuine same-position
+  // grading pair (same anchor corner, one size uniformly larger) covers the
+  // smaller piece's bounds almost completely; a real single-size factory
+  // file's sliver of incidental edge-sharing between two UNRELATED pieces
+  // measured as low as ~9% on a real fixture (see US-117) — comfortably
+  // under this threshold either way.
+  const DXF_MEASURE_SIZE_FILTER_OVERLAP_RATIO = 0.5;
+
+  // The dropdown's option list: distinct labels across every piece, in
+  // first-seen (piece) order. Empty when fewer than 2 distinct labels exist
+  // — an unlabeled sketch, a single-size file, or one whose pieces came from
+  // direct ENTITIES — since there is nothing to filter between.
+  //
+  // Found 2026-09-01 testing a real single-size factory file (5 different
+  // garment pieces, each its own INSERT, laid out side by side): 2+ distinct
+  // block-name labels is NOT by itself evidence of a grading nest — the
+  // filter's own justification above is specifically the SAME-position
+  // overlap a grading nest creates. Two differently-labeled pieces whose
+  // bounds don't SUBSTANTIALLY overlap are ordinary side-by-side garment
+  // pieces (or two pieces that merely share/cross a cut edge), not size
+  // variants stacked on each other; activating the filter for a file like
+  // that would silently make the other pieces unclickable with nothing
+  // genuinely ambiguous to resolve. So the filter now also requires at
+  // least one pair of differently-labeled pieces whose bounds substantially
+  // overlap before it activates at all.
+  function dxfMeasureAvailableSizeLabels(session) {
+    if (!session) return [];
+    const seen = [];
+    const piecesByLabel = new Map();
+    session.pieces.forEach((piece, i) => {
+      const label = dxfMeasurePieceSizeLabel(session, i);
+      if (!label) return;
+      if (!seen.includes(label)) seen.push(label);
+      if (!piecesByLabel.has(label)) piecesByLabel.set(label, []);
+      piecesByLabel.get(label).push(i);
+    });
+    if (seen.length < 2) return [];
+    const hasOverlappingPair = seen.some((labelA, ai) => seen.slice(ai + 1).some(labelB =>
+      piecesByLabel.get(labelA).some(i => piecesByLabel.get(labelB).some(j =>
+        dxfMeasureBoundsOverlapRatio(session.pieceBounds[i], session.pieceBounds[j]) >= DXF_MEASURE_SIZE_FILTER_OVERLAP_RATIO))));
+    return hasOverlappingPair ? seen : [];
+  }
+
+  // The single gate every piece-search loop in this file and
+  // dxf-measure-snap.js must call. `session.activeSizeLabel` null (the
+  // default, and the only possible value when dxfMeasureAvailableSizeLabels
+  // returns empty) means "every piece" — today's unfiltered behavior,
+  // byte-for-byte unchanged.
+  function dxfMeasurePieceIsActive(session, pieceIndex) {
+    if (!session || !session.activeSizeLabel) return true;
+    return dxfMeasurePieceSizeLabel(session, pieceIndex) === session.activeSizeLabel;
+  }
+
+  // A TD preference, not an edit — no history push (matches
+  // smartAlignEnabled and the snap-kind toggles), but DOES drop any
+  // in-flight placement: a pending choosing-entity/awaiting-b interaction
+  // may hold refs into a piece the new filter just hid, and there is no
+  // sane way to "continue" that pick once its own candidates are no longer
+  // valid choices.
+  function dxfMeasureSetActiveSizeLabel(session, label) {
+    if (!session) return;
+    session.activeSizeLabel = label || null;
+    session.interaction = null;
+    updateUI();
+    requestRender();
   }
 
   // Called from importDxfText right after a successful import, with the
@@ -28536,6 +28803,7 @@ function onWheel(e) {
     const nativeTolerance = toleranceWorld / Math.max(1e-9, scale);
     const hits = [];
     session.pieces.forEach((piece, pieceIndex) => {
+      if (!dxfMeasurePieceIsActive(session, pieceIndex)) return;
       const nativePoint = dxfMeasureBoardToNativeLive(boardPoint, session, pieceIndex);
       if (!nativePoint) return;
       piece.segments.forEach((seg, segIndexInPiece) => {
@@ -28988,6 +29256,15 @@ function onWheel(e) {
 // dxf-measure-interaction.js's dxfMeasureSnapEntityHitsForClick), same as an
 // unsnapped click with several entities in tolerance. Snap only narrows WHERE
 // the click is anchored, never who gets to decide between several entities.
+// US-114 extended that same rule to snap points from DIFFERENT pieces near-
+// coinciding (real grading-nest files stack every size's pieces at the same
+// board position — ADR 0069/0070 — so two sizes' matching vertices can sit a
+// fraction of a grade-step apart): dxfMeasureSnapTieCandidates surfaces every
+// candidate within a tight band of the best one, not just the single
+// nearest, so that case ALSO goes through choosing-entity instead of a
+// silent pick. See also dxfMeasurePieceIsActive (dxf-measure-session.js) —
+// the TD's own "Size" filter, a non-destructive way to rule out the other
+// sizes' pieces entirely rather than relying on Tab/Enter every time.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Release-1 scope (see docs/stories/epics/E01-manual-mode/
@@ -29037,7 +29314,66 @@ function onWheel(e) {
         bucket.refs.push({ segIndexInPiece, t });
       }
     });
-    return { endpoints, midpoints, intersections: null };
+    return { endpoints, midpoints, intersections: null, duplicateCanonical: dxfMeasureDuplicateSegmentCanonical(piece, tol) };
+  }
+
+  // Found 2026-09-01 on a real production file authored as pairs of
+  // back-to-back, byte-identical closed POLYLINEs (every piece's outline
+  // drawn twice): ADR 0073's dxfCollapseDuplicateParallelEdges already
+  // treats this as one edge for ROUTE SEARCH, but nothing did the same for
+  // point-PLACEMENT — a click near such an edge's midpoint (or a corner it
+  // shares with its own duplicate) hit BOTH copies within tolerance, and
+  // dxfMeasureResolveEntityClick's no-silent-pick rule correctly, but
+  // pointlessly, opened a Tab/Enter choice between two options that measure
+  // identically either way. Reuses the exact same "genuine duplicate"
+  // definition as dxfCollapseDuplicateParallelEdges (same kind, same
+  // length, same geometric midpoint, within `tolerance`) rather than a
+  // second heuristic — this just applies it to the flat per-piece segment
+  // list instead of the route-search graph. Returns canonical[i] === i for
+  // every segment with no duplicate, so callers can always index it safely.
+  function dxfMeasureDuplicateSegmentCanonical(piece, tolerance) {
+    const tol = Number.isFinite(tolerance) && tolerance > 0 ? tolerance : 1e-6;
+    const canonical = new Array(piece.segments.length);
+    const groups = [];
+    piece.segments.forEach((seg, segIndexInPiece) => {
+      if (dxfSegmentFailureReason(seg)) { canonical[segIndexInPiece] = segIndexInPiece; return; }
+      const length = dxfSegmentLength(seg);
+      const mid = dxfPointOnSegment(seg, 0.5);
+      const lenEps = Math.max(tol, Math.abs(length) * 1e-9);
+      const match = mid && groups.find(g => g.kind === seg.kind
+        && Math.abs(g.length - length) <= lenEps
+        && distance(g.mid, mid) <= tol);
+      if (match) {
+        canonical[segIndexInPiece] = match.segIndexInPiece;
+      } else {
+        canonical[segIndexInPiece] = segIndexInPiece;
+        groups.push({ kind: seg.kind, length, mid, segIndexInPiece });
+      }
+    });
+    return canonical;
+  }
+
+  // The candidate/hit list a click actually resolves against, with any
+  // hits that map to the SAME piece's canonical duplicate segment collapsed
+  // to one (keeping the first — callers pass hits already sorted nearest-
+  // first, or effectively tied at distance 0 for a true duplicate). See
+  // dxfMeasureDuplicateSegmentCanonical above for why: two authored copies
+  // of one edge are not two different entities for choosing-entity to make
+  // a TD pick between.
+  function dxfMeasureCollapseDuplicateSegmentHits(session, hits) {
+    if (!Array.isArray(hits) || hits.length < 2) return hits;
+    const seen = new Set();
+    const kept = [];
+    for (const hit of hits) {
+      const idx = dxfMeasureEnsurePieceSnapIndex(session, hit.pieceIndex);
+      const canonicalSeg = (idx.duplicateCanonical && idx.duplicateCanonical[hit.segIndexInPiece] != null)
+        ? idx.duplicateCanonical[hit.segIndexInPiece] : hit.segIndexInPiece;
+      const key = hit.pieceIndex + ':' + canonicalSeg;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      kept.push(hit);
+    }
+    return kept;
   }
 
   // Circle/line intersection: solve |P0 + t*D - C|^2 = r^2 for t, keep roots
@@ -29141,38 +29477,79 @@ function onWheel(e) {
     return !!(state.dxfMeasureSnapEndpoint || state.dxfMeasureSnapMidpoint || state.dxfMeasureSnapIntersection);
   }
 
-  // Nearest enabled-kind snap point to `world` (board/world space, live piece
-  // position already accounted for via dxfMeasureNativeToBoardLive) within
-  // DXF_MEASURE_SNAP_TOLERANCE_PX screen px, or null. When several kinds are
-  // in tolerance, the NEAREST wins regardless of kind — see the plan's "ưu
-  // tiên gần pointer nhất" rule; the caller always draws a marker exactly at
-  // the returned point before it can be committed by a click, so this is a
-  // visible preview, never a silent guess (file header).
-  function dxfMeasureSnapCandidate(session, world) {
-    if (!session || !world) return null;
+  // Every enabled-kind snap point within DXF_MEASURE_SNAP_TOLERANCE_PX screen
+  // px of `world` (board/world space, live piece position already accounted
+  // for via dxfMeasureNativeToBoardLive), sorted nearest-first and scoped to
+  // the active size filter (dxfMeasurePieceIsActive, US-114) exactly like
+  // every other piece-search in this session. `dxfMeasureSnapCandidate`
+  // (singular, below) keeps returning just the nearest for callers that only
+  // ever wanted one point (the hover preview, Out of Path placement); this
+  // plural form exists for dxfMeasureSnapTieCandidates' near-tie check below.
+  function dxfMeasureSnapCandidates(session, world) {
+    if (!session || !world) return [];
     const kinds = dxfMeasureSnapEnabledKinds();
-    if (!kinds.length) return null;
+    if (!kinds.length) return [];
     const tol = DXF_MEASURE_SNAP_TOLERANCE_PX / Math.max(0.0001, state.zoom);
-    let best = null;
+    const all = [];
     session.pieces.forEach((piece, pieceIndex) => {
-      if (!piece.segments.length) return;
+      if (!piece.segments.length || !dxfMeasurePieceIsActive(session, pieceIndex)) return;
       const idx = dxfMeasureEnsurePieceSnapIndex(session, pieceIndex);
+      // Computed ONCE per piece, not once per snap point — see
+      // dxfMeasureNativeToBoardLive's own comment on why this matters.
+      const offset = dxfMeasureCurrentPieceOffset(session, pieceIndex);
       const pools = [];
       if (kinds.includes('endpoint')) pools.push(['endpoint', idx.endpoints]);
       if (kinds.includes('midpoint')) pools.push(['midpoint', idx.midpoints]);
       if (kinds.includes('intersection')) pools.push(['intersection', dxfMeasureEnsurePieceIntersectionIndex(session, pieceIndex)]);
       for (const [kind, points] of pools) {
         for (const point of points) {
-          const board = dxfMeasureNativeToBoardLive(point.native, session, pieceIndex);
+          const board = dxfMeasureNativeToBoardLive(point.native, session, pieceIndex, offset);
           if (!board) continue;
           const d = distance(world, board);
-          if (d <= tol && (!best || d < best.distance)) {
-            best = { kind, pieceIndex, native: point.native, refs: point.refs, distance: d };
-          }
+          if (d <= tol) all.push({ kind, pieceIndex, native: point.native, refs: point.refs, distance: d });
         }
       }
     });
-    return best;
+    all.sort((a, b) => a.distance - b.distance);
+    return all;
+  }
+
+  // Nearest enabled-kind snap point to `world`, or null. When several kinds
+  // are in tolerance, the NEAREST wins regardless of kind — see the plan's
+  // "ưu tiên gần pointer nhất" rule; the caller always draws a marker exactly
+  // at the returned point before it can be committed by a click, so this is
+  // a visible preview, never a silent guess (file header).
+  function dxfMeasureSnapCandidate(session, world) {
+    const all = dxfMeasureSnapCandidates(session, world);
+    return all.length ? all[0] : null;
+  }
+
+  // A near-tie band around the single best candidate. Two DIFFERENT pieces'
+  // snap points landing this close together happens in practice on real
+  // grading-nest files — confirmed as close as 0.06 native units apart on a
+  // real factory file (two adjacent graded sizes' matching vertices), well
+  // under any realistic hand-click precision. Deliberately smaller than
+  // DXF_MEASURE_SNAP_TOLERANCE_PX itself (10px): that full radius already has
+  // its own long-standing "just take the nearest" behavior for the ordinary
+  // single-piece case (e.g. an endpoint narrowly beating a nearby midpoint),
+  // and treating every in-tolerance point as ambiguous would be a regression
+  // for that case, not a fix — this band exists only to catch genuine
+  // near-total coincidences, not "merely nearby" candidates.
+  const DXF_MEASURE_SNAP_TIE_TOLERANCE_PX = 2;
+
+  // The candidate set a click should actually resolve against: just the
+  // best one when it has no close rival, or every candidate within
+  // DXF_MEASURE_SNAP_TIE_TOLERANCE_PX of it when it does. Handed to
+  // dxfMeasureSnapEntityHitsForClick (dxf-measure-interaction.js) to build
+  // the SAME choosing-entity hits list an unsnapped click already produces —
+  // see this file's header: snap must never silently pick between several
+  // entities on its own.
+  function dxfMeasureSnapTieCandidates(session, world) {
+    const all = dxfMeasureSnapCandidates(session, world);
+    if (all.length <= 1) return all;
+    const tieTol = DXF_MEASURE_SNAP_TIE_TOLERANCE_PX / Math.max(0.0001, state.zoom);
+    const bestDistance = all[0].distance;
+    return all.filter(candidate => candidate.distance <= bestDistance + tieTol);
   }
 
   // ---- Menu toggles (same pattern as toggleSmartAlign) -----------------------
@@ -29300,12 +29677,18 @@ function onWheel(e) {
     if (!piece) return [];
     const n = samplesPerStep || 12;
     const points = [];
+    // Computed ONCE for the whole route, not once per sample point — see
+    // dxfMeasureNativeToBoardLive's own comment (same fix as US-114/ADR 0077
+    // applied to dxfMeasureSnapCandidates; this render path has the identical
+    // "same pieceIndex, many points" shape, just per-frame instead of
+    // per-hover).
+    const offset = dxfMeasureCurrentPieceOffset(session, pieceIndex);
     for (const step of route.steps) {
       const seg = piece.segments[step.segIndex];
       if (!seg) continue;
       for (let i = 0; i <= n; i += 1) {
         const t = step.t0 + (step.t1 - step.t0) * (i / n);
-        const board = dxfMeasureNativeToBoardLive(dxfPointOnSegment(seg, t), session, pieceIndex);
+        const board = dxfMeasureNativeToBoardLive(dxfPointOnSegment(seg, t), session, pieceIndex, offset);
         if (board) points.push(board);
       }
     }
@@ -29397,7 +29780,8 @@ function onWheel(e) {
   // choice" apart; picking hits[0] here would be exactly the silent-guess
   // behavior the checklist forbids.
   function dxfMeasureEntityHitsForClick(session, world) {
-    return dxfMeasureHitTestNativeSegments(session, world, dxfMeasureToleranceWorld());
+    const hits = dxfMeasureHitTestNativeSegments(session, world, dxfMeasureToleranceWorld());
+    return dxfMeasureCollapseDuplicateSegmentHits(session, hits);
   }
 
   function dxfMeasureRefFromHit(hit) {
@@ -29413,8 +29797,14 @@ function onWheel(e) {
   // snapping for this one click, matching Smart Align's own bypass gesture.
   function dxfMeasureSnapEntityHitsForClick(session, world, altBypass) {
     if (!altBypass) {
-      const snap = dxfMeasureSnapCandidate(session, world);
-      if (snap) return snap.refs.map(ref => ({ pieceIndex: snap.pieceIndex, segIndexInPiece: ref.segIndexInPiece, t: ref.t, distance: 0 }));
+      // US-114: every near-tied candidate (usually just the one), not only
+      // the single nearest — see dxfMeasureSnapTieCandidates for why.
+      const ties = dxfMeasureSnapTieCandidates(session, world);
+      if (ties.length) {
+        const hits = ties.flatMap(snap => snap.refs.map(ref =>
+          ({ pieceIndex: snap.pieceIndex, segIndexInPiece: ref.segIndexInPiece, t: ref.t, distance: 0 })));
+        return dxfMeasureCollapseDuplicateSegmentHits(session, hits);
+      }
     }
     return dxfMeasureEntityHitsForClick(session, world);
   }
@@ -30748,6 +31138,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       el.dxfMeasurementsListBtn.classList.toggle('active', isDxfMeasurementsPanelOpen());
     }
     if (typeof renderDxfMeasurementsPanel === 'function') renderDxfMeasurementsPanel();
+    // US-114: the active-size filter — hidden entirely unless the current
+    // import actually carries 2+ distinct size labels.
+    if (typeof renderDxfMeasureSizeSelect === 'function') renderDxfMeasureSizeSelect();
     // ADR 0073: the native-unit select + provenance note. The select mirrors
     // the session's EFFECTIVE unit; the activeElement guard is the
     // brushSizeInput pattern above — never fight the TD mid-interaction.
@@ -46121,7 +46514,23 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
             ? clone(dxfMeasureEnsurePieceIntersectionIndex(state.dxfMeasureSession, pieceIndex)) : null),
           snapCandidate: (world) => (typeof dxfMeasureSnapCandidate === 'function'
             ? clone(dxfMeasureSnapCandidate(state.dxfMeasureSession, world)) : null),
+          // US-114: every within-tolerance candidate, and the near-tie subset
+          // dxfMeasureSnapEntityHitsForClick actually resolves a click
+          // against — exposed separately so a test can assert both "how many
+          // candidates exist at all" and "how many count as a genuine tie".
+          snapCandidates: (world) => (typeof dxfMeasureSnapCandidates === 'function'
+            ? clone(dxfMeasureSnapCandidates(state.dxfMeasureSession, world)) : null),
+          snapTieCandidates: (world) => (typeof dxfMeasureSnapTieCandidates === 'function'
+            ? clone(dxfMeasureSnapTieCandidates(state.dxfMeasureSession, world)) : null),
           snapEnabled: () => ({ endpoint: !!state.dxfMeasureSnapEndpoint, midpoint: !!state.dxfMeasureSnapMidpoint, intersection: !!state.dxfMeasureSnapIntersection }),
+          // US-114: the Pattern-Measure-only size filter. Read-only by design
+          // (see this file's own header on why a real UI action is never
+          // exposed as a debug shortcut) — a test drives the real
+          // #dxfMeasureSizeSelect element, same as every other real control.
+          pieceSizeLabel: (pieceIndex) => (typeof dxfMeasurePieceSizeLabel === 'function' && state.dxfMeasureSession
+            ? dxfMeasurePieceSizeLabel(state.dxfMeasureSession, pieceIndex) : null),
+          availableSizeLabels: () => (typeof dxfMeasureAvailableSizeLabels === 'function' && state.dxfMeasureSession
+            ? clone(dxfMeasureAvailableSizeLabels(state.dxfMeasureSession)) : []),
           enumerateRoutesRaw: (segments, refA, refB, tolerance) => (typeof dxfEnumerateRoutes === 'function'
             ? clone(dxfEnumerateRoutes(segments, refA, refB, tolerance)) : null),
           reverseRoute: (route) => (typeof dxfReverseRoute === 'function' ? clone(dxfReverseRoute(route)) : null),
@@ -46159,6 +46568,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
               // US-112: read-only, for diagnosing the hover-driven snap preview.
               hoverWorld: clone(session.hoverWorld),
               hoverAltKey: !!session.hoverAltKey,
+              // US-114: the active-size filter + what's actually selectable.
+              activeSizeLabel: session.activeSizeLabel || null,
+              availableSizeLabels: (typeof dxfMeasureAvailableSizeLabels === 'function')
+                ? clone(dxfMeasureAvailableSizeLabels(session)) : [],
             };
           },
           pieceSegments: (pieceIndex) => {
@@ -49882,12 +50295,18 @@ function makeExportFileName() {
     const piece = session.pieces[pieceIndex];
     if (!piece || !route) return [];
     const points = [];
+    // Computed once for the whole route, not once per sample point — same
+    // O(n)-in-state.annotations cost dxfMeasureNativeToBoardLive's own
+    // comment describes; this preview redraws every route candidate on
+    // every frame while a TD is Tab-cycling, same "same piece, many points"
+    // shape as dxfMeasureRouteWorldPoints.
+    const offset = dxfMeasureCurrentPieceOffset(session, pieceIndex);
     for (const step of route.steps) {
       const seg = piece.segments[step.segIndex];
       if (!seg) continue;
       for (let i = 0; i <= 10; i += 1) {
         const t = step.t0 + (step.t1 - step.t0) * (i / 10);
-        const p = dxfMeasureNativeToBoardLive(dxfPointOnSegment(seg, t), session, pieceIndex);
+        const p = dxfMeasureNativeToBoardLive(dxfPointOnSegment(seg, t), session, pieceIndex, offset);
         if (p) points.push(p);
       }
     }
@@ -49921,13 +50340,24 @@ function makeExportFileName() {
   // be guessed from a toast alone.
   function drawDxfMeasureEntityCandidates(session, interaction) {
     const z = Math.max(0.0001, state.zoom);
+    // A real grading-nest click can surface hits from a dozen+ different
+    // overlapping pieces (US-114/ADR 0077 found up to 8 on a real file), but
+    // hits also frequently repeat the SAME piece (adjacent segments sharing
+    // a corner) — memoize per distinct pieceIndex within this one call
+    // rather than per hit, same "same piece, many points" fix as
+    // dxfMeasureSnapCandidates/dxfMeasureRouteWorldPoints.
+    const offsetByPiece = new Map();
+    const offsetFor = (pieceIndex) => {
+      if (!offsetByPiece.has(pieceIndex)) offsetByPiece.set(pieceIndex, dxfMeasureCurrentPieceOffset(session, pieceIndex));
+      return offsetByPiece.get(pieceIndex);
+    };
     interaction.hits.forEach((hit, idx) => {
       const chosen = idx === interaction.chosenIndex;
       const piece = session.pieces[hit.pieceIndex];
       const seg = piece && piece.segments[hit.segIndexInPiece];
       if (!seg) return;
       const native = dxfPointOnSegment(seg, hit.t);
-      const board = dxfMeasureNativeToBoardLive(native, session, hit.pieceIndex);
+      const board = dxfMeasureNativeToBoardLive(native, session, hit.pieceIndex, offsetFor(hit.pieceIndex));
       if (!board) return;
       const color = DXF_MEASURE_CANDIDATE_COLORS[idx % DXF_MEASURE_CANDIDATE_COLORS.length];
       ctx.save();

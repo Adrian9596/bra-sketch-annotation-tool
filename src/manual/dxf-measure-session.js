@@ -59,16 +59,28 @@
     return { x: ann.start.x - importBoardPoint.x, y: ann.start.y - importBoardPoint.y };
   }
 
-  function dxfMeasureNativeToBoardLive(nativePoint, session, pieceIndex) {
+  // `precomputedOffset` (optional): dxfMeasureCurrentPieceOffset is O(n) in
+  // `state.annotations` (getAnnotationById does a linear `.find()`) — cheap
+  // for an occasional single-point call, but a real cost multiplier for a
+  // caller invoking this once per SNAP POINT or per ROUTE SAMPLE within one
+  // piece (thousands of calls, same piece, same offset every time). Found on
+  // a real 108-piece/21211-annotation file: dxfMeasureSnapCandidates was
+  // taking ~525-611ms per call — consistently, not a one-time cache miss —
+  // because it recomputed this offset from scratch for every one of a
+  // piece's endpoints/midpoints instead of once for the whole piece. Any
+  // hot loop that already knows it's staying within one pieceIndex across
+  // many calls should compute the offset ONCE (dxfMeasureCurrentPieceOffset
+  // directly) and pass it here instead of paying that scan again per point.
+  function dxfMeasureNativeToBoardLive(nativePoint, session, pieceIndex, precomputedOffset) {
     const base = dxfMeasureNativeToBoard(nativePoint, session);
     if (!base) return null;
-    const offset = dxfMeasureCurrentPieceOffset(session, pieceIndex);
+    const offset = precomputedOffset || dxfMeasureCurrentPieceOffset(session, pieceIndex);
     return { x: base.x + offset.x, y: base.y + offset.y };
   }
 
-  function dxfMeasureBoardToNativeLive(boardPoint, session, pieceIndex) {
+  function dxfMeasureBoardToNativeLive(boardPoint, session, pieceIndex, precomputedOffset) {
     if (!boardPoint) return null;
-    const offset = dxfMeasureCurrentPieceOffset(session, pieceIndex);
+    const offset = precomputedOffset || dxfMeasureCurrentPieceOffset(session, pieceIndex);
     return dxfMeasureBoardToNative({ x: boardPoint.x - offset.x, y: boardPoint.y - offset.y }, session);
   }
 
@@ -90,6 +102,7 @@
     }
     const containing = [];
     session.pieceBounds.forEach((bounds, pieceIndex) => {
+      if (!dxfMeasurePieceIsActive(session, pieceIndex)) return;
       const native = dxfMeasureBoardToNativeLive(boardPoint, session, pieceIndex);
       if (native && native.x >= bounds.x && native.x <= bounds.x + bounds.width
         && native.y >= bounds.y && native.y <= bounds.y + bounds.height) {
@@ -185,7 +198,130 @@
       // `interaction`; never part of the undo snapshot.
       hoverWorld: null,
       hoverAltKey: false,
+      // US-114: Pattern-Measure-only active-size filter — see
+      // dxfMeasurePieceIsActive below. Session-scoped (unlike the snap kind
+      // toggles) because the choices themselves are file-specific; a fresh
+      // import always starts unfiltered.
+      activeSizeLabel: null,
     };
+  }
+
+  // ---- US-114: size filter (grading-nest disambiguation) --------------------
+  //
+  // A raw grading-nest import places every detected size's pieces at the
+  // same board position (ADR 0069/0070, deliberately — it's what keeps
+  // Pattern Pieces' "keep only these sizes" possible after the fact). That
+  // overlap is exactly what makes Pattern Measure's own click/snap
+  // resolution genuinely ambiguous between two different sizes' near-
+  // identical points (confirmed on a real factory file: two different
+  // sizes' matching vertices only 0.06 native units apart). Rather than
+  // build US-110's own full import-time size picker (a separate, not-yet-
+  // built high-risk story), this is a narrower, Pattern-Measure-only,
+  // NON-destructive preference: scope every piece-search to one size at a
+  // time, using the SAME block-name-per-piece data the Pattern Pieces panel
+  // already shows — never a new naming heuristic, never re-derived.
+
+  // The piece's own INSERT block name, exactly as the Pattern Pieces panel
+  // shows it (mojibake and all) — reached via the SAME anchor-annotation
+  // chain dxfMeasureCurrentPieceOffset above already uses. Null for a piece
+  // with no anchor (dxf-import.js couldn't pair native/board piece counts)
+  // or one that came from direct ENTITIES rather than an INSERT/BLOCK (no
+  // block name to have).
+  function dxfMeasurePieceSizeLabel(session, pieceIndex) {
+    const anchor = session && session.pieceAnchors && session.pieceAnchors[pieceIndex];
+    if (!anchor) return null;
+    const ann = getAnnotationById(anchor.annotationId);
+    const groupId = ann && ann.templateGroupId;
+    if (!groupId) return null;
+    return (state.templateGroupLabels && state.templateGroupLabels[groupId]) || null;
+  }
+
+  // Fraction of the SMALLER of the two boxes' own area that the two boxes'
+  // intersection covers — 0 for no overlap, up to 1 for one box wholly
+  // containing the other. A plain "do their bounding boxes touch at all"
+  // test is too permissive: real multi-piece layouts often have two
+  // unrelated pieces sharing/crossing a cut edge, which is a thin sliver of
+  // incidental AABB overlap, not the SAME-position stacking a grading nest
+  // creates (ADR 0069/0070 places every size at the same board position, so
+  // a real size pair's bounds are almost entirely coincident, not merely
+  // touching).
+  function dxfMeasureBoundsOverlapRatio(a, b) {
+    if (!a || !b) return 0;
+    const ix0 = Math.max(a.x, b.x), iy0 = Math.max(a.y, b.y);
+    const ix1 = Math.min(a.x + a.width, b.x + b.width), iy1 = Math.min(a.y + a.height, b.y + b.height);
+    const iw = ix1 - ix0, iy = iy1 - iy0;
+    if (iw <= 0 || iy <= 0) return 0;
+    const smallerArea = Math.min(Math.max(a.width * a.height, 1e-12), Math.max(b.width * b.height, 1e-12));
+    return (iw * iy) / smallerArea;
+  }
+
+  // How much of the smaller piece's bounds the overlap must cover to count
+  // as "the same piece stacked at another size" rather than incidental
+  // adjacency — see dxfMeasureBoundsOverlapRatio. A genuine same-position
+  // grading pair (same anchor corner, one size uniformly larger) covers the
+  // smaller piece's bounds almost completely; a real single-size factory
+  // file's sliver of incidental edge-sharing between two UNRELATED pieces
+  // measured as low as ~9% on a real fixture (see US-117) — comfortably
+  // under this threshold either way.
+  const DXF_MEASURE_SIZE_FILTER_OVERLAP_RATIO = 0.5;
+
+  // The dropdown's option list: distinct labels across every piece, in
+  // first-seen (piece) order. Empty when fewer than 2 distinct labels exist
+  // — an unlabeled sketch, a single-size file, or one whose pieces came from
+  // direct ENTITIES — since there is nothing to filter between.
+  //
+  // Found 2026-09-01 testing a real single-size factory file (5 different
+  // garment pieces, each its own INSERT, laid out side by side): 2+ distinct
+  // block-name labels is NOT by itself evidence of a grading nest — the
+  // filter's own justification above is specifically the SAME-position
+  // overlap a grading nest creates. Two differently-labeled pieces whose
+  // bounds don't SUBSTANTIALLY overlap are ordinary side-by-side garment
+  // pieces (or two pieces that merely share/cross a cut edge), not size
+  // variants stacked on each other; activating the filter for a file like
+  // that would silently make the other pieces unclickable with nothing
+  // genuinely ambiguous to resolve. So the filter now also requires at
+  // least one pair of differently-labeled pieces whose bounds substantially
+  // overlap before it activates at all.
+  function dxfMeasureAvailableSizeLabels(session) {
+    if (!session) return [];
+    const seen = [];
+    const piecesByLabel = new Map();
+    session.pieces.forEach((piece, i) => {
+      const label = dxfMeasurePieceSizeLabel(session, i);
+      if (!label) return;
+      if (!seen.includes(label)) seen.push(label);
+      if (!piecesByLabel.has(label)) piecesByLabel.set(label, []);
+      piecesByLabel.get(label).push(i);
+    });
+    if (seen.length < 2) return [];
+    const hasOverlappingPair = seen.some((labelA, ai) => seen.slice(ai + 1).some(labelB =>
+      piecesByLabel.get(labelA).some(i => piecesByLabel.get(labelB).some(j =>
+        dxfMeasureBoundsOverlapRatio(session.pieceBounds[i], session.pieceBounds[j]) >= DXF_MEASURE_SIZE_FILTER_OVERLAP_RATIO))));
+    return hasOverlappingPair ? seen : [];
+  }
+
+  // The single gate every piece-search loop in this file and
+  // dxf-measure-snap.js must call. `session.activeSizeLabel` null (the
+  // default, and the only possible value when dxfMeasureAvailableSizeLabels
+  // returns empty) means "every piece" — today's unfiltered behavior,
+  // byte-for-byte unchanged.
+  function dxfMeasurePieceIsActive(session, pieceIndex) {
+    if (!session || !session.activeSizeLabel) return true;
+    return dxfMeasurePieceSizeLabel(session, pieceIndex) === session.activeSizeLabel;
+  }
+
+  // A TD preference, not an edit — no history push (matches
+  // smartAlignEnabled and the snap-kind toggles), but DOES drop any
+  // in-flight placement: a pending choosing-entity/awaiting-b interaction
+  // may hold refs into a piece the new filter just hid, and there is no
+  // sane way to "continue" that pick once its own candidates are no longer
+  // valid choices.
+  function dxfMeasureSetActiveSizeLabel(session, label) {
+    if (!session) return;
+    session.activeSizeLabel = label || null;
+    session.interaction = null;
+    updateUI();
+    requestRender();
   }
 
   // Called from importDxfText right after a successful import, with the
@@ -267,6 +403,7 @@
     const nativeTolerance = toleranceWorld / Math.max(1e-9, scale);
     const hits = [];
     session.pieces.forEach((piece, pieceIndex) => {
+      if (!dxfMeasurePieceIsActive(session, pieceIndex)) return;
       const nativePoint = dxfMeasureBoardToNativeLive(boardPoint, session, pieceIndex);
       if (!nativePoint) return;
       piece.segments.forEach((seg, segIndexInPiece) => {

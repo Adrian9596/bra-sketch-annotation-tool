@@ -103,12 +103,18 @@
     if (!piece) return [];
     const n = samplesPerStep || 12;
     const points = [];
+    // Computed ONCE for the whole route, not once per sample point — see
+    // dxfMeasureNativeToBoardLive's own comment (same fix as US-114/ADR 0077
+    // applied to dxfMeasureSnapCandidates; this render path has the identical
+    // "same pieceIndex, many points" shape, just per-frame instead of
+    // per-hover).
+    const offset = dxfMeasureCurrentPieceOffset(session, pieceIndex);
     for (const step of route.steps) {
       const seg = piece.segments[step.segIndex];
       if (!seg) continue;
       for (let i = 0; i <= n; i += 1) {
         const t = step.t0 + (step.t1 - step.t0) * (i / n);
-        const board = dxfMeasureNativeToBoardLive(dxfPointOnSegment(seg, t), session, pieceIndex);
+        const board = dxfMeasureNativeToBoardLive(dxfPointOnSegment(seg, t), session, pieceIndex, offset);
         if (board) points.push(board);
       }
     }
@@ -200,7 +206,8 @@
   // choice" apart; picking hits[0] here would be exactly the silent-guess
   // behavior the checklist forbids.
   function dxfMeasureEntityHitsForClick(session, world) {
-    return dxfMeasureHitTestNativeSegments(session, world, dxfMeasureToleranceWorld());
+    const hits = dxfMeasureHitTestNativeSegments(session, world, dxfMeasureToleranceWorld());
+    return dxfMeasureCollapseDuplicateSegmentHits(session, hits);
   }
 
   function dxfMeasureRefFromHit(hit) {
@@ -216,8 +223,14 @@
   // snapping for this one click, matching Smart Align's own bypass gesture.
   function dxfMeasureSnapEntityHitsForClick(session, world, altBypass) {
     if (!altBypass) {
-      const snap = dxfMeasureSnapCandidate(session, world);
-      if (snap) return snap.refs.map(ref => ({ pieceIndex: snap.pieceIndex, segIndexInPiece: ref.segIndexInPiece, t: ref.t, distance: 0 }));
+      // US-114: every near-tied candidate (usually just the one), not only
+      // the single nearest — see dxfMeasureSnapTieCandidates for why.
+      const ties = dxfMeasureSnapTieCandidates(session, world);
+      if (ties.length) {
+        const hits = ties.flatMap(snap => snap.refs.map(ref =>
+          ({ pieceIndex: snap.pieceIndex, segIndexInPiece: ref.segIndexInPiece, t: ref.t, distance: 0 })));
+        return dxfMeasureCollapseDuplicateSegmentHits(session, hits);
+      }
     }
     return dxfMeasureEntityHitsForClick(session, world);
   }

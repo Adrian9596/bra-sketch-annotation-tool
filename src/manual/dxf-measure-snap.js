@@ -10,6 +10,15 @@
 // dxf-measure-interaction.js's dxfMeasureSnapEntityHitsForClick), same as an
 // unsnapped click with several entities in tolerance. Snap only narrows WHERE
 // the click is anchored, never who gets to decide between several entities.
+// US-114 extended that same rule to snap points from DIFFERENT pieces near-
+// coinciding (real grading-nest files stack every size's pieces at the same
+// board position — ADR 0069/0070 — so two sizes' matching vertices can sit a
+// fraction of a grade-step apart): dxfMeasureSnapTieCandidates surfaces every
+// candidate within a tight band of the best one, not just the single
+// nearest, so that case ALSO goes through choosing-entity instead of a
+// silent pick. See also dxfMeasurePieceIsActive (dxf-measure-session.js) —
+// the TD's own "Size" filter, a non-destructive way to rule out the other
+// sizes' pieces entirely rather than relying on Tab/Enter every time.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Release-1 scope (see docs/stories/epics/E01-manual-mode/
@@ -59,7 +68,66 @@
         bucket.refs.push({ segIndexInPiece, t });
       }
     });
-    return { endpoints, midpoints, intersections: null };
+    return { endpoints, midpoints, intersections: null, duplicateCanonical: dxfMeasureDuplicateSegmentCanonical(piece, tol) };
+  }
+
+  // Found 2026-09-01 on a real production file authored as pairs of
+  // back-to-back, byte-identical closed POLYLINEs (every piece's outline
+  // drawn twice): ADR 0073's dxfCollapseDuplicateParallelEdges already
+  // treats this as one edge for ROUTE SEARCH, but nothing did the same for
+  // point-PLACEMENT — a click near such an edge's midpoint (or a corner it
+  // shares with its own duplicate) hit BOTH copies within tolerance, and
+  // dxfMeasureResolveEntityClick's no-silent-pick rule correctly, but
+  // pointlessly, opened a Tab/Enter choice between two options that measure
+  // identically either way. Reuses the exact same "genuine duplicate"
+  // definition as dxfCollapseDuplicateParallelEdges (same kind, same
+  // length, same geometric midpoint, within `tolerance`) rather than a
+  // second heuristic — this just applies it to the flat per-piece segment
+  // list instead of the route-search graph. Returns canonical[i] === i for
+  // every segment with no duplicate, so callers can always index it safely.
+  function dxfMeasureDuplicateSegmentCanonical(piece, tolerance) {
+    const tol = Number.isFinite(tolerance) && tolerance > 0 ? tolerance : 1e-6;
+    const canonical = new Array(piece.segments.length);
+    const groups = [];
+    piece.segments.forEach((seg, segIndexInPiece) => {
+      if (dxfSegmentFailureReason(seg)) { canonical[segIndexInPiece] = segIndexInPiece; return; }
+      const length = dxfSegmentLength(seg);
+      const mid = dxfPointOnSegment(seg, 0.5);
+      const lenEps = Math.max(tol, Math.abs(length) * 1e-9);
+      const match = mid && groups.find(g => g.kind === seg.kind
+        && Math.abs(g.length - length) <= lenEps
+        && distance(g.mid, mid) <= tol);
+      if (match) {
+        canonical[segIndexInPiece] = match.segIndexInPiece;
+      } else {
+        canonical[segIndexInPiece] = segIndexInPiece;
+        groups.push({ kind: seg.kind, length, mid, segIndexInPiece });
+      }
+    });
+    return canonical;
+  }
+
+  // The candidate/hit list a click actually resolves against, with any
+  // hits that map to the SAME piece's canonical duplicate segment collapsed
+  // to one (keeping the first — callers pass hits already sorted nearest-
+  // first, or effectively tied at distance 0 for a true duplicate). See
+  // dxfMeasureDuplicateSegmentCanonical above for why: two authored copies
+  // of one edge are not two different entities for choosing-entity to make
+  // a TD pick between.
+  function dxfMeasureCollapseDuplicateSegmentHits(session, hits) {
+    if (!Array.isArray(hits) || hits.length < 2) return hits;
+    const seen = new Set();
+    const kept = [];
+    for (const hit of hits) {
+      const idx = dxfMeasureEnsurePieceSnapIndex(session, hit.pieceIndex);
+      const canonicalSeg = (idx.duplicateCanonical && idx.duplicateCanonical[hit.segIndexInPiece] != null)
+        ? idx.duplicateCanonical[hit.segIndexInPiece] : hit.segIndexInPiece;
+      const key = hit.pieceIndex + ':' + canonicalSeg;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      kept.push(hit);
+    }
+    return kept;
   }
 
   // Circle/line intersection: solve |P0 + t*D - C|^2 = r^2 for t, keep roots
@@ -163,38 +231,79 @@
     return !!(state.dxfMeasureSnapEndpoint || state.dxfMeasureSnapMidpoint || state.dxfMeasureSnapIntersection);
   }
 
-  // Nearest enabled-kind snap point to `world` (board/world space, live piece
-  // position already accounted for via dxfMeasureNativeToBoardLive) within
-  // DXF_MEASURE_SNAP_TOLERANCE_PX screen px, or null. When several kinds are
-  // in tolerance, the NEAREST wins regardless of kind — see the plan's "ưu
-  // tiên gần pointer nhất" rule; the caller always draws a marker exactly at
-  // the returned point before it can be committed by a click, so this is a
-  // visible preview, never a silent guess (file header).
-  function dxfMeasureSnapCandidate(session, world) {
-    if (!session || !world) return null;
+  // Every enabled-kind snap point within DXF_MEASURE_SNAP_TOLERANCE_PX screen
+  // px of `world` (board/world space, live piece position already accounted
+  // for via dxfMeasureNativeToBoardLive), sorted nearest-first and scoped to
+  // the active size filter (dxfMeasurePieceIsActive, US-114) exactly like
+  // every other piece-search in this session. `dxfMeasureSnapCandidate`
+  // (singular, below) keeps returning just the nearest for callers that only
+  // ever wanted one point (the hover preview, Out of Path placement); this
+  // plural form exists for dxfMeasureSnapTieCandidates' near-tie check below.
+  function dxfMeasureSnapCandidates(session, world) {
+    if (!session || !world) return [];
     const kinds = dxfMeasureSnapEnabledKinds();
-    if (!kinds.length) return null;
+    if (!kinds.length) return [];
     const tol = DXF_MEASURE_SNAP_TOLERANCE_PX / Math.max(0.0001, state.zoom);
-    let best = null;
+    const all = [];
     session.pieces.forEach((piece, pieceIndex) => {
-      if (!piece.segments.length) return;
+      if (!piece.segments.length || !dxfMeasurePieceIsActive(session, pieceIndex)) return;
       const idx = dxfMeasureEnsurePieceSnapIndex(session, pieceIndex);
+      // Computed ONCE per piece, not once per snap point — see
+      // dxfMeasureNativeToBoardLive's own comment on why this matters.
+      const offset = dxfMeasureCurrentPieceOffset(session, pieceIndex);
       const pools = [];
       if (kinds.includes('endpoint')) pools.push(['endpoint', idx.endpoints]);
       if (kinds.includes('midpoint')) pools.push(['midpoint', idx.midpoints]);
       if (kinds.includes('intersection')) pools.push(['intersection', dxfMeasureEnsurePieceIntersectionIndex(session, pieceIndex)]);
       for (const [kind, points] of pools) {
         for (const point of points) {
-          const board = dxfMeasureNativeToBoardLive(point.native, session, pieceIndex);
+          const board = dxfMeasureNativeToBoardLive(point.native, session, pieceIndex, offset);
           if (!board) continue;
           const d = distance(world, board);
-          if (d <= tol && (!best || d < best.distance)) {
-            best = { kind, pieceIndex, native: point.native, refs: point.refs, distance: d };
-          }
+          if (d <= tol) all.push({ kind, pieceIndex, native: point.native, refs: point.refs, distance: d });
         }
       }
     });
-    return best;
+    all.sort((a, b) => a.distance - b.distance);
+    return all;
+  }
+
+  // Nearest enabled-kind snap point to `world`, or null. When several kinds
+  // are in tolerance, the NEAREST wins regardless of kind — see the plan's
+  // "ưu tiên gần pointer nhất" rule; the caller always draws a marker exactly
+  // at the returned point before it can be committed by a click, so this is
+  // a visible preview, never a silent guess (file header).
+  function dxfMeasureSnapCandidate(session, world) {
+    const all = dxfMeasureSnapCandidates(session, world);
+    return all.length ? all[0] : null;
+  }
+
+  // A near-tie band around the single best candidate. Two DIFFERENT pieces'
+  // snap points landing this close together happens in practice on real
+  // grading-nest files — confirmed as close as 0.06 native units apart on a
+  // real factory file (two adjacent graded sizes' matching vertices), well
+  // under any realistic hand-click precision. Deliberately smaller than
+  // DXF_MEASURE_SNAP_TOLERANCE_PX itself (10px): that full radius already has
+  // its own long-standing "just take the nearest" behavior for the ordinary
+  // single-piece case (e.g. an endpoint narrowly beating a nearby midpoint),
+  // and treating every in-tolerance point as ambiguous would be a regression
+  // for that case, not a fix — this band exists only to catch genuine
+  // near-total coincidences, not "merely nearby" candidates.
+  const DXF_MEASURE_SNAP_TIE_TOLERANCE_PX = 2;
+
+  // The candidate set a click should actually resolve against: just the
+  // best one when it has no close rival, or every candidate within
+  // DXF_MEASURE_SNAP_TIE_TOLERANCE_PX of it when it does. Handed to
+  // dxfMeasureSnapEntityHitsForClick (dxf-measure-interaction.js) to build
+  // the SAME choosing-entity hits list an unsnapped click already produces —
+  // see this file's header: snap must never silently pick between several
+  // entities on its own.
+  function dxfMeasureSnapTieCandidates(session, world) {
+    const all = dxfMeasureSnapCandidates(session, world);
+    if (all.length <= 1) return all;
+    const tieTol = DXF_MEASURE_SNAP_TIE_TOLERANCE_PX / Math.max(0.0001, state.zoom);
+    const bestDistance = all[0].distance;
+    return all.filter(candidate => candidate.distance <= bestDistance + tieTol);
   }
 
   // ---- Menu toggles (same pattern as toggleSmartAlign) -----------------------

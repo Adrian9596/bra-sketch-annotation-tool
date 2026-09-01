@@ -229,12 +229,18 @@
     const piece = session.pieces[pieceIndex];
     if (!piece || !route) return [];
     const points = [];
+    // Computed once for the whole route, not once per sample point — same
+    // O(n)-in-state.annotations cost dxfMeasureNativeToBoardLive's own
+    // comment describes; this preview redraws every route candidate on
+    // every frame while a TD is Tab-cycling, same "same piece, many points"
+    // shape as dxfMeasureRouteWorldPoints.
+    const offset = dxfMeasureCurrentPieceOffset(session, pieceIndex);
     for (const step of route.steps) {
       const seg = piece.segments[step.segIndex];
       if (!seg) continue;
       for (let i = 0; i <= 10; i += 1) {
         const t = step.t0 + (step.t1 - step.t0) * (i / 10);
-        const p = dxfMeasureNativeToBoardLive(dxfPointOnSegment(seg, t), session, pieceIndex);
+        const p = dxfMeasureNativeToBoardLive(dxfPointOnSegment(seg, t), session, pieceIndex, offset);
         if (p) points.push(p);
       }
     }
@@ -268,13 +274,24 @@
   // be guessed from a toast alone.
   function drawDxfMeasureEntityCandidates(session, interaction) {
     const z = Math.max(0.0001, state.zoom);
+    // A real grading-nest click can surface hits from a dozen+ different
+    // overlapping pieces (US-114/ADR 0077 found up to 8 on a real file), but
+    // hits also frequently repeat the SAME piece (adjacent segments sharing
+    // a corner) — memoize per distinct pieceIndex within this one call
+    // rather than per hit, same "same piece, many points" fix as
+    // dxfMeasureSnapCandidates/dxfMeasureRouteWorldPoints.
+    const offsetByPiece = new Map();
+    const offsetFor = (pieceIndex) => {
+      if (!offsetByPiece.has(pieceIndex)) offsetByPiece.set(pieceIndex, dxfMeasureCurrentPieceOffset(session, pieceIndex));
+      return offsetByPiece.get(pieceIndex);
+    };
     interaction.hits.forEach((hit, idx) => {
       const chosen = idx === interaction.chosenIndex;
       const piece = session.pieces[hit.pieceIndex];
       const seg = piece && piece.segments[hit.segIndexInPiece];
       if (!seg) return;
       const native = dxfPointOnSegment(seg, hit.t);
-      const board = dxfMeasureNativeToBoardLive(native, session, hit.pieceIndex);
+      const board = dxfMeasureNativeToBoardLive(native, session, hit.pieceIndex, offsetFor(hit.pieceIndex));
       if (!board) return;
       const color = DXF_MEASURE_CANDIDATE_COLORS[idx % DXF_MEASURE_CANDIDATE_COLORS.length];
       ctx.save();
