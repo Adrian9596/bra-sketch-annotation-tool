@@ -75,6 +75,19 @@
       el.smartAlignToggleBtn.setAttribute('aria-checked', state.smartAlignEnabled ? 'true' : 'false');
       el.smartAlignToggleBtn.textContent = (state.smartAlignEnabled ? '✓ ' : '') + 'Smart Align';
     }
+    // US-112: same checkbox-menuitem convention as Smart Align above.
+    if (el.dxfMeasureSnapEndpointBtn) {
+      el.dxfMeasureSnapEndpointBtn.setAttribute('aria-checked', state.dxfMeasureSnapEndpoint ? 'true' : 'false');
+      el.dxfMeasureSnapEndpointBtn.textContent = (state.dxfMeasureSnapEndpoint ? '✓ ' : '') + 'Endpoints';
+    }
+    if (el.dxfMeasureSnapMidpointBtn) {
+      el.dxfMeasureSnapMidpointBtn.setAttribute('aria-checked', state.dxfMeasureSnapMidpoint ? 'true' : 'false');
+      el.dxfMeasureSnapMidpointBtn.textContent = (state.dxfMeasureSnapMidpoint ? '✓ ' : '') + 'Midpoints';
+    }
+    if (el.dxfMeasureSnapIntersectionBtn) {
+      el.dxfMeasureSnapIntersectionBtn.setAttribute('aria-checked', state.dxfMeasureSnapIntersection ? 'true' : 'false');
+      el.dxfMeasureSnapIntersectionBtn.textContent = (state.dxfMeasureSnapIntersection ? '✓ ' : '') + 'Intersections';
+    }
     el.brushSizeChip.hidden = state.tool !== 'eraser';
     if (el.brushSizeInput && document.activeElement !== el.brushSizeInput) {
       el.brushSizeInput.value = String(state.brushSize);
@@ -240,6 +253,17 @@
       // while the TD is actively reading measured numbers.
       const unitStatus = dxfMeasureUnitStatus(measureSession);
       if (unitStatus) toolText += ' · Units: ' + unitStatus.key + ' (' + unitStatus.provenance + ')';
+      // US-111: the TD-confirmed second surface for seam-match delta (the
+      // panel is the first) — canvas itself stays a compact label, no badge.
+      const activePairId = dxfMeasureFindSeamPairId(measureSession, measureSession.selectedMeasurementId);
+      if (activePairId != null) {
+        const pair = dxfMeasureGetSeamPair(measureSession, activePairId);
+        const delta = dxfMeasureSeamPairDelta(measureSession, pair);
+        if (delta) {
+          toolText += ' · Seam match: Δ' + (dxfMeasureFormatInches(Math.abs(delta.raw)) || '—')
+            + ' (' + dxfMeasureSeamPairStatus(delta) + ')';
+        }
+      }
     } else {
       toolText = imageCount === 0
         ? 'Eraser – Paste or import an image first, then drag to paint white over unwanted lines.'
@@ -340,6 +364,14 @@
       el.dxfMeasureOutBtn.classList.toggle('active', state.tool === 'pattern-measure'
         && hasSession && state.dxfMeasureSession.pendingMode === 'out-of-path');
     }
+    // US-113: same disabled-reason convention as Along/Out above.
+    if (el.dxfMeasurementsListBtn) {
+      const hasSession = !!state.dxfMeasureSession;
+      el.dxfMeasurementsListBtn.disabled = !hasSession;
+      el.dxfMeasurementsListBtn.title = hasSession ? 'List every measurement in this session' : 'Import a DXF file first';
+      el.dxfMeasurementsListBtn.classList.toggle('active', isDxfMeasurementsPanelOpen());
+    }
+    if (typeof renderDxfMeasurementsPanel === 'function') renderDxfMeasurementsPanel();
     // ADR 0073: the native-unit select + provenance note. The select mirrors
     // the session's EFFECTIVE unit; the activeElement guard is the
     // brushSizeInput pattern above — never fight the TD mid-interaction.

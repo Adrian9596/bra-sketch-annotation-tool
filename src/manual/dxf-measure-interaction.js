@@ -207,6 +207,21 @@
     return { pieceIndex: hit.pieceIndex, segIndexInPiece: hit.segIndexInPiece, t: hit.t };
   }
 
+  // US-112: the candidate set a click resolves against — the snapped point's
+  // own refs when a snap target is active (so a corner shared by several
+  // segments still goes through the normal choosing-entity Tab/Enter flow
+  // below, just anchored at the exact corner instead of wherever within
+  // tolerance the raw click landed), otherwise the unsnapped tolerance-radius
+  // hits exactly as before this story. `altBypass` (Alt/Option held) skips
+  // snapping for this one click, matching Smart Align's own bypass gesture.
+  function dxfMeasureSnapEntityHitsForClick(session, world, altBypass) {
+    if (!altBypass) {
+      const snap = dxfMeasureSnapCandidate(session, world);
+      if (snap) return snap.refs.map(ref => ({ pieceIndex: snap.pieceIndex, segIndexInPiece: ref.segIndexInPiece, t: ref.t, distance: 0 }));
+    }
+    return dxfMeasureEntityHitsForClick(session, world);
+  }
+
   // ---- Route/direction candidate construction (RB-1) -------------------------
   //
   // Unifies "choose which of several routes" and "choose forward vs reverse
@@ -299,8 +314,8 @@
   // the entity choice restore exactly the interaction state that existed
   // before this click, per "Escape cancels only the pending candidate
   // choice."
-  function dxfMeasureResolveEntityClick(session, world, forWhich, resume, onResolved) {
-    const hits = dxfMeasureEntityHitsForClick(session, world);
+  function dxfMeasureResolveEntityClick(session, world, forWhich, resume, altBypass, onResolved) {
+    const hits = dxfMeasureSnapEntityHitsForClick(session, world, altBypass);
     if (!hits.length) {
       showToast(forWhich === 'a'
         ? 'Click on the imported DXF pattern to place point A.'
@@ -314,9 +329,9 @@
     requestRender();
   }
 
-  function dxfMeasureBeginPlacement(session, world) {
+  function dxfMeasureBeginPlacement(session, world, altKey) {
     if (session.pendingMode === 'out-of-path') {
-      const endpoint = dxfMeasureOutOfPathEndpointFromBoard(session, world);
+      const endpoint = dxfMeasureOutOfPathEndpointFromBoard(session, world, altKey);
       if (!endpoint) { showToast('Click anywhere to place point A.'); return; }
       session.interaction = { type: 'awaiting-b', mode: 'out-of-path', a: endpoint };
       session.placementArmed = false;
@@ -325,7 +340,7 @@
       requestRender();
       return;
     }
-    dxfMeasureResolveEntityClick(session, world, 'a', null, (ref) => {
+    dxfMeasureResolveEntityClick(session, world, 'a', null, altKey, (ref) => {
       session.interaction = { type: 'awaiting-b', mode: 'along-path', a: ref };
       session.placementArmed = false;
       session.selectedMeasurementId = null;
@@ -334,11 +349,11 @@
     });
   }
 
-  function dxfMeasureCompletePlacement(session, world) {
+  function dxfMeasureCompletePlacement(session, world, altKey) {
     const pending = session.interaction;
     if (!pending || pending.type !== 'awaiting-b') return;
     if (pending.mode === 'out-of-path') {
-      const endpointB = dxfMeasureOutOfPathEndpointFromBoard(session, world);
+      const endpointB = dxfMeasureOutOfPathEndpointFromBoard(session, world, altKey);
       const measurement = dxfMeasureCreateOutOfPathMeasurement(session, pending.a, endpointB);
       session.selectedMeasurementId = measurement ? measurement.id : null;
       session.interaction = null;
@@ -346,7 +361,7 @@
       requestRender();
       return;
     }
-    dxfMeasureResolveEntityClick(session, world, 'b', pending, (refB) => {
+    dxfMeasureResolveEntityClick(session, world, 'b', pending, altKey, (refB) => {
       dxfMeasureResolveAlongPathPair(session, pending.a, refB);
     });
   }
@@ -630,7 +645,7 @@
     return state.tool === 'pattern-measure' && dxfMeasureIsSessionActive();
   }
 
-  function dxfMeasureOnMouseDown(world) {
+  function dxfMeasureOnMouseDown(world, altKey) {
     const session = state.dxfMeasureSession;
     if (!session) return;
     const tol = dxfMeasureToleranceWorld();
@@ -641,11 +656,11 @@
       return; // resolved by Tab/Enter/Escape only, per the toast shown when it opened
     }
     if (session.interaction && session.interaction.type === 'awaiting-b') {
-      dxfMeasureCompletePlacement(session, world);
+      dxfMeasureCompletePlacement(session, world, altKey);
       return;
     }
     if (!session.interaction && session.placementArmed) {
-      dxfMeasureBeginPlacement(session, world);
+      dxfMeasureBeginPlacement(session, world, altKey);
       return;
     }
     const handleHit = dxfMeasureHitTestHandle(session, world, tol);
@@ -660,14 +675,23 @@
         requestRender();
         return;
       }
-      dxfMeasureBeginPlacement(session, world);
+      dxfMeasureBeginPlacement(session, world, altKey);
       return;
     }
   }
 
-  function dxfMeasureOnMouseMove(world) {
+  // US-112: records hover position/Alt state for the snap-preview marker
+  // (drawDxfMeasureSnapHover) whenever idle or mid-placement (`awaiting-b`),
+  // then falls through to the existing drag handlers unchanged. Recording
+  // read-only position data and requesting a redraw is the same
+  // record-now/compute-at-render-time split RB-3 already uses for drag
+  // previews — this never touches `measurement`/`interaction` state itself.
+  function dxfMeasureOnMouseMove(world, altKey) {
     const session = state.dxfMeasureSession;
-    if (!session || !session.interaction) return;
+    if (!session) return;
+    session.hoverWorld = world;
+    session.hoverAltKey = !!altKey;
+    if (!session.interaction || session.interaction.type === 'awaiting-b') { requestRender(); return; }
     if (session.interaction.type === 'drag-endpoint') dxfMeasureOnDragEndpointMove(session, world);
     else if (session.interaction.type === 'drag-label') dxfMeasureOnDragLabelMove(session, world);
   }

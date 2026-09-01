@@ -502,6 +502,13 @@
     // one; cleared to null on another DXF import, a fresh project load, or
     // a mode/board reset (see the call sites listed in that file).
     dxfMeasureSession: null,
+    // US-112: Pattern Measure snap preferences. A TD-level tool preference,
+    // like smartAlignEnabled above — session-only, never saved/restored,
+    // and deliberately OUTSIDE state.dxfMeasureSession so opening a new DXF
+    // (which resets that session) does not reset what the TD just set here.
+    dxfMeasureSnapEndpoint: true,
+    dxfMeasureSnapMidpoint: true,
+    dxfMeasureSnapIntersection: false,
   };
 
   // Auto Mode allowed statuses:
@@ -600,6 +607,10 @@
     // US-105: the Pattern Measure tool entries, inside the Tools menu.
     dxfMeasureAlongBtn: document.getElementById('dxfMeasureAlongBtn'),
     dxfMeasureOutBtn: document.getElementById('dxfMeasureOutBtn'),
+    // US-112: Pattern Measure snap preference toggles, in the same menu.
+    dxfMeasureSnapEndpointBtn: document.getElementById('dxfMeasureSnapEndpointBtn'),
+    dxfMeasureSnapMidpointBtn: document.getElementById('dxfMeasureSnapMidpointBtn'),
+    dxfMeasureSnapIntersectionBtn: document.getElementById('dxfMeasureSnapIntersectionBtn'),
     // ADR 0073: the DXF native-unit select + provenance note beside them.
     dxfMeasureUnitSelect: document.getElementById('dxfMeasureUnitSelect'),
     dxfMeasureUnitNote: document.getElementById('dxfMeasureUnitNote'),
@@ -607,10 +618,19 @@
     // panel itself, mirroring the anchorManager* refs above.
     patternPiecesBtn: document.getElementById('patternPiecesBtn'),
     patternPiecesPanel: document.getElementById('patternPiecesPanel'),
+    patternPiecesHead: document.getElementById('patternPiecesHead'),
     patternPiecesCloseBtn: document.getElementById('patternPiecesCloseBtn'),
     patternPiecesCount: document.getElementById('patternPiecesCount'),
     patternPiecesBody: document.getElementById('patternPiecesBody'),
     patternPiecesApplyBtn: document.getElementById('patternPiecesApplyBtn'),
+    // US-113: Pattern Measurements list panel.
+    dxfMeasurementsListBtn: document.getElementById('dxfMeasurementsListBtn'),
+    dxfMeasurementsPanel: document.getElementById('dxfMeasurementsPanel'),
+    dxfMeasurementsHead: document.getElementById('dxfMeasurementsHead'),
+    dxfMeasurementsCloseBtn: document.getElementById('dxfMeasurementsCloseBtn'),
+    dxfMeasurementsCount: document.getElementById('dxfMeasurementsCount'),
+    dxfMeasurementsBody: document.getElementById('dxfMeasurementsBody'),
+    dxfMeasurementsClearAllBtn: document.getElementById('dxfMeasurementsClearAllBtn'),
     // ADR 0071: the Notch tool's Tools-menu entry.
     notchToolBtn: document.getElementById('notchToolBtn'),
     lineWidthChip: document.getElementById('lineWidthChip'),
@@ -1520,6 +1540,23 @@
     t = clamp(t, 0, 1);
     const proj = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
     return distance(p, proj);
+  }
+
+  // Strict segment-segment intersection (both t and u in [0,1]) — null when
+  // the two SEGMENTS don't actually cross (parallel, coincident, or crossing
+  // only on their infinite extensions). Deliberately stricter than a
+  // line-line intersection: a snap target should be a crossing the TD can
+  // actually see drawn on the board, not a projection past either line's end.
+  function segmentIntersection(a1, a2, b1, b2) {
+    const rX = a2.x - a1.x, rY = a2.y - a1.y;
+    const sX = b2.x - b1.x, sY = b2.y - b1.y;
+    const denom = rX * sY - rY * sX;
+    if (Math.abs(denom) < 1e-9) return null;
+    const dx = b1.x - a1.x, dy = b1.y - a1.y;
+    const t = (dx * sY - dy * sX) / denom;
+    const u = (dx * rY - dy * rX) / denom;
+    if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+    return { x: a1.x + t * rX, y: a1.y + t * rY };
   }
 
   // ---- src/geometry/dxf-path-kernel.js ----
@@ -8731,6 +8768,164 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
       const isDraftSel = state.selection.kind === 'draft' && String(state.selection.id) === tr.dataset.draftId;
       tr.classList.toggle('selected', isAnnSel || isDraftSel);
     });
+  }
+
+  // ---- src/ui/draggable-panel.js ----
+// Drag-to-reposition for a floating `.anchor-panel` by its header — generic,
+// reusable across every panel that opts in (currently Pattern Pieces and
+// Pattern Measurements; Anchor Manager deliberately not wired, see its CSS
+// comment). Each panel's CSS docks it to a corner via left/right/top/bottom;
+// the FIRST pointerdown converts whichever of those the panel currently has
+// into an explicit left/top in pixels (relative to its offsetParent, the
+// board card), so every drag after that is a plain delta regardless of which
+// corner the panel started in. Position persists for the session simply
+// because it lives in the element's own inline style — closing/reopening the
+// panel (a `hidden` toggle) never touches it, and nothing here claims to
+// survive a reload.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // Keeps the panel fully inside its offsetParent (the board card) so a TD
+  // can never drag one somewhere its own header is no longer reachable to
+  // drag back.
+  function clampDraggablePanelPosition(panel, left, top) {
+    const parent = panel.offsetParent;
+    const maxLeft = parent ? Math.max(0, parent.clientWidth - panel.offsetWidth) : left;
+    const maxTop = parent ? Math.max(0, parent.clientHeight - panel.offsetHeight) : top;
+    return { left: clamp(left, 0, maxLeft), top: clamp(top, 0, maxTop) };
+  }
+
+  // A STRICTLY INCREASING counter, not a fixed bump value — shared across
+  // every draggable panel. Two panels ever sharing one literal z-index value
+  // (e.g. both set to '21') fall back to DOM order to break the tie, which
+  // silently ignores which one the TD actually touched most recently; only
+  // an always-higher value guarantees "last touched is on top" holds even
+  // after both panels have been raised at least once.
+  let draggablePanelZIndexCounter = 20;
+
+  function bringDraggablePanelToFront(panel) {
+    draggablePanelZIndexCounter += 1;
+    panel.style.zIndex = String(draggablePanelZIndexCounter);
+  }
+
+  // Every panel that has opted into dragging, so a single board-card resize
+  // can re-clamp all of them at once (see armDraggablePanelResizeObserver).
+  const registeredDraggablePanels = [];
+
+  // Re-clamps one already-dragged panel (i.e. one with an explicit
+  // style.left/top, not still CSS-docked to a corner) back inside its
+  // CURRENT offsetParent bounds. A panel a TD parked near an edge is valid
+  // the moment they let go of it, but the board card can shrink later for
+  // reasons that have nothing to do with dragging — narrowing the window, a
+  // contextual toolbar row appearing/disappearing and reflowing the layout —
+  // and nothing about a resize on its own re-runs the drag's own clamp.
+  // Left uncorrected, that can push the panel (including its own header)
+  // outside `.board-card`'s `overflow:hidden` box, with nothing left
+  // on-screen to click to drag it back — the same "TD's own header becomes
+  // unreachable" failure the overlap bring-to-front fix exists for, just
+  // from a resize instead of another panel.
+  function reclampDraggablePanelIfPositioned(panel) {
+    if (panel.hidden || panel.style.left === '' || panel.style.top === '') return;
+    const { left, top } = clampDraggablePanelPosition(panel, parseFloat(panel.style.left), parseFloat(panel.style.top));
+    panel.style.left = left + 'px';
+    panel.style.top = top + 'px';
+  }
+
+  function reclampAllDraggablePanels() {
+    for (const panel of registeredDraggablePanels) reclampDraggablePanelIfPositioned(panel);
+  }
+
+  // One shared observer for every draggable panel's common offsetParent
+  // (the board card), armed once on the first panel registered — mirrors
+  // src/manual/viewport.js's initCanvasResizeObserver, the same "react to
+  // the actual box changing, not every event that might cause it" approach
+  // this codebase already uses for the canvas's own backing-buffer invariant.
+  let draggablePanelResizeObserverArmed = false;
+  function armDraggablePanelResizeObserver(boardCard) {
+    if (draggablePanelResizeObserverArmed || typeof ResizeObserver !== 'function' || !boardCard) return;
+    draggablePanelResizeObserverArmed = true;
+    new ResizeObserver(() => reclampAllDraggablePanels()).observe(boardCard);
+  }
+
+  // `handle` is what starts the drag (the panel's header); `excludeSelector`
+  // (e.g. '.anchor-panel-close') marks real controls inside it that must
+  // start their own click, never a drag. Pointer Events (not mouse+touch
+  // duplicated) so mouse, touch and pen all work through one path — this is
+  // an isolated DOM-panel gesture, independent of the canvas's own separate
+  // touch-input.js translation layer.
+  function makeDraggablePanel(panel, handle, excludeSelector) {
+    if (!panel || !handle) return;
+    registeredDraggablePanels.push(panel);
+    // el.boardCard, not panel.offsetParent — at bind time (app init) every
+    // panel is still `hidden` (display:none), and a display:none element's
+    // offsetParent is always null.
+    armDraggablePanelResizeObserver(el.boardCard);
+    let drag = null; // { pointerId, startClientX, startClientY, startLeft, startTop }
+
+    // Bring-to-front on ANY press inside the panel, not only a drag. Once
+    // two panels overlap, the covered one's HEADER can end up physically
+    // hidden under the other panel's body — a TD who clicks a still-visible
+    // sliver or button on the covered panel first raises it (exposing its
+    // header again), and only then can they actually grab it to drag it
+    // clear. Capture phase, so this always runs before any inner button's
+    // own click handler, and it fires for every panel unconditionally
+    // (there is nothing to exclude here — being touched at all, even via
+    // the close button, still means "this is the one the TD means right now").
+    panel.addEventListener('pointerdown', () => bringDraggablePanelToFront(panel), true);
+
+    handle.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || (excludeSelector && event.target.closest(excludeSelector))) return;
+      const parentRect = panel.offsetParent ? panel.offsetParent.getBoundingClientRect() : { left: 0, top: 0 };
+      const panelRect = panel.getBoundingClientRect();
+      // Lock in the CURRENT visual position as explicit left/top — replaces
+      // whatever right/bottom docked the panel to its starting corner. Also
+      // clamped right here, not only in pointermove below: if the panel was
+      // already out of bounds (e.g. a resize shrank the board card before
+      // this click — the ResizeObserver above should have already fixed
+      // that, but a plain click-no-move gesture must self-heal too, not
+      // only a real drag), the very click that starts a new drag is what
+      // snaps it back rather than starting the drag from an invalid origin.
+      const locked = clampDraggablePanelPosition(panel, panelRect.left - parentRect.left, panelRect.top - parentRect.top);
+      panel.style.left = locked.left + 'px';
+      panel.style.top = locked.top + 'px';
+      panel.style.right = 'auto';
+      panel.style.bottom = 'auto';
+      panel.classList.add('anchor-panel-dragging');
+      drag = {
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startLeft: locked.left,
+        startTop: locked.top,
+      };
+      // Capture keeps the drag tracking even if the pointer leaves the
+      // header mid-move (a fast drag). Not load-bearing for correctness —
+      // pointermove still bubbles through the handle while the pointer stays
+      // over it either way — so a browser/environment that refuses capture
+      // (e.g. a pointerId with no matching active-pointer entry) degrades to
+      // "works while over the handle" instead of throwing out of the whole
+      // gesture.
+      try { handle.setPointerCapture(event.pointerId); } catch (err) { /* degrade gracefully, see above */ }
+      event.preventDefault();
+    });
+
+    handle.addEventListener('pointermove', (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const { left, top } = clampDraggablePanelPosition(
+        panel,
+        drag.startLeft + (event.clientX - drag.startClientX),
+        drag.startTop + (event.clientY - drag.startClientY),
+      );
+      panel.style.left = left + 'px';
+      panel.style.top = top + 'px';
+    });
+
+    const endDrag = (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      drag = null;
+      panel.classList.remove('anchor-panel-dragging');
+    };
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
   }
 
   // ---- src/ui/anchor-manager-panel.js ----
@@ -17368,6 +17563,24 @@ const BOM_MATERIAL_LIBRARY = [
       page: 'board', mode: 'manual', target: '#dxfMeasureOutBtn',
       when: () => !state.sketchMode ? 'Available in Sketch Focus' : (state.dxfMeasureSession ? true : 'Import a DXF file first'),
       action: () => appCommandClick('#dxfMeasureOutBtn') }),
+    // US-113: the session's measurement list panel — same when() shape as
+    // Along/Out above (needs an active measure session).
+    appCommand({ id: 'board.pattern-measure.list', label: 'Pattern Measure: List Measurements…', category: 'Board · Measurements',
+      page: 'board', mode: 'manual', target: '#dxfMeasurementsListBtn',
+      when: () => !state.sketchMode ? 'Available in Sketch Focus' : (state.dxfMeasureSession ? true : 'Import a DXF file first'),
+      action: () => appCommandClick('#dxfMeasurementsListBtn') }),
+    // US-112: snap preference toggles — same when()-less shape as
+    // board.smart-align.toggle below (always available; a preference, not
+    // gated on a session existing).
+    appCommand({ id: 'board.pattern-measure.snap-endpoint.toggle', label: 'Pattern Measure: Toggle Snap to Endpoints', category: 'Board · Measurements',
+      page: 'board', mode: 'manual', target: '#dxfMeasureSnapEndpointBtn',
+      action: () => toggleDxfMeasureSnapKind('endpoint') }),
+    appCommand({ id: 'board.pattern-measure.snap-midpoint.toggle', label: 'Pattern Measure: Toggle Snap to Midpoints', category: 'Board · Measurements',
+      page: 'board', mode: 'manual', target: '#dxfMeasureSnapMidpointBtn',
+      action: () => toggleDxfMeasureSnapKind('midpoint') }),
+    appCommand({ id: 'board.pattern-measure.snap-intersection.toggle', label: 'Pattern Measure: Toggle Snap to Intersections', category: 'Board · Measurements',
+      page: 'board', mode: 'manual', target: '#dxfMeasureSnapIntersectionBtn',
+      action: () => toggleDxfMeasureSnapKind('intersection') }),
     appCommand({ id: 'board.smart-align.toggle', label: 'Toggle Smart Align', category: 'Board · Edit',
       page: 'board', mode: 'manual', target: '#smartAlignToggleBtn',
       action: () => toggleSmartAlign() }),
@@ -17676,6 +17889,9 @@ const BOM_MATERIAL_LIBRARY = [
     // US-093 / ADR 0053: Straight/Curved/Eraser/Text consolidated here to
     // free a toolbar slot for the new "Add point" tool.
     ['toolsMenuWrap', 'toolsMenuBtn', 'toolsMenuList'],
+    // US-105 / ADR 0062 follow-up: Pattern Measure (DXF length), promoted
+    // next to #libraryBtn — see index.html's #measureMenuWrap.
+    ['measureMenuWrap', 'measureMenuBtn', 'measureMenuList'],
   ];
 
   const TOOL_MENU_LABELS = { straight: 'Straight', curved: 'Curved', eraser: 'Eraser', text: 'Text', rectangle:'Rectangle', circle:'Circle', hexagon:'Hexagon' };
@@ -17857,6 +18073,16 @@ const BOM_MATERIAL_LIBRARY = [
           : 'Shape';
       }
       toolMenuBtn.textContent = label ? ('Tools: ' + label) : 'Tools ▾';
+    }
+
+    // Same trigger-label convention as Tools▾ above: name the armed Pattern
+    // Measure mode when it's active, otherwise the plain dropdown label.
+    const measureMenuBtn = document.getElementById('measureMenuBtn');
+    if (measureMenuBtn) {
+      const session = state.dxfMeasureSession;
+      const armed = state.tool === 'pattern-measure' && session ? session.pendingMode : null;
+      const measureLabel = armed === 'along-path' ? 'Along Path' : armed === 'out-of-path' ? 'Out of Path' : null;
+      measureMenuBtn.textContent = measureLabel ? ('Measure: ' + measureLabel) : 'Measure ▾';
     }
 
     // A mode/page transition never leaves a detached popup floating over the
@@ -18649,6 +18875,13 @@ const BOM_MATERIAL_LIBRARY = [
   function bindDxfMeasurePanel() {
     if (el.dxfMeasureAlongBtn) el.dxfMeasureAlongBtn.addEventListener('click', () => setDxfMeasureMode('along-path'));
     if (el.dxfMeasureOutBtn) el.dxfMeasureOutBtn.addEventListener('click', () => setDxfMeasureMode('out-of-path'));
+    // US-112: snap preference toggles — always clickable (a TD preference,
+    // not gated on a session existing, same as Smart Align).
+    if (el.dxfMeasureSnapEndpointBtn) el.dxfMeasureSnapEndpointBtn.addEventListener('click', () => toggleDxfMeasureSnapKind('endpoint'));
+    if (el.dxfMeasureSnapMidpointBtn) el.dxfMeasureSnapMidpointBtn.addEventListener('click', () => toggleDxfMeasureSnapKind('midpoint'));
+    if (el.dxfMeasureSnapIntersectionBtn) el.dxfMeasureSnapIntersectionBtn.addEventListener('click', () => toggleDxfMeasureSnapKind('intersection'));
+    // US-113: the session's measurement list panel.
+    bindDxfMeasurementsPanel();
     // ADR 0073: picking a unit is an explicit override even when it matches
     // the parser's guess — "the TD confirmed in" and "the parser assumed in"
     // are different provenance states, and the note reflects that.
@@ -18975,6 +19208,369 @@ const BOM_MATERIAL_LIBRARY = [
       });
     }
     if (el.patternPiecesCloseBtn) el.patternPiecesCloseBtn.addEventListener('click', closePatternPiecesPanel);
+    makeDraggablePanel(el.patternPiecesPanel, el.patternPiecesHead, '.anchor-panel-close');
+  }
+
+  // ---- src/ui/dxf-measurements-panel.js ----
+// US-113: Pattern Measurements list panel — ADR 0062's own "tabular output"
+// Follow-Up, landed as a session-only VIEW over state.dxfMeasureSession.
+// measurements. Every mutation (rename/select/delete/clear) goes through the
+// same session functions the canvas interaction already uses
+// (dxf-measure-session.js) — this file only builds rows and reacts to
+// clicks, mirroring src/ui/pattern-pieces-panel.js's shape. Unlike that
+// panel's one-shot "review then Apply" model, this one is a LIVE view:
+// measurements are created/deleted from the CANVAS as often as from here, so
+// renderDxfMeasurementsPanel() is called from updateUI() (ui-status.js) on
+// every app-state refresh and fingerprint-skips when nothing it displays
+// changed — same convention as src/ui/spec-panel.js's renderSpecPanel.
+// Source part for app.js. Run `npm run build` after editing.
+
+  let lastDxfMeasurementsFingerprint = null;
+  // US-111: the measurement id currently armed for "Match with…", or null.
+  // Panel-local UI state (like Pattern Pieces' own `keep` set) — never part
+  // of the session, never undo-able, cleared on cancel/complete/Escape/close.
+  let pendingSeamMatchSourceId = null;
+
+  function isDxfMeasurementsPanelOpen() {
+    return !!(el.dxfMeasurementsPanel && !el.dxfMeasurementsPanel.hidden);
+  }
+
+  function openDxfMeasurementsPanel() {
+    if (!el.dxfMeasurementsPanel) return;
+    if (!state.dxfMeasureSession) {
+      showToast('Import a DXF file first (Tools → Open DXF file…).');
+      return;
+    }
+    el.dxfMeasurementsPanel.hidden = false;
+    lastDxfMeasurementsFingerprint = null; // force a real rebuild on open
+    renderDxfMeasurementsPanel();
+  }
+
+  function closeDxfMeasurementsPanel() {
+    if (!el.dxfMeasurementsPanel) return;
+    el.dxfMeasurementsPanel.hidden = true;
+    pendingSeamMatchSourceId = null;
+  }
+
+  function toggleDxfMeasurementsPanel() {
+    if (isDxfMeasurementsPanelOpen()) closeDxfMeasurementsPanel();
+    else openDxfMeasurementsPanel();
+  }
+
+  function dxfMeasurementDisplayName(measurement) {
+    return measurement.name || ('M' + measurement.id);
+  }
+
+  function dxfMeasurementModeLabel(measurement) {
+    return measurement.mode === 'out-of-path' ? 'Out of Path' : 'Along Path';
+  }
+
+  function selectDxfMeasurement(session, id) {
+    if (!dxfMeasureGetMeasurement(session, id)) return;
+    session.selectedMeasurementId = id;
+    updateUI();
+    requestRender();
+  }
+
+  // Frames the measurement's route/endpoints in the viewport — the same
+  // fitBoundsToViewport used by "Fit board" (src/manual/viewport.js), so pan/
+  // zoom math has exactly one implementation. A fixed world-space pad keeps a
+  // degenerate (near-zero extent, e.g. two very close points) bound from
+  // zooming in absurdly tight.
+  function focusDxfMeasurementOnBoard(session, measurement) {
+    const pts = dxfMeasureRouteWorldPoints(session, measurement, 8);
+    if (!pts.length || typeof fitBoundsToViewport !== 'function') return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    const pad = 40;
+    fitBoundsToViewport({
+      x: minX - pad, y: minY - pad,
+      width: Math.max(1, maxX - minX) + pad * 2,
+      height: Math.max(1, maxY - minY) + pad * 2,
+    });
+  }
+
+  function deleteDxfMeasurementFromPanel(session, id) {
+    if (!dxfMeasureDeleteMeasurement(session, id)) return;
+    updateUI();
+    requestRender();
+  }
+
+  function clearAllDxfMeasurementsFromPanel(session) {
+    const count = dxfMeasureClearAllMeasurements(session);
+    if (!count) { showToast('No measurements to clear.'); return; }
+    updateUI();
+    requestRender();
+    showToast('Cleared ' + count + (count === 1 ? ' measurement' : ' measurements') + ' — ⌘Z to undo.');
+  }
+
+  // ---- US-111: seam match (Match with… / Cancel / Unlink / ease) -----------
+
+  function startSeamMatch(measurementId) {
+    pendingSeamMatchSourceId = measurementId;
+    lastDxfMeasurementsFingerprint = null; // force a rebuild — picking-mode is UI-only, not in the fingerprint
+    renderDxfMeasurementsPanel();
+    showToast('Click another Along Path row to match it with — Escape to cancel.');
+  }
+
+  function cancelSeamMatch() {
+    if (pendingSeamMatchSourceId == null) return;
+    pendingSeamMatchSourceId = null;
+    lastDxfMeasurementsFingerprint = null;
+    renderDxfMeasurementsPanel();
+  }
+
+  function completeSeamMatch(session, aId, bId) {
+    pendingSeamMatchSourceId = null;
+    const pair = dxfMeasureCreateSeamPair(session, aId, bId);
+    if (!pair) { showToast('Could not match those two measurements.'); return; }
+    session.selectedMeasurementId = aId;
+    updateUI();
+    requestRender();
+  }
+
+  function unlinkSeamPairFromPanel(session, pairId) {
+    if (!dxfMeasureDeleteSeamPair(session, pairId)) return;
+    updateUI();
+    requestRender();
+  }
+
+  function setSeamPairEaseFromPanel(session, pairId, rawValue) {
+    const parsed = parseFloat(rawValue);
+    dxfMeasureSetSeamEase(session, pairId, Number.isFinite(parsed) ? parsed : 0);
+    updateUI();
+    requestRender();
+  }
+
+  function dxfMeasurementMiniBtn(label, title, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pattern-piece-mini-btn';
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+    return b;
+  }
+
+  // The plain (non-editing) name cell — its own builder because three call
+  // sites need to (re)produce it: the normal row render, an Escape-cancel
+  // revert, and a no-op-rename revert (see startRenameDxfMeasurementRow).
+  function buildDxfMeasurementNameSpan(row, session, measurement) {
+    const span = document.createElement('span');
+    span.className = 'dxf-measurement-name';
+    span.textContent = dxfMeasurementDisplayName(measurement);
+    span.title = 'Double-click to rename';
+    span.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      startRenameDxfMeasurementRow(row, session, measurement);
+    });
+    return span;
+  }
+
+  // Commit-on-blur, matching this app's existing label-editor convention
+  // (never swallow a value silently). Escape reverts WITHOUT going through
+  // the fingerprint-gated renderDxfMeasurementsPanel() — the name hasn't
+  // changed, so that render would no-op and leave the <input> stuck in the
+  // DOM forever; the revert here is a direct, local DOM swap instead.
+  function startRenameDxfMeasurementRow(row, session, measurement) {
+    const nameSpan = row.querySelector('.dxf-measurement-name');
+    if (!nameSpan) return;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'dxf-measurement-name-input';
+    input.value = measurement.name || '';
+    input.placeholder = 'M' + measurement.id;
+    input.addEventListener('click', (e) => e.stopPropagation());
+    nameSpan.replaceWith(input);
+    input.focus();
+    input.select();
+    let settled = false;
+    const commit = () => {
+      if (settled) return;
+      settled = true;
+      const changed = dxfMeasureRenameMeasurement(session, measurement.id, input.value);
+      if (changed) {
+        // A real change pushes history and calls updateUI() below, which
+        // re-enters renderDxfMeasurementsPanel() through the normal
+        // fingerprint-changed path (document.activeElement has already
+        // moved off `input` by the time a blur event fires, so the
+        // "still editing" guard there does not block this rebuild).
+        updateUI();
+        requestRender();
+      } else if (input.isConnected) {
+        input.replaceWith(buildDxfMeasurementNameSpan(row, session, measurement));
+      }
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      else if (e.key === 'Escape') {
+        e.preventDefault();
+        settled = true;
+        if (input.isConnected) input.replaceWith(buildDxfMeasurementNameSpan(row, session, measurement));
+      }
+    });
+  }
+
+  function dxfMeasurementsFingerprint(session) {
+    if (!session) return 'none';
+    return JSON.stringify({
+      sel: session.selectedMeasurementId,
+      rows: session.measurements.map(m => [m.id, m.name, m.mode, dxfMeasureValueInches(session, m)]),
+      pairs: session.seamPairs.map(p => [p.id, p.aId, p.bId, p.ease]),
+    });
+  }
+
+  // One measurement row. Its mini-button set depends on match state:
+  //  - mid-pick, this row is the source: [Cancel] [⌖] [✕]
+  //  - mid-pick, this row is a valid target (unpaired Along Path, not the
+  //    source): no buttons — the WHOLE ROW is the "click to match" control
+  //    (see the click handler below), so a stray ⌖/✕ click can't be mistaken
+  //    for a match pick.
+  //  - unpaired Along Path, no pick in progress: [Match] [⌖] [✕]
+  //  - everything else (Out of Path, or already paired): [⌖] [✕]
+  function buildDxfMeasurementRow(session, measurement) {
+    const row = document.createElement('div');
+    const picking = pendingSeamMatchSourceId != null;
+    const isSource = pendingSeamMatchSourceId === measurement.id;
+    const pairId = dxfMeasureFindSeamPairId(session, measurement.id);
+    const isTarget = picking && !isSource && pairId == null && measurement.mode === 'along-path';
+    row.className = 'dxf-measurement-row'
+      + (measurement.id === session.selectedMeasurementId ? ' active' : '')
+      + (isTarget ? ' match-target' : '');
+    row.addEventListener('click', () => {
+      if (isTarget) { completeSeamMatch(session, pendingSeamMatchSourceId, measurement.id); return; }
+      selectDxfMeasurement(session, measurement.id);
+    });
+    if (isTarget) row.title = 'Click to match with ' + dxfMeasurementDisplayName(dxfMeasureGetMeasurement(session, pendingSeamMatchSourceId));
+
+    row.appendChild(buildDxfMeasurementNameSpan(row, session, measurement));
+
+    const mode = document.createElement('span');
+    mode.className = 'dxf-measurement-mode';
+    mode.textContent = dxfMeasurementModeLabel(measurement);
+    row.appendChild(mode);
+
+    const value = document.createElement('span');
+    value.className = 'dxf-measurement-value';
+    value.textContent = dxfMeasureFormatInches(dxfMeasureValueInches(session, measurement)) || '—';
+    row.appendChild(value);
+
+    if (isTarget) return row; // whole row is the control; no mini-buttons
+    if (isSource) {
+      row.appendChild(dxfMeasurementMiniBtn('Cancel', 'Cancel matching', () => cancelSeamMatch()));
+    } else if (!picking && measurement.mode === 'along-path' && pairId == null) {
+      row.appendChild(dxfMeasurementMiniBtn('Match', 'Match with another Along Path measurement to compare their lengths',
+        () => startSeamMatch(measurement.id)));
+    }
+    row.appendChild(dxfMeasurementMiniBtn('⌖', 'Frame this measurement in the viewport',
+      () => focusDxfMeasurementOnBoard(session, measurement)));
+    row.appendChild(dxfMeasurementMiniBtn('✕', 'Delete this measurement',
+      () => deleteDxfMeasurementFromPanel(session, measurement.id)));
+    return row;
+  }
+
+  // The Δ/ease/Unlink row directly beneath a matched pair's two member rows.
+  // Delta is recomputed here, not stored — see dxfMeasureSeamPairDelta.
+  function buildSeamPairSummaryRow(session, pair) {
+    const row = document.createElement('div');
+    const delta = dxfMeasureSeamPairDelta(session, pair);
+    const status = dxfMeasureSeamPairStatus(delta);
+    row.className = 'dxf-seam-summary-row dxf-seam-' + status;
+
+    const label = document.createElement('span');
+    label.className = 'dxf-seam-summary-label';
+    const deltaText = delta ? (dxfMeasureFormatInches(Math.abs(delta.raw)) || '0"') : '—';
+    label.textContent = 'Δ ' + deltaText + (pair.ease ? ' (ease ' + (dxfMeasureFormatInches(Math.abs(pair.ease)) || pair.ease) + ')' : '');
+    label.title = status === 'match' ? 'Within 1/16" of expected — match'
+      : status === 'review' ? 'Within 3/16" of expected — review'
+      : status === 'mismatch' ? 'Over 3/16" from expected — mismatch'
+      : 'Could not compute a delta for this pair';
+    row.appendChild(label);
+
+    const easeLabel = document.createElement('label');
+    easeLabel.className = 'dxf-seam-ease-label';
+    easeLabel.textContent = 'Ease';
+    const easeInput = document.createElement('input');
+    easeInput.type = 'number';
+    easeInput.step = '0.01';
+    easeInput.className = 'dxf-seam-ease-input';
+    easeInput.value = pair.ease || 0;
+    easeInput.title = 'Expected difference (first minus second) between the two seams — subtracted before judging the threshold';
+    easeInput.addEventListener('click', (e) => e.stopPropagation());
+    easeInput.addEventListener('change', () => setSeamPairEaseFromPanel(session, pair.id, easeInput.value));
+    easeLabel.appendChild(easeInput);
+    row.appendChild(easeLabel);
+
+    row.appendChild(dxfMeasurementMiniBtn('Unlink', 'Remove this seam match (keeps both measurements)',
+      () => unlinkSeamPairFromPanel(session, pair.id)));
+    return row;
+  }
+
+  function renderDxfMeasurementsPanel() {
+    const panel = el.dxfMeasurementsPanel, body = el.dxfMeasurementsBody;
+    if (!panel || !body || panel.hidden) return;
+    const session = state.dxfMeasureSession;
+    if (!session) { closeDxfMeasurementsPanel(); return; }
+    const active = document.activeElement;
+    if (active && body.contains(active) && active.classList.contains('dxf-measurement-name-input')) return;
+    const fingerprint = dxfMeasurementsFingerprint(session);
+    if (fingerprint === lastDxfMeasurementsFingerprint) return;
+    lastDxfMeasurementsFingerprint = fingerprint;
+
+    if (el.dxfMeasurementsCount) {
+      const n = session.measurements.length;
+      el.dxfMeasurementsCount.textContent = n + (n === 1 ? ' measurement' : ' measurements');
+    }
+    body.innerHTML = '';
+    const rendered = new Set();
+    for (const measurement of session.measurements) {
+      if (rendered.has(measurement.id)) continue;
+      const pairId = dxfMeasureFindSeamPairId(session, measurement.id);
+      const pair = pairId != null ? dxfMeasureGetSeamPair(session, pairId) : null;
+      if (pair) {
+        const a = dxfMeasureGetMeasurement(session, pair.aId);
+        const b = dxfMeasureGetMeasurement(session, pair.bId);
+        if (a) { body.appendChild(buildDxfMeasurementRow(session, a)); rendered.add(a.id); }
+        if (b) { body.appendChild(buildDxfMeasurementRow(session, b)); rendered.add(b.id); }
+        body.appendChild(buildSeamPairSummaryRow(session, pair));
+        continue;
+      }
+      body.appendChild(buildDxfMeasurementRow(session, measurement));
+      rendered.add(measurement.id);
+    }
+    if (!session.measurements.length) {
+      const empty = document.createElement('div');
+      empty.className = 'dxf-measurement-row';
+      empty.textContent = 'No measurements yet — use Along Path or Out of Path on the pattern.';
+      body.appendChild(empty);
+    }
+  }
+
+  function bindDxfMeasurementsPanel() {
+    if (el.dxfMeasurementsListBtn) {
+      el.dxfMeasurementsListBtn.addEventListener('click', () => openDxfMeasurementsPanel());
+    }
+    if (el.dxfMeasurementsCloseBtn) el.dxfMeasurementsCloseBtn.addEventListener('click', closeDxfMeasurementsPanel);
+    if (el.dxfMeasurementsClearAllBtn) {
+      el.dxfMeasurementsClearAllBtn.addEventListener('click', () => {
+        const session = state.dxfMeasureSession;
+        if (session) clearAllDxfMeasurementsFromPanel(session);
+      });
+    }
+    makeDraggablePanel(el.dxfMeasurementsPanel, el.dxfMeasurementsHead, '.anchor-panel-close');
+    // US-111: Escape cancels an in-progress "Match with…" pick — additive to
+    // whatever else already listens for Escape (dxfMeasureCancelInteraction
+    // reads session.interaction, a completely different piece of state, so
+    // the two never fight over the same keypress).
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && pendingSeamMatchSourceId != null) cancelSeamMatch();
+    });
   }
 
   // ---- src/ui/bindings.js ----
@@ -22334,7 +22930,7 @@ function setSelection(kind, id) {
     // state.annotations, and "Source Geometry Immutability" requires that
     // the normal endpoint/body hit-test chain below never run while it is.
     if (dxfMeasureIsActiveTool()) {
-      dxfMeasureOnMouseDown(world);
+      dxfMeasureOnMouseDown(world, e.altKey);
       return;
     }
 
@@ -22688,7 +23284,7 @@ function setSelection(kind, id) {
     const world = screenToWorld(screen.x, screen.y);
 
     if (dxfMeasureIsActiveTool()) {
-      dxfMeasureOnMouseMove(world);
+      dxfMeasureOnMouseMove(world, e.altKey);
       return;
     }
 
@@ -27749,8 +28345,12 @@ function onWheel(e) {
   // click belongs unambiguously to one imported piece, retain that piece
   // attachment. This lets the overlay travel with a whole-piece display move
   // without ever changing the native coordinate used for the value.
-  function dxfMeasureOutOfPathEndpointFromBoard(session, boardPoint) {
+  function dxfMeasureOutOfPathEndpointFromBoard(session, boardPoint, altBypass) {
     if (!session || !boardPoint) return null;
+    if (!altBypass) {
+      const snap = dxfMeasureSnapCandidate(session, boardPoint);
+      if (snap) return { pieceIndex: snap.pieceIndex, native: clonePoint(snap.native) };
+    }
     const nearHits = dxfMeasureHitTestNativeSegments(session, boardPoint, dxfMeasureToleranceWorld());
     const nearPieces = Array.from(new Set(nearHits.map(hit => hit.pieceIndex)));
     if (nearPieces.length === 1) {
@@ -27826,6 +28426,15 @@ function onWheel(e) {
       // a unit correction.
       unitOverride: null,
       measurements: [],
+      // US-111: seam-match pairs — {id, aId, bId, ease}. A pair relates two
+      // EXISTING along-path measurements; it owns no geometry of its own
+      // (delta is always derived, see dxfMeasureSeamPairDelta) and each
+      // measurement belongs to at most one pair (dxfMeasureCreateSeamPair
+      // enforces this). MUST stay in dxfMeasureSnapshot/RestoreSnapshot below
+      // — an undo that restores `measurements` but drops `seamPairs` would
+      // leave a pair pointing at a since-reverted measurement id.
+      seamPairs: [],
+      nextSeamPairId: 1,
       interaction: null,
       selectedMeasurementId: null,
       pendingMode: 'along-path',
@@ -27833,6 +28442,18 @@ function onWheel(e) {
       nextMeasurementId: 1,
       history: { past: [], future: [] },
       diagnostics: { dragPreviewRecomputes: 0 },
+      // US-112: per-piece snap point cache (endpoints/midpoints/lazy
+      // intersections) — see src/manual/dxf-measure-snap.js. Derived purely
+      // from `pieces`, which never changes after import, so this is safe to
+      // build lazily and keep for the life of the session; never included in
+      // dxfMeasureSnapshot (nothing here is TD-editable state).
+      snapIndex: { byPiece: nativeModel.pieces.map(() => null) },
+      // US-112: last pointer position while Pattern Measure is active, and
+      // whether Alt/Option was held then — read only by the snap-hover
+      // renderer (drawDxfMeasureSnapHover). Transient UI state, like
+      // `interaction`; never part of the undo snapshot.
+      hoverWorld: null,
+      hoverAltKey: false,
     };
   }
 
@@ -27983,6 +28604,11 @@ function onWheel(e) {
       routeCandidateIndex: routeCandidateIndex || 0,
       routeCandidateCount: routeCandidateCount || 1,
       labelOffset: null,
+      // US-113: TD-given display name for the measurements list panel; null
+      // means "show the default M{id} label". Lives on the measurement
+      // record itself, so the existing snapshot/undo machinery below covers
+      // renames for free — no separate history plumbing needed.
+      name: null,
     };
     session.measurements.push(measurement);
     dxfMeasurePushHistoryIfChanged();
@@ -28004,6 +28630,7 @@ function onWheel(e) {
       b: { pieceIndex: normalizedB.pieceIndex == null ? null : normalizedB.pieceIndex, segIndexInPiece: null, t: null, native: clonePoint(normalizedB.native) },
       route: null,
       labelOffset: null,
+      name: null,
     };
     session.measurements.push(measurement);
     dxfMeasurePushHistoryIfChanged();
@@ -28021,8 +28648,137 @@ function onWheel(e) {
     if (idx === -1) return false;
     session.measurements.splice(idx, 1);
     if (session.selectedMeasurementId === id) session.selectedMeasurementId = null;
+    // US-111: a seam pair cannot outlive either of its two members — the
+    // other measurement stays, just no longer matched to anything.
+    const pairIdx = session.seamPairs.findIndex(p => p.aId === id || p.bId === id);
+    if (pairIdx !== -1) session.seamPairs.splice(pairIdx, 1);
     dxfMeasurePushHistoryIfChanged();
     return true;
+  }
+
+  // ---- US-111: seam-match pairs -----------------------------------------------
+
+  function dxfMeasureFindSeamPairId(session, measurementId) {
+    if (!session || measurementId == null) return null;
+    const pair = session.seamPairs.find(p => p.aId === measurementId || p.bId === measurementId);
+    return pair ? pair.id : null;
+  }
+
+  function dxfMeasureGetSeamPair(session, pairId) {
+    if (!session || pairId == null) return null;
+    return session.seamPairs.find(p => p.id === pairId) || null;
+  }
+
+  function dxfMeasureSeamPairPartnerId(session, measurementId) {
+    if (!session || measurementId == null) return null;
+    const pair = session.seamPairs.find(p => p.aId === measurementId || p.bId === measurementId);
+    if (!pair) return null;
+    return pair.aId === measurementId ? pair.bId : pair.aId;
+  }
+
+  // Only two UNPAIRED Along Path measurements can be matched — Out of Path
+  // has no "route" a seam-length comparison is measuring, and one pair per
+  // measurement keeps "the other side of THIS seam" unambiguous (a TD who
+  // wants a different partner unlinks first, an explicit action, rather than
+  // silently reassigning).
+  function dxfMeasureCreateSeamPair(session, aId, bId) {
+    if (!session || aId == null || bId == null || aId === bId) return null;
+    const a = dxfMeasureGetMeasurement(session, aId);
+    const b = dxfMeasureGetMeasurement(session, bId);
+    if (!a || !b || a.mode !== 'along-path' || b.mode !== 'along-path') return null;
+    if (dxfMeasureFindSeamPairId(session, aId) != null || dxfMeasureFindSeamPairId(session, bId) != null) return null;
+    const pair = { id: session.nextSeamPairId, aId, bId, ease: 0 };
+    session.nextSeamPairId += 1;
+    session.seamPairs.push(pair);
+    dxfMeasurePushHistoryIfChanged();
+    return pair;
+  }
+
+  // Removes the MATCH, not either measurement — "unlink" reads as undoing a
+  // relationship, not a delete, so it stays a separate action from ✕.
+  function dxfMeasureDeleteSeamPair(session, pairId) {
+    if (!session) return false;
+    const idx = session.seamPairs.findIndex(p => p.id === pairId);
+    if (idx === -1) return false;
+    session.seamPairs.splice(idx, 1);
+    dxfMeasurePushHistoryIfChanged();
+    return true;
+  }
+
+  function dxfMeasureSetSeamEase(session, pairId, ease) {
+    const pair = dxfMeasureGetSeamPair(session, pairId);
+    if (!pair) return false;
+    const next = Number.isFinite(ease) ? ease : 0;
+    if (pair.ease === next) return false;
+    pair.ease = next;
+    dxfMeasurePushHistoryIfChanged();
+    return true;
+  }
+
+  // TD-confirmed thresholds (2026-09-01): absolute inches on the 1/16" grid
+  // this tool already displays fractions on (US-048), not a percentage of
+  // seam length.
+  const DXF_SEAM_MATCH_THRESHOLD_IN = 1 / 16;
+  const DXF_SEAM_REVIEW_THRESHOLD_IN = 3 / 16;
+
+  // Derived, NEVER stored — recomputed from each member's CURRENT value every
+  // call, so dragging an endpoint (or Undo/Redo, or a unit-override change)
+  // updates the delta the same frame the member's own value updates, with no
+  // separate cache to keep in sync. `raw` is signed (A minus B); `judged` is
+  // what the threshold actually reads — the plan's agreed formula
+  // |lenA - lenB - ease|, i.e. how far the ACTUAL difference deviates from
+  // the EXPECTED one, not the unsigned raw delta itself (a seam with 0.25"
+  // of intentional cup ease reading exactly 0.25" off judges as a perfect
+  // match, not a quarter-inch mismatch).
+  function dxfMeasureSeamPairDelta(session, pair) {
+    if (!session || !pair) return null;
+    const a = dxfMeasureGetMeasurement(session, pair.aId);
+    const b = dxfMeasureGetMeasurement(session, pair.bId);
+    if (!a || !b) return null;
+    const va = dxfMeasureValueInches(session, a);
+    const vb = dxfMeasureValueInches(session, b);
+    if (!Number.isFinite(va) || !Number.isFinite(vb)) return null;
+    const raw = va - vb;
+    return { a: va, b: vb, raw, judged: Math.abs(raw - (pair.ease || 0)) };
+  }
+
+  function dxfMeasureSeamPairStatus(delta) {
+    if (!delta) return 'unknown';
+    if (delta.judged <= DXF_SEAM_MATCH_THRESHOLD_IN) return 'match';
+    if (delta.judged <= DXF_SEAM_REVIEW_THRESHOLD_IN) return 'review';
+    return 'mismatch';
+  }
+
+  // US-113: TD-given display name, shown by the measurements list panel
+  // instead of the default "M{id}". Empty/whitespace-only clears back to the
+  // default rather than storing a blank string, so the panel's "M{id}"
+  // fallback (dxfMeasurementDisplayName) is the only place that formats the
+  // unnamed case. Returns false (no history push, no re-render) when the
+  // trimmed name is unchanged, so an in/out rename with no real edit does not
+  // manufacture a no-op undo step.
+  function dxfMeasureRenameMeasurement(session, id, name) {
+    const measurement = session && dxfMeasureGetMeasurement(session, id);
+    if (!measurement) return false;
+    const next = (name || '').trim() || null;
+    if (measurement.name === next) return false;
+    measurement.name = next;
+    dxfMeasurePushHistoryIfChanged();
+    return true;
+  }
+
+  // US-113: bulk-delete every measurement in ONE history step, so Cmd+Z
+  // undoes the whole clear at once rather than one measurement at a time —
+  // matching "Clear All" reading as a single action, not N deletes in a
+  // trenchcoat. No confirm dialog: deleting a single measurement via the
+  // panel's own ✕ has none either, and this is exactly as undo-able.
+  function dxfMeasureClearAllMeasurements(session) {
+    if (!session || !session.measurements.length) return 0;
+    const count = session.measurements.length;
+    session.measurements = [];
+    session.seamPairs = []; // US-111: no pair can outlive its measurements
+    session.selectedMeasurementId = null;
+    dxfMeasurePushHistoryIfChanged();
+    return count;
   }
 
   // RB-3: COMMITS a fully-resolved endpoint move in one shot — never called
@@ -28154,6 +28910,11 @@ function onWheel(e) {
     return {
       measurements: clone(session.measurements),
       nextMeasurementId: session.nextMeasurementId,
+      // US-111: MUST travel with measurements — restoring one without the
+      // other lets Undo bring back a measurement a pair still references (or
+      // resurrect a pair pointing at an id Undo just removed).
+      seamPairs: clone(session.seamPairs),
+      nextSeamPairId: session.nextSeamPairId,
     };
   }
 
@@ -28185,6 +28946,8 @@ function onWheel(e) {
     if (!session || !snapshot) return;
     session.measurements = clone(snapshot.measurements);
     session.nextMeasurementId = snapshot.nextMeasurementId;
+    session.seamPairs = clone(snapshot.seamPairs || []);
+    session.nextSeamPairId = snapshot.nextSeamPairId || 1;
     session.selectedMeasurementId = null;
     session.interaction = null;
   }
@@ -28210,6 +28973,225 @@ function onWheel(e) {
     session.history.past.push(next);
     dxfMeasureRestoreSnapshot(session, next.snapshot);
     return true;
+  }
+
+  // ---- src/manual/dxf-measure-snap.js ----
+// US-112: Pattern Measure snap modes — endpoint / midpoint / intersection
+// snap targets computed from the SAME native geometry dxf-measure-session.js
+// and the kernel (src/geometry/dxf-path-kernel.js) already treat as
+// measurement authority. A snap candidate is a PREVIEW the TD sees before
+// clicking (drawn by drawDxfMeasureSnapHover in render-dxf-measurements.js);
+// it never resolves an ambiguity silently on its own — when a snap point is
+// shared by several native entities (e.g. two segments meeting at a piece
+// corner), dxfMeasureResolveEntityClick still runs its existing Tab/Enter
+// choosing-entity flow against exactly those entities (see
+// dxf-measure-interaction.js's dxfMeasureSnapEntityHitsForClick), same as an
+// unsnapped click with several entities in tolerance. Snap only narrows WHERE
+// the click is anchored, never who gets to decide between several entities.
+// Source part for app.js. Run `npm run build` after editing.
+//
+// Release-1 scope (see docs/stories/epics/E01-manual-mode/
+// US-111-112-113-measure-enhancements-plan.md §3.2): endpoint, midpoint, and
+// LINE×LINE / LINE×ARC interior intersections. ARC×ARC intersection and
+// snapping during an EXISTING measurement's endpoint drag are explicitly out
+// of scope — only new-measurement placement (Along Path A/B, Out of Path A/B)
+// snaps. Dragging a placed endpoint keeps its pre-existing (unsnapped)
+// behavior; a future story can extend snap there once this shape has proven
+// out.
+
+  const DXF_MEASURE_SNAP_TOLERANCE_PX = 10; // same screen-px convention as DXF_MEASURE_HIT_TOLERANCE_PX
+
+  // A point strictly inside a segment's own span — excludes both endpoints
+  // (already covered by endpoint snap) so intersection snap only ever fires
+  // for a genuine interior crossing (a dart/style line cutting through an
+  // outline edge), never for two adjacent outline segments touching at the
+  // corner they already share.
+  function dxfMeasureIsInteriorT(t) {
+    return Number.isFinite(t) && t > 1e-4 && t < 1 - 1e-4;
+  }
+
+  // ---- Per-piece snap point index (endpoints + midpoints; intersections lazy) --
+
+  // Endpoints are CLUSTERED by native distance (same tolerance the route
+  // graph itself uses, session.topologyToleranceNative — see
+  // dxfBuildPathGraph's own findOrCreateNode) so a corner shared by several
+  // segments becomes ONE snap target carrying every segment's ref, not one
+  // per segment. Midpoints are never clustered — each segment has exactly one,
+  // by construction. `dxfPointOnSegment(seg, 0.5)` is deliberately the same
+  // "geometric midpoint" definition ADR 0073's duplicate-edge collapse already
+  // uses, not a re-derivation.
+  function dxfMeasureBuildPieceSnapIndex(piece, tolerance) {
+    const endpoints = [];
+    const midpoints = [];
+    const tol = Number.isFinite(tolerance) && tolerance > 0 ? tolerance : 1e-6;
+    piece.segments.forEach((seg, segIndexInPiece) => {
+      if (dxfSegmentFailureReason(seg)) return;
+      const mid = dxfPointOnSegment(seg, 0.5);
+      if (mid) midpoints.push({ native: mid, refs: [{ segIndexInPiece, t: 0.5 }] });
+      for (const t of [0, 1]) {
+        const p = dxfPointOnSegment(seg, t);
+        if (!p) continue;
+        let bucket = null;
+        for (const e of endpoints) { if (distance(e.native, p) <= tol) { bucket = e; break; } }
+        if (!bucket) { bucket = { native: p, refs: [] }; endpoints.push(bucket); }
+        bucket.refs.push({ segIndexInPiece, t });
+      }
+    });
+    return { endpoints, midpoints, intersections: null };
+  }
+
+  // Circle/line intersection: solve |P0 + t*D - C|^2 = r^2 for t, keep roots
+  // within the LINE's own [0,1] span, then reject any root whose angle (as
+  // seen from the arc's center) falls outside the arc's swept range using the
+  // SAME unclamped dxfAngleParamOnSweep the kernel already uses for
+  // point-on-arc projection — an arcT outside [0,1] means the circle point is
+  // real but on the unswept remainder of the full circle, not on this arc.
+  function dxfMeasureLineArcIntersections(lineSeg, arcSeg) {
+    const D = { x: lineSeg.b.x - lineSeg.a.x, y: lineSeg.b.y - lineSeg.a.y };
+    const f = { x: lineSeg.a.x - arcSeg.center.x, y: lineSeg.a.y - arcSeg.center.y };
+    const a = D.x * D.x + D.y * D.y;
+    if (a < 1e-12) return [];
+    const b = 2 * (f.x * D.x + f.y * D.y);
+    const c = f.x * f.x + f.y * f.y - arcSeg.radius * arcSeg.radius;
+    const disc = b * b - 4 * a * c;
+    if (disc < 0) return [];
+    const sq = Math.sqrt(Math.max(0, disc));
+    const roots = disc < 1e-12 ? [(-b) / (2 * a)] : [(-b + sq) / (2 * a), (-b - sq) / (2 * a)];
+    const results = [];
+    for (const t of roots) {
+      if (t < -1e-9 || t > 1 + 1e-9) continue;
+      const lineT = clamp(t, 0, 1);
+      const point = { x: lineSeg.a.x + lineT * D.x, y: lineSeg.a.y + lineT * D.y };
+      const angle = Math.atan2(point.y - arcSeg.center.y, point.x - arcSeg.center.x);
+      const arcT = dxfAngleParamOnSweep(angle, arcSeg.startAngle, arcSeg.sweep);
+      if (arcT < -1e-6 || arcT > 1 + 1e-6) continue;
+      results.push({ point, lineT, arcT: clamp(arcT, 0, 1) });
+    }
+    return results;
+  }
+
+  // Every pairwise LINE×LINE and LINE×ARC crossing within one piece, filtered
+  // to INTERIOR crossings only (dxfMeasureIsInteriorT on both sides) — see
+  // file header. O(segments^2) pairwise, same complexity class as
+  // dxfBuildPathGraph's own node clustering; computed once per piece, only
+  // once the TD turns Intersection snap on, and cached (dxfMeasureEnsurePiece
+  // IntersectionIndex) — never recomputed per pointermove. ARC×ARC pairs are
+  // skipped (out of scope, see file header).
+  function dxfMeasureBuildPieceIntersections(piece) {
+    const segs = piece.segments;
+    const out = [];
+    for (let i = 0; i < segs.length; i += 1) {
+      const A = segs[i];
+      if (dxfSegmentFailureReason(A)) continue;
+      for (let j = i + 1; j < segs.length; j += 1) {
+        const B = segs[j];
+        if (dxfSegmentFailureReason(B)) continue;
+        if (A.kind === 'straight' && B.kind === 'straight') {
+          const p = segmentIntersection(A.a, A.b, B.a, B.b);
+          if (!p) continue;
+          const tA = dxfProjectPointOnStraight(p, A).t;
+          const tB = dxfProjectPointOnStraight(p, B).t;
+          if (dxfMeasureIsInteriorT(tA) && dxfMeasureIsInteriorT(tB)) {
+            out.push({ native: p, refs: [{ segIndexInPiece: i, t: tA }, { segIndexInPiece: j, t: tB }] });
+          }
+        } else if (A.kind === 'straight' && B.kind === 'arc') {
+          for (const hit of dxfMeasureLineArcIntersections(A, B)) {
+            if (dxfMeasureIsInteriorT(hit.lineT) && dxfMeasureIsInteriorT(hit.arcT)) {
+              out.push({ native: hit.point, refs: [{ segIndexInPiece: i, t: hit.lineT }, { segIndexInPiece: j, t: hit.arcT }] });
+            }
+          }
+        } else if (A.kind === 'arc' && B.kind === 'straight') {
+          for (const hit of dxfMeasureLineArcIntersections(B, A)) {
+            if (dxfMeasureIsInteriorT(hit.lineT) && dxfMeasureIsInteriorT(hit.arcT)) {
+              out.push({ native: hit.point, refs: [{ segIndexInPiece: j, t: hit.lineT }, { segIndexInPiece: i, t: hit.arcT }] });
+            }
+          }
+        }
+        // ARC×ARC: out of scope for Release 1 — see file header.
+      }
+    }
+    return out;
+  }
+
+  function dxfMeasureEnsurePieceSnapIndex(session, pieceIndex) {
+    if (!session.snapIndex) session.snapIndex = { byPiece: session.pieces.map(() => null) };
+    if (!session.snapIndex.byPiece[pieceIndex]) {
+      session.snapIndex.byPiece[pieceIndex] = dxfMeasureBuildPieceSnapIndex(session.pieces[pieceIndex], session.topologyToleranceNative);
+    }
+    return session.snapIndex.byPiece[pieceIndex];
+  }
+
+  function dxfMeasureEnsurePieceIntersectionIndex(session, pieceIndex) {
+    const idx = dxfMeasureEnsurePieceSnapIndex(session, pieceIndex);
+    if (!idx.intersections) idx.intersections = dxfMeasureBuildPieceIntersections(session.pieces[pieceIndex]);
+    return idx.intersections;
+  }
+
+  // ---- Live candidate lookup (called from click resolution + hover render) --
+
+  function dxfMeasureSnapEnabledKinds() {
+    const kinds = [];
+    if (state.dxfMeasureSnapEndpoint) kinds.push('endpoint');
+    if (state.dxfMeasureSnapMidpoint) kinds.push('midpoint');
+    if (state.dxfMeasureSnapIntersection) kinds.push('intersection');
+    return kinds;
+  }
+
+  function dxfMeasureAnySnapEnabled() {
+    return !!(state.dxfMeasureSnapEndpoint || state.dxfMeasureSnapMidpoint || state.dxfMeasureSnapIntersection);
+  }
+
+  // Nearest enabled-kind snap point to `world` (board/world space, live piece
+  // position already accounted for via dxfMeasureNativeToBoardLive) within
+  // DXF_MEASURE_SNAP_TOLERANCE_PX screen px, or null. When several kinds are
+  // in tolerance, the NEAREST wins regardless of kind — see the plan's "ưu
+  // tiên gần pointer nhất" rule; the caller always draws a marker exactly at
+  // the returned point before it can be committed by a click, so this is a
+  // visible preview, never a silent guess (file header).
+  function dxfMeasureSnapCandidate(session, world) {
+    if (!session || !world) return null;
+    const kinds = dxfMeasureSnapEnabledKinds();
+    if (!kinds.length) return null;
+    const tol = DXF_MEASURE_SNAP_TOLERANCE_PX / Math.max(0.0001, state.zoom);
+    let best = null;
+    session.pieces.forEach((piece, pieceIndex) => {
+      if (!piece.segments.length) return;
+      const idx = dxfMeasureEnsurePieceSnapIndex(session, pieceIndex);
+      const pools = [];
+      if (kinds.includes('endpoint')) pools.push(['endpoint', idx.endpoints]);
+      if (kinds.includes('midpoint')) pools.push(['midpoint', idx.midpoints]);
+      if (kinds.includes('intersection')) pools.push(['intersection', dxfMeasureEnsurePieceIntersectionIndex(session, pieceIndex)]);
+      for (const [kind, points] of pools) {
+        for (const point of points) {
+          const board = dxfMeasureNativeToBoardLive(point.native, session, pieceIndex);
+          if (!board) continue;
+          const d = distance(world, board);
+          if (d <= tol && (!best || d < best.distance)) {
+            best = { kind, pieceIndex, native: point.native, refs: point.refs, distance: d };
+          }
+        }
+      }
+    });
+    return best;
+  }
+
+  // ---- Menu toggles (same pattern as toggleSmartAlign) -----------------------
+
+  function dxfMeasureSetSnapKind(kind, enabled) {
+    const key = kind === 'endpoint' ? 'dxfMeasureSnapEndpoint'
+      : kind === 'midpoint' ? 'dxfMeasureSnapMidpoint'
+      : kind === 'intersection' ? 'dxfMeasureSnapIntersection' : null;
+    if (!key) return;
+    state[key] = !!enabled;
+    updateUI();
+    requestRender();
+  }
+
+  function toggleDxfMeasureSnapKind(kind) {
+    const current = kind === 'endpoint' ? state.dxfMeasureSnapEndpoint
+      : kind === 'midpoint' ? state.dxfMeasureSnapMidpoint
+      : state.dxfMeasureSnapIntersection;
+    dxfMeasureSetSnapKind(kind, !current);
   }
 
   // ---- src/manual/dxf-measure-interaction.js ----
@@ -28422,6 +29404,21 @@ function onWheel(e) {
     return { pieceIndex: hit.pieceIndex, segIndexInPiece: hit.segIndexInPiece, t: hit.t };
   }
 
+  // US-112: the candidate set a click resolves against — the snapped point's
+  // own refs when a snap target is active (so a corner shared by several
+  // segments still goes through the normal choosing-entity Tab/Enter flow
+  // below, just anchored at the exact corner instead of wherever within
+  // tolerance the raw click landed), otherwise the unsnapped tolerance-radius
+  // hits exactly as before this story. `altBypass` (Alt/Option held) skips
+  // snapping for this one click, matching Smart Align's own bypass gesture.
+  function dxfMeasureSnapEntityHitsForClick(session, world, altBypass) {
+    if (!altBypass) {
+      const snap = dxfMeasureSnapCandidate(session, world);
+      if (snap) return snap.refs.map(ref => ({ pieceIndex: snap.pieceIndex, segIndexInPiece: ref.segIndexInPiece, t: ref.t, distance: 0 }));
+    }
+    return dxfMeasureEntityHitsForClick(session, world);
+  }
+
   // ---- Route/direction candidate construction (RB-1) -------------------------
   //
   // Unifies "choose which of several routes" and "choose forward vs reverse
@@ -28514,8 +29511,8 @@ function onWheel(e) {
   // the entity choice restore exactly the interaction state that existed
   // before this click, per "Escape cancels only the pending candidate
   // choice."
-  function dxfMeasureResolveEntityClick(session, world, forWhich, resume, onResolved) {
-    const hits = dxfMeasureEntityHitsForClick(session, world);
+  function dxfMeasureResolveEntityClick(session, world, forWhich, resume, altBypass, onResolved) {
+    const hits = dxfMeasureSnapEntityHitsForClick(session, world, altBypass);
     if (!hits.length) {
       showToast(forWhich === 'a'
         ? 'Click on the imported DXF pattern to place point A.'
@@ -28529,9 +29526,9 @@ function onWheel(e) {
     requestRender();
   }
 
-  function dxfMeasureBeginPlacement(session, world) {
+  function dxfMeasureBeginPlacement(session, world, altKey) {
     if (session.pendingMode === 'out-of-path') {
-      const endpoint = dxfMeasureOutOfPathEndpointFromBoard(session, world);
+      const endpoint = dxfMeasureOutOfPathEndpointFromBoard(session, world, altKey);
       if (!endpoint) { showToast('Click anywhere to place point A.'); return; }
       session.interaction = { type: 'awaiting-b', mode: 'out-of-path', a: endpoint };
       session.placementArmed = false;
@@ -28540,7 +29537,7 @@ function onWheel(e) {
       requestRender();
       return;
     }
-    dxfMeasureResolveEntityClick(session, world, 'a', null, (ref) => {
+    dxfMeasureResolveEntityClick(session, world, 'a', null, altKey, (ref) => {
       session.interaction = { type: 'awaiting-b', mode: 'along-path', a: ref };
       session.placementArmed = false;
       session.selectedMeasurementId = null;
@@ -28549,11 +29546,11 @@ function onWheel(e) {
     });
   }
 
-  function dxfMeasureCompletePlacement(session, world) {
+  function dxfMeasureCompletePlacement(session, world, altKey) {
     const pending = session.interaction;
     if (!pending || pending.type !== 'awaiting-b') return;
     if (pending.mode === 'out-of-path') {
-      const endpointB = dxfMeasureOutOfPathEndpointFromBoard(session, world);
+      const endpointB = dxfMeasureOutOfPathEndpointFromBoard(session, world, altKey);
       const measurement = dxfMeasureCreateOutOfPathMeasurement(session, pending.a, endpointB);
       session.selectedMeasurementId = measurement ? measurement.id : null;
       session.interaction = null;
@@ -28561,7 +29558,7 @@ function onWheel(e) {
       requestRender();
       return;
     }
-    dxfMeasureResolveEntityClick(session, world, 'b', pending, (refB) => {
+    dxfMeasureResolveEntityClick(session, world, 'b', pending, altKey, (refB) => {
       dxfMeasureResolveAlongPathPair(session, pending.a, refB);
     });
   }
@@ -28845,7 +29842,7 @@ function onWheel(e) {
     return state.tool === 'pattern-measure' && dxfMeasureIsSessionActive();
   }
 
-  function dxfMeasureOnMouseDown(world) {
+  function dxfMeasureOnMouseDown(world, altKey) {
     const session = state.dxfMeasureSession;
     if (!session) return;
     const tol = dxfMeasureToleranceWorld();
@@ -28856,11 +29853,11 @@ function onWheel(e) {
       return; // resolved by Tab/Enter/Escape only, per the toast shown when it opened
     }
     if (session.interaction && session.interaction.type === 'awaiting-b') {
-      dxfMeasureCompletePlacement(session, world);
+      dxfMeasureCompletePlacement(session, world, altKey);
       return;
     }
     if (!session.interaction && session.placementArmed) {
-      dxfMeasureBeginPlacement(session, world);
+      dxfMeasureBeginPlacement(session, world, altKey);
       return;
     }
     const handleHit = dxfMeasureHitTestHandle(session, world, tol);
@@ -28875,14 +29872,23 @@ function onWheel(e) {
         requestRender();
         return;
       }
-      dxfMeasureBeginPlacement(session, world);
+      dxfMeasureBeginPlacement(session, world, altKey);
       return;
     }
   }
 
-  function dxfMeasureOnMouseMove(world) {
+  // US-112: records hover position/Alt state for the snap-preview marker
+  // (drawDxfMeasureSnapHover) whenever idle or mid-placement (`awaiting-b`),
+  // then falls through to the existing drag handlers unchanged. Recording
+  // read-only position data and requesting a redraw is the same
+  // record-now/compute-at-render-time split RB-3 already uses for drag
+  // previews — this never touches `measurement`/`interaction` state itself.
+  function dxfMeasureOnMouseMove(world, altKey) {
     const session = state.dxfMeasureSession;
-    if (!session || !session.interaction) return;
+    if (!session) return;
+    session.hoverWorld = world;
+    session.hoverAltKey = !!altKey;
+    if (!session.interaction || session.interaction.type === 'awaiting-b') { requestRender(); return; }
     if (session.interaction.type === 'drag-endpoint') dxfMeasureOnDragEndpointMove(session, world);
     else if (session.interaction.type === 'drag-label') dxfMeasureOnDragLabelMove(session, world);
   }
@@ -29445,6 +30451,19 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       el.smartAlignToggleBtn.setAttribute('aria-checked', state.smartAlignEnabled ? 'true' : 'false');
       el.smartAlignToggleBtn.textContent = (state.smartAlignEnabled ? '✓ ' : '') + 'Smart Align';
     }
+    // US-112: same checkbox-menuitem convention as Smart Align above.
+    if (el.dxfMeasureSnapEndpointBtn) {
+      el.dxfMeasureSnapEndpointBtn.setAttribute('aria-checked', state.dxfMeasureSnapEndpoint ? 'true' : 'false');
+      el.dxfMeasureSnapEndpointBtn.textContent = (state.dxfMeasureSnapEndpoint ? '✓ ' : '') + 'Endpoints';
+    }
+    if (el.dxfMeasureSnapMidpointBtn) {
+      el.dxfMeasureSnapMidpointBtn.setAttribute('aria-checked', state.dxfMeasureSnapMidpoint ? 'true' : 'false');
+      el.dxfMeasureSnapMidpointBtn.textContent = (state.dxfMeasureSnapMidpoint ? '✓ ' : '') + 'Midpoints';
+    }
+    if (el.dxfMeasureSnapIntersectionBtn) {
+      el.dxfMeasureSnapIntersectionBtn.setAttribute('aria-checked', state.dxfMeasureSnapIntersection ? 'true' : 'false');
+      el.dxfMeasureSnapIntersectionBtn.textContent = (state.dxfMeasureSnapIntersection ? '✓ ' : '') + 'Intersections';
+    }
     el.brushSizeChip.hidden = state.tool !== 'eraser';
     if (el.brushSizeInput && document.activeElement !== el.brushSizeInput) {
       el.brushSizeInput.value = String(state.brushSize);
@@ -29610,6 +30629,17 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // while the TD is actively reading measured numbers.
       const unitStatus = dxfMeasureUnitStatus(measureSession);
       if (unitStatus) toolText += ' · Units: ' + unitStatus.key + ' (' + unitStatus.provenance + ')';
+      // US-111: the TD-confirmed second surface for seam-match delta (the
+      // panel is the first) — canvas itself stays a compact label, no badge.
+      const activePairId = dxfMeasureFindSeamPairId(measureSession, measureSession.selectedMeasurementId);
+      if (activePairId != null) {
+        const pair = dxfMeasureGetSeamPair(measureSession, activePairId);
+        const delta = dxfMeasureSeamPairDelta(measureSession, pair);
+        if (delta) {
+          toolText += ' · Seam match: Δ' + (dxfMeasureFormatInches(Math.abs(delta.raw)) || '—')
+            + ' (' + dxfMeasureSeamPairStatus(delta) + ')';
+        }
+      }
     } else {
       toolText = imageCount === 0
         ? 'Eraser – Paste or import an image first, then drag to paint white over unwanted lines.'
@@ -29710,6 +30740,14 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       el.dxfMeasureOutBtn.classList.toggle('active', state.tool === 'pattern-measure'
         && hasSession && state.dxfMeasureSession.pendingMode === 'out-of-path');
     }
+    // US-113: same disabled-reason convention as Along/Out above.
+    if (el.dxfMeasurementsListBtn) {
+      const hasSession = !!state.dxfMeasureSession;
+      el.dxfMeasurementsListBtn.disabled = !hasSession;
+      el.dxfMeasurementsListBtn.title = hasSession ? 'List every measurement in this session' : 'Import a DXF file first';
+      el.dxfMeasurementsListBtn.classList.toggle('active', isDxfMeasurementsPanelOpen());
+    }
+    if (typeof renderDxfMeasurementsPanel === 'function') renderDxfMeasurementsPanel();
     // ADR 0073: the native-unit select + provenance note. The select mirrors
     // the session's EFFECTIVE unit; the activeElement guard is the
     // brushSizeInput pattern above — never fight the TD mid-interaction.
@@ -45059,6 +46097,31 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           partialLength: (seg, t0, t1) => (typeof dxfPartialLength === 'function' ? dxfPartialLength(seg, t0, t1) : null),
           projectPointOnSegment: (point, seg) => (typeof dxfProjectPointOnSegment === 'function' ? clone(dxfProjectPointOnSegment(point, seg)) : null),
           directDistance: (a, b) => (typeof dxfDirectDistance === 'function' ? dxfDirectDistance(a, b) : null),
+          // US-112: snap. `lineArcIntersections` is pure kernel math (like
+          // directDistance above); the piece-index getters are read-only
+          // inspection of the session's own cached snap index, same
+          // read-only convention as pieceSegments below — this file's header
+          // comment is explicit that a MUTATING action (toggling a snap kind
+          // on/off) always goes through its real UI path
+          // (#dxfMeasureSnapEndpointBtn etc., src/ui/dxf-measure-panel.js),
+          // never a debug shortcut, so there is deliberately no setter here.
+          lineArcIntersections: (lineSeg, arcSeg) => (typeof dxfMeasureLineArcIntersections === 'function'
+            ? clone(dxfMeasureLineArcIntersections(lineSeg, arcSeg)) : null),
+          // Pure-function versions taking a bare `segments` array directly
+          // (no DXF parse, no board import, no piece-grouping involved) —
+          // same "isolate the math from any session/board state" contract as
+          // parseNative/segmentLength above.
+          buildSnapIndexForSegments: (segments, tolerance) => (typeof dxfMeasureBuildPieceSnapIndex === 'function'
+            ? clone(dxfMeasureBuildPieceSnapIndex({ segments }, tolerance)) : null),
+          buildIntersectionsForSegments: (segments) => (typeof dxfMeasureBuildPieceIntersections === 'function'
+            ? clone(dxfMeasureBuildPieceIntersections({ segments })) : null),
+          pieceSnapIndex: (pieceIndex) => (typeof dxfMeasureEnsurePieceSnapIndex === 'function' && state.dxfMeasureSession
+            ? clone(dxfMeasureEnsurePieceSnapIndex(state.dxfMeasureSession, pieceIndex)) : null),
+          pieceIntersectionIndex: (pieceIndex) => (typeof dxfMeasureEnsurePieceIntersectionIndex === 'function' && state.dxfMeasureSession
+            ? clone(dxfMeasureEnsurePieceIntersectionIndex(state.dxfMeasureSession, pieceIndex)) : null),
+          snapCandidate: (world) => (typeof dxfMeasureSnapCandidate === 'function'
+            ? clone(dxfMeasureSnapCandidate(state.dxfMeasureSession, world)) : null),
+          snapEnabled: () => ({ endpoint: !!state.dxfMeasureSnapEndpoint, midpoint: !!state.dxfMeasureSnapMidpoint, intersection: !!state.dxfMeasureSnapIntersection }),
           enumerateRoutesRaw: (segments, refA, refB, tolerance) => (typeof dxfEnumerateRoutes === 'function'
             ? clone(dxfEnumerateRoutes(segments, refA, refB, tolerance)) : null),
           reverseRoute: (route) => (typeof dxfReverseRoute === 'function' ? clone(dxfReverseRoute(route)) : null),
@@ -45080,6 +46143,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
               topologyToleranceNative: session.topologyToleranceNative,
               measurementCount: session.measurements.length,
               measurements: clone(session.measurements),
+              // US-111: seam-match pairs.
+              seamPairs: clone(session.seamPairs || []),
               selectedMeasurementId: session.selectedMeasurementId,
               // RB-1/RB-2/RB-3: the full interaction object (minus function
               // fields like onResolved, which structuredClone-style `clone()`
@@ -45091,6 +46156,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
               diagnostics: clone(session.diagnostics || {}),
               pieceAnchorAnnotationIds: (session.pieceAnchors || []).map(anchor => anchor ? anchor.annotationId : null),
               pieceBounds: clone(session.pieceBounds || []),
+              // US-112: read-only, for diagnosing the hover-driven snap preview.
+              hoverWorld: clone(session.hoverWorld),
+              hoverAltKey: !!session.hoverAltKey,
             };
           },
           pieceSegments: (pieceIndex) => {
@@ -45162,6 +46230,17 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
             return true;
           },
           formatInches: (value) => (typeof dxfMeasureFormatInches === 'function' ? dxfMeasureFormatInches(value) : null),
+          // US-111: seamPairStatus is pure (a {judged} object in, a status
+          // string out) — exposed directly for exact-boundary unit testing,
+          // same "isolate the math" contract as directDistance/segmentLength.
+          seamPairStatus: (delta) => (typeof dxfMeasureSeamPairStatus === 'function' ? dxfMeasureSeamPairStatus(delta) : null),
+          seamPairPartnerId: (measurementId) => (typeof dxfMeasureSeamPairPartnerId === 'function'
+            ? dxfMeasureSeamPairPartnerId(state.dxfMeasureSession, measurementId) : null),
+          seamPairDelta: (pairId) => {
+            const session = state.dxfMeasureSession;
+            const pair = session && typeof dxfMeasureGetSeamPair === 'function' ? dxfMeasureGetSeamPair(session, pairId) : null;
+            return pair && typeof dxfMeasureSeamPairDelta === 'function' ? clone(dxfMeasureSeamPairDelta(session, pair)) : null;
+          },
           valueInches: (measurementId) => {
             const session = state.dxfMeasureSession;
             const m = session && typeof dxfMeasureGetMeasurement === 'function' ? dxfMeasureGetMeasurement(session, measurementId) : null;
@@ -48594,10 +49673,75 @@ function makeExportFileName() {
       dxfMeasureRecomputeDragPreview(session, session.interaction);
     }
     const activeId = session.selectedMeasurementId;
+    // US-111: the selected measurement's seam-match partner (if any) shares
+    // the same route emphasis WITHOUT becoming independently selected — its
+    // handles stay hit-test-gated on session.selectedMeasurementId alone
+    // (dxfMeasureHitTestHandle), so this is a purely additive visual, never a
+    // second selection. Delta itself is read from the panel/status bar, per
+    // the TD-confirmed decision to keep the canvas label compact — no badge
+    // drawn here.
+    const partnerId = dxfMeasureSeamPairPartnerId(session, activeId);
     for (const measurement of session.measurements) {
-      drawOneDxfMeasurement(session, measurement, measurement.id === activeId);
+      const tier = measurement.id === activeId ? 'active' : (measurement.id === partnerId ? 'paired' : 'inactive');
+      drawOneDxfMeasurement(session, measurement, tier);
     }
     if (session.interaction) drawDxfMeasureInteractionPreview(session, session.interaction);
+    drawDxfMeasureSnapHover(session);
+  }
+
+  // ---- US-112: snap-preview marker --------------------------------------------
+
+  const DXF_MEASURE_SNAP_COLOR = '#0ea5e9'; // distinct from the orange measurement color and candidate palette
+
+  // Endpoint = small filled square, midpoint = triangle, intersection = ×.
+  // Distinct silhouettes so the marker reads correctly even without color
+  // (and stays distinguishable from each other at DPR 1 and 2 alike).
+  function drawDxfMeasureSnapMarker(point, kind) {
+    const z = Math.max(0.0001, state.zoom);
+    const r = 6 / z;
+    ctx.save();
+    ctx.fillStyle = DXF_MEASURE_SNAP_COLOR;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5 / z;
+    if (kind === 'endpoint') {
+      ctx.beginPath();
+      ctx.rect(point.x - r, point.y - r, r * 2, r * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else if (kind === 'midpoint') {
+      ctx.beginPath();
+      ctx.moveTo(point.x, point.y - r);
+      ctx.lineTo(point.x + r, point.y + r);
+      ctx.lineTo(point.x - r, point.y + r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.lineWidth = 2.5 / z;
+      ctx.strokeStyle = DXF_MEASURE_SNAP_COLOR;
+      ctx.beginPath();
+      ctx.moveTo(point.x - r, point.y - r);
+      ctx.lineTo(point.x + r, point.y + r);
+      ctx.moveTo(point.x + r, point.y - r);
+      ctx.lineTo(point.x - r, point.y + r);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Only while Pattern Measure is the live tool (not merely "a session
+  // exists" — committed measurements stay visible after switching tools, but
+  // a stale hover marker must not), only while idle or mid-placement (a drag
+  // or an entity/route choice already draws its own, more specific preview),
+  // and never while Alt/Option bypasses snapping for this pointer position.
+  function drawDxfMeasureSnapHover(session) {
+    if (!dxfMeasureIsActiveTool() || !session.hoverWorld || session.hoverAltKey) return;
+    if (session.interaction && session.interaction.type !== 'awaiting-b') return;
+    if (!dxfMeasureAnySnapEnabled()) return;
+    const snap = dxfMeasureSnapCandidate(session, session.hoverWorld);
+    if (!snap) return;
+    const board = dxfMeasureNativeToBoardLive(snap.native, session, snap.pieceIndex);
+    if (board) drawDxfMeasureSnapMarker(board, snap.kind);
   }
 
   function drawDxfMeasureRoutePolyline(pts, color, weight, alpha, dashed) {
@@ -48704,12 +49848,19 @@ function makeExportFileName() {
     ctx.restore();
   }
 
-  function drawOneDxfMeasurement(session, measurement, active) {
+  // `tier`: 'active' (truly selected — full A/B handles + direction arrow),
+  // 'paired' (this measurement's seam-match partner IS the selection — same
+  // heavy/opaque route weight so the two read as one comparison, but no
+  // handles/arrow of its own, so there is never visual doubt about which one
+  // is actually selected), or 'inactive' (the old plain boolean's false).
+  function drawOneDxfMeasurement(session, measurement, tier) {
+    const active = tier === 'active';
+    const emphasized = tier !== 'inactive';
     const pts = dxfMeasureRouteWorldPoints(session, measurement, 16);
     if (pts.length < 2) { drawDxfMeasureLabel(session, measurement, active); return; }
     const invalid = dxfMeasureDragInvalidFor(session, measurement.id);
     const color = invalid ? DXF_MEASURE_INVALID_COLOR : DXF_MEASURE_COLOR;
-    drawDxfMeasureRoutePolyline(pts, color, active ? 4.5 : 2, active ? 0.95 : 0.55, false);
+    drawDxfMeasureRoutePolyline(pts, color, emphasized ? 4.5 : 2, emphasized ? 0.95 : 0.55, false);
     if (active) {
       // RB-1: A/B are drawn from the measurement's own IDENTITY
       // (dxfMeasureHandleWorldPos reads measurement.a/measurement.b, live-

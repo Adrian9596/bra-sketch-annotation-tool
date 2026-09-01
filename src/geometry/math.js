@@ -26,3 +26,20 @@
     const proj = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
     return distance(p, proj);
   }
+
+  // Strict segment-segment intersection (both t and u in [0,1]) — null when
+  // the two SEGMENTS don't actually cross (parallel, coincident, or crossing
+  // only on their infinite extensions). Deliberately stricter than a
+  // line-line intersection: a snap target should be a crossing the TD can
+  // actually see drawn on the board, not a projection past either line's end.
+  function segmentIntersection(a1, a2, b1, b2) {
+    const rX = a2.x - a1.x, rY = a2.y - a1.y;
+    const sX = b2.x - b1.x, sY = b2.y - b1.y;
+    const denom = rX * sY - rY * sX;
+    if (Math.abs(denom) < 1e-9) return null;
+    const dx = b1.x - a1.x, dy = b1.y - a1.y;
+    const t = (dx * sY - dy * sX) / denom;
+    const u = (dx * rY - dy * rX) / denom;
+    if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+    return { x: a1.x + t * rX, y: a1.y + t * rY };
+  }

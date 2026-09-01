@@ -20,10 +20,75 @@
       dxfMeasureRecomputeDragPreview(session, session.interaction);
     }
     const activeId = session.selectedMeasurementId;
+    // US-111: the selected measurement's seam-match partner (if any) shares
+    // the same route emphasis WITHOUT becoming independently selected — its
+    // handles stay hit-test-gated on session.selectedMeasurementId alone
+    // (dxfMeasureHitTestHandle), so this is a purely additive visual, never a
+    // second selection. Delta itself is read from the panel/status bar, per
+    // the TD-confirmed decision to keep the canvas label compact — no badge
+    // drawn here.
+    const partnerId = dxfMeasureSeamPairPartnerId(session, activeId);
     for (const measurement of session.measurements) {
-      drawOneDxfMeasurement(session, measurement, measurement.id === activeId);
+      const tier = measurement.id === activeId ? 'active' : (measurement.id === partnerId ? 'paired' : 'inactive');
+      drawOneDxfMeasurement(session, measurement, tier);
     }
     if (session.interaction) drawDxfMeasureInteractionPreview(session, session.interaction);
+    drawDxfMeasureSnapHover(session);
+  }
+
+  // ---- US-112: snap-preview marker --------------------------------------------
+
+  const DXF_MEASURE_SNAP_COLOR = '#0ea5e9'; // distinct from the orange measurement color and candidate palette
+
+  // Endpoint = small filled square, midpoint = triangle, intersection = ×.
+  // Distinct silhouettes so the marker reads correctly even without color
+  // (and stays distinguishable from each other at DPR 1 and 2 alike).
+  function drawDxfMeasureSnapMarker(point, kind) {
+    const z = Math.max(0.0001, state.zoom);
+    const r = 6 / z;
+    ctx.save();
+    ctx.fillStyle = DXF_MEASURE_SNAP_COLOR;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5 / z;
+    if (kind === 'endpoint') {
+      ctx.beginPath();
+      ctx.rect(point.x - r, point.y - r, r * 2, r * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else if (kind === 'midpoint') {
+      ctx.beginPath();
+      ctx.moveTo(point.x, point.y - r);
+      ctx.lineTo(point.x + r, point.y + r);
+      ctx.lineTo(point.x - r, point.y + r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.lineWidth = 2.5 / z;
+      ctx.strokeStyle = DXF_MEASURE_SNAP_COLOR;
+      ctx.beginPath();
+      ctx.moveTo(point.x - r, point.y - r);
+      ctx.lineTo(point.x + r, point.y + r);
+      ctx.moveTo(point.x + r, point.y - r);
+      ctx.lineTo(point.x - r, point.y + r);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Only while Pattern Measure is the live tool (not merely "a session
+  // exists" — committed measurements stay visible after switching tools, but
+  // a stale hover marker must not), only while idle or mid-placement (a drag
+  // or an entity/route choice already draws its own, more specific preview),
+  // and never while Alt/Option bypasses snapping for this pointer position.
+  function drawDxfMeasureSnapHover(session) {
+    if (!dxfMeasureIsActiveTool() || !session.hoverWorld || session.hoverAltKey) return;
+    if (session.interaction && session.interaction.type !== 'awaiting-b') return;
+    if (!dxfMeasureAnySnapEnabled()) return;
+    const snap = dxfMeasureSnapCandidate(session, session.hoverWorld);
+    if (!snap) return;
+    const board = dxfMeasureNativeToBoardLive(snap.native, session, snap.pieceIndex);
+    if (board) drawDxfMeasureSnapMarker(board, snap.kind);
   }
 
   function drawDxfMeasureRoutePolyline(pts, color, weight, alpha, dashed) {
@@ -130,12 +195,19 @@
     ctx.restore();
   }
 
-  function drawOneDxfMeasurement(session, measurement, active) {
+  // `tier`: 'active' (truly selected — full A/B handles + direction arrow),
+  // 'paired' (this measurement's seam-match partner IS the selection — same
+  // heavy/opaque route weight so the two read as one comparison, but no
+  // handles/arrow of its own, so there is never visual doubt about which one
+  // is actually selected), or 'inactive' (the old plain boolean's false).
+  function drawOneDxfMeasurement(session, measurement, tier) {
+    const active = tier === 'active';
+    const emphasized = tier !== 'inactive';
     const pts = dxfMeasureRouteWorldPoints(session, measurement, 16);
     if (pts.length < 2) { drawDxfMeasureLabel(session, measurement, active); return; }
     const invalid = dxfMeasureDragInvalidFor(session, measurement.id);
     const color = invalid ? DXF_MEASURE_INVALID_COLOR : DXF_MEASURE_COLOR;
-    drawDxfMeasureRoutePolyline(pts, color, active ? 4.5 : 2, active ? 0.95 : 0.55, false);
+    drawDxfMeasureRoutePolyline(pts, color, emphasized ? 4.5 : 2, emphasized ? 0.95 : 0.55, false);
     if (active) {
       // RB-1: A/B are drawn from the measurement's own IDENTITY
       // (dxfMeasureHandleWorldPos reads measurement.a/measurement.b, live-

@@ -102,6 +102,10 @@ async function main() {
   await section7ViewportZoomMatrix(s);
   await section8InsertBlocksAndUnits(s);
   await section9PieceEditInvalidation(s);
+  await section10Snap(s);
+  await section11MeasurementsPanel(s);
+  await section12SeamMatch(s);
+  await section13DraggablePanels(s);
 
   const errors = await s.eval('window.__dxfMeasureErrors');
   check(Array.isArray(errors) && errors.length === 0, 'no uncaught browser errors: ' + JSON.stringify(errors));
@@ -542,6 +546,779 @@ async function section9PieceEditInvalidation(s) {
   check(result.sessionAlreadyNull === null, 'control: mode-switch already cleared the session before this Remove');
   check(result.toastAfterQuietRemove.indexOf('Pattern Measure cleared') === -1, 'control: removing a piece with no active session stays quiet, got "' + result.toastAfterQuietRemove + '"');
   console.log('PASS  section 9 (piece-edit invalidation — Finding 7)');
+}
+
+// ---- Section 10: US-112 snap modes ------------------------------------------
+// Endpoint/midpoint/intersection snap for Pattern Measure. 10.1 is pure
+// kernel math (no import, no session — same "isolate the math" contract as
+// section 1/8). 10.2 drives the REAL Out of Path placement flow through real
+// mousedown/mouseup events to prove snap actually changes what gets
+// committed (and that Alt/Option and the menu toggles bypass it), using Out
+// of Path specifically because its endpoint resolution
+// (dxfMeasureOutOfPathEndpointFromBoard) has no entity-ambiguity step to
+// route around — a corner shared by two segments would otherwise need the
+// same Tab/Enter choosing-entity dance section 6 already covers, which is
+// not what this section exists to prove. 10.3 is the perf guard named in the
+// story plan: per-piece snap index build must stay off the pointermove hot
+// path (lazy + cached), checked against the real six-piece factory fixture.
+async function section10Snap(s) {
+  // 10.1 — pure kernel math, no DXF parse/import at all.
+  const pure = await s.eval(`(() => {
+    const m = window.__braAutoModeDebug.dxf.measure;
+    // A 10x10 square (4 straight segments, closed) plus one internal
+    // vertical LINE at x=5 spanning y=-3..13 — crosses the bottom edge
+    // (y=0) and top edge (y=10) at interior points (t=0.5 on each edge),
+    // and is parallel to (so never crosses) the two vertical sides.
+    const square = [
+      { kind: 'straight', a: { x: 0, y: 0 }, b: { x: 10, y: 0 } },   // 0: bottom
+      { kind: 'straight', a: { x: 10, y: 0 }, b: { x: 10, y: 10 } }, // 1: right
+      { kind: 'straight', a: { x: 10, y: 10 }, b: { x: 0, y: 10 } }, // 2: top
+      { kind: 'straight', a: { x: 0, y: 10 }, b: { x: 0, y: 0 } },   // 3: left
+    ];
+    const withDart = square.concat([{ kind: 'straight', a: { x: 5, y: -3 }, b: { x: 5, y: 13 } }]); // 4: dart
+    const squareIndex = m.buildSnapIndexForSegments(square, 1e-6);
+    const dartIntersections = m.buildIntersectionsForSegments(withDart);
+    // Pure line x arc: a horizontal line through a half-circle's center.
+    const lineSeg = { kind: 'straight', a: { x: -20, y: 0 }, b: { x: 20, y: 0 } };
+    const arcSeg = { kind: 'arc', center: { x: 0, y: 0 }, radius: 10, startAngle: 0, sweep: Math.PI }; // upper half only
+    const hits = m.lineArcIntersections(lineSeg, arcSeg);
+    const noHits = m.lineArcIntersections({ kind: 'straight', a: { x: -20, y: 50 }, b: { x: 20, y: 50 } }, arcSeg);
+    return { squareIndex, dartIntersections, hits, noHits };
+  })()`);
+  check(pure.squareIndex.endpoints.length === 4, 'a closed 4-segment square clusters into exactly 4 endpoint (corner) snap points, got ' + pure.squareIndex.endpoints.length);
+  check(pure.squareIndex.endpoints.every(e => e.refs.length === 2), 'every square corner is shared by exactly 2 segments, got ' + JSON.stringify(pure.squareIndex.endpoints.map(e => e.refs.length)));
+  check(pure.squareIndex.midpoints.length === 4 && pure.squareIndex.midpoints.every(mp => mp.refs.length === 1),
+    'one unclustered midpoint per segment, got ' + JSON.stringify(pure.squareIndex.midpoints));
+  check(near(pure.squareIndex.midpoints[0].native.x, 5) && near(pure.squareIndex.midpoints[0].native.y, 0),
+    'bottom edge midpoint is exactly (5,0), got ' + JSON.stringify(pure.squareIndex.midpoints[0].native));
+  check(pure.dartIntersections.length === 2, 'the dart line crosses exactly 2 edges (bottom+top), not the 2 parallel sides or its own endpoints, got '
+    + JSON.stringify(pure.dartIntersections));
+  const dartPoints = pure.dartIntersections.map(x => x.native).sort((a, b) => a.y - b.y);
+  check(near(dartPoints[0].x, 5) && near(dartPoints[0].y, 0) && near(dartPoints[1].x, 5) && near(dartPoints[1].y, 10),
+    'dart intersections land exactly at (5,0) and (5,10), got ' + JSON.stringify(dartPoints));
+  check(pure.hits.length === 2 && pure.hits.every(h => near(Math.hypot(h.point.x, h.point.y), 10)),
+    'a line through a circle its center yields 2 points exactly on the radius, got ' + JSON.stringify(pure.hits));
+  check(pure.noHits.length === 0, 'a line entirely outside the circle (and outside the arc\'s own half-plane) yields no intersections, got ' + JSON.stringify(pure.noHits));
+  console.log('PASS  section 10.1 (snap index + intersection math, pure)');
+
+  // 10.2 — real Out of Path placement, snapped vs Alt-bypassed vs toggled off.
+  const SNAP_SQUARE_DXF = doc([dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0)]);
+  const live = await s.eval(`(async () => {
+    document.getElementById('modeManualBtn').click();
+    const dbg = window.__braAutoModeDebug;
+    const p = dbg.exportProject();
+    p.state.annotations = []; p.state.images = [];
+    await dbg.loadProject(p);
+    document.getElementById('modeManualBtn').click();
+    if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    document.getElementById('toolsMenuBtn').click();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const input = document.getElementById('dxfImportFileInput');
+    const dt = new DataTransfer();
+    dt.items.add(new File([${JSON.stringify(SNAP_SQUARE_DXF)}], 'snapsquare.dxf', { type: 'application/octet-stream' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 20; i += 1) await new Promise(r => requestAnimationFrame(r));
+
+    const canvas = document.getElementById('boardCanvas');
+    const settle = (frames=2) => new Promise(resolve => { const step = () => frames-- <= 0 ? resolve() : requestAnimationFrame(step); requestAnimationFrame(step); });
+    const toScreen = world => { const rect = canvas.getBoundingClientRect(), view = dbg.getView(); return { x: rect.left + world.x * view.zoom + view.panX, y: rect.top + world.y * view.zoom + view.panY }; };
+    const fireWorld = (type, world, extra={}) => { const p = toScreen(world); canvas.dispatchEvent(new MouseEvent(type, Object.assign({clientX:p.x,clientY:p.y,bubbles:true,button:0}, extra))); };
+    const clickWorld = async (world, extra={}) => { fireWorld('mousedown', world, extra); fireWorld('mouseup', world, extra); await settle(1); };
+    const pointB = dbg.dxf.measure.nativeToBoardLive({ x: 5, y: 5 }, 0);
+    // US-112: this section does not trust incoming toggle state (an earlier
+    // section may have changed it — see section 6's own comment) — force the
+    // exact endpoint/midpoint state each step needs before asserting on it.
+    const setSnap = (endpoint, midpoint) => {
+      const current = dbg.dxf.measure.snapEnabled();
+      if (current.endpoint !== endpoint) document.getElementById('dxfMeasureSnapEndpointBtn').click();
+      if (current.midpoint !== midpoint) document.getElementById('dxfMeasureSnapMidpointBtn').click();
+    };
+
+    // Point 6 screen px up-left of native corner (0,0), diagonally outside the square.
+    const corner = dbg.dxf.measure.nativeToBoardLive({ x: 0, y: 0 }, 0);
+    const zoom = dbg.getView().zoom, off = 6 / zoom / Math.SQRT2;
+    const near = { x: corner.x - off, y: corner.y - off };
+
+    const placeOutOfPath = async (extra={}) => {
+      document.getElementById('dxfMeasureOutBtn').click();
+      await clickWorld(near, extra);
+      await clickWorld(pointB, {});
+      const session = dbg.dxf.measure.getSession();
+      const m = session.measurements[session.measurements.length - 1];
+      return m ? m.a.native : null;
+    };
+
+    setSnap(true, true);
+    const snapped = await placeOutOfPath();
+    const altBypassed = await placeOutOfPath({ altKey: true });
+    setSnap(false, false);
+    const toggledOff = await placeOutOfPath();
+    setSnap(true, true); // restore defaults for whatever runs after this section
+    const restoredSnap = dbg.dxf.measure.snapEnabled();
+    document.getElementById('toolSelect').click();
+    return { snapped, altBypassed, toggledOff, restoredSnap, cornerNative: { x: 0, y: 0 } };
+  })()`);
+  const distTo00 = p => Math.hypot(p.x, p.y);
+  check(distTo00(live.snapped) < 1e-6, 'a click 6px from the corner snaps exactly onto it when Endpoint snap is on, got ' + JSON.stringify(live.snapped));
+  check(distTo00(live.altBypassed) > 1e-3, 'Alt/Option bypasses snap for that one click, got ' + JSON.stringify(live.altBypassed));
+  check(distTo00(live.toggledOff) > 1e-3, 'turning Endpoint snap off restores the unsnapped click, got ' + JSON.stringify(live.toggledOff));
+  check(near(live.altBypassed.x, live.toggledOff.x, 1e-6) && near(live.altBypassed.y, live.toggledOff.y, 1e-6),
+    'Alt-bypass and toggle-off resolve the SAME raw click to the same native point (both skip snap, neither invents a different unsnapped answer), got '
+    + JSON.stringify({ altBypassed: live.altBypassed, toggledOff: live.toggledOff }));
+  check(live.restoredSnap.endpoint === true && live.restoredSnap.midpoint === true, 'snap toggles are restored to their defaults for later sections, got ' + JSON.stringify(live.restoredSnap));
+  console.log('PASS  section 10.2 (real Out of Path placement: snapped / Alt-bypassed / toggled off)');
+
+  // 10.3 — perf guard: snap must not turn pointermove into an O(n^2)-per-frame
+  // scan. Real 6-piece fixture, all three kinds enabled (worst case, forces
+  // the lazy intersection index to build for every piece the sweep visits).
+  let fixtureText;
+  try {
+    fixtureText = await readFile(path.join(appDir, 'demo/DXF file/3380.dxf'), 'utf8');
+  } catch {
+    console.log('SKIP  dxf-measurement-check   demo/DXF file/3380.dxf not present (public mirror) — section 10.3 skipped');
+    return;
+  }
+  const perf = await s.eval(`(async () => {
+    document.getElementById('modeManualBtn').click();
+    const dbg = window.__braAutoModeDebug;
+    const p = dbg.exportProject();
+    p.state.annotations = []; p.state.images = [];
+    await dbg.loadProject(p);
+    document.getElementById('modeManualBtn').click();
+    if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    document.getElementById('toolsMenuBtn').click();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const input = document.getElementById('dxfImportFileInput');
+    const dt = new DataTransfer();
+    dt.items.add(new File([${JSON.stringify(fixtureText)}], '3380.dxf', { type: 'application/octet-stream' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 40; i += 1) await new Promise(r => requestAnimationFrame(r));
+
+    // US-112: force ALL THREE kinds on (worst case for the lazy-build cost
+    // this guards), not trusting whatever an earlier section left behind.
+    const setSnap3 = (endpoint, midpoint, intersection) => {
+      const current = dbg.dxf.measure.snapEnabled();
+      if (current.endpoint !== endpoint) document.getElementById('dxfMeasureSnapEndpointBtn').click();
+      if (current.midpoint !== midpoint) document.getElementById('dxfMeasureSnapMidpointBtn').click();
+      if (current.intersection !== intersection) document.getElementById('dxfMeasureSnapIntersectionBtn').click();
+    };
+    setSnap3(true, true, true);
+    document.getElementById('dxfMeasureAlongBtn').click(); // arms pattern-measure, so mousemove drives the hover snap lookup
+    const canvas = document.getElementById('boardCanvas'), rect = canvas.getBoundingClientRect();
+    const dispatchMove = (x, y) => canvas.dispatchEvent(new MouseEvent('mousemove', { clientX: rect.left + x, clientY: rect.top + y, bubbles: true }));
+    const N = 300;
+    const t0 = performance.now();
+    for (let i = 0; i < N; i += 1) dispatchMove((i * 37) % Math.max(1, rect.width), (i * 53) % Math.max(1, rect.height));
+    const elapsedMs = performance.now() - t0;
+    setSnap3(true, true, false); // restore defaults (Intersection is opt-in)
+    document.getElementById('toolSelect').click();
+    return { elapsedMs, perCallMs: elapsedMs / N, pieceCount: dbg.dxf.measure.getSession().pieceCount };
+  })()`);
+  check(perf.pieceCount === 6, 'perf guard ran against the real 6-piece fixture, got ' + perf.pieceCount + ' pieces');
+  // Generous by design (this proves "not accidentally quadratic per frame",
+  // not a tight ms budget) — a real regression to O(pieces * segments^2) per
+  // mousemove would blow through this by one or two orders of magnitude, not
+  // by a hair, so no `log()`-worthy silent tolerance-widening risk here.
+  check(perf.perCallMs < 8, '300 hover mousemoves over the 6-piece fixture with all 3 snap kinds on average under 8ms/call, got '
+    + perf.perCallMs.toFixed(3) + 'ms/call (total ' + perf.elapsedMs.toFixed(1) + 'ms)');
+  console.log('PASS  section 10.3 (snap perf guard on the real 6-piece fixture): ' + perf.perCallMs.toFixed(3) + 'ms/call');
+}
+
+// ---- Section 11: US-113 measurements list panel -----------------------------
+// The panel is a pure VIEW over state.dxfMeasureSession.measurements — every
+// assertion here compares the RENDERED DOM against the session read through
+// the debug hook (never the DOM against itself), per this file's own
+// no-tautology convention (see US-083's "a contract asserting the drafter's
+// own formula can never fail" lesson).
+async function section11MeasurementsPanel(s) {
+  const PANEL_SQUARE_DXF = doc([dxfLine(0, 0, 20, 0), dxfLine(20, 0, 20, 20), dxfLine(20, 20, 0, 20), dxfLine(0, 20, 0, 0)]);
+  const result = await s.eval(`(async () => {
+    document.getElementById('modeManualBtn').click();
+    const dbg = window.__braAutoModeDebug;
+    const p = dbg.exportProject();
+    p.state.annotations = []; p.state.images = [];
+    await dbg.loadProject(p);
+    document.getElementById('modeManualBtn').click();
+    if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    document.getElementById('toolsMenuBtn').click();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const input = document.getElementById('dxfImportFileInput');
+    const dt = new DataTransfer();
+    dt.items.add(new File([${JSON.stringify(PANEL_SQUARE_DXF)}], 'panelsquare.dxf', { type: 'application/octet-stream' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 20; i += 1) await new Promise(r => requestAnimationFrame(r));
+
+    const canvas = document.getElementById('boardCanvas');
+    const settle = (frames=2) => new Promise(resolve => { const step = () => frames-- <= 0 ? resolve() : requestAnimationFrame(step); requestAnimationFrame(step); });
+    const toScreen = world => { const rect = canvas.getBoundingClientRect(), view = dbg.getView(); return { x: rect.left + world.x * view.zoom + view.panX, y: rect.top + world.y * view.zoom + view.panY }; };
+    const fireWorld = (type, world) => { const p = toScreen(world); canvas.dispatchEvent(new MouseEvent(type, {clientX:p.x,clientY:p.y,bubbles:true,button:0})); };
+    const clickWorld = async world => { fireWorld('mousedown', world); fireWorld('mouseup', world); await settle(1); };
+    const placeOutOfPath = async (a, b) => {
+      document.getElementById('dxfMeasureOutBtn').click();
+      await clickWorld(dbg.dxf.measure.nativeToBoardLive(a, 0));
+      await clickWorld(dbg.dxf.measure.nativeToBoardLive(b, 0));
+    };
+
+    // Three measurements with distinct, independently-known native lengths.
+    await placeOutOfPath({ x: 2, y: 2 }, { x: 2, y: 5 });   // length 3
+    await placeOutOfPath({ x: 2, y: 2 }, { x: 6, y: 2 });   // length 4
+    await placeOutOfPath({ x: 2, y: 2 }, { x: 5, y: 6 });   // length 5 (3-4-5)
+    const sessionAfterCreate = dbg.dxf.measure.getSession();
+    const idsInCreationOrder = sessionAfterCreate.measurements.map(m => m.id);
+    // Independently-known-length oracle values, read through the debug hook
+    // (never the DOM), for comparison against what the panel actually shows.
+    const expectedValues = idsInCreationOrder.map(id => dbg.dxf.measure.valueInches(id));
+    const expectedFormatted = expectedValues.map(v => dbg.dxf.measure.formatInches(v));
+
+    document.getElementById('dxfMeasurementsListBtn').click();
+    await settle(1);
+    const panelOpenAfterClick = !document.getElementById('dxfMeasurementsPanel').hidden;
+    const rowsAfterCreate = Array.from(document.querySelectorAll('#dxfMeasurementsBody .dxf-measurement-row'))
+      .map(row => ({ name: row.querySelector('.dxf-measurement-name').textContent, value: row.querySelector('.dxf-measurement-value').textContent }));
+
+    // --- rename: dblclick -> set value -> blur (commit-on-blur convention) ---
+    const firstRow = document.querySelector('#dxfMeasurementsBody .dxf-measurement-row');
+    firstRow.querySelector('.dxf-measurement-name').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    const nameInput = firstRow.querySelector('.dxf-measurement-name-input');
+    const inputAppearedOnDblclick = !!nameInput;
+    nameInput.value = 'CF length';
+    // Real .blur() (not a synthetic 'blur' Event) — the panel's own
+    // "don't rebuild while this input is document.activeElement" guard reads
+    // document.activeElement, which only a genuine focus change updates.
+    nameInput.blur();
+    await settle(1);
+    const nameAfterRename = dbg.dxf.measure.getSession().measurements[0].name;
+    const rowNameAfterRename = document.querySelector('#dxfMeasurementsBody .dxf-measurement-row .dxf-measurement-name').textContent;
+
+    dbg.dxf.measure.undo();
+    const nameAfterUndo = dbg.dxf.measure.getSession().measurements[0].name;
+    dbg.dxf.measure.redo();
+    const nameAfterRedo = dbg.dxf.measure.getSession().measurements[0].name;
+
+    // --- Escape reverts locally without a no-op history entry ---
+    // The rename commit above triggered updateUI() -> a full panel rebuild
+    // (fingerprint changed), so firstRow (captured before that rebuild) is
+    // now a DETACHED node — re-query the live row-0 rather than reuse it.
+    const historyBeforeEscape = dbg.dxf.measure.getSession().historyPast;
+    const liveFirstRow = document.querySelector('#dxfMeasurementsBody .dxf-measurement-row');
+    liveFirstRow.querySelector('.dxf-measurement-name').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    const escapeInput = liveFirstRow.querySelector('.dxf-measurement-name-input');
+    escapeInput.value = 'should not stick';
+    escapeInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    const nameAfterEscape = dbg.dxf.measure.getSession().measurements[0].name;
+    const inputGoneAfterEscape = !liveFirstRow.querySelector('.dxf-measurement-name-input');
+    const historyAfterEscape = dbg.dxf.measure.getSession().historyPast;
+
+    // --- row click selects; ✕ deletes exactly that row ---
+    // Selecting a row changes session.selectedMeasurementId, which is part of
+    // this panel's own render fingerprint (dxfMeasurementsFingerprint) — so
+    // the click below triggers a FULL rebuild via updateUI(), and any row
+    // reference captured before it goes stale. Re-query fresh after every
+    // action that can trigger one, rather than trust a held reference.
+    const rowsAt = () => Array.from(document.querySelectorAll('#dxfMeasurementsBody .dxf-measurement-row'));
+    rowsAt()[1].click();
+    await settle(1);
+    const selectedAfterRowClick = dbg.dxf.measure.getSession().selectedMeasurementId;
+    const activeRowClassAfterClick = rowsAt()[1].className.includes('active');
+    const deleteBtn = Array.from(rowsAt()[2].querySelectorAll('.pattern-piece-mini-btn')).find(b => b.textContent === '✕');
+    deleteBtn.click();
+    await settle(1);
+    const idsAfterDelete = dbg.dxf.measure.getSession().measurements.map(m => m.id);
+    const rowCountAfterDelete = document.querySelectorAll('#dxfMeasurementsBody .dxf-measurement-row').length;
+
+    // --- Clear all: one history step, panel goes to its empty state ---
+    document.getElementById('dxfMeasurementsClearAllBtn').click();
+    await settle(1);
+    const countAfterClearAll = dbg.dxf.measure.getSession().measurementCount;
+    const emptyStateText = document.querySelector('#dxfMeasurementsBody .dxf-measurement-row').textContent;
+    dbg.dxf.measure.undo();
+    const countAfterClearAllUndo = dbg.dxf.measure.getSession().measurementCount;
+
+    // --- serializer guard: name never leaves the session ---
+    const projectJson = JSON.stringify(dbg.exportProject());
+    const autosave = dbg.autosave.peek() || '';
+
+    document.getElementById('dxfMeasurementsCloseBtn').click();
+    const panelHiddenAfterClose = document.getElementById('dxfMeasurementsPanel').hidden;
+    document.getElementById('toolSelect').click();
+
+    return {
+      idsInCreationOrder, expectedValues, expectedFormatted, panelOpenAfterClick, rowsAfterCreate,
+      inputAppearedOnDblclick, nameAfterRename, rowNameAfterRename, nameAfterUndo, nameAfterRedo,
+      historyBeforeEscape, nameAfterEscape, inputGoneAfterEscape, historyAfterEscape,
+      selectedAfterRowClick, activeRowClassAfterClick, idsAfterDelete, rowCountAfterDelete,
+      countAfterClearAll, emptyStateText, countAfterClearAllUndo,
+      projectJson, autosave, panelHiddenAfterClose,
+    };
+  })()`);
+
+  check(result.panelOpenAfterClick === true, 'Measurements… opens the panel');
+  check(result.rowsAfterCreate.length === 3, 'panel shows one row per session measurement, got ' + JSON.stringify(result.rowsAfterCreate));
+  check(result.rowsAfterCreate.every(r => /^M\d+$/.test(r.name)), 'unnamed measurements default to M{id}, got ' + JSON.stringify(result.rowsAfterCreate));
+  // Click-placed points round-trip through screen<->world<->native
+  // transforms, so the ACTUAL native length is close to but not bit-exact
+  // 3/4/5 — this proves the click geometry landed where intended without
+  // demanding float-exact equality from a UI gesture.
+  check(result.expectedValues.every((v, i) => near(v, [3, 4, 5][i], 0.05)),
+    'the three Out of Path clicks land within 0.05" of their intended 3/4/5 lengths, got ' + JSON.stringify(result.expectedValues));
+  // The row's rendered text vs. the SAME session value read independently
+  // through the debug hook — a real cross-check (would fail if the panel
+  // mapped a row to the wrong measurement or reformatted it differently),
+  // not a comparison of the panel against itself.
+  check(result.rowsAfterCreate.every((r, i) => r.value === result.expectedFormatted[i]),
+    'each row shows exactly the session\'s own formatted value for that measurement, got '
+    + JSON.stringify({ rows: result.rowsAfterCreate, expected: result.expectedFormatted }));
+  check(result.inputAppearedOnDblclick === true, 'double-clicking a name swaps in an editable input');
+  check(result.nameAfterRename === 'CF length', 'blur commits the typed name into the session record, got ' + JSON.stringify(result.nameAfterRename));
+  check(result.rowNameAfterRename === 'CF length', 'the row itself reflects the committed name without a stale rebuild, got ' + result.rowNameAfterRename);
+  check(result.nameAfterUndo === null, 'Undo reverts the rename in the session (mini undo stack), got ' + JSON.stringify(result.nameAfterUndo));
+  check(result.nameAfterRedo === 'CF length', 'Redo re-applies the rename, got ' + JSON.stringify(result.nameAfterRedo));
+  check(result.nameAfterEscape === 'CF length', 'Escape does not commit the abandoned edit, got ' + JSON.stringify(result.nameAfterEscape));
+  check(result.inputGoneAfterEscape === true, 'Escape swaps the input back out locally (no stuck editor)');
+  check(result.historyAfterEscape === result.historyBeforeEscape, 'Escape on an unchanged name pushes no history entry, got before='
+    + result.historyBeforeEscape + ' after=' + result.historyAfterEscape);
+  check(result.selectedAfterRowClick === result.idsInCreationOrder[1], 'clicking a row selects that exact measurement, got ' + result.selectedAfterRowClick);
+  check(result.activeRowClassAfterClick === true, 'the selected row gets the .active class');
+  check(JSON.stringify(result.idsAfterDelete) === JSON.stringify([result.idsInCreationOrder[0], result.idsInCreationOrder[1]]),
+    'the panel’s ✕ deletes exactly the row it was clicked on, got ' + JSON.stringify(result.idsAfterDelete));
+  check(result.rowCountAfterDelete === 2, 'the panel drops to 2 rows after that delete, got ' + result.rowCountAfterDelete);
+  check(result.countAfterClearAll === 0, 'Clear all empties the session, got ' + result.countAfterClearAll);
+  check(result.emptyStateText.indexOf('No measurements yet') !== -1, 'the panel shows an explicit empty state, got "' + result.emptyStateText + '"');
+  check(result.countAfterClearAllUndo === 2, 'Clear all is ONE undo step — one Undo restores both remaining measurements at once, got ' + result.countAfterClearAllUndo);
+  check(!result.projectJson.includes('CF length') && !result.autosave.includes('CF length'),
+    'the measurement name given in this test never reaches Project JSON or autosave (session-only, ADR 0062)');
+  check(!result.projectJson.includes('dxfMeasureSession') && !result.autosave.includes('dxfMeasureSession'),
+    'no Pattern Measure session data (of which name is one field) reaches Project JSON or autosave');
+  check(result.panelHiddenAfterClose === true, 'the close button hides the panel');
+  console.log('PASS  section 11 (US-113 measurements list panel)');
+}
+
+// ---- Section 12: US-111 seam match check ------------------------------------
+// 12.1 is pure (dxfMeasureSeamPairStatus takes a bare {judged} number, no
+// session at all — exact TD-confirmed boundaries: Match <=1/16", Review
+// <=3/16", else Mismatch). 12.2 proves the delta FORMULA
+// (|lenA-lenB-ease|) against two along-path measurements of independently-
+// known exact length (a single straight segment measured end-to-end via
+// Endpoint snap, so the route length is bit-exact, not click-noisy).
+// 12.3 drives the real panel UI (Match button -> click target row -> ease
+// input -> Unlink) and the mini undo stack end-to-end.
+async function section12SeamMatch(s) {
+  // 12.1 — pure threshold boundaries.
+  const statuses = await s.eval(`(() => {
+    const m = window.__braAutoModeDebug.dxf.measure;
+    return [
+      m.seamPairStatus({ judged: 0 }),
+      m.seamPairStatus({ judged: 1/16 }),
+      m.seamPairStatus({ judged: 1/16 + 1e-4 }),
+      m.seamPairStatus({ judged: 3/16 }),
+      m.seamPairStatus({ judged: 3/16 + 1e-4 }),
+      m.seamPairStatus(null),
+    ];
+  })()`);
+  check(JSON.stringify(statuses) === JSON.stringify(['match', 'match', 'review', 'review', 'mismatch', 'unknown']),
+    'seam status boundaries are exactly Match<=1/16", Review<=3/16", else Mismatch, got ' + JSON.stringify(statuses));
+
+  // 12.2/12.3 — real fixture: two far-apart single-segment pieces (lengths
+  // exactly 10 and 12, same far-apart-pieces convention as section 9's
+  // TWO_PIECE_DXF) so Along Path end-to-end gives bit-exact route lengths.
+  const SEAM_FIXTURE_DXF = doc([dxfLine(0, 0, 10, 0), dxfLine(1000, 0, 1000, 12)]);
+  const result = await s.eval(`(async () => {
+    document.getElementById('modeManualBtn').click();
+    const dbg = window.__braAutoModeDebug;
+    const p = dbg.exportProject();
+    p.state.annotations = []; p.state.images = [];
+    await dbg.loadProject(p);
+    document.getElementById('modeManualBtn').click();
+    if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    document.getElementById('toolsMenuBtn').click();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const input = document.getElementById('dxfImportFileInput');
+    const dt = new DataTransfer();
+    dt.items.add(new File([${JSON.stringify(SEAM_FIXTURE_DXF)}], 'seamfixture.dxf', { type: 'application/octet-stream' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 20; i += 1) await new Promise(r => requestAnimationFrame(r));
+
+    const canvas = document.getElementById('boardCanvas');
+    const settle = (ms=80) => new Promise(r => setTimeout(r, ms));
+    const toScreen = world => { const rect = canvas.getBoundingClientRect(), view = dbg.getView(); return { x: rect.left + world.x * view.zoom + view.panX, y: rect.top + world.y * view.zoom + view.panY }; };
+    const fireWorld = (type, world) => { const p = toScreen(world); canvas.dispatchEvent(new MouseEvent(type, {clientX:p.x,clientY:p.y,bubbles:true,button:0})); };
+    const clickWorld = async world => { fireWorld('mousedown', world); fireWorld('mouseup', world); await settle(); };
+
+    // Full-segment Along Path via Endpoint snap (bit-exact t=0/t=1, not a
+    // click-noisy near-0/near-1) — Midpoint/Intersection off so a snap on
+    // the SEGMENT's own endpoint is the only candidate near either click.
+    const setSnap = (endpoint, midpoint) => {
+      const cur = dbg.dxf.measure.snapEnabled();
+      if (cur.endpoint !== endpoint) document.getElementById('dxfMeasureSnapEndpointBtn').click();
+      if (cur.midpoint !== midpoint) document.getElementById('dxfMeasureSnapMidpointBtn').click();
+    };
+    setSnap(true, false);
+    const measureWholeSegment = async (pieceIndex) => {
+      const seg = dbg.dxf.measure.pieceSegments(pieceIndex)[0];
+      document.getElementById('dxfMeasureAlongBtn').click();
+      await clickWorld(dbg.dxf.measure.nativeToBoardLive(seg.a, pieceIndex));
+      await clickWorld(dbg.dxf.measure.nativeToBoardLive(seg.b, pieceIndex));
+      // Along Path always opens the unified route/direction chooser (even
+      // for one route) — confirm 'forward' like sections 6/10 do.
+      let pending = dbg.dxf.measure.getSession().interaction;
+      const idx = pending.candidates.findIndex(c => c.direction === 'forward');
+      let guard = 0;
+      while (pending.chosenIndex !== idx && guard++ < pending.candidates.length + 2) {
+        dbg.dxf.measure.cycleChoice(1); await settle(1);
+        pending = dbg.dxf.measure.getSession().interaction;
+      }
+      dbg.dxf.measure.confirmChoice();
+      await settle();
+      const session = dbg.dxf.measure.getSession();
+      return session.measurements[session.measurements.length - 1].id;
+    };
+
+    const historyAfterSeed = dbg.dxf.measure.getSession().historyPast;
+    const aId = await measureWholeSegment(0); // length 10
+    const historyAfterA = dbg.dxf.measure.getSession().historyPast;
+    const bId = await measureWholeSegment(1); // length 12
+    const historyAfterB = dbg.dxf.measure.getSession().historyPast;
+    const aValue = dbg.dxf.measure.valueInches(aId);
+    const bValue = dbg.dxf.measure.valueInches(bId);
+
+    // --- real panel UI: Match -> click target row -> ease -> Unlink ---
+    document.getElementById('dxfMeasurementsListBtn').click();
+    await settle();
+    const rowsAt = () => Array.from(document.querySelectorAll('#dxfMeasurementsBody .dxf-measurement-row'));
+    const matchBtnOnRow0 = Array.from(rowsAt()[0].querySelectorAll('.pattern-piece-mini-btn')).find(b => b.textContent === 'Match');
+    const matchBtnFound = !!matchBtnOnRow0;
+    matchBtnOnRow0.click();
+    await settle();
+    const targetRow = rowsAt().find(r => r.className.includes('match-target'));
+    const targetRowFound = !!targetRow;
+    targetRow.click();
+    await settle();
+    const sessionAfterMatch = dbg.dxf.measure.getSession();
+    const pairAfterMatch = sessionAfterMatch.seamPairs[0] || null;
+    const historyAfterMatch = sessionAfterMatch.historyPast;
+    const deltaAfterMatch = dbg.dxf.measure.seamPairDelta(pairAfterMatch ? pairAfterMatch.id : -1);
+
+    const summaryRow = document.querySelector('#dxfMeasurementsBody .dxf-seam-summary-row');
+    const summaryClassAfterMatch = summaryRow ? summaryRow.className : '';
+    const summaryTextAfterMatch = summaryRow ? summaryRow.querySelector('.dxf-seam-summary-label').textContent : '';
+
+    const easeInput = summaryRow.querySelector('.dxf-seam-ease-input');
+    easeInput.value = '-2';
+    easeInput.dispatchEvent(new Event('change'));
+    await settle();
+    const historyAfterEase = dbg.dxf.measure.getSession().historyPast;
+    const pairAfterEase = dbg.dxf.measure.getSession().seamPairs[0];
+    const deltaAfterEase = dbg.dxf.measure.seamPairDelta(pairAfterEase.id);
+    const summaryClassAfterEase = document.querySelector('#dxfMeasurementsBody .dxf-seam-summary-row').className;
+
+    // --- partner identity (logic) + canvas emphasis (rendering) -------------
+    const partnerOfA = dbg.dxf.measure.seamPairPartnerId(aId);
+    const partnerOfB = dbg.dxf.measure.seamPairPartnerId(bId);
+    dbg.dxf.measure.selectMeasurement(aId);
+    await settle(1);
+    const rect = canvas.getBoundingClientRect(), view = dbg.getView(), dpr = canvas.width / rect.width;
+    const sampleRed = world => {
+      const screen = { x: (world.x * view.zoom + view.panX) * dpr, y: (world.y * view.zoom + view.panY) * dpr };
+      const data = canvas.getContext('2d').getImageData(Math.max(0, Math.round(screen.x) - 3), Math.max(0, Math.round(screen.y) - 3), 7, 7).data;
+      let maxRed = 0;
+      for (let i = 0; i < data.length; i += 4) maxRed = Math.max(maxRed, data[i]);
+      return maxRed;
+    };
+    const bMidWorld = dbg.dxf.measure.nativeToBoardLive({ x: 1000, y: 6 }, 1); // midpoint of B's own segment
+    const partnerRedWhilePaired = sampleRed(bMidWorld);
+
+    // --- Unlink: B stops being anyone's partner; same sample point, same A
+    // selection, should now read as plain inactive (differential, not an
+    // absolute threshold — mirrors section 5's own active-vs-inactive proof).
+    const unlinkBtn = Array.from(document.querySelector('#dxfMeasurementsBody .dxf-seam-summary-row').querySelectorAll('.pattern-piece-mini-btn'))
+      .find(b => b.textContent === 'Unlink');
+    unlinkBtn.click();
+    await settle();
+    const sessionAfterUnlink = dbg.dxf.measure.getSession();
+    const historyAfterUnlink = sessionAfterUnlink.historyPast;
+    const pairsAfterUnlink = sessionAfterUnlink.seamPairs.length;
+    const measurementsAfterUnlink = sessionAfterUnlink.measurements.map(m => m.id);
+    dbg.dxf.measure.selectMeasurement(aId);
+    await settle(1);
+    const partnerRedAfterUnlink = sampleRed(bMidWorld);
+
+    // --- Undo x3: unlink, match, (B's own creation is history #(seed+2)) ---
+    dbg.dxf.measure.undo(); dbg.dxf.measure.undo(); dbg.dxf.measure.undo();
+    const sessionAfter3Undos = dbg.dxf.measure.getSession();
+
+    // --- Delete member cascades: re-pair, then delete A via its OWN ✕
+    // (not Unlink) — the pair must not outlive a deleted member.
+    document.getElementById('dxfMeasurementsListBtn').click();
+    await settle();
+    const matchBtnAgain = Array.from(rowsAt()[0].querySelectorAll('.pattern-piece-mini-btn')).find(b => b.textContent === 'Match');
+    matchBtnAgain.click();
+    await settle();
+    rowsAt().find(r => r.className.includes('match-target')).click();
+    await settle();
+    const pairBeforeMemberDelete = dbg.dxf.measure.getSession().seamPairs.length;
+    const deleteBtnOnRow0 = Array.from(rowsAt()[0].querySelectorAll('.pattern-piece-mini-btn')).find(b => b.textContent === '✕');
+    deleteBtnOnRow0.click();
+    await settle();
+    const sessionAfterMemberDelete = dbg.dxf.measure.getSession();
+
+    document.getElementById('dxfMeasurementsCloseBtn').click();
+    document.getElementById('toolSelect').click();
+    const projectJson = JSON.stringify(dbg.exportProject());
+    const autosave = dbg.autosave.peek() || '';
+
+    return {
+      historyAfterSeed, historyAfterA, historyAfterB, aValue, bValue,
+      matchBtnFound, targetRowFound, pairAfterMatch, historyAfterMatch, deltaAfterMatch,
+      summaryClassAfterMatch, summaryTextAfterMatch,
+      historyAfterEase, deltaAfterEase, summaryClassAfterEase,
+      partnerOfA, partnerOfB, aId, bId, partnerRedWhilePaired, partnerRedAfterUnlink,
+      historyAfterUnlink, pairsAfterUnlink, measurementsAfterUnlink,
+      seamPairsAfter3Undos: sessionAfter3Undos.seamPairs.length,
+      measurementsAfter3Undos: sessionAfter3Undos.measurements.map(m => m.id),
+      pairBeforeMemberDelete,
+      pairsAfterMemberDelete: sessionAfterMemberDelete.seamPairs.length,
+      measurementsAfterMemberDelete: sessionAfterMemberDelete.measurements.map(m => m.id),
+      projectJson, autosave,
+    };
+  })()`);
+
+  check(near(result.aValue, 10, 1e-9) && near(result.bValue, 12, 1e-9),
+    'Endpoint-snapped Along Path on a single straight segment gives bit-exact route length, got ' + JSON.stringify({ a: result.aValue, b: result.bValue }));
+  check(result.historyAfterA === result.historyAfterSeed + 1 && result.historyAfterB === result.historyAfterA + 1,
+    'each measurement creation is its own history step, got ' + JSON.stringify({ seed: result.historyAfterSeed, a: result.historyAfterA, b: result.historyAfterB }));
+  check(result.matchBtnFound === true, 'an unpaired Along Path row shows a Match button');
+  check(result.targetRowFound === true, 'arming Match turns the other eligible row into a clickable match-target');
+  check(!!result.pairAfterMatch, 'clicking the target row creates a real seam pair, got ' + JSON.stringify(result.pairAfterMatch));
+  check(result.historyAfterMatch === result.historyAfterB + 1, 'creating the pair is its own single history step, got '
+    + JSON.stringify({ afterB: result.historyAfterB, afterMatch: result.historyAfterMatch }));
+  check(near(result.deltaAfterMatch.raw, -2, 1e-9) && near(result.deltaAfterMatch.judged, 2, 1e-9),
+    'delta formula |lenA-lenB-ease| with ease=0 on 10 vs 12 gives raw=-2, judged=2, got ' + JSON.stringify(result.deltaAfterMatch));
+  check(result.summaryClassAfterMatch.includes('dxf-seam-mismatch'), 'a 2" unexplained gap (over 3/16") renders as Mismatch, got ' + result.summaryClassAfterMatch);
+  check(result.summaryTextAfterMatch.indexOf('2') !== -1, 'the summary label shows the 2" delta, got "' + result.summaryTextAfterMatch + '"');
+  check(result.historyAfterEase === result.historyAfterMatch + 1, 'setting ease is its own history step, got '
+    + JSON.stringify({ afterMatch: result.historyAfterMatch, afterEase: result.historyAfterEase }));
+  check(near(result.deltaAfterEase.judged, 0, 1e-9),
+    'ease=-2 makes judged = |10-12-(-2)| = 0 (the 2" gap is now fully explained), got ' + JSON.stringify(result.deltaAfterEase));
+  check(result.summaryClassAfterEase.includes('dxf-seam-match'), 'with ease explaining the gap the pair now reads as Match, got ' + result.summaryClassAfterEase);
+  check(result.partnerOfA === result.bId && result.partnerOfB === result.aId,
+    'seamPairPartnerId identifies each member as the other\'s partner, got ' + JSON.stringify({ partnerOfA: result.partnerOfA, partnerOfB: result.partnerOfB, aId: result.aId, bId: result.bId }));
+  check(result.partnerRedWhilePaired > result.partnerRedAfterUnlink,
+    'B renders heavier while it is A\'s seam-match partner than after Unlink, at the exact same sample point and same A selection (differential proof, not an absolute threshold) — paired='
+    + result.partnerRedWhilePaired + ' afterUnlink=' + result.partnerRedAfterUnlink);
+  check(result.historyAfterUnlink === result.historyAfterEase + 1, 'Unlink is its own history step, got '
+    + JSON.stringify({ afterEase: result.historyAfterEase, afterUnlink: result.historyAfterUnlink }));
+  check(result.pairsAfterUnlink === 0 && result.measurementsAfterUnlink.length === 2,
+    'Unlink removes the pair but keeps both measurements, got ' + JSON.stringify({ pairs: result.pairsAfterUnlink, measurements: result.measurementsAfterUnlink }));
+  check(result.seamPairsAfter3Undos === 0 && result.measurementsAfter3Undos.length === 2,
+    '3 Undos (unlink, ease, match) land exactly after both measurements exist but before any pair — no dangling seamPairs reference, got '
+    + JSON.stringify({ pairs: result.seamPairsAfter3Undos, measurements: result.measurementsAfter3Undos }));
+  check(result.pairBeforeMemberDelete === 1, 'a fresh re-match after undo creates exactly one pair, got ' + result.pairBeforeMemberDelete);
+  check(result.pairsAfterMemberDelete === 0 && JSON.stringify(result.measurementsAfterMemberDelete) === JSON.stringify([result.bId]),
+    'deleting a PAIRED measurement via its own ✕ (not Unlink) drops the pair but keeps the OTHER measurement, got '
+    + JSON.stringify({ pairs: result.pairsAfterMemberDelete, measurements: result.measurementsAfterMemberDelete, expectedSurvivor: result.bId }));
+  check(!result.projectJson.includes('seamPairs') && !result.autosave.includes('seamPairs'),
+    'seam pairs never reach Project JSON or autosave (session-only, ADR 0062)');
+  console.log('PASS  section 12 (US-111 seam match check)');
+}
+
+// ---- Section 13: draggable floating panels (Pattern Measurements + Pattern
+// Pieces) ---------------------------------------------------------------------
+// src/ui/draggable-panel.js is a generic utility wired to both panels' own
+// heads (#dxfMeasurementsHead, #patternPiecesHead). Real PointerEvents,
+// dispatched on the HEAD element itself (not window) so the test does not
+// depend on setPointerCapture actually engaging for a synthetic pointerId —
+// the same "degrade to bubbling" path the production code's own try/catch
+// exists for.
+async function section13DraggablePanels(s) {
+  const result = await s.eval(`(async () => {
+    document.getElementById('modeManualBtn').click();
+    const dbg = window.__braAutoModeDebug;
+    const p = dbg.exportProject();
+    p.state.annotations = []; p.state.images = [];
+    await dbg.loadProject(p);
+    document.getElementById('modeManualBtn').click();
+    if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    document.getElementById('toolsMenuBtn').click();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const input = document.getElementById('dxfImportFileInput');
+    const dt = new DataTransfer();
+    dt.items.add(new File([${JSON.stringify(doc([dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0)]))}], 'dragfixture.dxf', { type: 'application/octet-stream' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 20; i += 1) await new Promise(r => requestAnimationFrame(r));
+    const settle = (ms=80) => new Promise(r => setTimeout(r, ms));
+
+    const dragBy = (handle, startX, startY, dx, dy, steps=6) => {
+      const pointerId = 77;
+      handle.dispatchEvent(new PointerEvent('pointerdown', { pointerId, clientX: startX, clientY: startY, bubbles: true, button: 0 }));
+      for (let i = 1; i <= steps; i += 1) {
+        handle.dispatchEvent(new PointerEvent('pointermove', {
+          pointerId, clientX: startX + (dx * i) / steps, clientY: startY + (dy * i) / steps, bubbles: true,
+        }));
+      }
+      handle.dispatchEvent(new PointerEvent('pointerup', { pointerId, clientX: startX + dx, clientY: startY + dy, bubbles: true }));
+    };
+
+    // --- Pattern Measurements panel ---
+    document.getElementById('dxfMeasurementsListBtn').click();
+    await settle();
+    const panel = document.getElementById('dxfMeasurementsPanel');
+    const head = document.getElementById('dxfMeasurementsHead');
+    const boardCard = document.getElementById('boardCard');
+    const before = panel.getBoundingClientRect();
+    const zIndexBefore = getComputedStyle(panel).zIndex;
+
+    // 1. A real drag moves the panel by exactly the pointer delta. This
+    // panel opens docked bottom-right with only 12px of margin, so the
+    // delta must move it TOWARD the board's center (up-left) — a
+    // right/down delta here would immediately hit the same clamp step 3
+    // deliberately tests, making this assertion about clamping instead of
+    // about the exact-delta case it is meant to isolate.
+    const dx = -60, dy = -40;
+    dragBy(head, before.left + 20, before.top + 10, dx, dy);
+    await settle();
+    const after = panel.getBoundingClientRect();
+    const zIndexAfterDrag = panel.style.zIndex;
+    const usesExplicitLeftTop = panel.style.right === 'auto' && panel.style.bottom === 'auto'
+      && panel.style.left !== '' && panel.style.top !== '';
+
+    // 2. The close button starts its OWN click, never a drag — a pointerdown
+    // + move + up sequence there must leave the panel exactly where it is.
+    const beforeCloseAttempt = panel.getBoundingClientRect();
+    const closeBtn = document.getElementById('dxfMeasurementsCloseBtn');
+    const closeBtnRect = closeBtn.getBoundingClientRect();
+    dragBy(closeBtn, closeBtnRect.left + 4, closeBtnRect.top + 4, 60, 60);
+    await settle();
+    const afterCloseAttempt = panel.getBoundingClientRect();
+    // dispatchEvent-driven PointerEvents do not reliably synthesize a
+    // trailing 'click' the way a real press-release does, so the pointer
+    // sequence above only proves "no drag happened" — a SEPARATE, real
+    // .click() proves the button's own handler is still reachable
+    // (excluding a control from drag must not also disable it).
+    const stillOpenBeforeRealClick = !panel.hidden;
+    closeBtn.click();
+    await settle();
+    const closedByRealClick = panel.hidden;
+    document.getElementById('dxfMeasurementsListBtn').click(); // reopen for the clamp test below
+    await settle();
+
+    // 3. Clamp: an enormous drag cannot push the panel outside the board card.
+    const beforeClampDrag = panel.getBoundingClientRect();
+    dragBy(head, beforeClampDrag.left + 20, beforeClampDrag.top + 10, 100000, 100000);
+    await settle();
+    const afterClamp = panel.getBoundingClientRect();
+    const boardRect = boardCard.getBoundingClientRect();
+    const clampedInsideRight = afterClamp.right <= boardRect.right + 1; // +1: subpixel rounding
+    const clampedInsideBottom = afterClamp.bottom <= boardRect.bottom + 1;
+
+    document.getElementById('dxfMeasurementsCloseBtn').click();
+
+    // --- Pattern Pieces panel: same utility, wired independently ---
+    document.getElementById('patternPiecesBtn').click();
+    await settle();
+    const ppPanel = document.getElementById('patternPiecesPanel');
+    const ppHead = document.getElementById('patternPiecesHead');
+    const ppBefore = ppPanel.getBoundingClientRect();
+    dragBy(ppHead, ppBefore.left + 20, ppBefore.top + 10, -30, 15);
+    await settle();
+    const ppAfter = ppPanel.getBoundingClientRect();
+
+    // --- Overlap bring-to-front: the actual bug report this section exists
+    // to cover. Pattern Pieces was just dragged (most recent interaction),
+    // so it must currently be ahead of Pattern Measurements even though
+    // Pattern Measurements comes LATER in the DOM (the exact ordering a
+    // shared FIXED z-index value gets backwards — see the utility's own
+    // comment). Then touching Pattern Measurements' BODY (a row, not its
+    // header — proving this is not drag-specific) must raise IT above
+    // Pattern Pieces in turn.
+    document.getElementById('dxfMeasurementsListBtn').click(); // reopen (closed at the clamp step above)
+    await settle();
+    const ppZBeforeTouch = parseInt(ppPanel.style.zIndex || '0', 10);
+    const dxfZBeforeTouch = parseInt(document.getElementById('dxfMeasurementsPanel').style.zIndex || '0', 10);
+    const ppAheadAfterItsOwnDrag = ppZBeforeTouch > dxfZBeforeTouch;
+
+    const emptyStateRow = document.querySelector('#dxfMeasurementsBody .dxf-measurement-row');
+    emptyStateRow.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 88, bubbles: true, button: 0 }));
+    emptyStateRow.dispatchEvent(new PointerEvent('pointerup', { pointerId: 88, bubbles: true }));
+    await settle();
+    const dxfZAfterTouch = parseInt(document.getElementById('dxfMeasurementsPanel').style.zIndex, 10);
+    const ppZAfterTouch = parseInt(ppPanel.style.zIndex, 10);
+    const dxfAheadAfterBodyTouch = dxfZAfterTouch > ppZAfterTouch;
+
+    document.getElementById('patternPiecesCloseBtn').click();
+
+    // --- Park near the bottom-right edge of the CURRENT (large) viewport,
+    // for the resize-reclamp check run from the OUTER script below (a real
+    // CDP viewport resize needs s.setViewport, which only the Node side can
+    // call — this eval just sets up a valid, edge-adjacent starting point).
+    // boardCard is already declared above (used by the clamp-drag check).
+    const boardRectNow = boardCard.getBoundingClientRect();
+    panel.style.left = (boardRectNow.width - panel.offsetWidth - 5) + 'px';
+    panel.style.top = (boardRectNow.height - panel.offsetHeight - 5) + 'px';
+    panel.style.right = 'auto'; panel.style.bottom = 'auto';
+    await settle();
+    const parkedRect = panel.getBoundingClientRect();
+    const validWhileParked = parkedRect.right <= boardRectNow.right + 1 && parkedRect.bottom <= boardRectNow.bottom + 1;
+
+    return {
+      dx: after.left - before.left, dy: after.top - before.top,
+      usesExplicitLeftTop, zIndexBefore, zIndexAfterDrag,
+      closeAttemptMovedX: afterCloseAttempt.left - beforeCloseAttempt.left,
+      closeAttemptMovedY: afterCloseAttempt.top - beforeCloseAttempt.top,
+      stillOpenBeforeRealClick, closedByRealClick, clampedInsideRight, clampedInsideBottom,
+      afterClampLeft: afterClamp.left, afterClampTop: afterClamp.top,
+      ppDx: ppAfter.left - ppBefore.left, ppDy: ppAfter.top - ppBefore.top,
+      ppAheadAfterItsOwnDrag, dxfAheadAfterBodyTouch, validWhileParked,
+    };
+  })()`);
+
+  // Resize-reclamp: needs a REAL CDP viewport change (s.setViewport), which
+  // only the Node side can trigger — this is why it runs as its own
+  // follow-up round-trip instead of living inside the big eval above. The
+  // panel above is still open, parked validly near the bottom-right edge.
+  await s.setViewport(700, 500);
+  const afterShrink = await s.eval(`(async () => {
+    await new Promise(r => setTimeout(r, 300)); // let the ResizeObserver callback + layout settle
+    const panel = document.getElementById('dxfMeasurementsPanel');
+    const boardCard = document.getElementById('boardCard');
+    const panelRect = panel.getBoundingClientRect();
+    const boardRect = boardCard.getBoundingClientRect();
+    document.getElementById('dxfMeasurementsCloseBtn').click();
+    return {
+      insideRight: panelRect.right <= boardRect.right + 1,
+      insideBottom: panelRect.bottom <= boardRect.bottom + 1,
+    };
+  })()`);
+  await s.setViewport(1366, 900);
+  result.afterShrink = afterShrink;
+
+  check(near(result.dx, -60, 1) && near(result.dy, -40, 1),
+    'dragging the Pattern Measurements header by (-60,-40) moves the panel by exactly that delta, got ' + JSON.stringify({ dx: result.dx, dy: result.dy }));
+  check(result.usesExplicitLeftTop, 'after one drag the panel is repositioned via explicit left/top (right/bottom cleared), got '
+    + JSON.stringify({ usesExplicitLeftTop: result.usesExplicitLeftTop }));
+  check(result.zIndexBefore !== '21' && result.zIndexAfterDrag === '21',
+    'starting a drag brings the panel to front (z-index bump), got before=' + result.zIndexBefore + ' after=' + result.zIndexAfterDrag);
+  check(result.closeAttemptMovedX === 0 && result.closeAttemptMovedY === 0,
+    'a pointer gesture starting ON the close button never drags the panel, got moved=' + JSON.stringify({ x: result.closeAttemptMovedX, y: result.closeAttemptMovedY }));
+  check(result.stillOpenBeforeRealClick === true, 'the pointer-on-close-button gesture above did not close the panel either (it was not a drag, and it did not click)');
+  check(result.closedByRealClick === true, 'a real .click() on the close button still closes the panel — excluding it from drag never disables it');
+  check(result.clampedInsideRight && result.clampedInsideBottom,
+    'an enormous drag is clamped inside the board card, not lost off-screen, got ' + JSON.stringify({ left: result.afterClampLeft, top: result.afterClampTop }));
+  check(near(result.ppDx, -30, 1) && near(result.ppDy, 15, 1),
+    'the SAME utility, wired independently to Pattern Pieces, drags it by exactly its own delta too, got ' + JSON.stringify({ dx: result.ppDx, dy: result.ppDy }));
+  check(result.ppAheadAfterItsOwnDrag === true,
+    'Pattern Pieces (dragged most recently) is ahead of Pattern Measurements even though Pattern Measurements is LATER in the DOM — a shared fixed z-index would get this backwards');
+  check(result.dxfAheadAfterBodyTouch === true,
+    'touching Pattern Measurements\' BODY (not its header) brings IT back above Pattern Pieces in turn — bring-to-front fires for any press inside a panel, not only a drag-starting one');
+  check(result.validWhileParked === true, 'sanity: the panel is genuinely inside the board card before the window shrinks below');
+  check(result.afterShrink.insideRight && result.afterShrink.insideBottom,
+    'shrinking the window (1366x900 -> 700x500) re-clamps an already-parked panel back inside the smaller board card instead of leaving it — and its header — stranded under `overflow:hidden`, got '
+    + JSON.stringify(result.afterShrink));
+  console.log('PASS  section 13 (draggable Pattern Measurements + Pattern Pieces panels)');
 }
 
 // ---- Section 1: pure kernel unit tests -------------------------------------
@@ -1039,6 +1816,24 @@ async function section6RealFixture(s) {
     input.files = dt.files;
     input.dispatchEvent(new Event('change', { bubbles: true }));
     for (let i = 0; i < 40; i += 1) await new Promise(r => requestAnimationFrame(r));
+    // US-112: this fixture deliberately clicks ARBITRARY (segIndexInPiece, t)
+    // references — including t=.3/.7 on one segment and t=.5/.5 on two
+    // DIFFERENT segments — to exercise route/direction/entity-ambiguity
+    // machinery at exact points the topology graph considers interesting.
+    // Endpoint/Midpoint snap (on by default) can legitimately pull one of
+    // those exact clicks onto a DIFFERENT nearby segment's own snap point
+    // when two segments sit within the snap tolerance of each other (dense
+    // pattern geometry) — confirmed by first running this fixture with the
+    // new default snap ON: "piece 0 forward" failed with "intended entity is
+    // absent from explicit candidate set" (findPair's t=.5/.5 case landed on
+    // a neighboring segment's own midpoint instead of the one it asked for).
+    // That is snap doing exactly what US-112 asks — attract to the nearest
+    // enabled snap point — not a kernel/session regression, so the fix is to
+    // turn snap off for this precision fixture (exactly the toggle a TD would
+    // use for the same reason), not to weaken the snap tolerance. Section 10
+    // below is what actually tests snap.
+    document.getElementById('dxfMeasureSnapEndpointBtn').click();
+    document.getElementById('dxfMeasureSnapMidpointBtn').click();
     const dbg = window.__braAutoModeDebug;
     const canvas = document.getElementById('boardCanvas');
     const settle = (frames=2) => new Promise(resolve => {
@@ -1246,10 +2041,21 @@ async function section6RealFixture(s) {
       } else perPiece.push({pieceIndex,forward,reverse,direct,dragA,dragB,valuesBefore,valuesAfter,directHandleBefore,directHandleAfter});
     }
     const finalSession=dbg.dxf.measure.getSession();
+    // US-112: restore the snap toggles this section turned off near its own
+    // top (see the comment there) — state.dxfMeasureSnap* is global, not
+    // session-scoped, so it outlives this section in this one continuous
+    // browser page. This is hygiene, not a correctness dependency: section
+    // 10 does not trust it (it force-sets its own required toggle state
+    // before asserting anything) — first found the hard way when this
+    // restore was missing and section 10 silently ran against the OFF state
+    // section 6 leaves behind by default.
+    document.getElementById('dxfMeasureSnapEndpointBtn').click();
+    document.getElementById('dxfMeasureSnapMidpointBtn').click();
     return {
       pieceCount:finalSession.pieceCount,pieceSegmentCounts:finalSession.pieceSegmentCounts,source:finalSession.source,perPiece,
       measurementCount:finalSession.measurementCount,projectJson:JSON.stringify(dbg.exportProject()),autosave:dbg.autosave.peek()||'',
       measurementAnnIds:dbg.getMeasurementAnnIds(),parserDurationMs:finalSession.source.nativeParseDurationMs,
+      snapRestored:dbg.dxf.measure.snapEnabled(),
     };
   })()`);
   check(result.pieceCount === 6, 'real fixture: 6 pieces, got ' + result.pieceCount);
@@ -1273,6 +2079,8 @@ async function section6RealFixture(s) {
   const labelProof=result.perPiece[0].labelProof;
   check(distance2d(labelProof.labelBefore,labelProof.labelAfter)>1 && near(labelProof.valueBefore,labelProof.valueAfter,1e-12), 'real label drag moves presentation without changing value');
   check(labelProof.undone===labelProof.deleted+1 && labelProof.redone===labelProof.deleted, 'real delete Undo/Redo restores and re-deletes exactly one measurement');
+  check(result.snapRestored.endpoint === true && result.snapRestored.midpoint === true,
+    'this section restores the Endpoint/Midpoint snap toggles it turned off for its own precision clicks, got ' + JSON.stringify(result.snapRestored));
   console.log('PASS  section 6 (real factory UI/actions): ' + JSON.stringify(result.pieceSegmentCounts));
 
   // CLO accuracy gate — explicitly BLOCKED, never silently skipped or faked.

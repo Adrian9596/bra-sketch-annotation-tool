@@ -44,7 +44,7 @@
     // state.annotations, and "Source Geometry Immutability" requires that
     // the normal endpoint/body hit-test chain below never run while it is.
     if (dxfMeasureIsActiveTool()) {
-      dxfMeasureOnMouseDown(world);
+      dxfMeasureOnMouseDown(world, e.altKey);
       return;
     }
 
@@ -398,7 +398,7 @@
     const world = screenToWorld(screen.x, screen.y);
 
     if (dxfMeasureIsActiveTool()) {
-      dxfMeasureOnMouseMove(world);
+      dxfMeasureOnMouseMove(world, e.altKey);
       return;
     }
 

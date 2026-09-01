@@ -22,6 +22,13 @@
   function bindDxfMeasurePanel() {
     if (el.dxfMeasureAlongBtn) el.dxfMeasureAlongBtn.addEventListener('click', () => setDxfMeasureMode('along-path'));
     if (el.dxfMeasureOutBtn) el.dxfMeasureOutBtn.addEventListener('click', () => setDxfMeasureMode('out-of-path'));
+    // US-112: snap preference toggles — always clickable (a TD preference,
+    // not gated on a session existing, same as Smart Align).
+    if (el.dxfMeasureSnapEndpointBtn) el.dxfMeasureSnapEndpointBtn.addEventListener('click', () => toggleDxfMeasureSnapKind('endpoint'));
+    if (el.dxfMeasureSnapMidpointBtn) el.dxfMeasureSnapMidpointBtn.addEventListener('click', () => toggleDxfMeasureSnapKind('midpoint'));
+    if (el.dxfMeasureSnapIntersectionBtn) el.dxfMeasureSnapIntersectionBtn.addEventListener('click', () => toggleDxfMeasureSnapKind('intersection'));
+    // US-113: the session's measurement list panel.
+    bindDxfMeasurementsPanel();
     // ADR 0073: picking a unit is an explicit override even when it matches
     // the parser's guess — "the TD confirmed in" and "the parser assumed in"
     // are different provenance states, and the note reflects that.

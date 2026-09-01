@@ -295,6 +295,13 @@
     // one; cleared to null on another DXF import, a fresh project load, or
     // a mode/board reset (see the call sites listed in that file).
     dxfMeasureSession: null,
+    // US-112: Pattern Measure snap preferences. A TD-level tool preference,
+    // like smartAlignEnabled above — session-only, never saved/restored,
+    // and deliberately OUTSIDE state.dxfMeasureSession so opening a new DXF
+    // (which resets that session) does not reset what the TD just set here.
+    dxfMeasureSnapEndpoint: true,
+    dxfMeasureSnapMidpoint: true,
+    dxfMeasureSnapIntersection: false,
   };
 
   // Auto Mode allowed statuses:

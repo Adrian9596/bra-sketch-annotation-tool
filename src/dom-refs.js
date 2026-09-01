@@ -45,6 +45,10 @@
     // US-105: the Pattern Measure tool entries, inside the Tools menu.
     dxfMeasureAlongBtn: document.getElementById('dxfMeasureAlongBtn'),
     dxfMeasureOutBtn: document.getElementById('dxfMeasureOutBtn'),
+    // US-112: Pattern Measure snap preference toggles, in the same menu.
+    dxfMeasureSnapEndpointBtn: document.getElementById('dxfMeasureSnapEndpointBtn'),
+    dxfMeasureSnapMidpointBtn: document.getElementById('dxfMeasureSnapMidpointBtn'),
+    dxfMeasureSnapIntersectionBtn: document.getElementById('dxfMeasureSnapIntersectionBtn'),
     // ADR 0073: the DXF native-unit select + provenance note beside them.
     dxfMeasureUnitSelect: document.getElementById('dxfMeasureUnitSelect'),
     dxfMeasureUnitNote: document.getElementById('dxfMeasureUnitNote'),
@@ -52,10 +56,19 @@
     // panel itself, mirroring the anchorManager* refs above.
     patternPiecesBtn: document.getElementById('patternPiecesBtn'),
     patternPiecesPanel: document.getElementById('patternPiecesPanel'),
+    patternPiecesHead: document.getElementById('patternPiecesHead'),
     patternPiecesCloseBtn: document.getElementById('patternPiecesCloseBtn'),
     patternPiecesCount: document.getElementById('patternPiecesCount'),
     patternPiecesBody: document.getElementById('patternPiecesBody'),
     patternPiecesApplyBtn: document.getElementById('patternPiecesApplyBtn'),
+    // US-113: Pattern Measurements list panel.
+    dxfMeasurementsListBtn: document.getElementById('dxfMeasurementsListBtn'),
+    dxfMeasurementsPanel: document.getElementById('dxfMeasurementsPanel'),
+    dxfMeasurementsHead: document.getElementById('dxfMeasurementsHead'),
+    dxfMeasurementsCloseBtn: document.getElementById('dxfMeasurementsCloseBtn'),
+    dxfMeasurementsCount: document.getElementById('dxfMeasurementsCount'),
+    dxfMeasurementsBody: document.getElementById('dxfMeasurementsBody'),
+    dxfMeasurementsClearAllBtn: document.getElementById('dxfMeasurementsClearAllBtn'),
     // ADR 0071: the Notch tool's Tools-menu entry.
     notchToolBtn: document.getElementById('notchToolBtn'),
     lineWidthChip: document.getElementById('lineWidthChip'),

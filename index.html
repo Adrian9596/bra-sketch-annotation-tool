@@ -380,6 +380,14 @@
   }
   .anchor-panel-btn:hover{ border-color:#94a3b8; }
   .anchor-panel-body{ overflow-y:auto; padding:2px 0 6px; }
+  /* Drag-to-reposition (src/ui/draggable-panel.js) — scoped to the two heads
+     that actually wire up dragging (Pattern Pieces, Pattern Measurements),
+     not the generic .anchor-panel-head class, so the Anchor Manager panel
+     (not wired, not requested) never shows a "move" cursor it can't honor.
+     touch-action:none stops the browser trying to scroll/pan the page on a
+     touchmove that starts here, so the pointermove drag reads clean. */
+  #patternPiecesHead, #dxfMeasurementsHead{ cursor:move; touch-action:none; user-select:none; }
+  .anchor-panel.anchor-panel-dragging{ opacity:0.92; }
   /* ADR 0070: Pattern Pieces panel reuses the .anchor-panel shell, docked on
      the opposite corner so the two floating panels never overlap. */
   .pattern-pieces-panel{ left:auto; right:12px; }
@@ -400,6 +408,52 @@
     color:#334155; flex:0 0 auto;
   }
   .pattern-piece-mini-btn:hover{ border-color:#94a3b8; }
+  /* US-113: Pattern Measurements panel reuses the .anchor-panel shell,
+     docked at the third free corner (Anchor Manager top-left, Pattern
+     Pieces top-right, this bottom-right). */
+  .dxf-measurements-panel{ left:auto; right:12px; top:auto; bottom:12px; }
+  .dxf-measurement-row{
+    display:flex; align-items:center; gap:6px; padding:5px 10px;
+    font-size:12px; border-top:1px solid #f4f6fa; cursor:pointer;
+  }
+  .dxf-measurement-row:first-child{ border-top:0; }
+  .dxf-measurement-row.active{ background:#fff7ed; }
+  .dxf-measurement-name{
+    flex:1; min-width:0; color:#0f172a; font-weight:600;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .dxf-measurement-name:hover{ text-decoration:underline; }
+  .dxf-measurement-name-input{
+    flex:1; min-width:0; font:inherit; font-weight:600;
+    border:1px solid #f59e0b; border-radius:4px; padding:1px 4px;
+  }
+  .dxf-measurement-mode{ font-size:10.5px; color:#64748b; flex:0 0 auto; }
+  .dxf-measurement-value{
+    font-size:11.5px; font-weight:700; color:#c2410c; flex:0 0 auto;
+    min-width:52px; text-align:right;
+  }
+  /* US-111: while "Match with…" is armed, an eligible OTHER row IS the
+     control — tint it so the pick target reads as clickable, distinct from
+     ordinary row-select. */
+  .dxf-measurement-row.match-target{ cursor:pointer; background:#eff6ff; }
+  .dxf-measurement-row.match-target:hover{ background:#dbeafe; }
+  .dxf-seam-summary-row{
+    display:flex; align-items:center; gap:8px;
+    padding:4px 10px 6px 26px; font-size:11px;
+    border-top:1px dashed #e2e8f0; background:#f8fafc;
+  }
+  .dxf-seam-summary-label{ font-weight:700; flex:0 0 auto; color:#334155; }
+  .dxf-seam-match .dxf-seam-summary-label{ color:#16a34a; }
+  .dxf-seam-review .dxf-seam-summary-label{ color:#b45309; }
+  .dxf-seam-mismatch .dxf-seam-summary-label{ color:#dc2626; }
+  .dxf-seam-ease-label{
+    display:flex; align-items:center; gap:4px;
+    color:#64748b; font-size:10.5px; flex:1;
+  }
+  .dxf-seam-ease-input{
+    width:52px; font:inherit; border:1px solid #cbd5e1;
+    border-radius:4px; padding:1px 4px;
+  }
   .board-card.no-image{
     border:1px dashed #dcdce2;
   }
@@ -3288,17 +3342,10 @@
               <button id="sketchSetScaleBtn" type="button" role="menuitem" title="Calibrate from a selected line whose real length you know">Set Scale…</button>
               <button id="sketchClearScaleBtn" type="button" role="menuitem" title="Remove calibration">Clear Scale</button>
             </div>
-            <!-- US-105 / ADR 0062: Pattern Measure — temporary, session-only
-                 A/B length overlays read straight from the imported DXF's
-                 own native coordinates. Disabled (not hidden) with no
-                 measure session yet, so a TD who opens this menu before
-                 importing sees the entry and why it can't be used yet,
-                 matching this menu's Set Scale precedent above. -->
-            <div class="preset-divider sketch-mode-only" role="separator">Pattern Measure</div>
-            <div class="preset-menu-actions sketch-mode-only">
-              <button id="dxfMeasureAlongBtn" type="button" role="menuitem" title="Import a DXF file first">Along Path</button>
-              <button id="dxfMeasureOutBtn" type="button" role="menuitem" title="Import a DXF file first">Out of Path</button>
-            </div>
+            <!-- US-105 / ADR 0062: Pattern Measure (Along Path / Out of Path)
+                 moved out to its own #measureMenuWrap next to #libraryBtn —
+                 see the board-menu-tray group below. -->
+
             <!-- ADR 0073: the DXF's native unit. Real factory files routinely
                  omit $INSUNITS, so the parser's inch default is a guess — the
                  note names the provenance (from file / assumed / unsupported
@@ -3452,6 +3499,33 @@
            button, not a toolbar-menu dropdown, since it opens a dialog rather
            than a menu — same pattern as addImageBtn. -->
       <button id="libraryBtn" class="manual-only" type="button" title="Browse and organize Templates, Line Treatments, and saved Projects">Library</button>
+      <!-- US-105 / ADR 0062: Pattern Measure (DXF length — Along Path / Out
+           of Path), promoted from inside the Tools ▾ dropdown to its own
+           top-level button next to Library so a TD can find it without
+           digging through the drawing-tools menu. Sketch-Focus-only, like
+           the rest of the Pattern Measure concept — the buttons stay the
+           same #dxfMeasureAlongBtn/#dxfMeasureOutBtn, only relocated;
+           src/ui/dxf-measure-panel.js and src/manual/ui-status.js are
+           unchanged. Not the Measurements spec panel (#togglePanelBtn). -->
+      <div id="measureMenuWrap" class="toolbar-menu sketch-mode-only">
+        <button id="measureMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="measureMenuList" title="Measure a length on the imported DXF pattern — along its own path, or straight out of it">Measure ▾</button>
+        <div id="measureMenuList" class="toolbar-menu-list menu-left" role="menu" hidden>
+          <button id="dxfMeasureAlongBtn" type="button" role="menuitem" title="Import a DXF file first">Along Path</button>
+          <button id="dxfMeasureOutBtn" type="button" role="menuitem" title="Import a DXF file first">Out of Path</button>
+          <!-- US-113: the session's own measurement list — ADR 0062's own
+               "tabular output" follow-up. Same disabled-reason convention as
+               Along/Out above (no session yet = no list to show). -->
+          <div class="toolbar-menu-label">View</div>
+          <button id="dxfMeasurementsListBtn" type="button" role="menuitem" title="Import a DXF file first">Measurements…</button>
+          <!-- US-112: snap preferences. role="menuitemcheckbox" + no-close-on-click,
+               same pattern as #smartAlignToggleBtn — a TD toggling several of
+               these in a row should not have to reopen the menu each time. -->
+          <div class="toolbar-menu-label">Snap</div>
+          <button id="dxfMeasureSnapEndpointBtn" type="button" role="menuitemcheckbox" aria-checked="true" title="Snap to the endpoints (corners) of the imported pattern — hold Alt/Option to bypass for one click">✓ Endpoints</button>
+          <button id="dxfMeasureSnapMidpointBtn" type="button" role="menuitemcheckbox" aria-checked="true" title="Snap to the midpoint of each pattern edge — hold Alt/Option to bypass for one click">✓ Midpoints</button>
+          <button id="dxfMeasureSnapIntersectionBtn" type="button" role="menuitemcheckbox" aria-checked="false" title="Snap to where a dart or style line crosses another edge — hold Alt/Option to bypass for one click">Intersections</button>
+        </div>
+      </div>
       <div id="fileMenuWrap" class="toolbar-menu">
         <button id="fileMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="fileMenuList">File ▾</button>
         <div id="fileMenuList" class="toolbar-menu-list" role="menu" hidden>
@@ -3541,12 +3615,14 @@
         </div>
         <!-- ADR 0070: lists every sketch-element piece (templateGroupId
              group) on the board — DXF grading-nest pieces, chiefly — so the
-             TD can pick which sizes to keep. Floating, non-modal, docked
-             opposite the anchor panel. Opened from the Tools menu
+             TD can pick which sizes to keep. Floating, non-modal, opens
+             docked opposite the anchor panel but is freely draggable by its
+             head (src/ui/draggable-panel.js) — the CSS right:12px below is
+             only the OPENING position. Opened from the Tools menu
              (#patternPiecesBtn) or automatically after a multi-piece DXF
              import; see src/ui/pattern-pieces-panel.js. -->
         <div id="patternPiecesPanel" class="anchor-panel pattern-pieces-panel" hidden aria-label="Pattern pieces">
-          <div class="anchor-panel-head">
+          <div id="patternPiecesHead" class="anchor-panel-head" title="Drag to move">
             <div class="anchor-panel-titles">
               <div class="anchor-panel-title">Pattern pieces</div>
               <div class="anchor-panel-sub">Pick which pieces to keep</div>
@@ -3559,6 +3635,28 @@
             <button id="patternPiecesApplyBtn" type="button" class="anchor-panel-btn">Remove unchecked</button>
           </div>
           <div id="patternPiecesBody" class="anchor-panel-body"></div>
+        </div>
+        <!-- US-113: lists every Pattern Measure session measurement — ADR
+             0062's session-only "tabular output" follow-up, not a POM/export
+             surface. Floating, non-modal; opens docked bottom-right (Anchor
+             Manager top-left, Pattern Pieces top-right, this bottom-right —
+             three panels, three corners, non-overlapping at OPEN time only)
+             but is freely draggable by its head afterward
+             (src/ui/draggable-panel.js); see src/ui/dxf-measurements-panel.js. -->
+        <div id="dxfMeasurementsPanel" class="anchor-panel dxf-measurements-panel" hidden aria-label="Pattern measurements">
+          <div id="dxfMeasurementsHead" class="anchor-panel-head" title="Drag to move">
+            <div class="anchor-panel-titles">
+              <div class="anchor-panel-title">Pattern measurements</div>
+              <div class="anchor-panel-sub">Session-only — not saved with the project</div>
+            </div>
+            <button id="dxfMeasurementsCloseBtn" type="button" class="anchor-panel-close" title="Close">×</button>
+          </div>
+          <div class="anchor-panel-actions">
+            <span id="dxfMeasurementsCount" class="anchor-panel-count">0 measurements</span>
+            <span class="anchor-panel-spacer"></span>
+            <button id="dxfMeasurementsClearAllBtn" type="button" class="anchor-panel-btn">Clear all</button>
+          </div>
+          <div id="dxfMeasurementsBody" class="anchor-panel-body"></div>
         </div>
         <div id="boardEmpty" class="board-empty" aria-hidden="true">
           <div class="board-empty-icon">
@@ -3794,6 +3892,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=cd5fd70ddd29"></script>
+<script src="app.js?v=95a8feff42ce"></script>
 </body>
 </html>

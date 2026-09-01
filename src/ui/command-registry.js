@@ -295,6 +295,24 @@
       page: 'board', mode: 'manual', target: '#dxfMeasureOutBtn',
       when: () => !state.sketchMode ? 'Available in Sketch Focus' : (state.dxfMeasureSession ? true : 'Import a DXF file first'),
       action: () => appCommandClick('#dxfMeasureOutBtn') }),
+    // US-113: the session's measurement list panel — same when() shape as
+    // Along/Out above (needs an active measure session).
+    appCommand({ id: 'board.pattern-measure.list', label: 'Pattern Measure: List Measurements…', category: 'Board · Measurements',
+      page: 'board', mode: 'manual', target: '#dxfMeasurementsListBtn',
+      when: () => !state.sketchMode ? 'Available in Sketch Focus' : (state.dxfMeasureSession ? true : 'Import a DXF file first'),
+      action: () => appCommandClick('#dxfMeasurementsListBtn') }),
+    // US-112: snap preference toggles — same when()-less shape as
+    // board.smart-align.toggle below (always available; a preference, not
+    // gated on a session existing).
+    appCommand({ id: 'board.pattern-measure.snap-endpoint.toggle', label: 'Pattern Measure: Toggle Snap to Endpoints', category: 'Board · Measurements',
+      page: 'board', mode: 'manual', target: '#dxfMeasureSnapEndpointBtn',
+      action: () => toggleDxfMeasureSnapKind('endpoint') }),
+    appCommand({ id: 'board.pattern-measure.snap-midpoint.toggle', label: 'Pattern Measure: Toggle Snap to Midpoints', category: 'Board · Measurements',
+      page: 'board', mode: 'manual', target: '#dxfMeasureSnapMidpointBtn',
+      action: () => toggleDxfMeasureSnapKind('midpoint') }),
+    appCommand({ id: 'board.pattern-measure.snap-intersection.toggle', label: 'Pattern Measure: Toggle Snap to Intersections', category: 'Board · Measurements',
+      page: 'board', mode: 'manual', target: '#dxfMeasureSnapIntersectionBtn',
+      action: () => toggleDxfMeasureSnapKind('intersection') }),
     appCommand({ id: 'board.smart-align.toggle', label: 'Toggle Smart Align', category: 'Board · Edit',
       page: 'board', mode: 'manual', target: '#smartAlignToggleBtn',
       action: () => toggleSmartAlign() }),

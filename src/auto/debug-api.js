@@ -378,6 +378,31 @@
           partialLength: (seg, t0, t1) => (typeof dxfPartialLength === 'function' ? dxfPartialLength(seg, t0, t1) : null),
           projectPointOnSegment: (point, seg) => (typeof dxfProjectPointOnSegment === 'function' ? clone(dxfProjectPointOnSegment(point, seg)) : null),
           directDistance: (a, b) => (typeof dxfDirectDistance === 'function' ? dxfDirectDistance(a, b) : null),
+          // US-112: snap. `lineArcIntersections` is pure kernel math (like
+          // directDistance above); the piece-index getters are read-only
+          // inspection of the session's own cached snap index, same
+          // read-only convention as pieceSegments below — this file's header
+          // comment is explicit that a MUTATING action (toggling a snap kind
+          // on/off) always goes through its real UI path
+          // (#dxfMeasureSnapEndpointBtn etc., src/ui/dxf-measure-panel.js),
+          // never a debug shortcut, so there is deliberately no setter here.
+          lineArcIntersections: (lineSeg, arcSeg) => (typeof dxfMeasureLineArcIntersections === 'function'
+            ? clone(dxfMeasureLineArcIntersections(lineSeg, arcSeg)) : null),
+          // Pure-function versions taking a bare `segments` array directly
+          // (no DXF parse, no board import, no piece-grouping involved) —
+          // same "isolate the math from any session/board state" contract as
+          // parseNative/segmentLength above.
+          buildSnapIndexForSegments: (segments, tolerance) => (typeof dxfMeasureBuildPieceSnapIndex === 'function'
+            ? clone(dxfMeasureBuildPieceSnapIndex({ segments }, tolerance)) : null),
+          buildIntersectionsForSegments: (segments) => (typeof dxfMeasureBuildPieceIntersections === 'function'
+            ? clone(dxfMeasureBuildPieceIntersections({ segments })) : null),
+          pieceSnapIndex: (pieceIndex) => (typeof dxfMeasureEnsurePieceSnapIndex === 'function' && state.dxfMeasureSession
+            ? clone(dxfMeasureEnsurePieceSnapIndex(state.dxfMeasureSession, pieceIndex)) : null),
+          pieceIntersectionIndex: (pieceIndex) => (typeof dxfMeasureEnsurePieceIntersectionIndex === 'function' && state.dxfMeasureSession
+            ? clone(dxfMeasureEnsurePieceIntersectionIndex(state.dxfMeasureSession, pieceIndex)) : null),
+          snapCandidate: (world) => (typeof dxfMeasureSnapCandidate === 'function'
+            ? clone(dxfMeasureSnapCandidate(state.dxfMeasureSession, world)) : null),
+          snapEnabled: () => ({ endpoint: !!state.dxfMeasureSnapEndpoint, midpoint: !!state.dxfMeasureSnapMidpoint, intersection: !!state.dxfMeasureSnapIntersection }),
           enumerateRoutesRaw: (segments, refA, refB, tolerance) => (typeof dxfEnumerateRoutes === 'function'
             ? clone(dxfEnumerateRoutes(segments, refA, refB, tolerance)) : null),
           reverseRoute: (route) => (typeof dxfReverseRoute === 'function' ? clone(dxfReverseRoute(route)) : null),
@@ -399,6 +424,8 @@
               topologyToleranceNative: session.topologyToleranceNative,
               measurementCount: session.measurements.length,
               measurements: clone(session.measurements),
+              // US-111: seam-match pairs.
+              seamPairs: clone(session.seamPairs || []),
               selectedMeasurementId: session.selectedMeasurementId,
               // RB-1/RB-2/RB-3: the full interaction object (minus function
               // fields like onResolved, which structuredClone-style `clone()`
@@ -410,6 +437,9 @@
               diagnostics: clone(session.diagnostics || {}),
               pieceAnchorAnnotationIds: (session.pieceAnchors || []).map(anchor => anchor ? anchor.annotationId : null),
               pieceBounds: clone(session.pieceBounds || []),
+              // US-112: read-only, for diagnosing the hover-driven snap preview.
+              hoverWorld: clone(session.hoverWorld),
+              hoverAltKey: !!session.hoverAltKey,
             };
           },
           pieceSegments: (pieceIndex) => {
@@ -481,6 +511,17 @@
             return true;
           },
           formatInches: (value) => (typeof dxfMeasureFormatInches === 'function' ? dxfMeasureFormatInches(value) : null),
+          // US-111: seamPairStatus is pure (a {judged} object in, a status
+          // string out) — exposed directly for exact-boundary unit testing,
+          // same "isolate the math" contract as directDistance/segmentLength.
+          seamPairStatus: (delta) => (typeof dxfMeasureSeamPairStatus === 'function' ? dxfMeasureSeamPairStatus(delta) : null),
+          seamPairPartnerId: (measurementId) => (typeof dxfMeasureSeamPairPartnerId === 'function'
+            ? dxfMeasureSeamPairPartnerId(state.dxfMeasureSession, measurementId) : null),
+          seamPairDelta: (pairId) => {
+            const session = state.dxfMeasureSession;
+            const pair = session && typeof dxfMeasureGetSeamPair === 'function' ? dxfMeasureGetSeamPair(session, pairId) : null;
+            return pair && typeof dxfMeasureSeamPairDelta === 'function' ? clone(dxfMeasureSeamPairDelta(session, pair)) : null;
+          },
           valueInches: (measurementId) => {
             const session = state.dxfMeasureSession;
             const m = session && typeof dxfMeasureGetMeasurement === 'function' ? dxfMeasureGetMeasurement(session, measurementId) : null;

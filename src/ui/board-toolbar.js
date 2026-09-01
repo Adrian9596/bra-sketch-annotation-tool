@@ -12,6 +12,9 @@
     // US-093 / ADR 0053: Straight/Curved/Eraser/Text consolidated here to
     // free a toolbar slot for the new "Add point" tool.
     ['toolsMenuWrap', 'toolsMenuBtn', 'toolsMenuList'],
+    // US-105 / ADR 0062 follow-up: Pattern Measure (DXF length), promoted
+    // next to #libraryBtn — see index.html's #measureMenuWrap.
+    ['measureMenuWrap', 'measureMenuBtn', 'measureMenuList'],
   ];
 
   const TOOL_MENU_LABELS = { straight: 'Straight', curved: 'Curved', eraser: 'Eraser', text: 'Text', rectangle:'Rectangle', circle:'Circle', hexagon:'Hexagon' };
@@ -193,6 +196,16 @@
           : 'Shape';
       }
       toolMenuBtn.textContent = label ? ('Tools: ' + label) : 'Tools ▾';
+    }
+
+    // Same trigger-label convention as Tools▾ above: name the armed Pattern
+    // Measure mode when it's active, otherwise the plain dropdown label.
+    const measureMenuBtn = document.getElementById('measureMenuBtn');
+    if (measureMenuBtn) {
+      const session = state.dxfMeasureSession;
+      const armed = state.tool === 'pattern-measure' && session ? session.pendingMode : null;
+      const measureLabel = armed === 'along-path' ? 'Along Path' : armed === 'out-of-path' ? 'Out of Path' : null;
+      measureMenuBtn.textContent = measureLabel ? ('Measure: ' + measureLabel) : 'Measure ▾';
     }
 
     // A mode/page transition never leaves a detached popup floating over the

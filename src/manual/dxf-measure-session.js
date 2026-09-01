@@ -76,8 +76,12 @@
   // click belongs unambiguously to one imported piece, retain that piece
   // attachment. This lets the overlay travel with a whole-piece display move
   // without ever changing the native coordinate used for the value.
-  function dxfMeasureOutOfPathEndpointFromBoard(session, boardPoint) {
+  function dxfMeasureOutOfPathEndpointFromBoard(session, boardPoint, altBypass) {
     if (!session || !boardPoint) return null;
+    if (!altBypass) {
+      const snap = dxfMeasureSnapCandidate(session, boardPoint);
+      if (snap) return { pieceIndex: snap.pieceIndex, native: clonePoint(snap.native) };
+    }
     const nearHits = dxfMeasureHitTestNativeSegments(session, boardPoint, dxfMeasureToleranceWorld());
     const nearPieces = Array.from(new Set(nearHits.map(hit => hit.pieceIndex)));
     if (nearPieces.length === 1) {
@@ -153,6 +157,15 @@
       // a unit correction.
       unitOverride: null,
       measurements: [],
+      // US-111: seam-match pairs — {id, aId, bId, ease}. A pair relates two
+      // EXISTING along-path measurements; it owns no geometry of its own
+      // (delta is always derived, see dxfMeasureSeamPairDelta) and each
+      // measurement belongs to at most one pair (dxfMeasureCreateSeamPair
+      // enforces this). MUST stay in dxfMeasureSnapshot/RestoreSnapshot below
+      // — an undo that restores `measurements` but drops `seamPairs` would
+      // leave a pair pointing at a since-reverted measurement id.
+      seamPairs: [],
+      nextSeamPairId: 1,
       interaction: null,
       selectedMeasurementId: null,
       pendingMode: 'along-path',
@@ -160,6 +173,18 @@
       nextMeasurementId: 1,
       history: { past: [], future: [] },
       diagnostics: { dragPreviewRecomputes: 0 },
+      // US-112: per-piece snap point cache (endpoints/midpoints/lazy
+      // intersections) — see src/manual/dxf-measure-snap.js. Derived purely
+      // from `pieces`, which never changes after import, so this is safe to
+      // build lazily and keep for the life of the session; never included in
+      // dxfMeasureSnapshot (nothing here is TD-editable state).
+      snapIndex: { byPiece: nativeModel.pieces.map(() => null) },
+      // US-112: last pointer position while Pattern Measure is active, and
+      // whether Alt/Option was held then — read only by the snap-hover
+      // renderer (drawDxfMeasureSnapHover). Transient UI state, like
+      // `interaction`; never part of the undo snapshot.
+      hoverWorld: null,
+      hoverAltKey: false,
     };
   }
 
@@ -310,6 +335,11 @@
       routeCandidateIndex: routeCandidateIndex || 0,
       routeCandidateCount: routeCandidateCount || 1,
       labelOffset: null,
+      // US-113: TD-given display name for the measurements list panel; null
+      // means "show the default M{id} label". Lives on the measurement
+      // record itself, so the existing snapshot/undo machinery below covers
+      // renames for free — no separate history plumbing needed.
+      name: null,
     };
     session.measurements.push(measurement);
     dxfMeasurePushHistoryIfChanged();
@@ -331,6 +361,7 @@
       b: { pieceIndex: normalizedB.pieceIndex == null ? null : normalizedB.pieceIndex, segIndexInPiece: null, t: null, native: clonePoint(normalizedB.native) },
       route: null,
       labelOffset: null,
+      name: null,
     };
     session.measurements.push(measurement);
     dxfMeasurePushHistoryIfChanged();
@@ -348,8 +379,137 @@
     if (idx === -1) return false;
     session.measurements.splice(idx, 1);
     if (session.selectedMeasurementId === id) session.selectedMeasurementId = null;
+    // US-111: a seam pair cannot outlive either of its two members — the
+    // other measurement stays, just no longer matched to anything.
+    const pairIdx = session.seamPairs.findIndex(p => p.aId === id || p.bId === id);
+    if (pairIdx !== -1) session.seamPairs.splice(pairIdx, 1);
     dxfMeasurePushHistoryIfChanged();
     return true;
+  }
+
+  // ---- US-111: seam-match pairs -----------------------------------------------
+
+  function dxfMeasureFindSeamPairId(session, measurementId) {
+    if (!session || measurementId == null) return null;
+    const pair = session.seamPairs.find(p => p.aId === measurementId || p.bId === measurementId);
+    return pair ? pair.id : null;
+  }
+
+  function dxfMeasureGetSeamPair(session, pairId) {
+    if (!session || pairId == null) return null;
+    return session.seamPairs.find(p => p.id === pairId) || null;
+  }
+
+  function dxfMeasureSeamPairPartnerId(session, measurementId) {
+    if (!session || measurementId == null) return null;
+    const pair = session.seamPairs.find(p => p.aId === measurementId || p.bId === measurementId);
+    if (!pair) return null;
+    return pair.aId === measurementId ? pair.bId : pair.aId;
+  }
+
+  // Only two UNPAIRED Along Path measurements can be matched — Out of Path
+  // has no "route" a seam-length comparison is measuring, and one pair per
+  // measurement keeps "the other side of THIS seam" unambiguous (a TD who
+  // wants a different partner unlinks first, an explicit action, rather than
+  // silently reassigning).
+  function dxfMeasureCreateSeamPair(session, aId, bId) {
+    if (!session || aId == null || bId == null || aId === bId) return null;
+    const a = dxfMeasureGetMeasurement(session, aId);
+    const b = dxfMeasureGetMeasurement(session, bId);
+    if (!a || !b || a.mode !== 'along-path' || b.mode !== 'along-path') return null;
+    if (dxfMeasureFindSeamPairId(session, aId) != null || dxfMeasureFindSeamPairId(session, bId) != null) return null;
+    const pair = { id: session.nextSeamPairId, aId, bId, ease: 0 };
+    session.nextSeamPairId += 1;
+    session.seamPairs.push(pair);
+    dxfMeasurePushHistoryIfChanged();
+    return pair;
+  }
+
+  // Removes the MATCH, not either measurement — "unlink" reads as undoing a
+  // relationship, not a delete, so it stays a separate action from ✕.
+  function dxfMeasureDeleteSeamPair(session, pairId) {
+    if (!session) return false;
+    const idx = session.seamPairs.findIndex(p => p.id === pairId);
+    if (idx === -1) return false;
+    session.seamPairs.splice(idx, 1);
+    dxfMeasurePushHistoryIfChanged();
+    return true;
+  }
+
+  function dxfMeasureSetSeamEase(session, pairId, ease) {
+    const pair = dxfMeasureGetSeamPair(session, pairId);
+    if (!pair) return false;
+    const next = Number.isFinite(ease) ? ease : 0;
+    if (pair.ease === next) return false;
+    pair.ease = next;
+    dxfMeasurePushHistoryIfChanged();
+    return true;
+  }
+
+  // TD-confirmed thresholds (2026-09-01): absolute inches on the 1/16" grid
+  // this tool already displays fractions on (US-048), not a percentage of
+  // seam length.
+  const DXF_SEAM_MATCH_THRESHOLD_IN = 1 / 16;
+  const DXF_SEAM_REVIEW_THRESHOLD_IN = 3 / 16;
+
+  // Derived, NEVER stored — recomputed from each member's CURRENT value every
+  // call, so dragging an endpoint (or Undo/Redo, or a unit-override change)
+  // updates the delta the same frame the member's own value updates, with no
+  // separate cache to keep in sync. `raw` is signed (A minus B); `judged` is
+  // what the threshold actually reads — the plan's agreed formula
+  // |lenA - lenB - ease|, i.e. how far the ACTUAL difference deviates from
+  // the EXPECTED one, not the unsigned raw delta itself (a seam with 0.25"
+  // of intentional cup ease reading exactly 0.25" off judges as a perfect
+  // match, not a quarter-inch mismatch).
+  function dxfMeasureSeamPairDelta(session, pair) {
+    if (!session || !pair) return null;
+    const a = dxfMeasureGetMeasurement(session, pair.aId);
+    const b = dxfMeasureGetMeasurement(session, pair.bId);
+    if (!a || !b) return null;
+    const va = dxfMeasureValueInches(session, a);
+    const vb = dxfMeasureValueInches(session, b);
+    if (!Number.isFinite(va) || !Number.isFinite(vb)) return null;
+    const raw = va - vb;
+    return { a: va, b: vb, raw, judged: Math.abs(raw - (pair.ease || 0)) };
+  }
+
+  function dxfMeasureSeamPairStatus(delta) {
+    if (!delta) return 'unknown';
+    if (delta.judged <= DXF_SEAM_MATCH_THRESHOLD_IN) return 'match';
+    if (delta.judged <= DXF_SEAM_REVIEW_THRESHOLD_IN) return 'review';
+    return 'mismatch';
+  }
+
+  // US-113: TD-given display name, shown by the measurements list panel
+  // instead of the default "M{id}". Empty/whitespace-only clears back to the
+  // default rather than storing a blank string, so the panel's "M{id}"
+  // fallback (dxfMeasurementDisplayName) is the only place that formats the
+  // unnamed case. Returns false (no history push, no re-render) when the
+  // trimmed name is unchanged, so an in/out rename with no real edit does not
+  // manufacture a no-op undo step.
+  function dxfMeasureRenameMeasurement(session, id, name) {
+    const measurement = session && dxfMeasureGetMeasurement(session, id);
+    if (!measurement) return false;
+    const next = (name || '').trim() || null;
+    if (measurement.name === next) return false;
+    measurement.name = next;
+    dxfMeasurePushHistoryIfChanged();
+    return true;
+  }
+
+  // US-113: bulk-delete every measurement in ONE history step, so Cmd+Z
+  // undoes the whole clear at once rather than one measurement at a time —
+  // matching "Clear All" reading as a single action, not N deletes in a
+  // trenchcoat. No confirm dialog: deleting a single measurement via the
+  // panel's own ✕ has none either, and this is exactly as undo-able.
+  function dxfMeasureClearAllMeasurements(session) {
+    if (!session || !session.measurements.length) return 0;
+    const count = session.measurements.length;
+    session.measurements = [];
+    session.seamPairs = []; // US-111: no pair can outlive its measurements
+    session.selectedMeasurementId = null;
+    dxfMeasurePushHistoryIfChanged();
+    return count;
   }
 
   // RB-3: COMMITS a fully-resolved endpoint move in one shot — never called
@@ -481,6 +641,11 @@
     return {
       measurements: clone(session.measurements),
       nextMeasurementId: session.nextMeasurementId,
+      // US-111: MUST travel with measurements — restoring one without the
+      // other lets Undo bring back a measurement a pair still references (or
+      // resurrect a pair pointing at an id Undo just removed).
+      seamPairs: clone(session.seamPairs),
+      nextSeamPairId: session.nextSeamPairId,
     };
   }
 
@@ -512,6 +677,8 @@
     if (!session || !snapshot) return;
     session.measurements = clone(snapshot.measurements);
     session.nextMeasurementId = snapshot.nextMeasurementId;
+    session.seamPairs = clone(snapshot.seamPairs || []);
+    session.nextSeamPairId = snapshot.nextSeamPairId || 1;
     session.selectedMeasurementId = null;
     session.interaction = null;
   }
