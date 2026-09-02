@@ -29,6 +29,10 @@
     ROUTE_SEARCH_TRUNCATED: 'ROUTE_SEARCH_TRUNCATED',
     UNSUPPORTED_GEOMETRY: 'UNSUPPORTED_GEOMETRY',
     NON_FINITE_GEOMETRY: 'NON_FINITE_GEOMETRY',
+    // ADR 0084: A and B resolved to the same point on an OPEN path — there is
+    // nothing between them to measure. (On a closed loop the same click pair
+    // is a real request, "the whole way around," and yields a loop route.)
+    SAME_POINT: 'SAME_POINT',
   };
 
   // ---- Unit conversion --------------------------------------------------------
@@ -364,8 +368,14 @@
   // relative-diagonal fallback below only serves the standalone kernel
   // self-test entry point and any caller that has no unit context at all.
   function dxfDefaultTopologyTolerance(segments) {
-    const allPoints = segments.flatMap(dxfSegmentGraphEndpoints);
-    const bbox = dxfBoundsOfPoints(allPoints);
+    // ADR 0084: the PAINTED extent (dxfSegmentPoints — a full circle's own
+    // bounding box, a curve's handles), not the endpoints' extent. A piece
+    // that is one full circle has two endpoints ~1e-15 apart: an endpoint
+    // bbox gives a diagonal of ~1e-15 (not 0, so the `|| 1` fallback never
+    // fires) and a tolerance of ~1e-19 — smaller than the floating-point gap
+    // between those two endpoints, which then never cluster into one node,
+    // and the loop is silently an open dangling edge.
+    const bbox = dxfBoundsOfSegments(segments);
     const diag = Math.hypot(bbox.width, bbox.height) || 1;
     return 0.0001 * diag;
   }
@@ -509,24 +519,43 @@
   // routes" from "here are the first N of possibly more" — presenting a
   // capped candidate set as though it were the complete choice set is exactly
   // the silent-guess failure mode this story must not ship.
+  //
+  // ADR 0084: when startNode === endNode the request is "the whole way
+  // around" — every simple CYCLE through that node, each as a path of >= 1
+  // edge that leaves the node and returns to it (a self-loop edge, e.g. a
+  // full circle, is a 1-edge cycle). The trivial 0-edge "already there" path
+  // is never a route. Nothing else about the search changes: the node is
+  // still marked visited once left, so a cycle cannot pass through it
+  // twice, and the caps apply identically.
   function dxfEnumerateSimplePaths(adjacency, startNode, endNode, maxRoutes, maxVisits) {
     const routes = [];
     const visited = new Set();
+    const usedEdges = new Set();
     const path = [];
     let visits = 0;
     let truncated = false;
+    const loopRequest = startNode === endNode;
     function dfs(node) {
       if (routes.length >= maxRoutes || visits > maxVisits) { truncated = true; return; }
       visits += 1;
-      if (node === endNode) { routes.push(path.slice()); return; }
+      if (node === endNode && (!loopRequest || path.length > 0)) { routes.push(path.slice()); return; }
       visited.add(node);
       const edges = adjacency.get(node) || [];
       for (const edge of edges) {
         if (routes.length >= maxRoutes || visits > maxVisits) { truncated = true; break; }
+        // No edge twice in one route. Distinct-node simple paths never reuse
+        // an edge anyway; this is what stops a loop request from "closing"
+        // by walking straight back along the edge it just left (an
+        // out-and-back is not the way around anything).
+        if (usedEdges.has(edge.id)) continue;
         const next = edge.nodeA === node ? edge.nodeB : edge.nodeA;
-        if (visited.has(next)) continue;
+        // Returning to the start node closes a loop request — the one case
+        // where stepping onto an already-visited node is the goal.
+        if (visited.has(next) && !(loopRequest && next === endNode)) continue;
         path.push({ edge, forward: edge.nodeA === node });
+        usedEdges.add(edge.id);
         dfs(next);
+        usedEdges.delete(edge.id);
         path.pop();
       }
       visited.delete(node);
@@ -587,7 +616,27 @@
       adjacency.get(e.nodeA).push(e);
       adjacency.get(e.nodeB).push(e);
     }
-    const { routes: rawRoutes, truncated } = dxfEnumerateSimplePaths(adjacency, nodeA, nodeB, DXF_ROUTE_MAX_CANDIDATES, DXF_ROUTE_MAX_VISITS);
+    const { routes: found, truncated } = dxfEnumerateSimplePaths(adjacency, nodeA, nodeB, DXF_ROUTE_MAX_CANDIDATES, DXF_ROUTE_MAX_VISITS);
+    let rawRoutes = found;
+    if (nodeA === nodeB) {
+      // ADR 0084: the DFS walks every cycle through the point in BOTH
+      // directions (leave via edge e1 and return via e2, and vice versa) —
+      // the same edges, the same length, one loop. Keep one per distinct
+      // edge set; dxfMeasureBuildDirectionCandidates then presents that one
+      // loop as forward/reverse, exactly as it does for a single open route.
+      // The empty raw list here means A and B sit on the same point of an
+      // OPEN path (no cycle through it) — nothing to measure, and a distinct
+      // reason from "not connected", which would be a lie about two points
+      // that are trivially connected.
+      const seen = new Set();
+      rawRoutes = found.filter(steps => {
+        const key = steps.map(s => s.edge.id).sort((x, y) => x - y).join(',');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      if (!rawRoutes.length && !truncated) return { ok: false, reason: DXF_MEASURE_REASON.SAME_POINT, routes: [], truncated: false };
+    }
     if (!rawRoutes.length) return { ok: false, reason: DXF_MEASURE_REASON.NO_CONNECTED_PATH, routes: [], truncated: false };
     const routes = rawRoutes.map(steps => ({
       steps: steps.map(s => ({

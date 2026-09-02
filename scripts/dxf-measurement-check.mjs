@@ -112,6 +112,28 @@ const DUPLICATE_SEGMENT_DXF = doc([
   dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0),
 ]);
 
+// ADR 0084 (found 2026-09-02 on a real file, K01543CB-SE0583-STRIKE
+// COST-TAILONR.dxf): a nest that grades TWO different pieces at the same
+// position — here a cup outer (plain square) and a cup lining (same square
+// plus a diagonal, so it is genuinely different geometry, not a duplicate)
+// each in sizes S and M, all four INSERTed at (0,0). Block names follow the
+// corpus-wide `<piece>_<size>` convention. Filtering to size S must keep
+// BOTH S pieces reachable; US-114/117's whole-name rule hid LINING_S the
+// moment CUP_S was selected.
+const TWO_FAMILY_NEST_DXF = docWithBlocks(
+  [
+    dxfBlock('CUP_S', [dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0)]),
+    dxfBlock('CUP_M', [dxfLine(0, 0, 12, 0), dxfLine(12, 0, 12, 12), dxfLine(12, 12, 0, 12), dxfLine(0, 12, 0, 0)]),
+    dxfBlock('LINING_S', [dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0), dxfLine(0, 0, 10, 10)]),
+    dxfBlock('LINING_M', [dxfLine(0, 0, 12, 0), dxfLine(12, 0, 12, 12), dxfLine(12, 12, 0, 12), dxfLine(0, 12, 0, 0), dxfLine(0, 0, 12, 12)]),
+  ],
+  [dxfInsert('CUP_S', 0, 0), dxfInsert('CUP_M', 0, 0), dxfInsert('LINING_S', 0, 0), dxfInsert('LINING_M', 0, 0)],
+);
+// ADR 0084: a full circle is ONE native arc segment whose two ends coincide
+// — a self-loop edge in the path graph, the corpus's only real arc shape
+// (a drill-hole mark in 2875_ LiftyChic_Crossian.dxf).
+const CIRCLE_DXF = doc([dxfCircle(0, 0, 5)]);
+
 async function main() {
   const started = await startStaticServer(appDir);
   server = started.server;
@@ -148,6 +170,7 @@ async function main() {
   await section13DraggablePanels(s);
   await section14SnapTiesAndSizeFilter(s);
   await section15SizeFilterOverlapGateAndDuplicateSegments(s);
+  await section16SizeTokensAndLoopRoutes(s);
 
   const errors = await s.eval('window.__dxfMeasureErrors');
   check(Array.isArray(errors) && errors.length === 0, 'no uncaught browser errors: ' + JSON.stringify(errors));
@@ -1521,7 +1544,7 @@ async function section14SnapTiesAndSizeFilter(s) {
     // TD-facing control in this file).
     document.getElementById('dxfMeasureAlongBtn').click();
     const sizeSelect = document.getElementById('dxfMeasureSizeSelect');
-    sizeSelect.value = 'PIECE_S';
+    sizeSelect.value = 'S';
     sizeSelect.dispatchEvent(new Event('change', { bubbles: true }));
     const activeAfterFilter = dbg.dxf.measure.getSession().activeSizeLabel;
     const candidatesFiltered = dbg.dxf.measure.snapCandidates(corner);
@@ -1553,11 +1576,13 @@ async function section14SnapTiesAndSizeFilter(s) {
   check(Array.isArray(result.availableLabelsForPlainFile) && result.availableLabelsForPlainFile.length === 0,
     'no size labels detected for a plain (no-BLOCK) import, got ' + JSON.stringify(result.availableLabelsForPlainFile));
 
-  check(JSON.stringify(result.availableLabels) === JSON.stringify(['PIECE_S', 'PIECE_M']),
-    'both INSERTed block names are detected, in piece order, got ' + JSON.stringify(result.availableLabels));
+  // ADR 0084: the dropdown lists SIZE tokens (the part of the block name
+  // after its last underscore), not whole block names — PIECE_S/PIECE_M -> S/M.
+  check(JSON.stringify(result.availableLabels) === JSON.stringify(['S', 'M']),
+    'both INSERTed blocks\' size tokens are detected, in piece order, got ' + JSON.stringify(result.availableLabels));
   check(result.sizeWrapVisible === true, 'Size control becomes visible once 2+ sizes are detected');
-  check(JSON.stringify(result.sizeSelectOptions) === JSON.stringify(['', 'PIECE_S', 'PIECE_M']),
-    'the real <select> is populated with "All sizes" + both detected labels, got ' + JSON.stringify(result.sizeSelectOptions));
+  check(JSON.stringify(result.sizeSelectOptions) === JSON.stringify(['', 'S', 'M']),
+    'the real <select> is populated with "All sizes" + both detected size tokens, got ' + JSON.stringify(result.sizeSelectOptions));
   check(JSON.stringify(result.pieceLabels) === JSON.stringify(['PIECE_S', 'PIECE_M']),
     'each piece\'s own label matches the block it came from, got ' + JSON.stringify(result.pieceLabels));
 
@@ -1573,9 +1598,9 @@ async function section14SnapTiesAndSizeFilter(s) {
     'an unfiltered click at the tied point enters choosing-entity with all 4 hits (2 pieces x 2 adjacent segments each) — never a silent pick, got '
     + JSON.stringify(result.interactionUnfiltered));
 
-  check(result.activeAfterFilter === 'PIECE_S', 'the real <select> change event sets activeSizeLabel, got ' + JSON.stringify(result.activeAfterFilter));
+  check(result.activeAfterFilter === 'S', 'the real <select> change event sets activeSizeLabel (to the size token), got ' + JSON.stringify(result.activeAfterFilter));
   check(result.candidatesFiltered.length >= 1 && result.candidatesFiltered.every(c => c.pieceIndex === 0),
-    'once filtered to PIECE_S, every remaining candidate at that point belongs to piece 0 only, got ' + JSON.stringify(result.candidatesFiltered));
+    'once filtered to size S, every remaining candidate at that point belongs to piece 0 only, got ' + JSON.stringify(result.candidatesFiltered));
   check(result.interactionFiltered && result.interactionFiltered.type === 'choosing-entity'
     && result.interactionFiltered.hits.every(h => h.pieceIndex === 0),
     'once filtered, the SAME click only ever resolves against the selected size — PIECE_M is invisible to it, got '
@@ -1670,8 +1695,8 @@ async function section15SizeFilterOverlapGateAndDuplicateSegments(s) {
     'the Size filter must not activate for 2+ distinct block labels that never overlap (ordinary side-by-side pieces), got ' + JSON.stringify(result.nonOverlapLabels));
   check(result.nonOverlapWrapHidden === true, 'the Size control stays hidden for non-overlapping distinct pieces');
 
-  check(JSON.stringify(result.overlapLabels) === JSON.stringify(['PIECE_S', 'PIECE_M']),
-    'regression: the genuine same-position grading-nest fixture must still activate the filter, got ' + JSON.stringify(result.overlapLabels));
+  check(JSON.stringify(result.overlapLabels) === JSON.stringify(['S', 'M']),
+    'regression: the genuine same-position grading-nest fixture must still activate the filter (size tokens S/M), got ' + JSON.stringify(result.overlapLabels));
   check(result.overlapWrapHidden === false, 'regression: the Size control stays visible for a genuine overlapping grading nest');
 
   check(result.segCount === 8, 'sanity: the duplicate-segment fixture really does carry 8 raw segments (4 unique edges authored twice), got ' + result.segCount);
@@ -1685,13 +1710,211 @@ async function section15SizeFilterOverlapGateAndDuplicateSegments(s) {
   console.log('PASS  section 15 (Size filter overlap gate + duplicate-segment hit collapsing)');
 }
 
+// ADR 0084 — two findings from a 2026-09-02 live pass on real files
+// (findings-dxf.md Findings 11 and 12):
+//  (11) the Size filter grouped by WHOLE block name, so on a nest grading two
+//       different pieces at one position, selecting one piece's size hid the
+//       other piece entirely (no click, snap or Alt-bypass could reach it);
+//       it now groups by the size token after the name's last underscore.
+//  (12) clicking the same point for A and B on a CLOSED piece failed with a
+//       generic toast; the kernel now returns the loop itself as the route,
+//       and an open path reports the distinct SAME_POINT reason instead.
+async function section16SizeTokensAndLoopRoutes(s) {
+  // --- Pure kernel: same-point A/B.
+  const pure = await s.eval(`(() => {
+    const d = window.__braAutoModeDebug.dxf.measure;
+    const square = d.parseNative(${JSON.stringify(SQUARE_DXF)}).pieces[0].segments;
+    const chain = d.parseNative(${JSON.stringify(CHAIN_DXF)}).pieces[0].segments;
+    const circleParsed = d.parseNative(${JSON.stringify(CIRCLE_DXF)});
+    const circle = circleParsed.ok ? circleParsed.pieces[0].segments : null;
+    return {
+      squareCorner: d.enumerateRoutesRaw(square, {segIndex:0,t:0}, {segIndex:0,t:0}),
+      squareMidEdge: d.enumerateRoutesRaw(square, {segIndex:1,t:0.5}, {segIndex:1,t:0.5}),
+      squareDistinct: d.enumerateRoutesRaw(square, {segIndex:0,t:0.5}, {segIndex:2,t:0.5}),
+      chainSamePoint: d.enumerateRoutesRaw(chain, {segIndex:2,t:0.5}, {segIndex:2,t:0.5}),
+      circleSegs: circle,
+      circleLoop: circle ? d.enumerateRoutesRaw(circle, {segIndex:0,t:0}, {segIndex:0,t:0}) : null,
+      circleQuarter: circle ? d.enumerateRoutesRaw(circle, {segIndex:0,t:0}, {segIndex:0,t:0.25}) : null,
+    };
+  })()`);
+  check(pure.squareCorner.ok && pure.squareCorner.routes.length === 1 && near(pure.squareCorner.routes[0].length, 40, 1e-9),
+    'same corner for A and B on a closed square yields exactly ONE loop route of the full 40-unit perimeter (both walking directions collapsed to one), got ' + JSON.stringify(pure.squareCorner));
+  check(pure.squareCorner.routes[0].steps.length === 4 && new Set(pure.squareCorner.routes[0].steps.map(st => st.segIndex)).size === 4,
+    'that loop route walks all 4 edges once each, got ' + JSON.stringify(pure.squareCorner.routes[0].steps));
+  check(pure.squareMidEdge.ok && pure.squareMidEdge.routes.length === 1 && near(pure.squareMidEdge.routes[0].length, 40, 1e-9)
+    && pure.squareMidEdge.routes[0].steps.length === 5,
+    'same mid-edge point for A and B also yields the one full-perimeter loop (the split edge contributes two half-steps), got ' + JSON.stringify(pure.squareMidEdge));
+  check(pure.squareDistinct.ok && pure.squareDistinct.routes.length === 2,
+    'regression: two DIFFERENT points on the square still yield the 2 complementary routes, got ' + JSON.stringify(pure.squareDistinct.routes && pure.squareDistinct.routes.length));
+  check(!pure.chainSamePoint.ok && pure.chainSamePoint.reason === 'SAME_POINT' && pure.chainSamePoint.routes.length === 0,
+    'same point for A and B on an OPEN chain reports SAME_POINT (not NO_CONNECTED_PATH — the points are trivially connected), got ' + JSON.stringify(pure.chainSamePoint));
+  check(Array.isArray(pure.circleSegs) && pure.circleSegs.length === 1 && pure.circleSegs[0].kind === 'arc',
+    'sanity: a CIRCLE parses to one self-closing native arc segment, got ' + JSON.stringify(pure.circleSegs));
+  check(pure.circleLoop && pure.circleLoop.ok && pure.circleLoop.routes.length === 1 && near(pure.circleLoop.routes[0].length, 2 * Math.PI * 5, 1e-9),
+    'same point for A and B on a full circle (a self-loop edge) yields one route of the exact circumference 2*pi*5, got ' + JSON.stringify(pure.circleLoop));
+  check(pure.circleQuarter && pure.circleQuarter.ok && pure.circleQuarter.routes.length === 2
+    && near(Math.min(...pure.circleQuarter.routes.map(r => r.length)), 2 * Math.PI * 5 / 4, 1e-9)
+    && near(Math.max(...pure.circleQuarter.routes.map(r => r.length)), 2 * Math.PI * 5 * 3 / 4, 1e-9),
+    'regression: two different points on the circle still yield the short arc and the long arc, got ' + JSON.stringify(pure.circleQuarter && pure.circleQuarter.routes.map(r => r.length)));
+
+  // --- Real UI: the two-family nest + the same-point loop through real clicks.
+  const result = await s.eval(`(async () => {
+    document.getElementById('modeManualBtn').click();
+    const dbg = window.__braAutoModeDebug;
+    const p = dbg.exportProject();
+    p.state.annotations = []; p.state.images = [];
+    await dbg.loadProject(p);
+    document.getElementById('modeManualBtn').click();
+    if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    document.getElementById('toolsMenuBtn').click();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const importDxf = async (text, name) => {
+      const input = document.getElementById('dxfImportFileInput');
+      const dt = new DataTransfer();
+      dt.items.add(new File([text], name, { type: 'application/octet-stream' }));
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      for (let i = 0; i < 20; i += 1) await new Promise(r => requestAnimationFrame(r));
+    };
+    const setSnap = (endpoint, midpoint) => {
+      const current = dbg.dxf.measure.snapEnabled();
+      if (current.endpoint !== endpoint) document.getElementById('dxfMeasureSnapEndpointBtn').click();
+      if (current.midpoint !== midpoint) document.getElementById('dxfMeasureSnapMidpointBtn').click();
+    };
+    setSnap(true, true);
+    const canvas = document.getElementById('boardCanvas');
+    const toScreen = world => { const rect = canvas.getBoundingClientRect(), view = dbg.getView(); return { x: rect.left + world.x * view.zoom + view.panX, y: rect.top + world.y * view.zoom + view.panY }; };
+    const fireWorld = (type, world, extra={}) => { const sp = toScreen(world); canvas.dispatchEvent(new MouseEvent(type, Object.assign({clientX:sp.x,clientY:sp.y,bubbles:true,button:0}, extra))); };
+    const clickWorld = (world, extra={}) => { fireWorld('mousedown', world, extra); fireWorld('mouseup', world, extra); };
+    const escape = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    const toastText = () => document.getElementById('toast').textContent;
+
+    // --- 1. Two piece families graded at one position.
+    await importDxf(${JSON.stringify(TWO_FAMILY_NEST_DXF)}, 'twofamily.dxf');
+    const sess = dbg.dxf.measure.getSession();
+    const names = Array.from({ length: sess.pieceCount }, (_, i) => dbg.dxf.measure.pieceSizeLabel(i));
+    const tokens = Array.from({ length: sess.pieceCount }, (_, i) => dbg.dxf.measure.pieceSizeToken(i));
+    const options = dbg.dxf.measure.availableSizeLabels();
+    const selectOptions = Array.from(document.getElementById('dxfMeasureSizeSelect').options).map(o => o.value);
+    const idx = name => names.indexOf(name);
+    // The shared (0,0) corner: every one of the 4 pieces has a vertex there.
+    const corner = dbg.dxf.measure.nativeToBoardLive({ x: 0, y: 0 }, idx('CUP_S'));
+    const piecesAtCornerUnfiltered = [...new Set(dbg.dxf.measure.snapCandidates(corner).map(c => c.pieceIndex))].sort();
+    const sizeSelect = document.getElementById('dxfMeasureSizeSelect');
+    sizeSelect.value = 'S';
+    sizeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    const activeToken = dbg.dxf.measure.getSession().activeSizeLabel;
+    const piecesAtCornerSizeS = [...new Set(dbg.dxf.measure.snapCandidates(corner).map(c => c.pieceIndex))].sort();
+    // The lining's own diagonal midpoint (5,5): reachable ONLY through the
+    // lining piece — a point the cup outline never has. Alt-bypass takes the
+    // raw hit-test path, so this proves both gates agree.
+    const liningMid = dbg.dxf.measure.nativeToBoardLive({ x: 5, y: 5 }, idx('LINING_S'));
+    const liningHitsSizeS = [...new Set(dbg.dxf.measure.snapCandidates(liningMid).map(c => c.pieceIndex))].sort();
+    document.getElementById('dxfMeasureAlongBtn').click();
+    clickWorld(liningMid, { altKey: true });
+    const liningAltInteraction = dbg.dxf.measure.getSession().interaction;
+    escape();
+    sizeSelect.value = 'M';
+    sizeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    // The M lining's own diagonal midpoint is (6,6) — (5,5) is a snap point
+    // only on the S lining, so re-aim at the M piece's own geometry.
+    const liningMidM = dbg.dxf.measure.nativeToBoardLive({ x: 6, y: 6 }, idx('LINING_M'));
+    const liningHitsSizeM = [...new Set(dbg.dxf.measure.snapCandidates(liningMidM).map(c => c.pieceIndex))].sort();
+    sizeSelect.value = '';
+    sizeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // --- 2. Same point twice on a closed square: a real loop measurement.
+    await importDxf(${JSON.stringify(SQUARE_DXF)}, 'loopsquare.dxf');
+    const sq = dbg.dxf.measure.getSession();
+    const sqIndex = sq.pieceCount - 1;
+    const sqCorner = dbg.dxf.measure.nativeToBoardLive({ x: 0, y: 0 }, sqIndex);
+    const off = 6 / dbg.getView().zoom / Math.SQRT2;
+    const nearSqCorner = { x: sqCorner.x - off, y: sqCorner.y - off };
+    document.getElementById('dxfMeasureAlongBtn').click();
+    clickWorld(nearSqCorner);
+    let afterA = dbg.dxf.measure.getSession().interaction;
+    // The corner is shared by 2 segments: resolve the entity choice like a TD would.
+    if (afterA && afterA.type === 'choosing-entity') { dbg.dxf.measure.confirmChoice(); afterA = dbg.dxf.measure.getSession().interaction; }
+    clickWorld(nearSqCorner);
+    let afterB = dbg.dxf.measure.getSession().interaction;
+    if (afterB && afterB.type === 'choosing-entity') { dbg.dxf.measure.confirmChoice(); afterB = dbg.dxf.measure.getSession().interaction; }
+    const loopChoice = afterB ? { type: afterB.type, candidates: afterB.candidates, routes: afterB.routes && afterB.routes.map(r => r.length) } : null;
+    const before = dbg.dxf.measure.getSession().measurementCount;
+    dbg.dxf.measure.confirmChoice();
+    const sessAfter = dbg.dxf.measure.getSession();
+    const loopMeasurement = sessAfter.measurements[sessAfter.measurements.length - 1];
+    const loopValue = loopMeasurement ? dbg.dxf.measure.valueInches(loopMeasurement.id) : null;
+
+    // --- 3. Same point twice on an OPEN chain: the specific toast, A kept.
+    await importDxf(${JSON.stringify(CHAIN_DXF)}, 'loopchain.dxf');
+    const ch = dbg.dxf.measure.getSession();
+    const chIndex = ch.pieceCount - 1;
+    const chMid = dbg.dxf.measure.nativeToBoardLive({ x: 25, y: 0 }, chIndex);
+    document.getElementById('dxfMeasureAlongBtn').click();
+    clickWorld(chMid);
+    const chainAfterA = dbg.dxf.measure.getSession().interaction;
+    clickWorld(chMid);
+    // toast.js queues behind an earlier still-visible toast (TOAST_MIN_VISIBLE_MS)
+    // — poll for the expected text, never read the toast element once (this file's own
+    // section 8/9 convention).
+    let chainToast = '';
+    for (let i = 0; i < 40 && !chainToast.includes('same point as A'); i += 1) {
+      chainToast = toastText();
+      if (!chainToast.includes('same point as A')) await new Promise(r => setTimeout(r, 100));
+    }
+    const chainAfterB = dbg.dxf.measure.getSession().interaction;
+    escape();
+    document.getElementById('toolSelect').click();
+    return {
+      names, tokens, options, selectOptions, piecesAtCornerUnfiltered, activeToken, piecesAtCornerSizeS,
+      liningHitsSizeS, liningAltInteraction, liningHitsSizeM,
+      idxCupS: idx('CUP_S'), idxLiningS: idx('LINING_S'), idxCupM: idx('CUP_M'), idxLiningM: idx('LINING_M'),
+      loopChoice, before, measurementCountAfter: sessAfter.measurementCount, loopMeasurement, loopValue,
+      chainAfterA, chainToast, chainAfterB,
+    };
+  })()`);
+
+  check(JSON.stringify([...result.names].sort()) === JSON.stringify(['CUP_M', 'CUP_S', 'LINING_M', 'LINING_S']),
+    'sanity: all four blocks imported as pieces with their own names, got ' + JSON.stringify(result.names));
+  check(result.tokens.every((t, i) => t === result.names[i].split('_').pop()),
+    'each piece\'s size token is the part of its block name after the last underscore, got ' + JSON.stringify(result.tokens));
+  check(JSON.stringify(result.options) === JSON.stringify(['S', 'M']) && JSON.stringify(result.selectOptions) === JSON.stringify(['', 'S', 'M']),
+    'the Size dropdown offers the two SIZES, not the four block names, got ' + JSON.stringify([result.options, result.selectOptions]));
+  check(result.piecesAtCornerUnfiltered.length === 4, 'sanity: unfiltered, all 4 pieces share the (0,0) corner, got ' + JSON.stringify(result.piecesAtCornerUnfiltered));
+  check(result.activeToken === 'S', 'selecting "S" stores the size token, got ' + JSON.stringify(result.activeToken));
+  check(JSON.stringify(result.piecesAtCornerSizeS) === JSON.stringify([result.idxCupS, result.idxLiningS].sort()),
+    'filtered to size S, the corner resolves against BOTH size-S pieces (cup AND lining) and neither M piece — Finding 11: the lining is no longer hidden, got '
+    + JSON.stringify(result.piecesAtCornerSizeS) + ' expected ' + JSON.stringify([result.idxCupS, result.idxLiningS].sort()));
+  check(JSON.stringify(result.liningHitsSizeS) === JSON.stringify([result.idxLiningS]),
+    'filtered to size S, the lining\'s own diagonal midpoint is reachable via snap, got ' + JSON.stringify(result.liningHitsSizeS));
+  check(result.liningAltInteraction && result.liningAltInteraction.type === 'awaiting-b' && result.liningAltInteraction.a.pieceIndex === result.idxLiningS,
+    'filtered to size S, an Alt-bypass click on the lining diagonal places point A on the lining (raw hit-test agrees with snap), got ' + JSON.stringify(result.liningAltInteraction));
+  check(JSON.stringify(result.liningHitsSizeM) === JSON.stringify([result.idxLiningM]),
+    'filtered to size M, the M lining\'s diagonal midpoint resolves to the M lining only (the filter still hides other SIZES), got ' + JSON.stringify(result.liningHitsSizeM));
+
+  check(result.loopChoice && result.loopChoice.type === 'choosing-route' && result.loopChoice.candidates.length === 2
+    && result.loopChoice.routes.length === 1 && near(result.loopChoice.routes[0], 40, 1e-9),
+    'Finding 12: clicking the same corner twice on a closed square enters choosing-route with ONE 40-unit loop offered forward/reverse (not a failure toast), got ' + JSON.stringify(result.loopChoice));
+  check(result.measurementCountAfter === result.before + 1 && result.loopMeasurement && result.loopMeasurement.mode === 'along-path'
+    && near(result.loopMeasurement.route.length, 40, 1e-9) && near(result.loopValue, 40, 1e-9),
+    'confirming commits a real 40-unit full-perimeter measurement, got ' + JSON.stringify({ count: result.measurementCountAfter, before: result.before, m: result.loopMeasurement, value: result.loopValue }));
+
+  check(result.chainAfterA && result.chainAfterA.type === 'awaiting-b', 'sanity: point A placed on the open chain, got ' + JSON.stringify(result.chainAfterA));
+  check(typeof result.chainToast === 'string' && result.chainToast.includes('same point as A'),
+    'same point twice on an OPEN chain shows the specific same-point toast, got ' + JSON.stringify(result.chainToast));
+  check(result.chainAfterB && result.chainAfterB.type === 'awaiting-b',
+    'and keeps point A armed so the TD can pick a different B, got ' + JSON.stringify(result.chainAfterB));
+
+  console.log('PASS  section 16 (ADR 0084: size tokens keep every piece of a size reachable + same-point loop routes)');
+}
+
 // ---- Section 1: pure kernel unit tests -------------------------------------
 async function section1PureKernel(s) {
   const reasons = await s.eval('window.__braAutoModeDebug.dxf.measure.reasonCodes()');
   check(reasons.NO_CONNECTED_PATH === 'NO_CONNECTED_PATH' && reasons.AMBIGUOUS_ROUTE === 'AMBIGUOUS_ROUTE'
     && reasons.ROUTE_SEARCH_TRUNCATED === 'ROUTE_SEARCH_TRUNCATED'
     && reasons.NON_FINITE_GEOMETRY === 'NON_FINITE_GEOMETRY' && reasons.UNSUPPORTED_GEOMETRY === 'UNSUPPORTED_GEOMETRY'
-    && reasons.NO_HIT === 'NO_HIT' && reasons.NO_DXF_SESSION === 'NO_DXF_SESSION',
+    && reasons.NO_HIT === 'NO_HIT' && reasons.NO_DXF_SESSION === 'NO_DXF_SESSION' && reasons.SAME_POINT === 'SAME_POINT',
     'all stable reason codes present: ' + JSON.stringify(reasons));
 
   const lineLen = await s.eval(`window.__braAutoModeDebug.dxf.measure.segmentLength({kind:'straight', a:{x:0,y:0}, b:{x:3,y:4}})`);

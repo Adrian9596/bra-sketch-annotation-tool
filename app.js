@@ -1594,6 +1594,10 @@
     ROUTE_SEARCH_TRUNCATED: 'ROUTE_SEARCH_TRUNCATED',
     UNSUPPORTED_GEOMETRY: 'UNSUPPORTED_GEOMETRY',
     NON_FINITE_GEOMETRY: 'NON_FINITE_GEOMETRY',
+    // ADR 0084: A and B resolved to the same point on an OPEN path — there is
+    // nothing between them to measure. (On a closed loop the same click pair
+    // is a real request, "the whole way around," and yields a loop route.)
+    SAME_POINT: 'SAME_POINT',
   };
 
   // ---- Unit conversion --------------------------------------------------------
@@ -1929,8 +1933,14 @@
   // relative-diagonal fallback below only serves the standalone kernel
   // self-test entry point and any caller that has no unit context at all.
   function dxfDefaultTopologyTolerance(segments) {
-    const allPoints = segments.flatMap(dxfSegmentGraphEndpoints);
-    const bbox = dxfBoundsOfPoints(allPoints);
+    // ADR 0084: the PAINTED extent (dxfSegmentPoints — a full circle's own
+    // bounding box, a curve's handles), not the endpoints' extent. A piece
+    // that is one full circle has two endpoints ~1e-15 apart: an endpoint
+    // bbox gives a diagonal of ~1e-15 (not 0, so the `|| 1` fallback never
+    // fires) and a tolerance of ~1e-19 — smaller than the floating-point gap
+    // between those two endpoints, which then never cluster into one node,
+    // and the loop is silently an open dangling edge.
+    const bbox = dxfBoundsOfSegments(segments);
     const diag = Math.hypot(bbox.width, bbox.height) || 1;
     return 0.0001 * diag;
   }
@@ -2074,24 +2084,43 @@
   // routes" from "here are the first N of possibly more" — presenting a
   // capped candidate set as though it were the complete choice set is exactly
   // the silent-guess failure mode this story must not ship.
+  //
+  // ADR 0084: when startNode === endNode the request is "the whole way
+  // around" — every simple CYCLE through that node, each as a path of >= 1
+  // edge that leaves the node and returns to it (a self-loop edge, e.g. a
+  // full circle, is a 1-edge cycle). The trivial 0-edge "already there" path
+  // is never a route. Nothing else about the search changes: the node is
+  // still marked visited once left, so a cycle cannot pass through it
+  // twice, and the caps apply identically.
   function dxfEnumerateSimplePaths(adjacency, startNode, endNode, maxRoutes, maxVisits) {
     const routes = [];
     const visited = new Set();
+    const usedEdges = new Set();
     const path = [];
     let visits = 0;
     let truncated = false;
+    const loopRequest = startNode === endNode;
     function dfs(node) {
       if (routes.length >= maxRoutes || visits > maxVisits) { truncated = true; return; }
       visits += 1;
-      if (node === endNode) { routes.push(path.slice()); return; }
+      if (node === endNode && (!loopRequest || path.length > 0)) { routes.push(path.slice()); return; }
       visited.add(node);
       const edges = adjacency.get(node) || [];
       for (const edge of edges) {
         if (routes.length >= maxRoutes || visits > maxVisits) { truncated = true; break; }
+        // No edge twice in one route. Distinct-node simple paths never reuse
+        // an edge anyway; this is what stops a loop request from "closing"
+        // by walking straight back along the edge it just left (an
+        // out-and-back is not the way around anything).
+        if (usedEdges.has(edge.id)) continue;
         const next = edge.nodeA === node ? edge.nodeB : edge.nodeA;
-        if (visited.has(next)) continue;
+        // Returning to the start node closes a loop request — the one case
+        // where stepping onto an already-visited node is the goal.
+        if (visited.has(next) && !(loopRequest && next === endNode)) continue;
         path.push({ edge, forward: edge.nodeA === node });
+        usedEdges.add(edge.id);
         dfs(next);
+        usedEdges.delete(edge.id);
         path.pop();
       }
       visited.delete(node);
@@ -2152,7 +2181,27 @@
       adjacency.get(e.nodeA).push(e);
       adjacency.get(e.nodeB).push(e);
     }
-    const { routes: rawRoutes, truncated } = dxfEnumerateSimplePaths(adjacency, nodeA, nodeB, DXF_ROUTE_MAX_CANDIDATES, DXF_ROUTE_MAX_VISITS);
+    const { routes: found, truncated } = dxfEnumerateSimplePaths(adjacency, nodeA, nodeB, DXF_ROUTE_MAX_CANDIDATES, DXF_ROUTE_MAX_VISITS);
+    let rawRoutes = found;
+    if (nodeA === nodeB) {
+      // ADR 0084: the DFS walks every cycle through the point in BOTH
+      // directions (leave via edge e1 and return via e2, and vice versa) —
+      // the same edges, the same length, one loop. Keep one per distinct
+      // edge set; dxfMeasureBuildDirectionCandidates then presents that one
+      // loop as forward/reverse, exactly as it does for a single open route.
+      // The empty raw list here means A and B sit on the same point of an
+      // OPEN path (no cycle through it) — nothing to measure, and a distinct
+      // reason from "not connected", which would be a lie about two points
+      // that are trivially connected.
+      const seen = new Set();
+      rawRoutes = found.filter(steps => {
+        const key = steps.map(s => s.edge.id).sort((x, y) => x - y).join(',');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      if (!rawRoutes.length && !truncated) return { ok: false, reason: DXF_MEASURE_REASON.SAME_POINT, routes: [], truncated: false };
+    }
     if (!rawRoutes.length) return { ok: false, reason: DXF_MEASURE_REASON.NO_CONNECTED_PATH, routes: [], truncated: false };
     const routes = rawRoutes.map(steps => ({
       steps: steps.map(s => ({
@@ -28665,10 +28714,39 @@ function onWheel(e) {
   // under this threshold either way.
   const DXF_MEASURE_SIZE_FILTER_OVERLAP_RATIO = 0.5;
 
-  // The dropdown's option list: distinct labels across every piece, in
-  // first-seen (piece) order. Empty when fewer than 2 distinct labels exist
-  // — an unlabeled sketch, a single-size file, or one whose pieces came from
-  // direct ENTITIES — since there is nothing to filter between.
+  // ADR 0084: the SIZE a block name encodes, not the whole block name.
+  // Every grading-nest export in the real corpus names its blocks
+  // `<piece>_<size>` — `杯侧_S1` / `杯侧_M1` (3708.dxf), `11_22_M`
+  // (BiancaBra), `K01543CW-SE0583-STRIKE COST-TAILONR_C34` (K01543CB) — so
+  // the token after the LAST underscore is the size and everything before it
+  // is which piece. Filtering on the whole name (US-114/117) hid every piece
+  // whose name differed from the one selected — on a file grading TWO
+  // different pieces at the same position (cup outer `..CW.._C34..C40` and
+  // cup lining `..CZ.._C34..C40`, found 2026-09-02), selecting `CW_C34`
+  // made `CZ_C34` unreachable by any click, snap or Alt-bypass, though it is
+  // a different piece at the SAME size, not a size sibling. Grouping by the
+  // size token keeps every `_C34` piece active together and hides only the
+  // other sizes — which is what a control labeled "Size" means. A name with
+  // no underscore (or nothing after it) is its own token, so a file whose
+  // names carry no size structure behaves exactly as before. Because same
+  // token ⊇ same name, this can only ever hide FEWER pieces than the
+  // whole-name rule did — never more.
+  function dxfMeasureSizeToken(label) {
+    if (typeof label !== 'string' || !label) return null;
+    const cut = label.lastIndexOf('_');
+    if (cut < 0 || cut === label.length - 1) return label;
+    return label.slice(cut + 1);
+  }
+
+  function dxfMeasurePieceSizeToken(session, pieceIndex) {
+    return dxfMeasureSizeToken(dxfMeasurePieceSizeLabel(session, pieceIndex));
+  }
+
+  // The dropdown's option list: distinct size tokens (see
+  // dxfMeasureSizeToken) across every piece, in first-seen (piece) order.
+  // Empty when fewer than 2 distinct tokens exist — an unlabeled sketch, a
+  // single-size file, or one whose pieces came from direct ENTITIES — since
+  // there is nothing to filter between.
   //
   // Found 2026-09-01 testing a real single-size factory file (5 different
   // garment pieces, each its own INSERT, laid out side by side): 2+ distinct
@@ -28687,7 +28765,7 @@ function onWheel(e) {
     const seen = [];
     const piecesByLabel = new Map();
     session.pieces.forEach((piece, i) => {
-      const label = dxfMeasurePieceSizeLabel(session, i);
+      const label = dxfMeasurePieceSizeToken(session, i);
       if (!label) return;
       if (!seen.includes(label)) seen.push(label);
       if (!piecesByLabel.has(label)) piecesByLabel.set(label, []);
@@ -28704,10 +28782,12 @@ function onWheel(e) {
   // dxf-measure-snap.js must call. `session.activeSizeLabel` null (the
   // default, and the only possible value when dxfMeasureAvailableSizeLabels
   // returns empty) means "every piece" — today's unfiltered behavior,
-  // byte-for-byte unchanged.
+  // byte-for-byte unchanged. Otherwise it holds a size TOKEN (ADR 0084), and
+  // a piece is active when its own token matches — every piece of that size,
+  // whatever piece it is.
   function dxfMeasurePieceIsActive(session, pieceIndex) {
     if (!session || !session.activeSizeLabel) return true;
-    return dxfMeasurePieceSizeLabel(session, pieceIndex) === session.activeSizeLabel;
+    return dxfMeasurePieceSizeToken(session, pieceIndex) === session.activeSizeLabel;
   }
 
   // A TD preference, not an edit — no history push (matches
@@ -29879,7 +29959,11 @@ function onWheel(e) {
         ? 'Point B is not on the same connected path as point A.'
         : result.reason === DXF_MEASURE_REASON.ROUTE_SEARCH_TRUNCATED
           ? 'This A–B pair has too many routes to prove completely. Measurement canceled; choose different endpoints.'
-          : 'Could not measure between those two points.');
+          : result.reason === DXF_MEASURE_REASON.SAME_POINT
+            // ADR 0084: on a closed loop this same click pair measures the
+            // whole way around; only an open path has nothing between A and A.
+            ? 'Point B is the same point as A on an open edge — nothing to measure between them. Click a different point for B.'
+            : 'Could not measure between those two points.');
       return;
     }
     const piece = session.pieces[refA.pieceIndex];
@@ -46529,6 +46613,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           // #dxfMeasureSizeSelect element, same as every other real control.
           pieceSizeLabel: (pieceIndex) => (typeof dxfMeasurePieceSizeLabel === 'function' && state.dxfMeasureSession
             ? dxfMeasurePieceSizeLabel(state.dxfMeasureSession, pieceIndex) : null),
+          // ADR 0084: the size TOKEN the filter actually groups by (the part
+          // of the block name after its last underscore) — what
+          // availableSizeLabels lists and activeSizeLabel holds.
+          pieceSizeToken: (pieceIndex) => (typeof dxfMeasurePieceSizeToken === 'function' && state.dxfMeasureSession
+            ? dxfMeasurePieceSizeToken(state.dxfMeasureSession, pieceIndex) : null),
           availableSizeLabels: () => (typeof dxfMeasureAvailableSizeLabels === 'function' && state.dxfMeasureSession
             ? clone(dxfMeasureAvailableSizeLabels(state.dxfMeasureSession)) : []),
           enumerateRoutesRaw: (segments, refA, refB, tolerance) => (typeof dxfEnumerateRoutes === 'function'

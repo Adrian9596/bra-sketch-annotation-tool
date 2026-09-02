@@ -417,6 +417,11 @@
           // #dxfMeasureSizeSelect element, same as every other real control.
           pieceSizeLabel: (pieceIndex) => (typeof dxfMeasurePieceSizeLabel === 'function' && state.dxfMeasureSession
             ? dxfMeasurePieceSizeLabel(state.dxfMeasureSession, pieceIndex) : null),
+          // ADR 0084: the size TOKEN the filter actually groups by (the part
+          // of the block name after its last underscore) — what
+          // availableSizeLabels lists and activeSizeLabel holds.
+          pieceSizeToken: (pieceIndex) => (typeof dxfMeasurePieceSizeToken === 'function' && state.dxfMeasureSession
+            ? dxfMeasurePieceSizeToken(state.dxfMeasureSession, pieceIndex) : null),
           availableSizeLabels: () => (typeof dxfMeasureAvailableSizeLabels === 'function' && state.dxfMeasureSession
             ? clone(dxfMeasureAvailableSizeLabels(state.dxfMeasureSession)) : []),
           enumerateRoutesRaw: (segments, refA, refB, tolerance) => (typeof dxfEnumerateRoutes === 'function'

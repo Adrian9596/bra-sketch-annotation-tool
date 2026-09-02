@@ -305,7 +305,11 @@
         ? 'Point B is not on the same connected path as point A.'
         : result.reason === DXF_MEASURE_REASON.ROUTE_SEARCH_TRUNCATED
           ? 'This A–B pair has too many routes to prove completely. Measurement canceled; choose different endpoints.'
-          : 'Could not measure between those two points.');
+          : result.reason === DXF_MEASURE_REASON.SAME_POINT
+            // ADR 0084: on a closed loop this same click pair measures the
+            // whole way around; only an open path has nothing between A and A.
+            ? 'Point B is the same point as A on an open edge — nothing to measure between them. Click a different point for B.'
+            : 'Could not measure between those two points.');
       return;
     }
     const piece = session.pieces[refA.pieceIndex];
