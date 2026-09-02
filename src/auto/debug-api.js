@@ -105,6 +105,33 @@
         };
       },
       getAnnotations: () => clone(state.annotations),
+      // US-109 Auto Detect Seam test surface. Runtime and tests share the same
+      // analyzer/validator/action; no benchmark Oracle ROI enters this path.
+      autoSeam: {
+        analyzeImage: (imageId) => {
+          const image = getImageById(imageId) || pickAutoSourceImage();
+          return image ? clone(analyzeAutoSeamSource(image)) : null;
+        },
+        validateResult: result => validateAutoSeamResult(clone(result)),
+        run: () => runAutoDetectSeam(),
+        getLastRun: () => clone(state.autoSeam?.lastRun || null),
+        isDraft: annotationId => isAutoSeamDraft(state.annotations.find(ann => ann.id === annotationId)),
+        markTdEdit: annotationId => {
+          const ann = state.annotations.find(item => item.id === annotationId);
+          if (!ann) return null;
+          markDraftTouchedByTD(ann);
+          return clone(ann);
+        },
+        commitHistory: () => {
+          pushHistoryIfChanged();
+          return state.history.past.length;
+        },
+        historyDepth: () => state.history.past.length,
+        undo: async () => {
+          await undo();
+          return clone(state.annotations);
+        },
+      },
       // ADR 0071.
       getNotches: () => clone(state.notches || []),
       // US-095 focused browser proof. The mutation seams call the same model

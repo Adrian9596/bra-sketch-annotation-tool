@@ -4,7 +4,7 @@
 // onKeyDown is the flat if-chain for every board shortcut (undo/redo,
 // save/open, arrow nudges, tool picks, board clears, exports, Escape); it
 // calls into selection.js, canvas-tools.js, line-nudge.js and the auto/
-// render/ clusters. onKeyUp only releases the space-pan modifier.
+// render/ clusters. onKeyUp releases continuous Space/Shift modifiers.
 
   function onKeyDown(e) {
     const target = e.target;
@@ -77,6 +77,14 @@
     // owns the screen. Global and page-navigation chords already ran through
     // the registry above; each non-Board page owns its own local key handling.
     if (state.activePage !== 'board') return;
+
+    // A modifier press does not move the pointer, so update the active Straight
+    // preview explicitly. Its raw cursor point is retained by canvas-tools.js;
+    // the second click uses the same constraint and therefore cannot disagree
+    // with what the TD just saw.
+    if (e.key === 'Shift' && state.appMode !== 'auto') {
+      refreshStraightDrawAngleLock(true);
+    }
 
     // U1: arrow keys nudge the selected Auto-Mode anchor by one source-image
     // pixel (Shift = 10) — the precise landing tool after a rough drag.
@@ -156,13 +164,15 @@
       return;
     }
 
-    // Copy for the selected line. Cmd/Ctrl-V is NOT intercepted here: the
-    // native paste event (onPasteEvent) decides between an OS-clipboard
-    // image and the internal line clipboard, so copying a photo after
-    // copying lines still pastes the photo.
-    if (isMeta && key === 'c' && state.selection.kind === 'annotation' && state.appMode !== 'auto') {
+    // Copy for the selected line or shape. Cmd/Ctrl-V is NOT intercepted
+    // here: the native paste event (onPasteEvent) decides between an
+    // OS-clipboard image and the internal board clipboard (line or shape,
+    // whichever was copied most recently), so copying a photo after
+    // copying a line/shape still pastes the photo.
+    if (isMeta && key === 'c' && state.appMode !== 'auto'
+        && (state.selection.kind === 'annotation' || state.selection.kind === 'graphic')) {
       e.preventDefault();
-      copySelectedAnnotation();
+      copySelectedLineOrGraphic();
       return;
     }
     if (!isMeta && key === 'm' && state.selection.kind === 'annotation' && state.appMode !== 'auto') {
@@ -398,6 +408,9 @@
   }
 
   function onKeyUp(e) {
+    if (e.key === 'Shift') {
+      refreshStraightDrawAngleLock(false);
+    }
     if (e.code === 'Space') {
       state.spacePan = false;
       document.body.classList.remove('space-pan');

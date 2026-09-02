@@ -350,6 +350,13 @@
     // Restore, all three through src/manual/sketch-mode.js's
     // applySketchModeVisual — the one function those three sites share.
     sketchMode: false,
+    // US-109 Auto Detect Seam runtime state. Session-only: generated Board
+    // annotations persist through the ordinary project/history path, while a
+    // detector's transient running/result UI does not belong in project JSON.
+    autoSeam: {
+      running: false,
+      lastRun: null,
+    },
     // US-103: the POM-side pending arrow preference (state.arrowType), saved
     // by applySketchModeVisual the moment Sketch Focus turns on and restored
     // the moment it turns off. Session-only, like sketchMode itself — never
@@ -601,9 +608,6 @@
     // Templates is the unified Library dialog now.
     shapeStampSaveBtn: document.getElementById('shapeStampSaveBtn'),
     shapeStampFileInput: document.getElementById('shapeStampFileInput'),
-    // US-104: the "Open DXF file" action, inside the Tools menu.
-    dxfImportBtn: document.getElementById('dxfImportBtn'),
-    dxfImportFileInput: document.getElementById('dxfImportFileInput'),
     // US-105: the Pattern Measure tool entries, inside the Tools menu.
     dxfMeasureAlongBtn: document.getElementById('dxfMeasureAlongBtn'),
     dxfMeasureOutBtn: document.getElementById('dxfMeasureOutBtn'),
@@ -705,6 +709,8 @@
     modeManualBtn: document.getElementById('modeManualBtn'),
     modeAutoBtn: document.getElementById('modeAutoBtn'),
     sketchFocusBtn: document.getElementById('sketchFocusBtn'),
+    mindMapBtn: document.getElementById('mindMapBtn'),
+    autoDetectSeamBtn: document.getElementById('autoDetectSeamBtn'),
     autoModeBar: document.getElementById('autoModeBar'),
     autoDetectBtn: document.getElementById('autoDetectBtn'),
     autoResetAnchorsBtn: document.getElementById('autoResetAnchorsBtn'),
@@ -2286,6 +2292,74 @@
 
   function getSelectedBoardGraphic() {
     return state.selection.kind === 'graphic' ? getBoardGraphicById(state.selection.id) : null;
+  }
+
+  // Shape clipboard — the graphics-side sibling of annotation-clipboard.js's
+  // lineClipboard. Kept here (not there) because it needs bgNextId /
+  // normalizeBoardGraphic, which own the shape's id-assignment and
+  // normalization rules; lastBoardClipboardKind is declared in
+  // annotation-clipboard.js and shared across both files, same as any other
+  // module-scope state in this bundle. Reached only through the
+  // copySelectedLineOrGraphic / pasteFromClipboard dispatchers there.
+  let graphicClipboard = null;
+
+  function copySelectedGraphic() {
+    if (state.appMode === 'auto') return;
+    const graphic = getSelectedBoardGraphic();
+    if (!graphic) {
+      showToast('Select a shape to copy first.');
+      return;
+    }
+    graphicClipboard = clone(graphic);
+    lastBoardClipboardKind = 'graphic';
+    // Claim the OS clipboard the same way copySelectedAnnotation does, so a
+    // line copied earlier no longer shadows this shape copy on paste.
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText('[Bra Auto Measure] shape copied').catch(() => {});
+    }
+    updateUI();
+    showToast('Shape copied.');
+  }
+
+  function pasteGraphicFromClipboard() {
+    if (state.appMode === 'auto' || !graphicClipboard) {
+      showToast('Nothing to paste — copy a shape first.');
+      return;
+    }
+    const offset = 20 / state.zoom;
+    const shift = (p) => (p ? { x: p.x + offset, y: p.y + offset } : null);
+    const src = clone(graphicClipboard);
+    const raw = {
+      ...src,
+      id: bgNextId('bg'),
+      live: src.live
+        ? { center: shift(src.live.center), width: src.live.width, height: src.live.height }
+        : null,
+      subpaths: (Array.isArray(src.subpaths) ? src.subpaths : []).map(sp => ({
+        id: bgNextId('bgsp'),
+        closed: sp.closed,
+        nodes: (Array.isArray(sp.nodes) ? sp.nodes : []).map(n => ({
+          id: bgNextId('bgn'),
+          point: shift(n.point),
+          handleIn: shift(n.handleIn),
+          handleOut: shift(n.handleOut),
+          segmentType: n.segmentType,
+        })),
+      })),
+    };
+    const graphic = normalizeBoardGraphic(raw);
+    if (!graphic) return;
+    state.graphics = state.graphics || [];
+    state.graphics.push(graphic);
+    setSelection('graphic', graphic.id);
+    pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+    showToast('Shape pasted.');
+  }
+
+  function hasGraphicClipboard() {
+    return graphicClipboard != null;
   }
 
   function bgNormalizeNode(raw) {
@@ -17576,14 +17650,7 @@ const BOM_MATERIAL_LIBRARY = [
       page: 'board', mode: 'manual', target: '#shapeStampSaveBtn',
       when: () => (typeof canSaveShapeStampReason === 'function' ? canSaveShapeStampReason() : true),
       action: () => saveSelectedLineAsShape() }),
-    // US-104: DXF import is Sketch-Focus-only — no `mode`/`page` gate exists
-    // for that, so `when` carries it, matching the disabled-reason
-    // convention every other conditionally-available command already uses.
-    appCommand({ id: 'board.template.import-dxf', label: 'Open DXF file', category: 'Board · Style',
-      page: 'board', mode: 'manual', target: '#dxfImportBtn',
-      when: () => state.sketchMode ? true : 'Available in Sketch Focus',
-      action: () => appCommandClick('#dxfImportBtn') }),
-    // ADR 0070: same Sketch-Focus gate as the DXF import command above — the
+    // ADR 0070: same Sketch-Focus gate the retired DXF-import command used —
     // panel only has anything to list once a sketch-element piece exists.
     appCommand({ id: 'board.pattern-pieces.open', label: 'Pattern Pieces: Choose Sizes', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#patternPiecesBtn',
@@ -17644,6 +17711,12 @@ const BOM_MATERIAL_LIBRARY = [
     appCommand({ id: 'board.focus.sketch.toggle', label: 'Toggle Sketch Focus', category: 'Board · View',
       page: 'board', mode: 'manual', target: '#sketchFocusBtn',
       action: () => toggleSketchMode() }),
+    appCommand({ id: 'board.auto-detect-seam', label: 'Auto Detect Seam', category: 'Board · Auto',
+      page: 'board', mode: 'manual', target: '#autoDetectSeamBtn',
+      when: () => !state.sketchMode
+        ? 'Available in Sketch Focus'
+        : (pickAutoSourceImage() ? true : 'Add or paste a source image first'),
+      action: () => runAutoDetectSeam() }),
     appCommand({ id: 'board.copy.line', label: 'Copy Selected Line/Shape', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'c', meta: true }, target: '#copyLineBtn',
       when: appCommandSelectedAnnotationOrGraphicReason, action: () => copySelectedLineOrGraphic() }),
@@ -18058,16 +18131,24 @@ const BOM_MATERIAL_LIBRARY = [
 
     setBoardToolbarHidden(el.autoResetAnchorsBtn, !isAuto || !auto.detection);
     setBoardToolbarHidden(el.autoResetBoardBtn, !isAuto || isWorkingBoardEmpty());
+    if (el.autoDetectSeamBtn) {
+      el.autoDetectSeamBtn.disabled = !hasSource || !!state.autoSeam?.running;
+      el.autoDetectSeamBtn.textContent = state.autoSeam?.running
+        ? 'Detecting Seam…'
+        : 'Auto Detect Seam';
+    }
 
     // Manual selection actions occupy the toolbar only when actionable.
     const selectionMode = !isAuto && state.tool === 'select';
     setBoardToolbarHidden(el.undoBtn, !selectionMode || el.undoBtn.disabled);
     setBoardToolbarHidden(el.redoBtn, !selectionMode || el.redoBtn.disabled);
-    setBoardToolbarHidden(el.copyLineBtn, !selectionMode || !selectedAnnotation);
+    setBoardToolbarHidden(el.copyLineBtn, !selectionMode || !(selectedAnnotation || selectedGraphic));
     setBoardToolbarHidden(el.reflectLineBtn, !selectionMode || !selectedAnnotation);
     setBoardToolbarHidden(el.pasteLineBtn, !selectionMode || el.pasteLineBtn.disabled);
     // US-092: Delete is the note's only toolbar action — Copy / Reflect / Paste
-    // are line operations and stay hidden for a selected note.
+    // are line (and, for Copy/Paste, shape) operations and stay hidden for a
+    // selected note. Reflect stays annotation-only — mirroring a shape was
+    // never asked for and ADR 0054 scoped graphics ops to move/resize/delete.
     setBoardToolbarHidden(el.deleteBtn, !selectionMode || !(selectedAnnotation || selectedImage || selectedNote || selectedGraphic));
     setBoardToolbarHidden(el.lockImageBtn, !selectionMode || !selectedImage);
     const editingGraphic = !!(selectedGraphic && state.graphicEdit && state.graphicEdit.graphicId === selectedGraphic.id);
@@ -18869,39 +18950,6 @@ const BOM_MATERIAL_LIBRARY = [
     });
   }
 
-  // ---- src/ui/dxf-import-panel.js ----
-// US-104: the "Open DXF file" action in the Tools menu.
-//
-// Presentation only, mirroring src/ui/shape-stamp-panel.js's split: the
-// model (parsing, geometry, the board mutation) lives in
-// src/manual/dxf-import.js. This file is just the hidden file input, the
-// FileReader glue, and closing the Tools menu after picking a file.
-// Source part for app.js. Run `npm run build` after editing.
-
-  function onDxfImportFile(event) {
-    const file = event.target.files && event.target.files[0];
-    event.target.value = '';
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      // Unlike Template JSON import, a successful result lands on the board,
-      // not inside this menu — close it so the TD sees the placed pieces.
-      closeBoardToolbarMenus(null, false);
-      importDxfText(String(reader.result || ''));
-    };
-    reader.onerror = () => showToast('Could not read that file.');
-    reader.readAsText(file);
-  }
-
-  function bindDxfImportPanel() {
-    if (!el.dxfImportBtn || !el.dxfImportFileInput) return;
-    el.dxfImportBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      el.dxfImportFileInput.click();
-    });
-    el.dxfImportFileInput.addEventListener('change', onDxfImportFile);
-  }
-
   // ---- src/ui/dxf-measure-panel.js ----
 // US-105: DXF Pattern Measurement — Tools-menu entry wiring. Sibling to
 // src/ui/dxf-import-panel.js, same split: this file owns only the button
@@ -19689,6 +19737,10 @@ const BOM_MATERIAL_LIBRARY = [
     el.toolHexagon.addEventListener('click', () => setTool('hexagon'));
     if (el.smartAlignToggleBtn) el.smartAlignToggleBtn.addEventListener('click', toggleSmartAlign);
     if (el.sketchFocusBtn) el.sketchFocusBtn.addEventListener('click', () => toggleSketchMode());
+    if (el.mindMapBtn) el.mindMapBtn.addEventListener('click', () => openMindMap());
+    if (el.autoDetectSeamBtn) el.autoDetectSeamBtn.addEventListener('click', () => {
+      void runAutoDetectSeam();
+    });
     // US-093 / ADR 0053: only visible while a curved annotation is selected
     // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
     // no extra guard needed here.
@@ -19698,7 +19750,6 @@ const BOM_MATERIAL_LIBRARY = [
     // US-096: the preset dropdown owns its own rows and handlers.
     bindLinePresetPanel();
     bindShapeStampPanel();
-    bindDxfImportPanel();
     bindPatternPiecesPanel();
     bindDxfMeasurePanel();
     el.styleOptionBtns.forEach((button) => {
@@ -19757,8 +19808,8 @@ const BOM_MATERIAL_LIBRARY = [
     // tool is active — see dxfMeasureOrGlobalUndo/Redo's own comment.
     el.undoBtn.addEventListener('click', () => dxfMeasureOrGlobalUndo());
     el.redoBtn.addEventListener('click', () => dxfMeasureOrGlobalRedo());
-    el.copyLineBtn.addEventListener('click', copySelectedAnnotation);
-    el.pasteLineBtn.addEventListener('click', pasteLineFromClipboard);
+    el.copyLineBtn.addEventListener('click', copySelectedLineOrGraphic);
+    el.pasteLineBtn.addEventListener('click', pasteFromClipboard);
     el.reflectLineBtn.addEventListener('click', reflectSelectedAnnotation);
     el.deleteBtn.addEventListener('click', deleteSelected);
     el.editPathBtn.addEventListener('click', () => bgEnterEdit(getSelectedBoardGraphic()));
@@ -20808,6 +20859,7 @@ const BOM_MATERIAL_LIBRARY = [
       // Auto-first so detection can run right away.
       state.appMode = (state.annotations.length > 0 || state.graphics.length > 0 || state.notes.length > 0) ? 'manual' : 'auto';
       state.autoMode = makeInitialAutoModeState();
+      state.autoSeam = { running: false, lastRun: null };
       state.hiddenAnnIds = [];
       state.hiddenDraftIds = [];
       // US-105: a reopened project never carries a measure session — it is
@@ -22116,6 +22168,7 @@ const BOM_MATERIAL_LIBRARY = [
       }
       if (typeof ensureAutoModeStatus === 'function') ensureAutoModeStatus();
     }
+    if (state.autoSeam?.lastRun?.sourceImageId === deletedId) state.autoSeam.lastRun = null;
     return true;
   }
 
@@ -22136,7 +22189,7 @@ const BOM_MATERIAL_LIBRARY = [
         deleteCurveAnchorAt(anchorAnn, anchor.index);
         state.selection.part = null;
         if (!anchorAnn.labelManual) anchorAnn.label = computeDefaultLabelPosition(anchorAnn);
-        if (isAutoDraft(anchorAnn)) markDraftTouchedByTD(anchorAnn);
+        if (isTDReviewDraft(anchorAnn)) markDraftTouchedByTD(anchorAnn);
         pushHistoryIfChanged();
         updateUI();
         requestRender();
@@ -22259,12 +22312,24 @@ const BOM_MATERIAL_LIBRARY = [
 // computeDefaultLabelPosition). Sibling files: annotation builders live in
 // src/manual/annotation-factory.js; label-collision nudging lives in
 // src/manual/label-layout.js; delete/clear lifecycle lives in
-// src/manual/annotation-lifecycle.js.
+// src/manual/annotation-lifecycle.js; the analogous shape clipboard
+// (copySelectedGraphic / pasteGraphicFromClipboard) lives in
+// src/manual/board-graphics.js. copySelectedLineOrGraphic and
+// pasteFromClipboard below are the single dispatchers every caller (the
+// keyboard router, the toolbar buttons, the Command Palette, and the native
+// paste event) goes through, so "last copy wins" is decided in one place —
+// see lastBoardClipboardKind.
 // Source part for app.js. Run `npm run build` after editing.
 
   // Module-scope clipboard — survives undo/redo and isn't snapshotted in
   // history. Paste always builds a fresh annotation off this template.
   let lineClipboard = null;
+  // Which internal clipboard (line or shape) was copied most recently. A
+  // plain shared flag rather than two independent "has a clipboard" checks,
+  // because a TD can copy a line, then copy a shape, then paste — paste must
+  // give the shape, not silently keep re-pasting the line. Shape-side writes
+  // live in board-graphics.js's copySelectedGraphic.
+  let lastBoardClipboardKind = null;
 
   function copySelectedAnnotation() {
     if (state.appMode === 'auto') return;
@@ -22274,6 +22339,7 @@ const BOM_MATERIAL_LIBRARY = [
       return;
     }
     lineClipboard = anns.map(clone);
+    lastBoardClipboardKind = 'annotation';
     // Claim the OS clipboard (best-effort) so a photo copied EARLIER no
     // longer shadows this line copy on paste: onPasteEvent pastes an OS
     // image when present, otherwise the internal line clipboard — writing
@@ -22462,6 +22528,24 @@ const BOM_MATERIAL_LIBRARY = [
 
   function hasLineClipboard() {
     return Array.isArray(lineClipboard) ? lineClipboard.length > 0 : lineClipboard != null;
+  }
+
+  // Dispatchers used by every copy/paste entry point (toolbar buttons,
+  // Command Palette, keyboard router, native paste event) so a selected
+  // shape and a selected line share the same Copy/Paste affordance instead
+  // of Copy silently doing nothing for a shape.
+  function copySelectedLineOrGraphic() {
+    if (state.selection.kind === 'graphic') copySelectedGraphic();
+    else copySelectedAnnotation();
+  }
+
+  function pasteFromClipboard() {
+    if (state.appMode === 'auto') return;
+    if (lastBoardClipboardKind === 'graphic' && hasGraphicClipboard()) {
+      pasteGraphicFromClipboard();
+      return;
+    }
+    pasteLineFromClipboard();
   }
 
   // ---- src/manual/selection.js ----
@@ -23196,7 +23280,7 @@ function setSelection(kind, id) {
     }
 
     if (state.tool === 'straight' || state.tool === 'curved') {
-      handleDrawToolClick(world);
+      handleDrawToolClick(world, !!e.shiftKey);
       return;
     }
 
@@ -23469,7 +23553,7 @@ function setSelection(kind, id) {
     }
 
     if (state.drawSession) {
-      state.drawSession.current = world;
+      updateDrawSessionPreview(world, !!e.shiftKey);
       requestRender();
     }
 
@@ -23543,7 +23627,7 @@ function setSelection(kind, id) {
         if (!a) continue;
         restoreAnnotationMoveGeometry(a, source);
         moveAnnotation(a, aligned.dx, aligned.dy);
-        if (isAutoDraft(a)) markDraftTouchedByTD(a);
+        if (isTDReviewDraft(a)) markDraftTouchedByTD(a);
       }
       state.smartAlignGuides = aligned.guides;
       interaction.smartAlignGuides = aligned.guides;
@@ -23652,10 +23736,16 @@ function setSelection(kind, id) {
       const off = interaction.grabOffset || { x: 0, y: 0 };
       const target = { x: world.x + off.x, y: world.y + off.y };
       if (!dragArmed(interaction, world)) return;
-      dragHandle(ann, interaction.part, target, interaction.prevWorld, e.altKey);
-      if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
+      // Smart Align has no other say over a single-endpoint drag — this is
+      // the one place a straight line's own end can snap onto where two
+      // OTHER lines cross (see computeSmartIntersectionSnapForHandle).
+      const snap = computeSmartIntersectionSnapForHandle(ann, interaction.part, target, e.altKey);
+      dragHandle(ann, interaction.part, snap.point, interaction.prevWorld, e.altKey);
+      if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
       interaction.changed = true;
-      interaction.prevWorld = target;
+      interaction.prevWorld = snap.point;
+      state.smartAlignGuides = snap.guide ? [snap.guide] : [];
+      interaction.smartAlignGuides = state.smartAlignGuides;
       refreshMeasuredValueForAnnotation(ann.id); // US-028: live Value cell
       requestRender();
       return;
@@ -24493,7 +24583,7 @@ function onWheel(e) {
     }
     state.selection.part = 'point' + index + '.point';
     if (!ann.labelManual) ann.label = computeDefaultLabelPosition(ann);
-    if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
+    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
     pushHistoryIfChanged();
     updateUI();
     requestRender();
@@ -24566,7 +24656,51 @@ function onWheel(e) {
     };
   }
 
-  function handleDrawToolClick(world) {
+  // Return the endpoint at the cursor's current radius, with its angle rounded
+  // to the nearest 45-degree increment around `start`. Keeping radius stable
+  // makes Shift an angle constraint, not an unexpected resize operation.
+  function constrainStraightEndpoint(start, current) {
+    const dx = current.x - start.x;
+    const dy = current.y - start.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 0.0001) return clonePoint(current);
+    const step = Math.PI / 4;
+    const angle = Math.round(Math.atan2(dy, dx) / step) * step;
+    return {
+      x: start.x + Math.cos(angle) * length,
+      y: start.y + Math.sin(angle) * length,
+    };
+  }
+
+  // Mouse movement is the common preview path for straight, curved, and
+  // extension sessions. Straight keeps the unconstrained cursor separately so
+  // a Shift key press/release can recompute the preview without another move.
+  function updateDrawSessionPreview(world, angleLocked) {
+    const session = state.drawSession;
+    if (!session) return;
+    if (session.type === 'straight') {
+      session.rawCurrent = clonePoint(world);
+      session.angleLocked = !!angleLocked;
+      session.current = session.angleLocked
+        ? constrainStraightEndpoint(session.start, session.rawCurrent)
+        : clonePoint(session.rawCurrent);
+      return;
+    }
+    session.current = world;
+  }
+
+  function refreshStraightDrawAngleLock(angleLocked) {
+    const session = state.drawSession;
+    if (!session || session.type !== 'straight' || !session.rawCurrent) return;
+    session.angleLocked = !!angleLocked;
+    session.current = session.angleLocked
+      ? constrainStraightEndpoint(session.start, session.rawCurrent)
+      : clonePoint(session.rawCurrent);
+    updateUI();
+    requestRender();
+  }
+
+  function handleDrawToolClick(world, angleLocked) {
     // Extension follow-up: a straight line was just committed and the tool is
     // offering an optional collinear dashed extension. A click within the axis
     // snap zone commits it as its own annotation (separate seq number); a click
@@ -24612,7 +24746,9 @@ function onWheel(e) {
         arrowType: state.arrowType,
         lineWidth: state.lineWidth,
         start: world,
-        current: world,
+        current: clonePoint(world),
+        rawCurrent: clonePoint(world),
+        angleLocked: !!angleLocked,
       };
       updateUI();
       requestRender();
@@ -24645,7 +24781,9 @@ function onWheel(e) {
     }
 
     const start = state.drawSession.start;
-    const end = world;
+    const end = angleLocked
+      ? constrainStraightEndpoint(state.drawSession.start, world)
+      : world;
     const drawSettings = state.drawSession;
     if (distance(start, end) < (4 / state.zoom)) {
       return;
@@ -24809,7 +24947,7 @@ function onWheel(e) {
     } else {
       moveAnnotation(ann, dx, dy);
     }
-    if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
+    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
     if (lineNudgeSession.timer) clearTimeout(lineNudgeSession.timer);
     lineNudgeSession.timer = setTimeout(flushLineNudgeSession, LINE_NUDGE_COMMIT_MS);
     refreshMeasuredValueForAnnotation(ann.id); // US-028: live Value cell
@@ -24848,7 +24986,7 @@ function onWheel(e) {
 // onKeyDown is the flat if-chain for every board shortcut (undo/redo,
 // save/open, arrow nudges, tool picks, board clears, exports, Escape); it
 // calls into selection.js, canvas-tools.js, line-nudge.js and the auto/
-// render/ clusters. onKeyUp only releases the space-pan modifier.
+// render/ clusters. onKeyUp releases continuous Space/Shift modifiers.
 
   function onKeyDown(e) {
     const target = e.target;
@@ -24921,6 +25059,14 @@ function onWheel(e) {
     // owns the screen. Global and page-navigation chords already ran through
     // the registry above; each non-Board page owns its own local key handling.
     if (state.activePage !== 'board') return;
+
+    // A modifier press does not move the pointer, so update the active Straight
+    // preview explicitly. Its raw cursor point is retained by canvas-tools.js;
+    // the second click uses the same constraint and therefore cannot disagree
+    // with what the TD just saw.
+    if (e.key === 'Shift' && state.appMode !== 'auto') {
+      refreshStraightDrawAngleLock(true);
+    }
 
     // U1: arrow keys nudge the selected Auto-Mode anchor by one source-image
     // pixel (Shift = 10) — the precise landing tool after a rough drag.
@@ -25000,13 +25146,15 @@ function onWheel(e) {
       return;
     }
 
-    // Copy for the selected line. Cmd/Ctrl-V is NOT intercepted here: the
-    // native paste event (onPasteEvent) decides between an OS-clipboard
-    // image and the internal line clipboard, so copying a photo after
-    // copying lines still pastes the photo.
-    if (isMeta && key === 'c' && state.selection.kind === 'annotation' && state.appMode !== 'auto') {
+    // Copy for the selected line or shape. Cmd/Ctrl-V is NOT intercepted
+    // here: the native paste event (onPasteEvent) decides between an
+    // OS-clipboard image and the internal board clipboard (line or shape,
+    // whichever was copied most recently), so copying a photo after
+    // copying a line/shape still pastes the photo.
+    if (isMeta && key === 'c' && state.appMode !== 'auto'
+        && (state.selection.kind === 'annotation' || state.selection.kind === 'graphic')) {
       e.preventDefault();
-      copySelectedAnnotation();
+      copySelectedLineOrGraphic();
       return;
     }
     if (!isMeta && key === 'm' && state.selection.kind === 'annotation' && state.appMode !== 'auto') {
@@ -25242,6 +25390,9 @@ function onWheel(e) {
   }
 
   function onKeyUp(e) {
+    if (e.key === 'Shift') {
+      refreshStraightDrawAngleLock(false);
+    }
     if (e.code === 'Space') {
       state.spacePan = false;
       document.body.classList.remove('space-pan');
@@ -25497,6 +25648,127 @@ function onWheel(e) {
 
   function toggleSketchMode() {
     return setSketchModeEnabled(!state.sketchMode, true);
+  }
+
+  // ---- src/manual/mindmap-mode.js ----
+// Mind Map: a fully separate, self-contained tool (vendor/mindmap.html,
+// embedded byte-for-byte in an <iframe>) reachable from a single
+// Manual-only toolbar button (#mindMapBtn, index.html). It shares no code
+// and no state with the measurement board — its own document, its own
+// localStorage namespace (`atlas.mindmap.*`) — and takes over the whole
+// viewport while open. The rest of the app is marked `inert` for the
+// duration so nothing behind the overlay is clickable or keyboard-reachable;
+// the only way out is the overlay's own Exit button, which always confirms
+// first via openMindMapExitDialog — the same "confirm before leaving" shape
+// as openAutoModeExitDialog (auto-exit-dialog.js), reused via the shared
+// buildDialog shell (dialogs/core.js).
+// Source part for app.js. Run `npm run build` after editing.
+
+  const MINDMAP_SRC = 'vendor/mindmap.html';
+
+  function openMindMap() {
+    if (document.getElementById('mindMapOverlay')) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'mindMapOverlay';
+    overlay.className = 'mindmap-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'Mind Map');
+
+    const bar = document.createElement('div');
+    bar.className = 'mindmap-overlay-bar';
+    const title = document.createElement('strong');
+    title.textContent = 'Mind Map';
+    const exitBtn = document.createElement('button');
+    exitBtn.type = 'button';
+    exitBtn.className = 'mindmap-exit-btn';
+    exitBtn.textContent = 'Exit Mind Map';
+    exitBtn.addEventListener('click', requestMindMapExit);
+    bar.appendChild(title);
+    bar.appendChild(exitBtn);
+
+    const frame = document.createElement('iframe');
+    frame.className = 'mindmap-overlay-frame';
+    frame.title = 'Mind Map';
+    frame.src = MINDMAP_SRC;
+
+    overlay.appendChild(bar);
+    overlay.appendChild(frame);
+    document.body.appendChild(overlay);
+
+    const appRoot = document.querySelector('.app');
+    if (appRoot) appRoot.inert = true;
+  }
+
+  function closeMindMap() {
+    const overlay = document.getElementById('mindMapOverlay');
+    if (overlay) overlay.remove();
+    const appRoot = document.querySelector('.app');
+    if (appRoot) appRoot.inert = false;
+  }
+
+  function requestMindMapExit() {
+    openMindMapExitDialog().then(shouldExit => {
+      if (shouldExit) closeMindMap();
+    });
+  }
+
+  // Stay/Exit prompt shown before leaving Mind Map. Mirrors
+  // openAutoModeExitDialog's settle-once-on-any-dismissal shape (Esc,
+  // backdrop click, or the dialog's own X all resolve the same as Stay) so
+  // every dismissal route funnels through one place and none of them can
+  // leave Mind Map without the TD explicitly choosing Exit.
+  function openMindMapExitDialog() {
+    const dialog = buildDialog({
+      title: 'Exit Mind Map?',
+      sub: 'It saves on its own — nothing is lost either way.',
+    });
+
+    const body = document.createElement('div');
+    body.className = 'dialog-body';
+    body.innerHTML = '<p>Returning to the measurement board closes this tool. ' +
+      'It is not part of the bra project and is unaffected by anything you do ' +
+      'on the board.</p>';
+    dialog.panel.appendChild(body);
+
+    const footer = document.createElement('div');
+    footer.className = 'picker-footer';
+    const spacer = document.createElement('span');
+    spacer.style.flex = '1';
+
+    const stayBtn = document.createElement('button');
+    stayBtn.type = 'button';
+    stayBtn.className = 'picker-btn';
+    stayBtn.textContent = 'Stay';
+
+    const exitBtn = document.createElement('button');
+    exitBtn.type = 'button';
+    exitBtn.className = 'picker-btn primary';
+    exitBtn.textContent = 'Exit Mind Map';
+
+    footer.appendChild(spacer);
+    footer.appendChild(stayBtn);
+    footer.appendChild(exitBtn);
+    dialog.panel.appendChild(footer);
+
+    return new Promise(resolve => {
+      let choice = false;
+      let settled = false;
+      const observer = new MutationObserver(() => {
+        if (!document.body.contains(dialog.overlay)) {
+          observer.disconnect();
+          if (settled) return;
+          settled = true;
+          resolve(choice);
+        }
+      });
+      observer.observe(document.body, { childList: true });
+      stayBtn.addEventListener('click', () => { choice = false; dialog.close(); });
+      exitBtn.addEventListener('click', () => { choice = true; dialog.close(); });
+      dialog.open();
+      stayBtn.focus();
+    });
   }
 
   // ---- src/manual/library-store.js ----
@@ -31072,9 +31344,13 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         toolText = 'Select – Click an image, line, or label to select. Use wheel to zoom, double-click to fit, or hold <span class="kbd">Space</span> to pan.';
       }
     } else if (state.tool === 'straight') {
-      toolText = state.drawSession
-        ? 'Straight Line – Click second point to finish.'
-        : 'Straight Line – Click first point.';
+      toolText = state.drawSession && state.drawSession.type === 'straight'
+        ? (state.drawSession.angleLocked
+            ? 'Straight Line – Angle locked in 45° steps; click second point to finish.'
+            : 'Straight Line – Click second point to finish; hold <span class="kbd">Shift</span> to lock to 45° steps.')
+        : (state.drawSession
+            ? 'Straight Line – Click second point to finish.'
+            : 'Straight Line – Click first point; hold <span class="kbd">Shift</span> to lock to 45° steps.');
     } else if (state.tool === 'curved') {
       toolText = !state.drawSession
         ? 'Curved Line – Click the start point.'
@@ -31143,9 +31419,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     el.countStatus.innerHTML = '<strong>Images:</strong> ' + imageCount + ' &nbsp;•&nbsp; <strong>Annotations:</strong> ' + annotationCount + ' &nbsp;•&nbsp; <strong>Graphics:</strong> ' + (state.graphics || []).length;
     el.deleteBtn.disabled = !(selectedAnnotation || selectedNote || selectedGraphic || (selectedImage && !selectedImage.locked));
     const lineActionsEnabled = state.appMode !== 'auto';
-    el.copyLineBtn.disabled = !(selectedAnnotation && lineActionsEnabled);
+    el.copyLineBtn.disabled = !((selectedAnnotation || selectedGraphic) && lineActionsEnabled);
     el.reflectLineBtn.disabled = !(selectedAnnotation && lineActionsEnabled);
-    el.pasteLineBtn.disabled = !(hasLineClipboard() && lineActionsEnabled);
+    el.pasteLineBtn.disabled = !((hasLineClipboard() || hasGraphicClipboard()) && lineActionsEnabled);
     el.saveProjectBtn.disabled = annotationCount === 0 && imageCount === 0 && (state.graphics || []).length === 0 && (state.notes || []).length === 0;
     el.clearBtn.disabled = annotationCount === 0;
     el.fitBtn.disabled = imageCount === 0;
@@ -31487,13 +31763,15 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       }
       return;
     }
-    // No image on the OS clipboard — fall back to the internal line
-    // clipboard. copySelectedAnnotation claims the OS clipboard with a text
-    // marker, so whichever was copied LAST wins here, like a real clipboard.
-    // Never hijack a paste aimed at a text field.
-    if (inField || state.appMode === 'auto' || !hasLineClipboard()) return;
+    // No image on the OS clipboard — fall back to the internal board
+    // clipboard (a copied line or a copied shape). copySelectedAnnotation /
+    // copySelectedGraphic both claim the OS clipboard with a text marker, so
+    // whichever was copied LAST wins here, like a real clipboard; between
+    // the two internal ones, pasteFromClipboard reads lastBoardClipboardKind
+    // to decide. Never hijack a paste aimed at a text field.
+    if (inField || state.appMode === 'auto' || (!hasLineClipboard() && !hasGraphicClipboard())) return;
     e.preventDefault();
-    pasteLineFromClipboard();
+    pasteFromClipboard();
   }
 
   async function addImagesFromDataURLs(dataURLs) {
@@ -37580,6 +37858,12 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       sideLeftCol, sideRightCol, sideLeftX, sideRightX,
       apexLeft, apexRight,
       hemNormAtColumn,
+      // Independent corroboration for `cradleRow` from POM 6's own CF-axis
+      // seam checks: true when findCradleCfTop confirmed a real
+      // seam AT this exact row via its 'direct' or 'dip' tier — both anchor
+      // on `cradleRow` itself (only the row-agnostic 'junction' tier does
+      // not, so it is excluded). See the ARC_MIN_CF_CLEARANCE use below.
+      cradleRowConfirmedAtCf,
     } = ctx;
 
     // ---- Cradle-at-bottom-cup (POM 7 endpoints) ----
@@ -38037,7 +38321,24 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     //
     // Scoped to the arc tier on purpose — it is the last-resort, review-flagged
     // tier (ADR 0022); the seam tiers carry their own validation.
+    //
+    // The floor has two settings. `cradleY`'s OWN reliability varies:
+    // on a genuine neckline mis-lock (the "EvelynBliss vA 1.0" case this floor
+    // was calibrated against) `cradleRow` collapsed onto a spurious peak near
+    // the chest, so a shallow clearance is exactly the mislock signature. But
+    // when POM 6's independent CF-axis seam check (`cradleRowConfirmedAtCf`)
+    // already proved real seam ink sits AT this row — a check that looks at
+    // ink continuity and baseline projection, nothing to do with clearance —
+    // a shallow clearance is no longer suspicious: it just means this style's
+    // cup bottom genuinely sits close to CF (e.g. a narrow/plunge cup), and
+    // the corroborated case measured empirically at 26% ("EvelynBliss vA 2.0",
+    // same sketch family, real cradleRow with strong ink/baseline evidence and
+    // a high-confidence POM 6 direct-tier match) should draw for TD review
+    // instead of silently dropping POM 7 entirely.
     const ARC_MIN_CF_CLEARANCE = 1 / 3;
+    const ARC_MIN_CF_CLEARANCE_CONFIRMED = 1 / 5;
+    const arcClearanceFloor = cradleRowConfirmedAtCf
+      ? ARC_MIN_CF_CLEARANCE_CONFIRMED : ARC_MIN_CF_CLEARANCE;
     if (!cradleCupTop && cradleY != null && bandY != null) {
       let arcClearanceReject = null;
       for (const side of [+1, -1]) {
@@ -38056,7 +38357,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
             && arc.bottomY > apexPoint.y + 0.08
             && arc.bottomY >= cradleY - 0.05
             && arc.bottomY < bandY - 0.01
-            && arcCfClearance >= ARC_MIN_CF_CLEARANCE) {
+            && arcCfClearance >= arcClearanceFloor) {
           cradleCupTop = { x: arc.bottomX, y: arc.bottomY };
           // Hem-following bottom, same rule as the seam/strong tier (US-061).
           cradleCupBottom = { x: arc.bottomX, y: hemNormAtColumn(arc.bottomX * w, bandY) };
@@ -38067,11 +38368,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           break;
         }
         if (arc && arc.bottomX != null
-            && arcCfClearance < ARC_MIN_CF_CLEARANCE
+            && arcCfClearance < arcClearanceFloor
             && !arcClearanceReject) {
           arcClearanceReject = 'traced cup-bottom arc rejected: bottoms out '
             + Math.round(arcCfClearance * 100) + '% of the way from CF to the side seam, '
-            + 'inside the ' + Math.round(ARC_MIN_CF_CLEARANCE * 100)
+            + 'inside the ' + Math.round(arcClearanceFloor * 100)
             + '% cup-base floor (reads as the neckline curve, not a cup bottom)';
         }
       }
@@ -38643,6 +38944,12 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // ---- Cradle-at-bottom-cup (POM 7 endpoints) ----
     // See src/auto/detect/pom7-cradle-cup.js for the full contract, the
     // strong / seam / dashed-guide / arc tiers and their tuned thresholds.
+    // cradleRowConfirmedAtCf: POM 6 already ran above and, via its
+    // 'direct' or 'dip' tier, independently confirmed real seam ink AT this
+    // same `cradleRow` (its 'junction' tier finds a different row and is
+    // excluded). POM 7's arc tier uses this to relax its CF-clearance floor —
+    // see pom7-cradle-cup.js for why.
+    const cradleRowConfirmedAtCf = !!cradleCfTop && !cradleCfTopJunction;
     const {
       cradleCupTop,
       cradleCupBottom,
@@ -38665,6 +38972,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       sideLeftCol, sideRightCol, sideLeftX, sideRightX,
       apexLeft, apexRight,
       hemNormAtColumn,
+      cradleRowConfirmedAtCf,
     });
 
     _stageMark('frontInkEndpoints');
@@ -43081,7 +43389,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // -------- TD review actions on drafts --------
 
   function markDraftTouchedByTD(ann) {
-    if (!isAutoDraft(ann)) return;
+    if (!isTDReviewDraft(ann)) return;
     const wasEdited = !!ann.tdEdited;
     ann.tdEdited = true;
     ann.tdApprovalRequired = true;
@@ -43415,6 +43723,2268 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 
   function isFinitePoint(p) {
     return !!(p && Number.isFinite(p.x) && Number.isFinite(p.y));
+  }
+
+  // ---- src/auto/seam/contract.js ----
+// Auto Detect Seam Candidate V2/V3 shared contract. V2 remains authoritative
+// for product photos; V3 separates visible appearance from stitch meaning for
+// technical flats.
+// Source part for app.js. Run npm run build after editing.
+
+  function autoSeamPhotoOutputZones() {
+    return ['underbust_band', 'neckline', 'armhole'];
+  }
+
+  function autoSeamTechnicalFlatOutputZones() {
+    return ['shoulder_strap', 'neckline', 'armhole', 'cup_edge', 'cup_seam', 'underbust_band', 'side_seam'];
+  }
+
+  function autoSeamOutputZones(lane = 'product_photo') {
+    return lane === 'technical_flat' ? autoSeamTechnicalFlatOutputZones() : autoSeamPhotoOutputZones();
+  }
+
+  function autoSeamClamp01(value) {
+    return Math.max(0, Math.min(1, value));
+  }
+
+  function autoSeamUnitPoint(point) {
+    return !!point && Number.isFinite(point.x) && point.x >= 0 && point.x <= 1
+      && Number.isFinite(point.y) && point.y >= 0 && point.y <= 1;
+  }
+
+  function autoSeamGeometryIsValid(geometry) {
+    return !!geometry
+      && [geometry.start, geometry.control1, geometry.control2, geometry.end].every(autoSeamUnitPoint)
+      && Array.isArray(geometry.points) && geometry.points.length <= 8
+      && geometry.points.every(point => point
+        && [point.point, point.handleIn, point.handleOut].every(autoSeamUnitPoint));
+  }
+
+  function autoSeamRoiTransform(model, polygon) {
+    const xs = polygon.map(point => point.x);
+    const ys = polygon.map(point => point.y);
+    const padding = 0.006;
+    const left = autoSeamClamp01(Math.min(...xs) - padding);
+    const right = autoSeamClamp01(Math.max(...xs) + padding);
+    const top = autoSeamClamp01(Math.min(...ys) - padding);
+    const bottom = autoSeamClamp01(Math.max(...ys) + padding);
+    const sourceRect = {
+      x: left * model.naturalWidth,
+      y: top * model.naturalHeight,
+      width: Math.max(1, (right - left) * model.naturalWidth),
+      height: Math.max(1, (bottom - top) * model.naturalHeight),
+    };
+    const scaleX = model.width / model.naturalWidth;
+    const scaleY = model.height / model.naturalHeight;
+    return {
+      sourceSize: { width: model.naturalWidth, height: model.naturalHeight },
+      analysisSize: { width: model.width, height: model.height },
+      sourceRect,
+      analysisRect: {
+        x: sourceRect.x * scaleX,
+        y: sourceRect.y * scaleY,
+        width: sourceRect.width * scaleX,
+        height: sourceRect.height * scaleY,
+      },
+      sourceToAnalysis: { scaleX, scaleY, offsetX: 0, offsetY: 0 },
+      analysisToSource: { scaleX: 1 / scaleX, scaleY: 1 / scaleY, offsetX: 0, offsetY: 0 },
+      roundTripMaxErrorPx: 0,
+    };
+  }
+
+  function autoSeamTransformIsValid(transform) {
+    if (!transform || !transform.sourceSize || !transform.analysisSize
+        || !transform.sourceRect || !transform.analysisRect
+        || !transform.sourceToAnalysis || !transform.analysisToSource) return false;
+    const finitePositive = value => Number.isFinite(value) && value > 0;
+    if (![transform.sourceSize.width, transform.sourceSize.height,
+      transform.analysisSize.width, transform.analysisSize.height,
+      transform.sourceRect.width, transform.sourceRect.height,
+      transform.analysisRect.width, transform.analysisRect.height].every(finitePositive)) return false;
+    if (!Number.isFinite(transform.roundTripMaxErrorPx) || transform.roundTripMaxErrorPx > 0.01) return false;
+    const x = transform.sourceRect.x + transform.sourceRect.width * 0.37;
+    const y = transform.sourceRect.y + transform.sourceRect.height * 0.61;
+    const ax = x * transform.sourceToAnalysis.scaleX + transform.sourceToAnalysis.offsetX;
+    const ay = y * transform.sourceToAnalysis.scaleY + transform.sourceToAnalysis.offsetY;
+    const sx = ax * transform.analysisToSource.scaleX + transform.analysisToSource.offsetX;
+    const sy = ay * transform.analysisToSource.scaleY + transform.analysisToSource.offsetY;
+    return Math.hypot(sx - x, sy - y) <= 0.01;
+  }
+
+  function validateAutoSeamResult(result) {
+    const candidateV2 = result?.contractVersion === 'photo-stitch-candidate/2';
+    const candidateV3 = result?.contractVersion === 'auto-seam-candidate/3';
+    if (!candidateV2 && !candidateV3) throw new Error('invalid Auto Seam contract version');
+    if (candidateV3 && result.analysisLane !== 'technical_flat') {
+      throw new Error('Candidate V3 is limited to the technical-flat lane');
+    }
+    if (!['product_photo', 'technical_flat', 'unknown'].includes(result.inputClass?.value)
+        || !result.inputClass.ruleId || !result.inputClass.features) {
+      throw new Error('invalid deterministic Auto Seam input classification');
+    }
+    if (result.analysisLane !== result.inputClass.value) throw new Error('input class and analysis lane disagree');
+    if (!Array.isArray(result.automaticRois) || !Array.isArray(result.candidates) || !Array.isArray(result.abstentions)) {
+      throw new Error('Auto Seam result arrays are missing');
+    }
+    const laneZones = new Set(autoSeamOutputZones(result.analysisLane));
+    const roiIds = new Set();
+    result.automaticRois.forEach(roi => {
+      if (!roi.id || roiIds.has(roi.id)) throw new Error('duplicate or missing Automatic ROI id');
+      roiIds.add(roi.id);
+      if (!laneZones.has(roi.zone) || !['left', 'right', 'bilateral'].includes(roi.side)) {
+        throw new Error('unsupported Automatic ROI identity');
+      }
+      if (!Array.isArray(roi.polygon) || roi.polygon.length < 4 || roi.polygon.length > 12
+          || !roi.polygon.every(autoSeamUnitPoint) || !autoSeamTransformIsValid(roi.transform)) {
+        throw new Error(`invalid Automatic ROI ${roi.id}`);
+      }
+    });
+    if (result.inputEligible && result.analysisLane !== 'unknown'
+        && result.automaticRois.length !== autoSeamOutputZones(result.analysisLane).length * 2) {
+      throw new Error('eligible input must contain the complete lane-specific Automatic ROI set');
+    }
+    const candidateIds = new Set();
+    result.candidates.forEach(candidate => {
+      if (!candidate.id || candidateIds.has(candidate.id)) throw new Error('duplicate or missing candidate id');
+      candidateIds.add(candidate.id);
+      if (!['left', 'right', 'bilateral'].includes(candidate.side)) {
+        throw new Error('candidate has an unsupported side');
+      }
+      if (candidateV2 && candidate.stitchType !== 'zigzag') {
+        throw new Error('Candidate V2 exceeds Zigzag output authority');
+      }
+      if (candidateV3) {
+        const appearances = ['solid_plain', 'single_dashed', 'parallel_dashed', 'zigzag'];
+        const stitchTypes = ['plain', 'single_needle', 'double_needle', 'cover_stitch', 'zigzag', null];
+        if (!appearances.includes(candidate.appearanceType)
+            || !stitchTypes.includes(candidate.stitchType)
+            || !['resolved', 'unresolved'].includes(candidate.classificationStatus)) {
+          throw new Error('Candidate V3 has an invalid appearance/classification state');
+        }
+        if ((candidate.classificationStatus === 'unresolved') !== (candidate.stitchType === null)) {
+          throw new Error('Candidate V3 unresolved classification must keep stitchType null');
+        }
+        if ((candidate.appearanceType === 'zigzag' && candidate.stitchType !== 'zigzag')
+            || (candidate.appearanceType === 'solid_plain' && candidate.stitchType !== 'plain')
+            || (['single_dashed', 'parallel_dashed'].includes(candidate.appearanceType)
+              && candidate.classificationStatus !== 'unresolved')) {
+          throw new Error('Candidate V3 appearance exceeds stitch classification authority');
+        }
+      }
+      const resolved = candidate.zoneStatus === 'resolved';
+      if ((resolved && !laneZones.has(candidate.semanticZone))
+          || (!resolved && !(candidate.zoneStatus === 'unresolved' && candidate.semanticZone === null))) {
+        throw new Error('invalid candidate semantic-zone state');
+      }
+      if (!candidate.reviewRequired || candidate.evidenceStatus !== 'observed') {
+        throw new Error('candidate is missing review/evidence state');
+      }
+      if (!autoSeamGeometryIsValid(candidate.rawGeometry) || !autoSeamGeometryIsValid(candidate.geometry)) {
+        throw new Error(`invalid candidate geometry ${candidate.id}`);
+      }
+      if (!candidate.roiId || !roiIds.has(candidate.roiId) || !autoSeamTransformIsValid(candidate.roiTransform)) {
+        throw new Error(`candidate ${candidate.id} is missing ROI provenance`);
+      }
+      if (!Array.isArray(candidate.evidenceProvenance) || candidate.evidenceProvenance.length < 2
+          || candidate.evidenceProvenance.some(pass => !pass.passId || pass.source !== 'source_pixels'
+            || !['pass', 'support'].includes(pass.status))) {
+        throw new Error('candidate is missing explicit source-pixel pass provenance');
+      }
+      if (!candidate.confidence || Object.values(candidate.confidence).some(value =>
+        !Number.isFinite(value) || value < 0 || value > 1)) {
+        throw new Error('candidate is missing bounded evidence confidence');
+      }
+      if (!candidate.symmetryResult || !['corroborated', 'independent', 'unavailable', 'copied'].includes(candidate.symmetryResult.status)) {
+        throw new Error('candidate has an invalid symmetry evidence state');
+      }
+      if (candidate.symmetryResult.status === 'corroborated'
+          && !result.candidates.some(item => item.id === candidate.symmetryResult.counterpartCandidateId
+            && item.id !== candidate.id)) {
+        throw new Error('candidate symmetry counterpart is unavailable');
+      }
+    });
+    result.abstentions.forEach(abstention => {
+      if (!abstention || !['image', 'zone'].includes(abstention.scope) || !abstention.code || !abstention.reason) {
+        throw new Error('invalid abstention record');
+      }
+      if (abstention.scope === 'zone'
+          && (!laneZones.has(abstention.zone) || !['left', 'right', 'bilateral'].includes(abstention.side))) {
+        throw new Error('invalid zone abstention identity');
+      }
+    });
+    if (!result.inputEligible && result.candidates.length) throw new Error('ineligible input cannot produce a candidate');
+    return true;
+  }
+
+  // ---- src/auto/seam/thresholds.js ----
+// US-109 Auto Seam — every number a lane DECIDES with, named and placed next
+// to the corpus measurement that set it. TBC — TD calibrated: a calibration
+// pass edits THIS file only. Feature DEFINITIONS are deliberately not here —
+// the corridor's search radius, penalty weights, diagonal-ratio cut and
+// evidence weights (corridor.js), and the pixel model's background/mask/box
+// parameters (pixel-model.js) define what a feature means; changing them
+// changes the feature, not the decision. Read only inside functions (never at
+// load time), so part order does not matter for this `const`.
+// Source part for app.js.
+const AUTO_SEAM_THRESHOLDS = {
+  classifier: {
+    // A technical flat is sparse high-contrast ink on a white field.
+    sparseInk: { nearWhiteMin: 0.72, lumaEntropyMax: 2.2, strongEdgeMin: 0.025, darkInkMin: 0.018, darkInkMax: 0.22 },
+    // measured 2026-09-02: dominant 5-bit foreground colour share 0.525 on the
+    // colour-filled flat image2.png vs <= 0.116 on all six product photos and
+    // <= 0.08 on line flats; crisp-edge density 0.076 vs <= 0.035 on photos.
+    flatFill: { nearWhiteMin: 0.30, dominantColourMin: 0.35, strongEdgeMin: 0.05 },
+    productPhoto: { foregroundMin: 0.055, foregroundMax: 0.78 },
+  },
+  technicalFlat: {
+    // Phase 1 non-zigzag appearance gates. All measurements are taken along a
+    // source-supported path inside one Semantic ROI. These are intentionally
+    // conservative until the TD-labelled technical-flat corpus is large
+    // enough to calibrate release precision/recall.
+    pattern: {
+      inkCutBelowBackground: 55,
+      normalRadius: 0.022,
+      minimumRadius: 8,
+      pathSupport: 0.40,
+      continuity: 0.55,
+      solid: { occupancy: 0.88 },
+      dashed: {
+        occupancyMin: 0.22,
+        occupancyMax: 0.78,
+        runCount: 4,
+        medianRunMin: 2,
+        medianGapMin: 1,
+        periodicity: 0.40,
+      },
+      // A 3 px source stroke plus the 1 px anti-alias neighbourhood can expose
+      // two dark edge sequences 4–5 px apart; require 7 px so one line cannot
+      // masquerade as a pair.
+      parallel: { spacingMin: 7, spacingMax: 18, alignmentMin: 0.42 },
+    },
+    // Contour-derived seeds (neckline from the top ink profile, underbust from
+    // the bottom one). Proportions of the garment box.
+    contour: {
+      strapCeiling: 0.10,     // topmost ink above this is strap/shoulder, not neckline
+      hemFloor: 0.12,         // bottom-most ink below this is the hem
+      // measured: bindings 17–24 px inside the outline on 3 real flats = 1.8–2.5% of box height
+      bindingInset: 0.025,
+      innerStart: 0.12,       // neckline walk starts this far from the axis (skips center decorations)
+      minSpan: 0.12,          // a side shorter than this is not a neckline/hem
+      // Keep the top-contour trace off steep strap edges; when a neckline is
+      // visibly occluded by that edge, walk the lower overlap outline separately
+      // so display geometry includes the steep binding flank without treating it
+      // as reliable triangle-wave evidence.
+      junctionSlopeMax: 3.0,
+      junctionInset: 0.02,    // start this far inside the detected strap junction
+      overlapJunctionX: 0.19,
+      overlapJunctionY: 0.35,
+      overlapMinXGap: 0.10,
+      overlapTraceRise: 0.004,
+      overlapTraceFall: 0.018,
+      hemStartInBox: 0.05,    // template hem start (x), nudged inward until the column reads as hem
+      hemOuterMargin: 0.03,
+    },
+    // Edge band: the strip just inside a garment edge, per image column.
+    edgeBand: {
+      lo: 0.005,                    // skip the outline stroke
+      hi: 0.055,                    // real bindings 1.8–2.5%; synthetic drawn at 2.7%; deeper changes nothing where a nearer structure exists
+      inkCutBelowBackground: 55,    // crisp ink = luma <= bgLuma - 55 (anti-aliasing must not widen strokes)
+      steepSlope: 1.2,              // column scanning unreliable past ~50° (photo4 junction flank: 68-column run of bandTop=lo)
+      evaluateFrom: 0.20, evaluateTo: 0.95,  // stats over the middle of each side, away from junction and center front
+      flatRunMin: 4,                // a zero-step run at least this long is an arc top or a straight line, never a zigzag apex
+      smoothStepMax: 3,             // |step| <= 3 px counts as a smooth step
+      maxFlatRunNormalizer: 64,     // contourBindingMaxFlatRun = min(1, run / 64) so it stays in [0,1] for the validator
+      geometryWindow: 7,            // moving median half-window on the envelope
+      geometryHalfStroke: 1.5,      // envelope (first ink) + half a stroke = centerline
+      // measured 2026-09-02, per side: zigzag (photo4/image5 necklines) flips .27/.23,
+      // flatRun>=4 share .00, longest run 2–3, smooth .71–.79; scallop (image5 hem)
+      // flips .25–.31 but flatRun share .10–.17 and longest run 9–10; plain (image3
+      // neckline) flips .94/.95; single-line hems ink share .39–.46.
+      gate: { evaluableMin: 0.40, inkMin: 0.80, flipMax: 0.45, flatRunShareMax: 0.06, maxFlatRunMax: 6, smoothMin: 0.50 },
+    },
+    gates: {
+      // Edge-seeded zones: the band decides; these are sanity floors. Balance alone
+      // rejects a plain outline (0.22–0.35, e.g. image2's filled armholes).
+      edgeSeeded: { pathSupport: 0.45, continuity: 0.60, diagonalEnergy: 0.18, balance: 0.55 },
+      // Template-seeded fallback when the top contour could not be read.
+      templateNeckline: { pathSupport: 0.60, continuity: 0.80, diagonalEnergy: 0.20, diagonalAlternation: 0.42, balance: 0.55 },
+      // measured: center-straddling armhole bindings 0.87–0.97 balance (image5,
+      // synthetic), while plain image3 outlines stay at 0.29–0.35. The true
+      // photo4 bindings are one-sided and are handled by armholeEdge below.
+      armhole: { pathSupport: 0.45, continuity: 0.80, diagonalEnergy: 0.18, diagonalAlternation: 0.45, balance: 0.70 },
+      // Edge-only armhole bindings are one-sided, so balance is intentionally
+      // weak here. photo4's true zigzags have lateral activity .464/.557,
+      // diagonal energy .316/.356 and two-sided coverage .041/.041; image3's
+      // plain armholes stay at activity .309/.320 and energy .194/.261, while
+      // image2's filled outlines have two-sided coverage .959/1.0.
+      armholeEdge: { pathSupport: 0.45, continuity: 0.80, diagonalEnergy: 0.30, diagonalAlternation: 0.45, balance: 0.28, lateralActivity: 0.45, twoSidedMax: 0.10 },
+      // measured: true straps 0.485/0.546 pathSupport vs a plain-line false positive at 0.557 —
+      // corridorTwoSidedCoverage separates them (straps < 0.10, false positive 0.35).
+      templateDefault: { pathSupport: 0.45, continuity: 0.80, diagonalEnergy: 0.18, diagonalAlternation: 0.58, balance: 0.55, twoSidedMax: 0.15 },
+    },
+  },
+  productPhoto: {
+    // Adaptive proposal gate, not a release/accuracy threshold.
+    adaptive: { overallMin: 0.40, continuityMin: 0.48, diagonalEnergyMin: 0.24, diagonalAlternationMin: 0.34 },
+    zone: {
+      underbust_band: { diagonalShare: 0.50, balance: 0.55, twoSided: 0.75, diagonalAlternation: 0.45, overall: 0.65 },
+      // Armhole stitches in the approved pilot are blurred by binding texture: dense
+      // bilateral coverage with strongly balanced diagonal directions, weaker raw share.
+      armhole: { diagonalShare: 0.28, balance: 0.85, twoSided: 0.85, diagonalAlternation: 0.40, overall: 0.55 },
+      // The TD-confirmed neckline binding is visibly blurred: balanced, continuous
+      // corridor evidence but LOW pointwise diagonal energy; crisp decorative motifs
+      // in the negative photos score much higher energy and are excluded by the cap.
+      neckline: { overall: 0.50, continuity: 0.60, diagonalEnergyMin: 0.08, diagonalEnergyMax: 0.22, diagonalAlternation: 0.48, diagonalShare: 0.40, balance: 0.55 },
+    },
+    // Underbust is judged as one bilateral construction row.
+    pair: { underbust_band: { diagonalShare: 0.55, balance: 0.55, twoSided: 0.80, overallAverage: 0.70 } },
+    underbustCenterClearance: 0.035,  // of box width, either side of the center closure
+  },
+};
+
+  // ---- src/auto/seam/pixel-model.js ----
+// US-109 Auto Seam — pixel model shared by both lanes: background estimate,
+// foreground mask, luma, gradients, the quantized foreground colour
+// histogram the input classifier reads, garment eligibility (coverage, box,
+// trusted center axis), and the small point/sampling helpers built on it.
+// Pure: image in, plain objects out. Source part for app.js.
+
+  function autoSeamQuantileFromHistogram(histogram, total, quantile) {
+    const target = Math.max(0, Math.min(total - 1, Math.floor(total * quantile)));
+    let seen = 0;
+    for (let index = 0; index < histogram.length; index += 1) {
+      seen += histogram[index];
+      if (seen > target) return index;
+    }
+    return histogram.length - 1;
+  }
+
+  function autoSeamPercentile(values, fraction) {
+    if (!values.length) return 0;
+    const sorted = values.slice().sort((a, b) => a - b);
+    return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
+  }
+
+  function autoSeamPixelModel(sourceImage, maxDimension = 640) {
+    const img = sourceImage && sourceImage.img;
+    if (!img) throw new Error('source image is not decoded');
+    const naturalWidth = img.naturalWidth || img.width;
+    const naturalHeight = img.naturalHeight || img.height;
+    if (!(naturalWidth > 0 && naturalHeight > 0)) throw new Error('source image has no usable dimensions');
+    const scale = Math.min(1, maxDimension / Math.max(naturalWidth, naturalHeight));
+    const width = Math.max(48, Math.round(naturalWidth * scale));
+    const height = Math.max(48, Math.round(naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.drawImage(img, 0, 0, width, height);
+    const rgba = context.getImageData(0, 0, width, height).data;
+    const luma = new Float32Array(width * height);
+
+    const corner = Math.max(3, Math.round(Math.min(width, height) * 0.045));
+    const cornerSamples = [];
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (!((x < corner || x >= width - corner) && (y < corner || y >= height - corner))) continue;
+        const offset = (y * width + x) * 4;
+        cornerSamples.push([rgba[offset], rgba[offset + 1], rgba[offset + 2]]);
+      }
+    }
+    const bg = [0, 1, 2].map(channel => cornerSamples.reduce((sum, rgb) => sum + rgb[channel], 0) / Math.max(1, cornerSamples.length));
+    const bgLuma = 0.2126 * bg[0] + 0.7152 * bg[1] + 0.0722 * bg[2];
+    const backgroundSpread = Math.sqrt(cornerSamples.reduce((sum, rgb) => {
+      const dr = rgb[0] - bg[0], dg = rgb[1] - bg[1], db = rgb[2] - bg[2];
+      return sum + (dr * dr + dg * dg + db * db) / 3;
+    }, 0) / Math.max(1, cornerSamples.length));
+    const distanceThreshold = Math.max(26, Math.min(72, backgroundSpread * 3.2));
+
+    const mask = new Uint8Array(width * height);
+    const xHist = new Uint32Array(width);
+    const yHist = new Uint32Array(height);
+    // Quantized (5 bits/channel) colour histogram of the foreground. A vector
+    // fill lands almost entirely in one bin; photographed fabric never does.
+    const colourHistogram = new Uint32Array(32768);
+    let maskCount = 0;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const index = y * width + x;
+        const offset = index * 4;
+        const r = rgba[offset], g = rgba[offset + 1], b = rgba[offset + 2];
+        const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        luma[index] = lum;
+        const dr = r - bg[0], dg = g - bg[1], db = b - bg[2];
+        const distanceFromBackground = Math.sqrt((dr * dr + dg * dg + db * db) / 3);
+        const foreground = distanceFromBackground > distanceThreshold
+          || (bgLuma > 215 && lum < bgLuma - 34);
+        if (!foreground) continue;
+        mask[index] = 1;
+        xHist[x] += 1;
+        yHist[y] += 1;
+        maskCount += 1;
+        colourHistogram[((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)] += 1;
+      }
+    }
+    let dominantColourCount = 0;
+    for (let bin = 0; bin < colourHistogram.length; bin += 1) {
+      if (colourHistogram[bin] > dominantColourCount) dominantColourCount = colourHistogram[bin];
+    }
+    const dominantForegroundColourShare = maskCount ? dominantColourCount / maskCount : 0;
+
+    const gradient = new Float32Array(width * height);
+    const gradientX = new Float32Array(width * height);
+    const gradientY = new Float32Array(width * height);
+    const garmentGradients = [];
+    for (let y = 1; y < height - 1; y += 1) {
+      for (let x = 1; x < width - 1; x += 1) {
+        const index = y * width + x;
+        const gx = luma[index + 1] - luma[index - 1];
+        const gy = luma[index + width] - luma[index - width];
+        const magnitude = Math.hypot(gx, gy);
+        gradientX[index] = gx;
+        gradientY[index] = gy;
+        gradient[index] = magnitude;
+        if (mask[index] && (x + y) % 3 === 0) garmentGradients.push(magnitude);
+      }
+    }
+    return { naturalWidth, naturalHeight, width, height, luma, gradient, gradientX, gradientY, mask, maskCount, xHist, yHist, bgLuma, backgroundSpread, garmentGradients, dominantForegroundColourShare };
+  }
+
+  function autoSeamEligibility(model, options = {}) {
+    const { width, height, maskCount, xHist, yHist } = model;
+    const coverage = maskCount / (width * height);
+    const minimumCoverage = options.minimumCoverage ?? 0.055;
+    if (coverage < minimumCoverage) return { eligible: false, code: 'insufficient_garment_mask', coverage };
+    if (coverage > 0.78) return { eligible: false, code: 'background_not_separable', coverage };
+    const left = autoSeamQuantileFromHistogram(xHist, maskCount, 0.015);
+    const right = autoSeamQuantileFromHistogram(xHist, maskCount, 0.985);
+    const top = autoSeamQuantileFromHistogram(yHist, maskCount, 0.015);
+    const bottom = autoSeamQuantileFromHistogram(yHist, maskCount, 0.985);
+    const boxWidth = right - left;
+    const boxHeight = bottom - top;
+    if (boxWidth < width * 0.36 || boxHeight < height * 0.28) {
+      return { eligible: false, code: 'materially_cropped_or_incomplete', coverage };
+    }
+
+    const lowerStart = Math.round(top + boxHeight * 0.42);
+    const lowerEnd = Math.min(height, Math.round(top + boxHeight * 0.88));
+    let weightedX = 0, weightedCount = 0;
+    for (let y = lowerStart; y < lowerEnd; y += 1) {
+      for (let x = left; x <= right; x += 1) {
+        if (!model.mask[y * width + x]) continue;
+        weightedX += x;
+        weightedCount += 1;
+      }
+    }
+    const boxCenter = (left + right) / 2;
+    const axis = weightedCount ? boxCenter * 0.65 + (weightedX / weightedCount) * 0.35 : boxCenter;
+    let leftMass = 0, rightMass = 0;
+    for (let y = top; y <= bottom; y += 1) {
+      for (let x = left; x <= right; x += 1) {
+        if (!model.mask[y * width + x]) continue;
+        if (x < axis) leftMass += 1;
+        else rightMass += 1;
+      }
+    }
+    const symmetryRatio = Math.max(leftMass, rightMass) / Math.max(1, Math.min(leftMass, rightMass));
+    if (axis / width < 0.34 || axis / width > 0.66 || symmetryRatio > 2.6) {
+      return { eligible: false, code: 'untrusted_center_axis_or_oblique_view', coverage, symmetryRatio };
+    }
+    return {
+      eligible: true,
+      coverage,
+      symmetryRatio,
+      centerAxisX: axis / width,
+      bounds: { left: left / width, right: right / width, top: top / height, bottom: bottom / height },
+      pixelBounds: { left, right, top, bottom, width: boxWidth, height: boxHeight },
+    };
+  }
+
+  function autoSeamLocalPoint(bounds, x, y) {
+    return { x: bounds.left + x * bounds.width, y: bounds.top + y * bounds.height };
+  }
+
+  function autoSeamSampleAt(array, width, height, point) {
+    const x = Math.max(0, Math.min(width - 1, Math.round(point.x)));
+    const y = Math.max(0, Math.min(height - 1, Math.round(point.y)));
+    return array[y * width + x];
+  }
+
+  function autoSeamNormalizePoint(model, point) {
+    return { x: autoSeamClamp01(point.x / model.width), y: autoSeamClamp01(point.y / model.height) };
+  }
+
+  // ---- src/auto/seam/input-classifier.js ----
+// Deterministic, offline input classification for Auto Detect Seam.
+// It routes source pixels; it does not ask the TD to confirm or override.
+
+  function autoSeamInputClassification(model) {
+    const total = model.width * model.height;
+    const histogram = new Uint32Array(32);
+    let nearWhite = 0;
+    let strongEdge = 0;
+    let darkInk = 0;
+    for (let index = 0; index < total; index += 1) {
+      const luma = model.luma[index];
+      histogram[Math.max(0, Math.min(31, Math.floor(luma / 8)))] += 1;
+      if (luma >= 242) nearWhite += 1;
+      if (luma <= 215) darkInk += 1;
+      if (model.gradient[index] >= 60) strongEdge += 1;
+    }
+    let entropy = 0;
+    for (const count of histogram) {
+      if (!count) continue;
+      const probability = count / total;
+      entropy -= probability * Math.log2(probability);
+    }
+    const features = {
+      lumaEntropy32: Number(entropy.toFixed(6)),
+      nearWhiteShare: Number((nearWhite / total).toFixed(6)),
+      darkInkShare: Number((darkInk / total).toFixed(6)),
+      strongEdgeShare: Number((strongEdge / total).toFixed(6)),
+      foregroundCoverage: Number((model.maskCount / total).toFixed(6)),
+      dominantForegroundColourShare: Number((model.dominantForegroundColourShare || 0).toFixed(6)),
+    };
+    // Thresholds live in thresholds.js (AUTO_SEAM_THRESHOLDS.classifier) with
+    // the corpus measurements that set them. They are routing parameters, not
+    // a claim that the garment or seam has been validated.
+    const rules = AUTO_SEAM_THRESHOLDS.classifier;
+    // A technical flat is sparse high-contrast ink on a white field. Product
+    // photos may also be monochrome, so the rule requires both low tonal
+    // entropy and a material density of crisp edges.
+    if (features.nearWhiteShare >= rules.sparseInk.nearWhiteMin
+        && features.lumaEntropy32 <= rules.sparseInk.lumaEntropyMax
+        && features.strongEdgeShare >= rules.sparseInk.strongEdgeMin
+        && features.darkInkShare >= rules.sparseInk.darkInkMin
+        && features.darkInkShare <= rules.sparseInk.darkInkMax) {
+      return { value: 'technical_flat', ruleId: 'sparse-high-contrast-ink/v1', features };
+    }
+    // A colour-filled technical flat (vector fill + crisp black outlines on a
+    // white field) fails the sparse-ink rule because the fill is neither white
+    // nor sparse, but a vector fill is one exact colour, so one quantized
+    // foreground colour dominates; crisp-edge density is the secondary guard.
+    if (features.nearWhiteShare >= rules.flatFill.nearWhiteMin
+        && features.dominantForegroundColourShare >= rules.flatFill.dominantColourMin
+        && features.strongEdgeShare >= rules.flatFill.strongEdgeMin) {
+      return { value: 'technical_flat', ruleId: 'flat-fill-with-crisp-outline/v1', features };
+    }
+    if (features.foregroundCoverage >= rules.productPhoto.foregroundMin
+        && features.foregroundCoverage <= rules.productPhoto.foregroundMax) {
+      return { value: 'product_photo', ruleId: 'continuous-tone-or-low-edge/v1', features };
+    }
+    return { value: 'unknown', ruleId: 'abstain-outside-supported-image-rules/v1', features };
+  }
+
+  // ---- src/auto/seam/corridor.js ----
+// US-109 Auto Seam — corridor machinery shared by both lanes: the quadratic
+// seed path, the per-station strongest-edge refinement, the median-offset
+// centerline, path and corridor evidence features, the ROI corridor polygon
+// and the averaged knot helper. Pure. Source part for app.js.
+
+  function autoSeamQuadraticPoint(points, t) {
+    const mt = 1 - t;
+    return {
+      x: mt * mt * points[0].x + 2 * mt * t * points[1].x + t * t * points[2].x,
+      y: mt * mt * points[0].y + 2 * mt * t * points[1].y + t * t * points[2].y,
+    };
+  }
+
+  function autoSeamQuadraticTangent(points, t) {
+    return {
+      x: 2 * (1 - t) * (points[1].x - points[0].x) + 2 * t * (points[2].x - points[1].x),
+      y: 2 * (1 - t) * (points[1].y - points[0].y) + 2 * t * (points[2].y - points[1].y),
+    };
+  }
+
+  function autoSeamRefinePath(model, seed, gradientThreshold, sampleCount = 49) {
+    const samples = [];
+    const searchRadius = Math.max(2, Math.round(Math.min(model.width, model.height) * 0.018));
+    let previousOffset = 0;
+    const count = sampleCount;
+    for (let index = 0; index < count; index += 1) {
+      const t = index / (count - 1);
+      const base = autoSeamQuadraticPoint(seed.points, t);
+      const tangent = autoSeamQuadraticTangent(seed.points, t);
+      const length = Math.max(0.0001, Math.hypot(tangent.x, tangent.y));
+      const normal = { x: -tangent.y / length, y: tangent.x / length };
+      let best = null;
+      let rawBest = null;
+      for (let offset = -searchRadius; offset <= searchRadius; offset += 1) {
+        const point = { x: base.x + normal.x * offset, y: base.y + normal.y * offset };
+        const gradient = autoSeamSampleAt(model.gradient, model.width, model.height, point);
+        const rawScore = gradient - Math.abs(offset) * 0.05;
+        const continuityPenalty = Math.abs(offset - previousOffset) * Math.max(0.3, gradientThreshold * 0.035);
+        const score = gradient - continuityPenalty - Math.abs(offset) * 0.05;
+        if (!rawBest || rawScore > rawBest.score) rawBest = { offset, score: rawScore };
+        if (!best || score > best.score) best = { point, gradient, offset, score };
+      }
+      previousOffset = best.offset * 0.72 + previousOffset * 0.28;
+      samples.push({
+        x: best.point.x,
+        y: best.point.y,
+        gradient: best.gradient,
+        gradientX: autoSeamSampleAt(model.gradientX, model.width, model.height, best.point),
+        gradientY: autoSeamSampleAt(model.gradientY, model.width, model.height, best.point),
+        luma: autoSeamSampleAt(model.luma, model.width, model.height, best.point),
+        rawOffset: rawBest.offset,
+        searchRadius,
+      });
+    }
+    return samples;
+  }
+
+  // A local median of the per-station strongest-edge offset. On a zigzag this
+  // cancels the individual tooth-to-tooth jumps and leaves the corridor's true
+  // centerline; used both as the alternation baseline below and, on the
+  // technical-flat lane, as the actual drawn geometry (see
+  // autoSeamSmoothedStationPoints in src/auto/seam/technical-flat.js).
+  function autoSeamMedianOffsets(samples, halfWindow = 4) {
+    const offsets = samples.map(sample => sample.rawOffset || 0);
+    return offsets.map((offset, index) => {
+      const from = Math.max(0, index - halfWindow);
+      const to = Math.min(offsets.length, index + halfWindow + 1);
+      const local = offsets.slice(from, to).sort((a, b) => a - b);
+      return local[Math.floor(local.length / 2)] || 0;
+    });
+  }
+
+  function autoSeamEvidence(samples, lowGradient, highGradient) {
+    const gradients = samples.map(sample => sample.gradient);
+    const meanGradient = gradients.reduce((sum, value) => sum + value, 0) / gradients.length;
+    const support = gradients.filter(value => value >= highGradient).length / gradients.length;
+    const continuity = gradients.filter(value => value >= lowGradient).length / gradients.length;
+    const highPass = samples.map((sample, index) => {
+      if (index === 0 || index === samples.length - 1) return 0;
+      return sample.luma - (samples[index - 1].luma + samples[index + 1].luma) / 2;
+    });
+    const hpScale = Math.max(2, autoSeamPercentile(highPass.map(Math.abs), 0.65));
+    let changes = 0, activePairs = 0, previousSign = 0;
+    const peaks = [];
+    for (let index = 1; index < highPass.length - 1; index += 1) {
+      const value = highPass[index];
+      if (Math.abs(value) >= hpScale) {
+        const sign = Math.sign(value);
+        if (previousSign && sign !== previousSign) changes += 1;
+        if (previousSign) activePairs += 1;
+        previousSign = sign;
+      }
+      if (Math.abs(value) >= hpScale && Math.abs(value) >= Math.abs(highPass[index - 1])
+          && Math.abs(value) >= Math.abs(highPass[index + 1])) peaks.push(index);
+    }
+    const alternation = activePairs ? changes / activePairs : 0;
+    let diagonalSum = 0, diagonalCount = 0, diagonalChanges = 0, diagonalPairs = 0, previousDiagonalSign = 0;
+    for (let index = 1; index < samples.length - 1; index += 1) {
+      const before = samples[index - 1], current = samples[index], after = samples[index + 1];
+      const txRaw = after.x - before.x, tyRaw = after.y - before.y;
+      const tangentLength = Math.max(0.0001, Math.hypot(txRaw, tyRaw));
+      const tx = txRaw / tangentLength, ty = tyRaw / tangentLength;
+      const nx = -ty, ny = tx;
+      const along = current.gradientX * tx + current.gradientY * ty;
+      const normal = current.gradientX * nx + current.gradientY * ny;
+      const major = Math.max(Math.abs(along), Math.abs(normal));
+      const diagonalRatio = major > 0 ? Math.min(Math.abs(along), Math.abs(normal)) / major : 0;
+      if (current.gradient >= lowGradient) {
+        diagonalSum += diagonalRatio;
+        diagonalCount += 1;
+        if (diagonalRatio >= 0.22) {
+          const sign = Math.sign(along);
+          if (previousDiagonalSign && sign !== previousDiagonalSign) diagonalChanges += 1;
+          if (previousDiagonalSign) diagonalPairs += 1;
+          previousDiagonalSign = sign;
+        }
+      }
+    }
+    const diagonalEnergy = diagonalCount ? diagonalSum / diagonalCount : 0;
+    const diagonalAlternation = diagonalPairs ? diagonalChanges / diagonalPairs : 0;
+    // A smooth seam edge can have strong, continuous gradients and still not
+    // be a Zigzag stitch. Track the strongest source edge independently at
+    // each station, remove slow seed/path drift, then require repeated lateral
+    // reversals. This is a source-pixel signal; it does not use fixture labels.
+    const offsets = samples.map(sample => sample.rawOffset || 0);
+    const medianOffsets = autoSeamMedianOffsets(samples);
+    const residuals = offsets.map((offset, index) => offset - medianOffsets[index]);
+    const radius = Math.max(1, samples[0]?.searchRadius || 1);
+    const lateralThreshold = Math.max(1, radius * 0.16);
+    let lateralChanges = 0, lateralPairs = 0, previousLateralSign = 0, activeLateral = 0;
+    for (const residual of residuals) {
+      if (Math.abs(residual) < lateralThreshold) continue;
+      activeLateral += 1;
+      const sign = Math.sign(residual);
+      if (previousLateralSign && sign !== previousLateralSign) lateralChanges += 1;
+      if (previousLateralSign) lateralPairs += 1;
+      previousLateralSign = sign;
+    }
+    const lateralAlternation = lateralPairs ? lateralChanges / lateralPairs : 0;
+    const lateralActivity = activeLateral / residuals.length;
+    const lateralAmplitude = autoSeamClamp01(
+      residuals.reduce((sum, value) => sum + Math.abs(value), 0) / residuals.length / Math.max(1, radius * 0.42));
+    const spacings = peaks.slice(1).map((peak, index) => peak - peaks[index]);
+    let periodicity = 0;
+    if (spacings.length >= 2) {
+      const mean = spacings.reduce((sum, value) => sum + value, 0) / spacings.length;
+      const deviation = Math.sqrt(spacings.reduce((sum, value) => sum + (value - mean) ** 2, 0) / spacings.length);
+      periodicity = autoSeamClamp01(1 - deviation / Math.max(1, mean));
+    }
+    const strength = autoSeamClamp01(meanGradient / Math.max(1, highGradient * 1.55));
+    const overall = 0.18 * support + 0.14 * continuity + 0.08 * alternation + 0.08 * periodicity
+      + 0.08 * strength + 0.10 * diagonalEnergy + 0.08 * diagonalAlternation
+      + 0.12 * lateralActivity + 0.08 * lateralAmplitude + 0.06 * lateralAlternation;
+    return {
+      pathSupport: support, continuity, periodicity, alternation, diagonalEnergy, diagonalAlternation,
+      lateralActivity, lateralAmplitude, lateralAlternation, strength, overall,
+    };
+  }
+
+  function autoSeamCorridorEvidence(model, seed, lowGradient) {
+    const searchRadius = Math.max(2, Math.round(Math.min(model.width, model.height) * 0.018));
+    let totalEnergy = 0, diagonalEnergy = 0, positiveEnergy = 0, negativeEnergy = 0;
+    let twoSidedStations = 0;
+    let diagonalStations = 0, dominantStations = 0, dominantChanges = 0, previousDominant = 0;
+    const stationCount = 49;
+    for (let index = 0; index < stationCount; index += 1) {
+      const t = index / (stationCount - 1);
+      const base = autoSeamQuadraticPoint(seed.points, t);
+      const tangent = autoSeamQuadraticTangent(seed.points, t);
+      const length = Math.max(0.0001, Math.hypot(tangent.x, tangent.y));
+      const tx = tangent.x / length, ty = tangent.y / length;
+      const nx = -ty, ny = tx;
+      let stationPositive = 0, stationNegative = 0;
+      for (let offset = -searchRadius; offset <= searchRadius; offset += 1) {
+        const point = { x: base.x + nx * offset, y: base.y + ny * offset };
+        const gx = autoSeamSampleAt(model.gradientX, model.width, model.height, point);
+        const gy = autoSeamSampleAt(model.gradientY, model.width, model.height, point);
+        const magnitude = Math.hypot(gx, gy);
+        if (magnitude < lowGradient) continue;
+        const along = gx * tx + gy * ty;
+        const normal = gx * nx + gy * ny;
+        const major = Math.max(Math.abs(along), Math.abs(normal));
+        const ratio = major ? Math.min(Math.abs(along), Math.abs(normal)) / major : 0;
+        totalEnergy += magnitude;
+        if (ratio < 0.28) continue;
+        diagonalEnergy += magnitude;
+        if (along * normal >= 0) {
+          positiveEnergy += magnitude;
+          stationPositive += magnitude;
+        } else {
+          negativeEnergy += magnitude;
+          stationNegative += magnitude;
+        }
+      }
+      if (stationPositive >= lowGradient && stationNegative >= lowGradient) twoSidedStations += 1;
+      const stationDiagonal = stationPositive + stationNegative;
+      if (stationDiagonal >= lowGradient * 1.5) diagonalStations += 1;
+      if (stationDiagonal > 0
+          && Math.abs(stationPositive - stationNegative) / stationDiagonal >= 0.14) {
+        const dominant = stationPositive > stationNegative ? 1 : -1;
+        if (previousDominant && dominant !== previousDominant) dominantChanges += 1;
+        previousDominant = dominant;
+        dominantStations += 1;
+      }
+    }
+    return {
+      corridorDiagonalShare: totalEnergy ? diagonalEnergy / totalEnergy : 0,
+      corridorDiagonalBalance: Math.max(positiveEnergy, negativeEnergy)
+        ? Math.min(positiveEnergy, negativeEnergy) / Math.max(positiveEnergy, negativeEnergy) : 0,
+      corridorTwoSidedCoverage: twoSidedStations / stationCount,
+      corridorDiagonalCoverage: diagonalStations / stationCount,
+      corridorDominantCoverage: dominantStations / stationCount,
+      corridorDominantChangeDensity: dominantChanges / Math.max(1, stationCount - 1),
+    };
+  }
+
+  function autoSeamCorridorPolygon(model, seed) {
+    const radius = Math.max(3, Math.min(model.width, model.height) * 0.035);
+    const left = [], right = [];
+    for (const t of [0, 0.5, 1]) {
+      const point = autoSeamQuadraticPoint(seed.points, t);
+      const tangent = autoSeamQuadraticTangent(seed.points, t);
+      const length = Math.max(0.0001, Math.hypot(tangent.x, tangent.y));
+      const normal = { x: -tangent.y / length, y: tangent.x / length };
+      left.push(autoSeamNormalizePoint(model, { x: point.x + normal.x * radius, y: point.y + normal.y * radius }));
+      right.push(autoSeamNormalizePoint(model, { x: point.x - normal.x * radius, y: point.y - normal.y * radius }));
+    }
+    return left.concat(right.reverse());
+  }
+
+  function autoSeamRefinedKnot(model, refined, index) {
+    const from = Math.max(0, index - 2);
+    const to = Math.min(refined.length, index + 3);
+    const samples = refined.slice(from, to);
+    const average = samples.reduce((point, sample) => ({ x: point.x + sample.x, y: point.y + sample.y }), { x: 0, y: 0 });
+    return autoSeamNormalizePoint(model, { x: average.x / samples.length, y: average.y / samples.length });
+  }
+
+  // ---- src/auto/seam/pattern-evidence.js ----
+// US-118 Auto Seam — source-pixel appearance evidence for non-zigzag lines
+// in the technical-flat lane. A proportional Semantic ROI only says where to
+// inspect; every accepted appearance must still form a coherent source-pixel
+// path. Pure. Source part for app.js.
+
+  function autoSeamBinaryRuns(sequence) {
+    const runs = [];
+    let start = null;
+    for (let index = 0; index <= sequence.length; index += 1) {
+      const active = index < sequence.length && sequence[index];
+      if (active && start === null) start = index;
+      if (!active && start !== null) {
+        runs.push({ start, end: index - 1, length: index - start });
+        start = null;
+      }
+    }
+    return runs;
+  }
+
+  function autoSeamMedian(values) {
+    if (!values.length) return 0;
+    const sorted = values.slice().sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  }
+
+  function autoSeamPatternSequenceEvidence(sequence) {
+    const runs = autoSeamBinaryRuns(sequence);
+    const gaps = [];
+    for (let index = 1; index < runs.length; index += 1) {
+      gaps.push(runs[index].start - runs[index - 1].end - 1);
+    }
+    const occupancy = sequence.filter(Boolean).length / Math.max(1, sequence.length);
+    const runLengths = runs.map(run => run.length);
+    const medianRun = autoSeamMedian(runLengths);
+    const medianGap = autoSeamMedian(gaps);
+    const dispersion = values => {
+      if (values.length < 2) return 1;
+      const median = Math.max(1, autoSeamMedian(values));
+      return values.reduce((sum, value) => sum + Math.abs(value - median), 0) / values.length / median;
+    };
+    const periodicity = autoSeamClamp01(1 - (dispersion(runLengths) + dispersion(gaps)) / 2);
+    return { occupancy, runCount: runs.length, medianRun, medianGap, periodicity };
+  }
+
+  function autoSeamInkNear(model, point, inkCut) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        if (autoSeamSampleAt(model.luma, model.width, model.height,
+          { x: point.x + dx, y: point.y + dy }) <= inkCut) return true;
+      }
+    }
+    return false;
+  }
+
+  function autoSeamTechnicalPatternEvidence(model, seed, refined) {
+    const rules = AUTO_SEAM_THRESHOLDS.technicalFlat.pattern;
+    const points = autoSeamSmoothedStationPoints(seed, refined);
+    const inkCut = model.bgLuma - rules.inkCutBelowBackground;
+    const radius = Math.max(rules.minimumRadius,
+      Math.round(Math.min(model.width, model.height) * rules.normalRadius));
+    const sequences = [];
+    for (let offset = -radius; offset <= radius; offset += 1) {
+      const sequence = points.map((point, index) => {
+        const before = points[Math.max(0, index - 1)];
+        const after = points[Math.min(points.length - 1, index + 1)];
+        const tx = after.x - before.x;
+        const ty = after.y - before.y;
+        const length = Math.max(0.0001, Math.hypot(tx, ty));
+        return autoSeamInkNear(model, {
+          x: point.x - ty / length * offset,
+          y: point.y + tx / length * offset,
+        }, inkCut);
+      });
+      sequences.push({ offset, sequence, ...autoSeamPatternSequenceEvidence(sequence) });
+    }
+
+    const solid = sequences
+      .filter(item => item.occupancy >= rules.solid.occupancy)
+      .sort((a, b) => Math.abs(a.offset) - Math.abs(b.offset))[0] || null;
+    const dashed = sequences
+      .filter(item => item.occupancy >= rules.dashed.occupancyMin
+        && item.occupancy <= rules.dashed.occupancyMax
+        && item.runCount >= rules.dashed.runCount
+        && item.medianRun >= rules.dashed.medianRunMin
+        && item.medianGap >= rules.dashed.medianGapMin
+        && item.periodicity >= rules.dashed.periodicity)
+      .sort((a, b) => b.periodicity - a.periodicity || Math.abs(a.offset) - Math.abs(b.offset));
+
+    let pair = null;
+    for (let leftIndex = 0; leftIndex < dashed.length && !pair; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < dashed.length; rightIndex += 1) {
+        const first = dashed[leftIndex];
+        const second = dashed[rightIndex];
+        const spacing = Math.abs(first.offset - second.offset);
+        if (spacing < rules.parallel.spacingMin || spacing > rules.parallel.spacingMax) continue;
+        let union = 0;
+        let overlap = 0;
+        for (let index = 0; index < first.sequence.length; index += 1) {
+          if (first.sequence[index] || second.sequence[index]) union += 1;
+          if (first.sequence[index] && second.sequence[index]) overlap += 1;
+        }
+        const alignment = overlap / Math.max(1, union);
+        if (alignment >= rules.parallel.alignmentMin) {
+          pair = { first, second, spacing, alignment };
+          break;
+        }
+      }
+    }
+
+    let appearanceType = null;
+    let selected = null;
+    if (pair) {
+      appearanceType = 'parallel_dashed';
+      selected = pair.first;
+    } else if (dashed.length) {
+      appearanceType = 'single_dashed';
+      selected = dashed[0];
+    } else if (solid) {
+      appearanceType = 'solid_plain';
+      selected = solid;
+    }
+    return {
+      appearanceType,
+      selectedOffset: selected?.offset ?? 0,
+      patternInkOccupancy: selected?.occupancy ?? 0,
+      patternRunCount: autoSeamClamp01((selected?.runCount ?? 0) / 16),
+      patternPeriodicity: selected?.periodicity ?? 0,
+      patternPairSpacing: pair ? autoSeamClamp01(pair.spacing / Math.max(1, radius * 2)) : 0,
+      patternPairAlignment: pair?.alignment ?? 0,
+    };
+  }
+
+  // ---- src/auto/seam/edge-band.js ----
+// US-109 Auto Seam — edge band: the strip just inside a garment edge, read
+// per image column along a measured contour (top/bottom ink profiles); the
+// triangle-wave verifier that separates a zigzag binding from plain lines,
+// scalloped edges and fills; and the geometry taken from the band's own ink
+// envelope. Zone- and lane-independent. Pure. Source part for app.js.
+
+  // Topmost ink row per column inside the garment box, median-smoothed over
+  // five columns so one anti-aliased gap in a thin outline cannot spike it.
+  // -1 where a column has no ink at all.
+  function autoSeamTopInkProfile(model, bounds, fromBottom = false) {
+    const { width, mask } = model;
+    const raw = new Float32Array(width).fill(-1);
+    for (let x = bounds.left; x <= bounds.right; x += 1) {
+      if (fromBottom) {
+        for (let y = bounds.bottom; y >= bounds.top; y -= 1) {
+          if (mask[y * width + x]) { raw[x] = y; break; }
+        }
+      } else {
+        for (let y = bounds.top; y <= bounds.bottom; y += 1) {
+          if (mask[y * width + x]) { raw[x] = y; break; }
+        }
+      }
+    }
+    const profile = new Float32Array(width).fill(-1);
+    for (let x = bounds.left; x <= bounds.right; x += 1) {
+      const window = [];
+      for (let dx = -2; dx <= 2; dx += 1) {
+        const value = raw[Math.max(bounds.left, Math.min(bounds.right, x + dx))];
+        if (value >= 0) window.push(value);
+      }
+      if (!window.length) continue;
+      window.sort((a, b) => a - b);
+      profile[x] = window[Math.floor(window.length / 2)];
+    }
+    return profile;
+  }
+
+  // ---- Edge band: the strip just inside a garment edge, measured along the
+  // local inward normal (not per image column, so steep flanks are handled).
+  // For a seed that carries `edge` (outward direction hint + inset), each of
+  // ~1 px-spaced stations along the seed records where the garment edge
+  // actually is on the normal (first mask hit scanning from outside) and where
+  // the first crisp ink inside the strip [lo, hi] beyond that edge is — the
+  // binding's envelope. Crisp ink is luma <= bgLuma - 55 rather than the
+  // foreground mask so anti-aliasing does not widen strokes into the stats.
+  // Stations walk the measured contour itself (one per image column, tangent
+  // from the neighbouring contour points) rather than the quadratic seed: a
+  // parabola through three contour points can sit 20+ px off a real neckline
+  // between them, which is exactly what made stations invalid on image5.png's
+  // flanks. The quadratic seed is still what the corridor/gradient evidence
+  // uses; the edge band only needs the true edge.
+  function autoSeamEdgeBandProfile(model, seed) {
+    const { width, height, mask, luma, bgLuma } = model;
+    const bounds = seed.edge.bounds;
+    const rules = AUTO_SEAM_THRESHOLDS.technicalFlat.edgeBand;
+    const lo = Math.max(3, Math.round(bounds.height * rules.lo));
+    // Real bindings sit 1.8–2.5% of box height inside the outline; the band
+    // reaches deeper so a drawing with a gap between outline and stitch is
+    // still read. The first-ink rule means a deeper band changes nothing where
+    // a nearer structure exists.
+    const hi = Math.max(lo + 2, Math.round(bounds.height * rules.hi));
+    const inkCut = bgLuma - rules.inkCutBelowBackground;
+    // Top/bottom contours are scanned straight down/up the image column. A
+    // normal-direction scan was tried and rejected: rounding diagonal sample
+    // points skips pixels of a 1–2 px zigzag stroke, so the band offset jumps
+    // to the next structure and a triangle wave reads as spurious reversals
+    // (zigzag flips 0.24 → 0.54, ink share 1.0 → 0.76 on the pilot corpus).
+    // Column scanning visits every row exactly once, and the band pixel it
+    // finds is literally on the stroke, so the geometry built from it is exact
+    // too. Left/right (vertical) edges would need the row-scanning twin.
+    const dir = -Math.sign(seed.edge.outward.y) || 1;
+    const inward = { x: 0, y: dir };
+    const buildStations = contour => {
+      const stations = [];
+      for (let index = 0; index < contour.length; index += 1) {
+        const base = contour[index];
+        const x = Math.round(base.x);
+        const edgeRow = Math.round(base.y);
+        // Column scanning is only trustworthy where the edge is not steep: on
+        // a ~55° flank a 3 px outline stroke spans 5 px vertically. Such
+        // stations can still supply display geometry but stay out of evidence.
+        const before = contour[Math.max(0, index - 3)];
+        const after = contour[Math.min(contour.length - 1, index + 3)];
+        const slope = Math.abs(after.y - before.y) / Math.max(1, Math.abs(after.x - before.x));
+        const evaluable = slope <= rules.steepSlope;
+        let valid = x >= 0 && x < width;
+        if (valid) {
+          valid = false;
+          for (let offset = -2; offset <= 2 && !valid; offset += 1) {
+            const y = edgeRow + offset;
+            if (y >= 0 && y < height && mask[y * width + x]) valid = true;
+          }
+        }
+        let bandTop = NaN;
+        if (valid) {
+          const ink = dy => {
+            const y = edgeRow + dir * dy;
+            return y >= 0 && y < height && luma[y * width + x] <= inkCut;
+          };
+          let dy = lo;
+          if (ink(lo)) {
+            // The scan started inside the outline's own stroke (thick outline
+            // or a slight slope): step past that stroke and the following gap.
+            while (dy <= hi && ink(dy)) dy += 1;
+            while (dy <= hi && !ink(dy)) dy += 1;
+          } else {
+            while (dy <= hi && !ink(dy)) dy += 1;
+          }
+          if (dy <= hi) bandTop = dy;
+        }
+        stations.push({ t: index / Math.max(1, contour.length - 1), base, inward, edge: 0, valid, evaluable, bandTop });
+      }
+      return stations;
+    };
+    const stations = buildStations(seed.edge.contour);
+    const geometryStations = seed.edge.geometryContour ? buildStations(seed.edge.geometryContour) : stations;
+    return { stations, geometryStations, lo, hi };
+  }
+
+  // Zigzag-vs-plain-vs-scallop on the edge band's ink envelope. A zigzag
+  // binding is a triangle wave: consecutive steps run monotonically for
+  // several stations before reversing, and there are almost no flat runs. A
+  // plain second line jitters ±1 px around a constant offset (nearly every
+  // step reverses, many zero steps). A scalloped/picot edge also reverses
+  // rarely but has flat arc tops, so flat share separates it from zigzag.
+  // Measured on the real fixtures before this was written (flips / flat,
+  // per side): plain — image3 neckline 0.97/0.54, image3+photo4 hems
+  // 0.86–0.90/0.69–0.71; zigzag — photo4 neckline 0.28/0.22, image5 neckline
+  // 0.23/0.19; scallop — image5 hem 0.29–0.33/0.58–0.72. Categorical gaps,
+  // not tuned cuts. Limitation: the binding must be the first crisp ink
+  // inside the edge; a straight guide line between edge and zigzag reads as
+  // plain, and on a colour-filled flat the fill itself reads as ink.
+  function autoSeamEdgeBandEvidence(profile) {
+    const rules = AUTO_SEAM_THRESHOLDS.technicalFlat.edgeBand;
+    const inRange = profile.stations.filter(station => station.t >= rules.evaluateFrom && station.t <= rules.evaluateTo);
+    const evaluableStations = inRange.filter(station => station.evaluable);
+    const series = evaluableStations.map(station => (station.valid ? station.bandTop : NaN));
+    let inkStations = 0, steps = 0, flat = 0, smooth = 0, flips = 0, signed = 0, previousSign = 0;
+    // Zero-step runs: a zigzag tooth apex is flat for at most (stroke width
+    // - 1) columns, a scallop arc top for many, a straight line for all.
+    let flatRun = 0, longFlat = 0, maxFlatRun = 0;
+    const closeRun = () => { if (flatRun >= rules.flatRunMin) longFlat += flatRun; maxFlatRun = Math.max(maxFlatRun, flatRun); flatRun = 0; };
+    for (let index = 0; index < series.length; index += 1) {
+      if (!Number.isNaN(series[index])) inkStations += 1;
+      if (index === 0 || Number.isNaN(series[index]) || Number.isNaN(series[index - 1])) { closeRun(); continue; }
+      const delta = series[index] - series[index - 1];
+      steps += 1;
+      if (delta === 0) { flat += 1; flatRun += 1; continue; }
+      closeRun();
+      if (Math.abs(delta) <= rules.smoothStepMax) smooth += 1;
+      const sign = Math.sign(delta);
+      if (previousSign && sign !== previousSign) flips += 1;
+      if (previousSign) signed += 1;
+      previousSign = sign;
+    }
+    closeRun();
+    return {
+      contourBindingEvaluableShare: inRange.length ? evaluableStations.length / inRange.length : 0,
+      contourBindingInkShare: series.length ? inkStations / series.length : 0,
+      contourBindingFlatShare: steps ? flat / steps : 1,
+      contourBindingFlatRunShare: steps ? longFlat / steps : 1,
+      contourBindingMaxFlatRun: Math.min(1, maxFlatRun / rules.maxFlatRunNormalizer),
+      contourBindingSmoothShare: steps ? smooth / steps : 0,
+      contourBindingFlipShare: signed ? flips / signed : 1,
+    };
+  }
+
+  // Triangle-wave test. Measured on the pilot corpus with the runtime's own
+  // pipeline (evaluable columns only, outline stroke skipped), per side:
+  //   zigzag  — photo4 neckline flips .27/.27, flatRun≥4 share .00/.00,
+  //             longest flat run 2/2, smooth .76/.71; image5 neckline
+  //             .24/.23, .00/.00, 3/2, .73/.79
+  //   scallop — image5 hem flips .25/.28 (a periodic structure too) but
+  //             flatRun≥4 share .11/.17 and longest flat run 9/10: arc tops
+  //             are flat for many columns, zigzag apexes for at most the
+  //             stroke width
+  //   plain   — image3 neckline flips .94/.95; image3/photo4 hems ink .39–.46
+  // Flip share separates zigzag from plain, flat-run length separates it from
+  // scallop, ink share from single lines and dot fills. Categorical gaps, not
+  // tuned cuts; still TBC — TD calibrated like every threshold in this file.
+  function autoSeamEdgeBandPasses(evidence) {
+    const rules = AUTO_SEAM_THRESHOLDS.technicalFlat.edgeBand;
+    const gate = rules.gate;
+    return evidence.contourBindingEvaluableShare >= gate.evaluableMin
+      && evidence.contourBindingInkShare >= gate.inkMin
+      && evidence.contourBindingFlipShare <= gate.flipMax
+      && evidence.contourBindingFlatRunShare <= gate.flatRunShareMax
+      && evidence.contourBindingMaxFlatRun <= gate.maxFlatRunMax / rules.maxFlatRunNormalizer
+      && evidence.contourBindingSmoothShare >= gate.smoothMin;
+  }
+
+  // Geometry straight from the edge band: the binding centerline is the edge
+  // plus a moving median of the envelope offset (the envelope oscillates
+  // between the teeth's near and far extremes, so its median sits on the
+  // stroke's center) plus half a stroke. Because the strip starts `lo` px
+  // inside the edge, the solid outline can no longer capture the trace on
+  // steep flanks the way the raw-gradient refinement did.
+  function autoSeamEdgeBandGeometry(model, profile, zone) {
+    const { lo, hi } = profile;
+    const stations = profile.geometryStations || profile.stations;
+    const rules = AUTO_SEAM_THRESHOLDS.technicalFlat.edgeBand;
+    const window = rules.geometryWindow;
+    const tracedPoints = stations.map((station, index) => {
+      const local = [];
+      for (let offset = -window; offset <= window; offset += 1) {
+        const neighbour = stations[index + offset];
+        if (neighbour && neighbour.valid && Number.isFinite(neighbour.bandTop)) local.push(neighbour.bandTop);
+      }
+      local.sort((a, b) => a - b);
+      const bandOffset = local.length ? local[Math.floor(local.length / 2)] : (lo + hi) / 2;
+      const centerline = station.edge + bandOffset + rules.geometryHalfStroke;
+      return { x: station.base.x + station.inward.x * centerline, y: station.base.y + station.inward.y * centerline };
+    });
+    return autoSeamGeometryFromTechnicalTrace(model, tracedPoints, zone);
+  }
+
+  // ---- src/auto/seam/geometry.js ----
+// US-109 Auto Seam — editable-curve geometry builders shared by the lanes:
+// Catmull-Rom-style knot chains, median-smoothed corridor traces, the
+// refinement-based fit and the bilateral neckline merge. Every output is the
+// existing annotation curve contract (start/control1/control2/end/points[]).
+// Pure. Source part for app.js.
+
+  function autoSeamGeometryFromKnots(knots) {
+    const tangents = knots.map((point, index) => {
+      if (index === 0) return { x: knots[1].x - point.x, y: knots[1].y - point.y };
+      if (index === knots.length - 1) return { x: point.x - knots[index - 1].x, y: point.y - knots[index - 1].y };
+      return { x: (knots[index + 1].x - knots[index - 1].x) / 2, y: (knots[index + 1].y - knots[index - 1].y) / 2 };
+    });
+    const handleIn = index => ({
+      x: autoSeamClamp01(knots[index].x - tangents[index].x / 3),
+      y: autoSeamClamp01(knots[index].y - tangents[index].y / 3),
+    });
+    const handleOut = index => ({
+      x: autoSeamClamp01(knots[index].x + tangents[index].x / 3),
+      y: autoSeamClamp01(knots[index].y + tangents[index].y / 3),
+    });
+    const last = knots.length - 1;
+    return {
+      type: 'curved',
+      start: knots[0],
+      control1: handleOut(0),
+      control2: handleIn(last),
+      end: knots[last],
+      points: knots.slice(1, last).map((point, offset) => {
+        const index = offset + 1;
+        return { point, handleIn: handleIn(index), handleOut: handleOut(index) };
+      }),
+    };
+  }
+
+  // The seed corridor is only a starting guess (a proportional template for
+  // most zones, the garment's own top ink contour for the neckline), not this
+  // specific garment's real stitch line — it is deliberately never drawn
+  // directly (see autoSeamTechnicalCandidate below). Rebuild a per-station
+  // centerline from the same refined samples
+  // already computed for evidence, using a local median of the raw offsets
+  // (autoSeamMedianOffsets) rather than each station's single strongest edge:
+  // on a technical flat that raw per-station edge legitimately alternates
+  // between individual zigzag tooth vertices, but the local median across a
+  // few neighbouring stations cancels that alternation and recovers the
+  // corridor's true centerline, which does track this garment's actual
+  // proportions instead of the generic seed template.
+  function autoSeamSmoothedStationPoints(seed, refined) {
+    const offsets = autoSeamMedianOffsets(refined);
+    const count = refined.length;
+    return refined.map((sample, index) => {
+      const t = index / (count - 1);
+      const base = autoSeamQuadraticPoint(seed.points, t);
+      const tangent = autoSeamQuadraticTangent(seed.points, t);
+      const length = Math.max(0.0001, Math.hypot(tangent.x, tangent.y));
+      const normal = { x: -tangent.y / length, y: tangent.x / length };
+      return { x: base.x + normal.x * offsets[index], y: base.y + normal.y * offsets[index] };
+    });
+  }
+
+  // Same shape as auto-seam.js's autoSeamGeometryFromRefinement (product-photo
+  // lane), generalized to an arbitrary station count: one cubic for most
+  // zones, a four-knot Catmull-Rom-style chain for neckline's extra
+  // curvature. `points` here are already-smoothed model-pixel coordinates
+  // (autoSeamSmoothedStationPoints), not raw per-station samples.
+  function autoSeamGeometryFromTechnicalTrace(model, points, zone) {
+    const count = points.length;
+    if (zone !== 'neckline') {
+      const start = autoSeamNormalizePoint(model, points[0]);
+      const middle = autoSeamNormalizePoint(model, points[Math.floor(count / 2)]);
+      const end = autoSeamNormalizePoint(model, points[count - 1]);
+      return {
+        type: 'curved', start, end,
+        control1: { x: start.x + (middle.x - start.x) * 2 / 3, y: start.y + (middle.y - start.y) * 2 / 3 },
+        control2: { x: end.x + (middle.x - end.x) * 2 / 3, y: end.y + (middle.y - end.y) * 2 / 3 },
+        points: [],
+      };
+    }
+    const knotIndexes = [0, Math.round((count - 1) / 3), Math.round((2 * (count - 1)) / 3), count - 1];
+    const knots = knotIndexes.map(index => autoSeamRefinedKnot(model, points, index));
+    const tangents = knots.map((point, index) => {
+      if (index === 0) return { x: 0, y: knots[1].y - point.y };
+      if (index === knots.length - 1) return { x: point.x - knots[index - 1].x, y: point.y - knots[index - 1].y };
+      return { x: (knots[index + 1].x - knots[index - 1].x) / 2, y: (knots[index + 1].y - knots[index - 1].y) / 2 };
+    });
+    const handleIn = index => ({
+      x: autoSeamClamp01(knots[index].x - tangents[index].x / 3),
+      y: autoSeamClamp01(knots[index].y - tangents[index].y / 3),
+    });
+    const handleOut = index => ({
+      x: autoSeamClamp01(knots[index].x + tangents[index].x / 3),
+      y: autoSeamClamp01(knots[index].y + tangents[index].y / 3),
+    });
+    const last = knots.length - 1;
+    return {
+      type: 'curved',
+      start: knots[0],
+      control1: handleOut(0),
+      control2: handleIn(last),
+      end: knots[last],
+      points: [1, 2].map(index => ({ point: knots[index], handleIn: handleIn(index), handleOut: handleOut(index) })),
+    };
+  }
+
+  function autoSeamBilateralGeometry(left, right) {
+    const leftGeometry = left.rawGeometry;
+    const rightGeometry = right.rawGeometry;
+    const leftInterior = (leftGeometry.points || []).map(point => point.point);
+    const rightInterior = (rightGeometry.points || []).map(point => point.point).reverse();
+    const center = {
+      x: (leftGeometry.end.x + rightGeometry.end.x) / 2,
+      y: (leftGeometry.end.y + rightGeometry.end.y) / 2,
+    };
+    return autoSeamGeometryFromKnots([
+      leftGeometry.start,
+      ...leftInterior,
+      center,
+      ...rightInterior,
+      rightGeometry.start,
+    ]);
+  }
+
+  function autoSeamGeometryFromRefinement(model, refined, zone) {
+    if (zone !== 'neckline') {
+      const start = autoSeamNormalizePoint(model, refined[0]);
+      const middle = autoSeamNormalizePoint(model, refined[Math.floor(refined.length / 2)]);
+      const end = autoSeamNormalizePoint(model, refined[refined.length - 1]);
+      return {
+        type: 'curved', start, end,
+        control1: {
+          x: start.x + (middle.x - start.x) * 2 / 3,
+          y: start.y + (middle.y - start.y) * 2 / 3,
+        },
+        control2: {
+          x: end.x + (middle.x - end.x) * 2 / 3,
+          y: end.y + (middle.y - end.y) * 2 / 3,
+        },
+        points: [],
+      };
+    }
+
+    // Sample four robust knots from all 49 refined stations, then convert a
+    // Catmull–Rom chain into three editable cubic Bézier segments. This keeps
+    // the draft smooth while allowing real intermediate curvature instead of
+    // forcing every neckline into one almost-straight cubic.
+    const knots = [0, 16, 32, 48].map(index => autoSeamRefinedKnot(model, refined, index));
+    const tangents = knots.map((point, index) => {
+      if (index === 0) return { x: 0, y: knots[1].y - point.y };
+      if (index === knots.length - 1) return { x: point.x - knots[index - 1].x, y: point.y - knots[index - 1].y };
+      return { x: (knots[index + 1].x - knots[index - 1].x) / 2, y: (knots[index + 1].y - knots[index - 1].y) / 2 };
+    });
+    const handleIn = index => ({
+      x: autoSeamClamp01(knots[index].x - tangents[index].x / 3),
+      y: autoSeamClamp01(knots[index].y - tangents[index].y / 3),
+    });
+    const handleOut = index => ({
+      x: autoSeamClamp01(knots[index].x + tangents[index].x / 3),
+      y: autoSeamClamp01(knots[index].y + tangents[index].y / 3),
+    });
+    return {
+      type: 'curved',
+      start: knots[0],
+      control1: handleOut(0),
+      control2: handleIn(3),
+      end: knots[3],
+      points: [1, 2].map(index => ({ point: knots[index], handleIn: handleIn(index), handleOut: handleOut(index) })),
+    };
+  }
+
+  // ---- src/auto/seam/result.js ----
+// US-109 + US-118 Auto Seam — result records shared by every lane: the
+// base result, the evidence-pass identities and the abstention builders, so
+// both lanes emit identical shapes and tests filter on constants, not strings.
+// Source part for app.js.
+
+  // Evidence-pass identities recorded on every candidate (provenance). Each is
+  // a deterministic source-pixel pass; the version suffix changes when the
+  // pass's definition changes, never silently.
+  const AUTO_SEAM_PASSES = {
+    nativeRoiSobel: 'native-roi-sobel/v1',
+    shortDiagonalAlternation: 'short-diagonal-alternation/v1',
+    pathContinuity: 'path-continuity/v1',
+    centerFrontContinuity: 'center-front-path-continuity/v1',
+    edgeBandTriangleWave: 'edge-band-triangle-wave/v1',
+    sourceBackgroundMask: 'source-background-mask/v1',
+    adaptiveContinuity: 'adaptive-continuity/v1',
+    zigzagPeriodicity: 'zigzag-periodicity/v1',
+    pairedSideCorroboration: 'paired-side-corroboration/v1',
+    technicalFlatPattern: 'technical-flat-pattern/v1',
+  };
+
+  // Abstention codes: the stable identity tests filter on. The `reason` next
+  // to a code is prose a TD can read and says WHICH test failed.
+  const AUTO_SEAM_ABSTENTIONS = {
+    ineligibleView: 'ineligible_view',
+    unknownInputClass: 'unknown_input_class',
+    insufficientEvidence: 'insufficient_evidence',
+    asymmetricEvidence: 'asymmetric_evidence',
+    insufficientZigzagTopology: 'insufficient_zigzag_topology',
+  };
+
+  function autoSeamPass(passId, status) {
+    return { passId, source: 'source_pixels', status };
+  }
+
+  function autoSeamImageAbstention(code, reason) {
+    return { scope: 'image', code, reason };
+  }
+
+  function autoSeamZoneAbstention(zone, side, code, reason, evidence) {
+    return { scope: 'zone', zone, side, code, reason, evidence };
+  }
+
+  function autoSeamBaseResult(inputClass, eligibility, lane, pipelineVersion, contractVersion = 'photo-stitch-candidate/2') {
+    return {
+      contractVersion,
+      pipelineVersion,
+      inputClass,
+      analysisLane: lane,
+      inputEligible: eligibility.eligible,
+      view: {
+        role: eligibility.eligible ? 'front_outer' : 'unknown',
+        centerAxis: eligibility.eligible ? { status: 'trusted', xTop: eligibility.centerAxisX, xBottom: eligibility.centerAxisX } : { status: 'unavailable', xTop: null, xBottom: null },
+      },
+      automaticRois: [],
+      candidates: [],
+      abstentions: [],
+      diagnostics: { coverage: eligibility.coverage, symmetryRatio: eligibility.symmetryRatio ?? null },
+    };
+  }
+
+  // ---- src/auto/seam/lanes/product-photo.js ----
+// US-109 Auto Seam — Product Photo Seam Lane (ADR 0083): template seeds,
+// the P0 adaptive zone/pair gates, refinement-based geometry and the lane
+// analyzer. P0 output authority: underbust_band, neckline, armhole. Pure.
+// Source part for app.js.
+
+  function autoSeamSeedPaths(eligibility) {
+    const b = eligibility.pixelBounds;
+    const axisLocal = eligibility.centerAxisX;
+    const axisInBox = autoSeamClamp01((axisLocal - eligibility.bounds.left) / Math.max(0.0001, eligibility.bounds.right - eligibility.bounds.left));
+    const left = [
+      // The lower-band Zigzag is a separate, nearly level stitch row. Keep its
+      // seed below the curved cup-to-band construction edge; pixel refinement
+      // may nudge it locally but must not inherit the cup seam's center drop.
+      // Evidence sampling stays inside the garment so the silhouette edge
+      // cannot impersonate the stitch. Output geometry is extended separately
+      // after the lane passes its evidence gate.
+      { zone: 'underbust_band', side: 'left', points: [[0.08, 0.93], [0.28, 0.93], [axisInBox, 0.93]] },
+      // Neckline Zigzag follows the curved binding from strap to center front.
+      // Evidence uses a broad semantic corridor; output geometry below adds
+      // the two independent cubic controls needed for the vertical strap
+      // tangent and smooth inward bend.
+      { zone: 'neckline', side: 'left', points: [[0.13, 0.26], [0.24, 0.39], [axisInBox, 0.65]] },
+      // Armhole binding runs from the strap attachment outward and down along
+      // the garment silhouette. The old seed curved inward into the cup, so
+      // strong cup texture could validate a path whose geometry never touched
+      // the armhole seam it claimed to represent.
+      { zone: 'armhole', side: 'left', points: [[0.11, 0.26], [0.02, 0.43], [-0.03, 0.59]] },
+    ];
+    const right = left.map(seed => ({
+      zone: seed.zone,
+      side: 'right',
+      points: seed.points.map(([x, y]) => [2 * axisInBox - x, y]),
+    }));
+    return left.concat(right).map(seed => ({
+      zone: seed.zone,
+      side: seed.side,
+      points: seed.points.map(([x, y]) => autoSeamLocalPoint(b, x, y)),
+    }));
+  }
+
+  // Zone gates; the numbers and the pilot observations behind them live in
+  // thresholds.js (AUTO_SEAM_THRESHOLDS.productPhoto.zone).
+  function autoSeamZoneEvidencePass(zone, evidence) {
+    const zones = AUTO_SEAM_THRESHOLDS.productPhoto.zone;
+    if (zone === 'underbust_band') {
+      const gate = zones.underbust_band;
+      return evidence.corridorDiagonalShare >= gate.diagonalShare
+        && evidence.corridorDiagonalBalance >= gate.balance
+        && evidence.corridorTwoSidedCoverage >= gate.twoSided
+        && evidence.diagonalAlternation >= gate.diagonalAlternation
+        && evidence.overall >= gate.overall;
+    }
+    if (zone === 'armhole') {
+      // Armhole stitches in the approved pilot are blurred by binding texture:
+      // raw diagonal share is weaker than the cup texture that caused the
+      // false path. The real binding instead has dense bilateral corridor
+      // coverage with strongly balanced diagonal directions along the
+      // semantic outer-edge path.
+      const gate = zones.armhole;
+      return evidence.corridorDiagonalShare >= gate.diagonalShare
+        && evidence.corridorDiagonalBalance >= gate.balance
+        && evidence.corridorTwoSidedCoverage >= gate.twoSided
+        && evidence.diagonalAlternation >= gate.diagonalAlternation
+        && evidence.overall >= gate.overall;
+    }
+    // The TD-confirmed neckline binding is visibly blurred. It is
+    // characterized by balanced, continuous corridor evidence but low
+    // pointwise diagonal energy; crisp decorative motifs in the negative
+    // photos produce much higher energy and are deliberately excluded.
+    const gate = zones.neckline;
+    return evidence.overall >= gate.overall
+      && evidence.continuity >= gate.continuity
+      && evidence.diagonalEnergy >= gate.diagonalEnergyMin
+      && evidence.diagonalEnergy <= gate.diagonalEnergyMax
+      && evidence.diagonalAlternation >= gate.diagonalAlternation
+      && evidence.corridorDiagonalShare >= gate.diagonalShare
+      && evidence.corridorDiagonalBalance >= gate.balance;
+  }
+
+  function autoSeamPairEvidencePass(zone, paired) {
+    if (zone !== 'underbust_band') return true;
+    const gate = AUTO_SEAM_THRESHOLDS.productPhoto.pair.underbust_band;
+    const evidence = paired.map(candidate => candidate.confidence);
+    const minimum = key => Math.min(...evidence.map(item => item[key]));
+    const average = key => evidence.reduce((sum, item) => sum + item[key], 0) / evidence.length;
+    // Underbust is judged as one bilateral construction row. One side may be
+    // weaker because of the center closure or lighting, but both must occupy
+    // the same lower stitch lane and the pair must clear the aggregate rule.
+    return minimum('corridorDiagonalShare') >= gate.diagonalShare
+      && minimum('corridorDiagonalBalance') >= gate.balance
+      && minimum('corridorTwoSidedCoverage') >= gate.twoSided
+      && average('overall') >= gate.overallAverage;
+  }
+
+  function analyzeAutoSeamProductPhoto(sourceImage, model, eligibility, inputClass) {
+    const result = autoSeamBaseResult(inputClass, eligibility, 'product_photo', 'auto-seam-product-photo/2');
+    if (!eligibility.eligible) {
+      result.abstentions.push(autoSeamImageAbstention(AUTO_SEAM_ABSTENTIONS.ineligibleView, eligibility.code));
+      return result;
+    }
+
+    const gradients = model.garmentGradients;
+    const lowGradient = autoSeamPercentile(gradients, 0.52);
+    const highGradient = autoSeamPercentile(gradients, 0.72);
+    const seeds = autoSeamSeedPaths(eligibility);
+    const proposals = [];
+    for (const seed of seeds) {
+      const polygon = autoSeamCorridorPolygon(model, seed);
+      result.automaticRois.push({
+        id: `automatic-roi-${seed.zone}-${seed.side}`,
+        zone: seed.zone,
+        side: seed.side,
+        polygon,
+        transform: autoSeamRoiTransform(model, polygon),
+        source: 'automatic',
+        reviewRequired: true,
+      });
+      const refined = autoSeamRefinePath(model, seed, highGradient);
+      const evidence = {
+        ...autoSeamEvidence(refined, lowGradient, highGradient),
+        ...autoSeamCorridorEvidence(model, seed, lowGradient),
+      };
+      // Adaptive detector parameters, not release/accuracy thresholds. The
+      // latter remain TBC — TD calibrated and are evaluated outside runtime.
+      const adaptive = AUTO_SEAM_THRESHOLDS.productPhoto.adaptive;
+      if (evidence.overall < adaptive.overallMin || evidence.continuity < adaptive.continuityMin
+          || (!['armhole', 'neckline'].includes(seed.zone)
+            && (evidence.diagonalEnergy < adaptive.diagonalEnergyMin || evidence.diagonalAlternation < adaptive.diagonalAlternationMin))
+          || !autoSeamZoneEvidencePass(seed.zone, evidence)) {
+        result.abstentions.push(autoSeamZoneAbstention(seed.zone, seed.side,
+          AUTO_SEAM_ABSTENTIONS.insufficientEvidence,
+          'source-pixel zigzag evidence did not pass the P0 adaptive proposal gate',
+          evidence));
+        continue;
+      }
+      const geometry = autoSeamGeometryFromRefinement(model, refined, seed.zone);
+      const { start, end } = geometry;
+      if (seed.zone === 'underbust_band') {
+        // Detection deliberately avoids the silhouette and center closure,
+        // but the editable draft must cover the whole visible seam segment.
+        // Extend only after evidence passes, and preserve a bilateral gap over
+        // the closure instead of drawing one false continuous seam through it.
+        const centerClearance = (eligibility.bounds.right - eligibility.bounds.left) * AUTO_SEAM_THRESHOLDS.productPhoto.underbustCenterClearance;
+        start.x = seed.side === 'left' ? eligibility.bounds.left : eligibility.bounds.right;
+        end.x = eligibility.centerAxisX + (seed.side === 'left' ? -centerClearance : centerClearance);
+      }
+      const roi = result.automaticRois[result.automaticRois.length - 1];
+      proposals.push({
+        id: `candidate-${seed.zone}-${seed.side}`,
+        stitchType: 'zigzag',
+        semanticZone: seed.zone,
+        zone: seed.zone,
+        zoneStatus: 'resolved',
+        side: seed.side,
+        rawGeometry: clone(geometry),
+        geometry: clone(geometry),
+        geometrySource: 'raw_observation',
+        roiId: roi.id,
+        roiTransform: clone(roi.transform),
+        evidenceStatus: 'observed',
+        evidenceProvenance: [
+          autoSeamPass(AUTO_SEAM_PASSES.sourceBackgroundMask, 'support'),
+          autoSeamPass(AUTO_SEAM_PASSES.adaptiveContinuity, 'pass'),
+          autoSeamPass(AUTO_SEAM_PASSES.zigzagPeriodicity, 'pass'),
+        ],
+        supportingPasses: [AUTO_SEAM_PASSES.sourceBackgroundMask, AUTO_SEAM_PASSES.adaptiveContinuity, AUTO_SEAM_PASSES.zigzagPeriodicity],
+        symmetryResult: { status: 'independent', counterpartCandidateId: null },
+        confidence: evidence,
+        reviewRequired: true,
+      });
+    }
+    for (const zone of autoSeamPhotoOutputZones()) {
+      const paired = proposals.filter(candidate => candidate.zone === zone);
+      if (paired.length === 2 && new Set(paired.map(candidate => candidate.side)).size === 2
+          && autoSeamPairEvidencePass(zone, paired)) {
+        for (const candidate of paired) {
+          const counterpart = paired.find(item => item.side !== candidate.side);
+          candidate.symmetryResult = {
+            status: 'corroborated',
+            counterpartCandidateId: counterpart.id,
+          };
+          candidate.evidenceProvenance.push(autoSeamPass(AUTO_SEAM_PASSES.pairedSideCorroboration, 'support'));
+          candidate.supportingPasses.push(AUTO_SEAM_PASSES.pairedSideCorroboration);
+        }
+        result.candidates.push(...paired);
+        continue;
+      }
+      for (const candidate of paired) {
+        result.abstentions.push(autoSeamZoneAbstention(candidate.zone, candidate.side,
+          AUTO_SEAM_ABSTENTIONS.asymmetricEvidence,
+          'the paired side did not pass the fail-closed Zigzag proposal gate',
+          candidate.confidence));
+      }
+    }
+    return result;
+  }
+
+  // ---- src/auto/seam/lanes/technical-flat.js ----
+// US-109 Auto Seam — Technical Flat Seam Lane (ADR 0083). Coarse mask and
+// classification happen at 640 px; seam evidence is sampled in source-scaled
+// analysis space up to 1600 px. Seeds come from the garment's own top/bottom
+// ink contour where a zone has one (neckline, underbust) and from the
+// proportional template otherwise; edge-seeded zones are decided by the
+// edge-band triangle-wave test (edge-band.js), template zones by corridor
+// gates. Pure. Source part for app.js.
+
+  // Neckline seeds read from this garment's own upper ink contour. Between the
+  // two straps nothing is drawn above the neckline, so the topmost ink in each
+  // column IS the neckline edge. The proportional template below guessed that
+  // edge at ~0.49 of the box height; on image5.png's tall mesh insert the real
+  // edge sat ~110 px — five times the refinement search radius — higher, and
+  // the corridor passed its gate on mesh-dot texture instead. The strap
+  // junction x still comes from the template (strap placement varies far less
+  // than neckline depth), nudged inward past any strap top the profile shows.
+  // Each point is then pushed a small distance along the inward normal: the
+  // zigzag binding is drawn just inside the outline, not on it (17–24 px on
+  // the three real fixtures ≈ 2–2.5% of box height), and 2.5% keeps the
+  // outline itself outside the search radius while the binding stays inside.
+  // Returns null when the profile does not read as a strapped front view, and
+  // the caller keeps the template.
+  function autoSeamTechnicalFlatNecklineSeeds(model, eligibility, axisInBox) {
+    const b = eligibility.pixelBounds;
+    const contourRules = AUTO_SEAM_THRESHOLDS.technicalFlat.contour;
+    const profile = autoSeamTopInkProfile(model, b);
+    const axisX = Math.round(b.left + axisInBox * b.width);
+    const strapCeiling = b.top + b.height * contourRules.strapCeiling;
+    const isNeckline = x => x >= b.left && x <= b.right && profile[x] >= strapCeiling;
+    if (!isNeckline(axisX)) return null;
+    const median = x => {
+      const values = [];
+      for (let dx = -3; dx <= 3; dx += 1) {
+        const value = profile[Math.max(b.left, Math.min(b.right, x + dx))];
+        if (value >= 0) values.push(value);
+      }
+      values.sort((a, c) => a - c);
+      return values[Math.floor(values.length / 2)];
+    };
+    const bindingOffset = b.height * contourRules.bindingInset;
+    const inward = x => {
+      const y = median(x);
+      const slope = (median(Math.min(b.right, x + 5)) - median(Math.max(b.left, x - 5))) / 10;
+      const length = Math.hypot(1, slope);
+      return { x: x - (slope / length) * bindingOffset, y: y + bindingOffset / length };
+    };
+    const slopeAt = col => Math.abs(median(Math.min(b.right, col + 3)) - median(Math.max(b.left, col - 3))) / 6;
+    const traceOverlapContour = (side, reliableX) => {
+      const xInBox = side === 'left'
+        ? contourRules.overlapJunctionX
+        : 2 * axisInBox - contourRules.overlapJunctionX;
+      const outerX = Math.round(b.left + xInBox * b.width);
+      if (Math.abs(reliableX - outerX) < b.width * contourRules.overlapMinXGap) return null;
+      const step = side === 'left' ? 1 : -1;
+      const inkCut = model.bgLuma - AUTO_SEAM_THRESHOLDS.technicalFlat.edgeBand.inkCutBelowBackground;
+      const maxRise = Math.max(2, Math.round(b.height * contourRules.overlapTraceRise));
+      const maxFall = Math.max(maxRise + 2, Math.round(b.height * contourRules.overlapTraceFall));
+      // `outerX` still passes through the full-height shoulder strap, so the
+      // top-ink profile there is the strap top, not its lower junction. Start
+      // near the lower strap edge and let the constrained ink walk lock onto
+      // the outline that the neckline binding follows.
+      let previousY = b.top + b.height * contourRules.overlapJunctionY;
+      const traced = [];
+      for (let col = outerX; step > 0 ? col < reliableX : col > reliableX; col += step) {
+        const runs = [];
+        let runStart = null;
+        const fromY = Math.max(b.top, Math.round(previousY - maxRise));
+        const toY = Math.min(b.bottom, Math.round(previousY + maxFall));
+        for (let row = fromY; row <= toY + 1; row += 1) {
+          const ink = row <= toY && model.luma[row * model.width + col] <= inkCut;
+          if (ink && runStart === null) runStart = row;
+          if (!ink && runStart !== null) {
+            runs.push({ start: runStart, end: row - 1, mid: (runStart + row - 1) / 2 });
+            runStart = null;
+          }
+        }
+        if (runs.length) {
+          // The uppermost reachable stroke is the solid neckline outline. A
+          // nearer/lower choice can jump onto the zigzag itself and then make
+          // the edge-band scan fall through to mesh dots underneath it.
+          previousY = runs[0].mid;
+        }
+        traced.push({ x: col, y: previousY });
+      }
+      return traced;
+    };
+    const build = side => {
+      const toward = side === 'left' ? 1 : -1;
+      // Find the reliable top-contour section by walking outward until it turns
+      // into the steep strap edge. On overlapping constructions (photo4), the
+      // true neckline continues below that topmost solid edge; edge geometry
+      // gets a separately snapped junction endpoint below, while evidence stays
+      // on this trustworthy contour section.
+      const innerStart = Math.round(axisX - toward * b.width * contourRules.innerStart);
+      const outerLimit = side === 'left' ? b.left + 3 : b.right - 3;
+      let x = innerStart;
+      while ((toward > 0 ? x - toward > outerLimit : x - toward < outerLimit)
+          && isNeckline(x - toward) && slopeAt(x - toward) <= contourRules.junctionSlopeMax) x -= toward;
+      x += toward * Math.round(b.width * contourRules.junctionInset);
+      if (!isNeckline(x) || (toward > 0 ? axisX - x : x - axisX) < b.width * contourRules.minSpan) return null;
+      const start = inward(x);
+      const end = inward(axisX);
+      const mid = inward(Math.round((x + axisX) / 2));
+      // Quadratic through start/end whose t=0.5 point is the measured mid contour.
+      const control = { x: 2 * mid.x - 0.5 * (start.x + end.x), y: 2 * mid.y - 0.5 * (start.y + end.y) };
+      const contour = [];
+      for (let col = x; toward > 0 ? col <= axisX : col >= axisX; col += toward) contour.push({ x: col, y: median(col) });
+      const overlapContour = traceOverlapContour(side, x);
+      const geometryContour = overlapContour ? overlapContour.concat(contour) : null;
+      return {
+        zone: 'neckline', side, points: [start, control, end], seedSource: 'mask_top_contour',
+        edge: { outward: { x: 0, y: -1 }, inset: bindingOffset, bounds: b, contour, geometryContour },
+      };
+    };
+    const left = build('left');
+    const right = build('right');
+    return left && right ? [left, right] : null;
+  }
+
+  // Underbust seeds from the garment's bottom ink contour, the mirror of the
+  // neckline case: below the hem nothing is drawn, so the bottom-most ink per
+  // column is the hem edge, and the binding (if any) sits just inside it.
+  // The template's 0.05-of-width start is kept for x; y comes from the
+  // contour. Both sides end on the center axis.
+  function autoSeamTechnicalFlatHemSeeds(model, eligibility, axisInBox) {
+    const b = eligibility.pixelBounds;
+    const contourRules = AUTO_SEAM_THRESHOLDS.technicalFlat.contour;
+    const profile = autoSeamTopInkProfile(model, b, true);
+    const axisX = Math.round(b.left + axisInBox * b.width);
+    const hemFloor = b.bottom - b.height * contourRules.hemFloor;
+    const isHem = x => x >= b.left && x <= b.right && profile[x] >= hemFloor;
+    if (!isHem(axisX)) return null;
+    const median = x => {
+      const values = [];
+      for (let dx = -3; dx <= 3; dx += 1) {
+        const value = profile[Math.max(b.left, Math.min(b.right, x + dx))];
+        if (value >= 0) values.push(value);
+      }
+      values.sort((a, c) => a - c);
+      return values[Math.floor(values.length / 2)];
+    };
+    const bindingOffset = b.height * contourRules.bindingInset;
+    const inward = x => {
+      const y = median(x);
+      const slope = (median(Math.min(b.right, x + 5)) - median(Math.max(b.left, x - 5))) / 10;
+      const length = Math.hypot(1, slope);
+      return { x: x + (slope / length) * bindingOffset, y: y - bindingOffset / length };
+    };
+    const build = side => {
+      const toward = side === 'left' ? 1 : -1;
+      const startInBox = side === 'left' ? contourRules.hemStartInBox : 2 * axisInBox - contourRules.hemStartInBox;
+      let x = Math.round(b.left + startInBox * b.width + toward * b.width * contourRules.hemOuterMargin);
+      const limit = Math.round(axisX - toward * b.width * contourRules.minSpan);
+      while (!isHem(x) && (toward > 0 ? x < limit : x > limit)) x += toward;
+      if (!isHem(x)) return null;
+      const start = inward(x);
+      const end = inward(axisX);
+      const mid = inward(Math.round((x + axisX) / 2));
+      const control = { x: 2 * mid.x - 0.5 * (start.x + end.x), y: 2 * mid.y - 0.5 * (start.y + end.y) };
+      const contour = [];
+      for (let col = x; toward > 0 ? col <= axisX : col >= axisX; col += toward) contour.push({ x: col, y: median(col) });
+      return {
+        zone: 'underbust_band', side, points: [start, control, end], seedSource: 'mask_bottom_contour',
+        edge: { outward: { x: 0, y: 1 }, inset: bindingOffset, bounds: b, contour },
+      };
+    };
+    const left = build('left');
+    const right = build('right');
+    return left && right ? [left, right] : null;
+  }
+
+  // ---- Zone registry: one row says everything the lane needs about a zone.
+  // Order matters — ROIs and candidate ordinals follow it (all left sides,
+  // then all right sides). `points` are proportions of the garment box for
+  // the left side ('axis' resolves to the center axis column); the right side
+  // is the mirror across the axis. `seed` names a builder in
+  // AUTO_SEAM_TF_SEED_BUILDERS; a contour-seeded row falls back to its
+  // template when the contour cannot be read, and then `fallbackVerifier`
+  // applies instead of `verifier` (names in AUTO_SEAM_TF_VERIFIERS). The zone
+  // list must equal autoSeamTechnicalFlatOutputZones() in contract.js — the
+  // analyzer asserts it, so adding a zone here without the contract fails
+  // loudly instead of silently drifting the 14-ROI invariant.
+  const AUTO_SEAM_TF_ZONES = [
+    { zone: 'shoulder_strap', seed: 'template', points: [[0.115, 0.02], [0.115, 0.18], [0.115, 0.327]], verifier: 'templateDefault', merge: 'pair' },
+    { zone: 'neckline', seed: 'topContour', points: [[0.115, 0.327], [0.25, 0.42], ['axis', 0.493]], verifier: 'edgeBand', fallbackVerifier: 'templateNeckline', merge: 'bilateral' },
+    { zone: 'armhole', seed: 'template', points: [[0.115, 0.327], [0.04, 0.50], [-0.028, 0.647]], verifier: 'armhole', merge: 'pair' },
+    { zone: 'cup_edge', seed: 'template', points: [[0.21, 0.51], [0.18, 0.72], [0.28, 0.91]], verifier: 'templateDefault', merge: 'pair' },
+    { zone: 'cup_seam', seed: 'template', points: [[0.22, 0.50], [0.38, 0.61], [0.46, 0.89]], verifier: 'templateDefault', merge: 'pair' },
+    { zone: 'underbust_band', seed: 'bottomContour', points: [[0.05, 0.92], [0.28, 0.93], ['axis', 0.91]], verifier: 'edgeBand', fallbackVerifier: 'templateDefault', merge: 'pair' },
+    { zone: 'side_seam', seed: 'template', points: [[0.0, 0.65], [0.02, 0.78], [0.08, 0.96]], verifier: 'templateDefault', merge: 'pair' },
+  ];
+
+  // Contour seed builders. Each returns [leftSeed, rightSeed] carrying
+  // `edge` (so the edge band applies), or null when the contour does not read
+  // as that edge — then the registry row's template is used for both sides.
+  const AUTO_SEAM_TF_SEED_BUILDERS = {
+    topContour: autoSeamTechnicalFlatNecklineSeeds,
+    bottomContour: autoSeamTechnicalFlatHemSeeds,
+  };
+
+  function autoSeamTechnicalFlatSeeds(model, eligibility) {
+    const b = eligibility.pixelBounds;
+    const axisInBox = autoSeamClamp01((eligibility.centerAxisX - eligibility.bounds.left)
+      / Math.max(0.0001, eligibility.bounds.right - eligibility.bounds.left));
+    const resolve = ([x, y]) => [x === 'axis' ? axisInBox : x, y];
+    const templateSeed = (row, side) => ({
+      zone: row.zone,
+      side,
+      points: row.points.map(resolve).map(([x, y]) => autoSeamLocalPoint(b, side === 'left' ? x : 2 * axisInBox - x, y)),
+      seedSource: 'proportional_template',
+    });
+    const contourSeeds = new Map();
+    for (const row of AUTO_SEAM_TF_ZONES) {
+      const builder = AUTO_SEAM_TF_SEED_BUILDERS[row.seed];
+      if (builder) contourSeeds.set(row.zone, builder(model, eligibility, axisInBox));
+    }
+    const seeds = [];
+    for (const side of ['left', 'right']) {
+      for (const row of AUTO_SEAM_TF_ZONES) {
+        const contour = contourSeeds.get(row.zone);
+        seeds.push(contour ? contour.find(item => item.side === side) : templateSeed(row, side));
+      }
+    }
+    return seeds;
+  }
+
+  // Corridor floors shared by every branch below.
+  function autoSeamCorridorFloorsPass(evidence, gate) {
+    return evidence.pathSupport >= gate.pathSupport
+      && evidence.continuity >= gate.continuity
+      && evidence.diagonalEnergy >= gate.diagonalEnergy
+      && (gate.diagonalAlternation === undefined || evidence.diagonalAlternation >= gate.diagonalAlternation)
+      && evidence.corridorDiagonalBalance >= gate.balance
+      && (gate.lateralActivity === undefined || evidence.lateralActivity >= gate.lateralActivity)
+      && (gate.twoSidedMax === undefined || evidence.corridorTwoSidedCoverage <= gate.twoSidedMax);
+  }
+
+  // Verifiers a registry row can name. Numbers and their measurements live in
+  // thresholds.js (AUTO_SEAM_THRESHOLDS.technicalFlat.gates).
+  //  - edgeBand: for edge-seeded zones the edge-band triangle-wave test
+  //    decides, because the corridor features cannot tell a zigzag binding
+  //    from the mesh-dot fill under every neckline in the corpus (image3's
+  //    plain neckline scored 0.88 balance / 0.55 two-sided, the same as the
+  //    real ones), the corridor's 97 stations undersample a ~10 px zigzag,
+  //    and its rounded diagonal sampling skips thin strokes. Corridor
+  //    features stay as sanity floors.
+  //  - armhole: a high-balance branch handles center-straddling bindings;
+  //    a bounded low-two-sided branch handles edge-hugging bindings like
+  //    photo4 without admitting image3's plain or image2's filled outlines.
+  //  - templateDefault: pathSupport alone cannot separate a partly-blurred
+  //    real zigzag from a strong plain-line false positive;
+  //    corridorTwoSidedCoverage does.
+  //  - templateNeckline: the template-seeded neckline fallback.
+  const AUTO_SEAM_TF_VERIFIERS = {
+    edgeBand: evidence => autoSeamCorridorFloorsPass(evidence, AUTO_SEAM_THRESHOLDS.technicalFlat.gates.edgeSeeded)
+      && autoSeamEdgeBandPasses(evidence),
+    templateNeckline: evidence => autoSeamCorridorFloorsPass(evidence, AUTO_SEAM_THRESHOLDS.technicalFlat.gates.templateNeckline),
+    armhole: evidence => autoSeamCorridorFloorsPass(evidence, AUTO_SEAM_THRESHOLDS.technicalFlat.gates.armhole)
+      || autoSeamCorridorFloorsPass(evidence, AUTO_SEAM_THRESHOLDS.technicalFlat.gates.armholeEdge),
+    templateDefault: evidence => autoSeamCorridorFloorsPass(evidence, AUTO_SEAM_THRESHOLDS.technicalFlat.gates.templateDefault),
+  };
+
+  function autoSeamTechnicalFlatEvidencePass(row, seed, evidence) {
+    const verifier = seed.edge ? row.verifier : (row.fallbackVerifier || row.verifier);
+    return AUTO_SEAM_TF_VERIFIERS[verifier](evidence);
+  }
+
+  function autoSeamOffsetTechnicalPoints(points, offset) {
+    if (!offset) return points;
+    return points.map((point, index) => {
+      const before = points[Math.max(0, index - 1)];
+      const after = points[Math.min(points.length - 1, index + 1)];
+      const tx = after.x - before.x;
+      const ty = after.y - before.y;
+      const length = Math.max(0.0001, Math.hypot(tx, ty));
+      return { x: point.x - ty / length * offset, y: point.y + tx / length * offset };
+    });
+  }
+
+  function autoSeamTechnicalCandidate(model, roi, seed, evidence, refined, edgeProfile, ordinal,
+      appearanceType = 'zigzag', selectedOffset = 0) {
+    // Do not use each station's single strongest edge directly: on a
+    // technical flat it jumps between individual zigzag teeth, binding edges,
+    // and dot fills. For edge-seeded zones the geometry is the edge band's own
+    // envelope centerline (autoSeamEdgeBandGeometry); otherwise
+    // autoSeamSmoothedStationPoints median-filters the refinement jitter back
+    // to the corridor's centerline. Either way the drawn line tracks this
+    // garment, not the seed's generic template.
+    const stationPoints = autoSeamOffsetTechnicalPoints(
+      autoSeamSmoothedStationPoints(seed, refined), selectedOffset);
+    const rawGeometry = edgeProfile && appearanceType === 'zigzag'
+      ? autoSeamEdgeBandGeometry(model, edgeProfile, seed.zone)
+      : autoSeamGeometryFromTechnicalTrace(model, stationPoints, seed.zone);
+    const passes = [
+      autoSeamPass(AUTO_SEAM_PASSES.nativeRoiSobel, 'pass'),
+      autoSeamPass(AUTO_SEAM_PASSES.pathContinuity, 'support'),
+    ];
+    if (appearanceType === 'zigzag') {
+      passes.push(autoSeamPass(AUTO_SEAM_PASSES.shortDiagonalAlternation, 'pass'));
+      if (edgeProfile) passes.push(autoSeamPass(AUTO_SEAM_PASSES.edgeBandTriangleWave, 'pass'));
+    } else {
+      passes.push(autoSeamPass(AUTO_SEAM_PASSES.technicalFlatPattern, 'pass'));
+    }
+    const resolvedAppearance = appearanceType === 'zigzag' || appearanceType === 'solid_plain';
+    return {
+      id: `candidate-technical-flat-${seed.zone}-${seed.side}-${appearanceType}-${ordinal}`,
+      appearanceType,
+      stitchType: appearanceType === 'zigzag' ? 'zigzag' : appearanceType === 'solid_plain' ? 'plain' : null,
+      classificationStatus: resolvedAppearance ? 'resolved' : 'unresolved',
+      semanticZone: seed.zone,
+      zone: seed.zone,
+      zoneStatus: 'resolved',
+      side: seed.side,
+      rawGeometry: clone(rawGeometry),
+      geometry: clone(rawGeometry),
+      geometrySource: edgeProfile && appearanceType === 'zigzag'
+        ? 'edge_band_trace' : 'source_supported_structural_fit',
+      roiId: roi.id,
+      roiTransform: clone(roi.transform),
+      evidenceStatus: 'observed',
+      evidenceProvenance: passes,
+      supportingPasses: passes.map(pass => pass.passId),
+      symmetryResult: { status: 'independent', counterpartCandidateId: null },
+      confidence: evidence,
+      reviewRequired: true,
+    };
+  }
+
+  function autoSeamSketchOutlineDiagnostics(model, eligibility) {
+    const b = eligibility.pixelBounds;
+    const top = autoSeamTopInkProfile(model, b);
+    const bottom = autoSeamTopInkProfile(model, b, true);
+    let supportedColumns = 0;
+    let longestGap = 0;
+    let gap = 0;
+    for (let x = b.left; x <= b.right; x += 1) {
+      const supported = top[x] >= 0 && bottom[x] >= 0 && bottom[x] >= top[x];
+      if (supported) {
+        supportedColumns += 1;
+        gap = 0;
+      } else {
+        gap += 1;
+        longestGap = Math.max(longestGap, gap);
+      }
+    }
+    const columns = Math.max(1, b.right - b.left + 1);
+    const boundaryContinuity = supportedColumns / columns;
+    return {
+      source: 'source_pixels',
+      status: boundaryContinuity >= 0.90 ? 'available' : 'review',
+      boundaryContinuity,
+      longestEnvelopeGap: autoSeamClamp01(longestGap / columns),
+      centerAxisX: eligibility.centerAxisX,
+      leftRightSymmetryRatio: eligibility.symmetryRatio,
+      emitsCandidate: false,
+    };
+  }
+
+  function autoSeamTechnicalFlatRegistryMatchesContract() {
+    const contractZones = autoSeamTechnicalFlatOutputZones();
+    return contractZones.length === AUTO_SEAM_TF_ZONES.length
+      && contractZones.every((zone, index) => zone === AUTO_SEAM_TF_ZONES[index].zone);
+  }
+
+  function analyzeAutoSeamTechnicalFlat(sourceImage, coarseModel, coarseEligibility, inputClass) {
+    if (!autoSeamTechnicalFlatRegistryMatchesContract()) {
+      throw new Error('technical-flat zone registry disagrees with autoSeamTechnicalFlatOutputZones()');
+    }
+    const rows = new Map(AUTO_SEAM_TF_ZONES.map(row => [row.zone, row]));
+    const model = autoSeamPixelModel(sourceImage, 1600);
+    const eligibility = autoSeamEligibility(model, { minimumCoverage: 0.012 });
+    const result = autoSeamBaseResult(inputClass, eligibility, 'technical_flat',
+      'auto-seam-technical-flat/2', 'auto-seam-candidate/3');
+    if (!eligibility.eligible) {
+      result.abstentions.push(autoSeamImageAbstention(AUTO_SEAM_ABSTENTIONS.ineligibleView, eligibility.code));
+      return result;
+    }
+    const gradients = model.garmentGradients;
+    const lowGradient = autoSeamPercentile(gradients, 0.52);
+    const highGradient = autoSeamPercentile(gradients, 0.72);
+    const proposals = [];
+    let ordinal = 0;
+    const seeds = autoSeamTechnicalFlatSeeds(model, eligibility);
+    result.diagnostics.necklineSeedSource = seeds.find(seed => seed.zone === 'neckline').seedSource;
+    result.diagnostics.sketchOutline = autoSeamSketchOutlineDiagnostics(model, eligibility);
+    for (const seed of seeds) {
+      const row = rows.get(seed.zone);
+      const polygon = autoSeamCorridorPolygon(model, seed);
+      const roi = {
+        id: `automatic-roi-technical-flat-${seed.zone}-${seed.side}`,
+        zone: seed.zone,
+        side: seed.side,
+        polygon,
+        transform: autoSeamRoiTransform(model, polygon),
+        source: 'automatic',
+        seedSource: seed.seedSource,
+        reviewRequired: true,
+      };
+      result.automaticRois.push(roi);
+      const refined = autoSeamRefinePath(model, seed, highGradient, 97);
+      const edgeProfile = seed.edge ? autoSeamEdgeBandProfile(model, seed) : null;
+      const evidence = {
+        ...autoSeamEvidence(refined, lowGradient, highGradient),
+        ...autoSeamCorridorEvidence(model, seed, lowGradient),
+        ...(edgeProfile ? autoSeamEdgeBandEvidence(edgeProfile) : {}),
+      };
+      if (!autoSeamTechnicalFlatEvidencePass(row, seed, evidence)) {
+        // A zigzag can expose two periodically dark rails when the main
+        // verifier abstains (notably a narrow strap). Do not relabel that
+        // unresolved zigzag topology as a dashed pair. Non-zigzag lines have
+        // low lateral edge motion even when their dash endpoints contribute
+        // high diagonal alternation.
+        const unresolvedZigzagTopology = evidence.corridorDiagonalShare >= 0.55
+          && evidence.diagonalAlternation >= 0.50;
+        const pattern = unresolvedZigzagTopology
+          ? { appearanceType: null }
+          : autoSeamTechnicalPatternEvidence(model, seed, refined);
+        const patternRules = AUTO_SEAM_THRESHOLDS.technicalFlat.pattern;
+        if (pattern.appearanceType
+            && evidence.pathSupport >= patternRules.pathSupport
+            && evidence.continuity >= patternRules.continuity) {
+          const patternEvidence = {
+            ...evidence,
+            patternInkOccupancy: pattern.patternInkOccupancy,
+            patternRunCount: pattern.patternRunCount,
+            patternPeriodicity: pattern.patternPeriodicity,
+            patternPairSpacing: pattern.patternPairSpacing,
+            patternPairAlignment: pattern.patternPairAlignment,
+          };
+          proposals.push(autoSeamTechnicalCandidate(model, roi, seed, patternEvidence,
+            refined, null, ++ordinal, pattern.appearanceType, pattern.selectedOffset));
+          continue;
+        }
+        const plainBinding = edgeProfile && !autoSeamEdgeBandPasses(evidence);
+        result.abstentions.push(autoSeamZoneAbstention(seed.zone, seed.side,
+          AUTO_SEAM_ABSTENTIONS.insufficientEvidence,
+          plainBinding
+            ? 'edge band did not form a supported Plain, Dashed, Parallel Dashed, or Zigzag path'
+            : 'source pixels did not form a supported Plain, Dashed, Parallel Dashed, or Zigzag path',
+          evidence));
+        continue;
+      }
+      proposals.push(autoSeamTechnicalCandidate(model, roi, seed, evidence, refined, edgeProfile, ++ordinal));
+    }
+
+    for (const row of AUTO_SEAM_TF_ZONES) {
+      const paired = proposals.filter(candidate => candidate.semanticZone === row.zone);
+      const left = paired.find(candidate => candidate.side === 'left');
+      const right = paired.find(candidate => candidate.side === 'right');
+      if (row.merge === 'bilateral' && left && right && left.appearanceType === right.appearanceType) {
+        const rawGeometry = autoSeamBilateralGeometry(left, right);
+        result.candidates.push({
+          ...left,
+          id: `candidate-technical-flat-${row.zone}-bilateral-1`,
+          side: 'bilateral',
+          rawGeometry: clone(rawGeometry),
+          geometry: clone(rawGeometry),
+          roiIds: [left.roiId, right.roiId],
+          evidenceProvenance: left.evidenceProvenance.concat([
+            autoSeamPass(AUTO_SEAM_PASSES.centerFrontContinuity, 'pass'),
+          ]),
+          supportingPasses: left.supportingPasses.concat([AUTO_SEAM_PASSES.centerFrontContinuity]),
+          symmetryResult: { status: 'independent', counterpartCandidateId: null },
+          confidence: Object.fromEntries(Object.keys(left.confidence).map(key =>
+            [key, (left.confidence[key] + right.confidence[key]) / 2])),
+        });
+        continue;
+      }
+      if (left && right && left.appearanceType === right.appearanceType) {
+        left.symmetryResult = { status: 'corroborated', counterpartCandidateId: right.id };
+        right.symmetryResult = { status: 'corroborated', counterpartCandidateId: left.id };
+      }
+      result.candidates.push(...paired);
+    }
+    result.diagnostics.coarseAnalysisSize = { width: coarseModel.width, height: coarseModel.height };
+    result.diagnostics.nativeRoiAnalysisSize = { width: model.width, height: model.height };
+    result.diagnostics.coarseEligibility = {
+      coverage: coarseEligibility.coverage,
+      symmetryRatio: coarseEligibility.symmetryRatio ?? null,
+    };
+    return result;
+  }
+
+  // ---- src/auto/seam/router.js ----
+// US-109 Auto Seam — lane router: coarse 640 px model -> eligibility ->
+// deterministic input classification -> one lane, or an explicit `unknown`
+// abstention. Pure. Source part for app.js.
+
+  function analyzeAutoSeamSource(sourceImage) {
+    const coarseModel = autoSeamPixelModel(sourceImage, 640);
+    const coarseEligibility = autoSeamEligibility(coarseModel);
+    const inputClass = autoSeamInputClassification(coarseModel);
+    if (inputClass.value === 'technical_flat') {
+      return analyzeAutoSeamTechnicalFlat(sourceImage, coarseModel, coarseEligibility, inputClass);
+    }
+    if (inputClass.value === 'product_photo') {
+      return analyzeAutoSeamProductPhoto(sourceImage, coarseModel, coarseEligibility, inputClass);
+    }
+    const result = autoSeamBaseResult(inputClass, coarseEligibility, 'unknown', 'auto-seam-classifier/1');
+    result.inputEligible = false;
+    result.abstentions.push(autoSeamImageAbstention(AUTO_SEAM_ABSTENTIONS.unknownInputClass,
+      'deterministic input rules could not safely select a seam-analysis lane'));
+    return result;
+  }
+
+  // ---- src/manual/auto-seam.js ----
+// US-109: Auto Detect Seam — APPLICATION LAYER. The only Auto Seam part that
+// touches Board state, history or toasts: runs the pure analysis (see
+// src/auto/seam/router.js), validates Candidate V2/V3, and applies
+// every candidate as a review-required Auto Seam Draft. Oracle ROI fixtures
+// are benchmark-only and are never imported here.
+// Source part for app.js. Run `npm run build` after editing.
+
+  async function autoSeamSourceSha256(sourceImage) {
+    const dataURL = String(sourceImage?.dataURL || '');
+    const comma = dataURL.indexOf(',');
+    let bytes;
+    if (comma >= 0 && /;base64/i.test(dataURL.slice(0, comma))) {
+      const binary = atob(dataURL.slice(comma + 1));
+      bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+    } else {
+      bytes = new TextEncoder().encode(dataURL);
+    }
+    const hash = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  function autoSeamAppearancePresentation(candidate) {
+    const appearance = candidate.appearanceType || 'zigzag';
+    if (appearance === 'solid_plain') {
+      return { style: 'solid', label: 'Plain', lineTreatment: null };
+    }
+    if (appearance === 'single_dashed') {
+      return { style: 'dashed', label: 'Single Dashed · stitch type unresolved', lineTreatment: null };
+    }
+    if (appearance === 'parallel_dashed') {
+      return {
+        style: 'cover',
+        label: 'Parallel Dashed Pair · stitch type unresolved',
+        lineTreatment: {
+          name: 'Auto Seam · Parallel Dashed Pair',
+          scale: 1,
+          layers: [
+            { pattern: 'dashed', offset: -4, width: 1.6, color: 'red', spacing: 10, amplitude: 4 },
+            { pattern: 'dashed', offset: 4, width: 1.6, color: 'red', spacing: 10, amplitude: 4 },
+          ],
+        },
+      };
+    }
+    return {
+      style: 'zigzag',
+      label: 'Zigzag',
+      lineTreatment: {
+        name: 'Auto Seam · Zigzag',
+        scale: 1,
+        layers: [{ pattern: 'zigzag', offset: 0, width: 1.6, color: 'red', spacing: 4, amplitude: 2.5 }],
+      },
+    };
+  }
+
+  function buildAutoSeamAnnotation(candidate, result, sourceImage, sourceSha256, runId) {
+    const presentation = autoSeamAppearancePresentation(candidate);
+    const geometry = candidate.geometry;
+    const start = worldFromNormalized(geometry.start, sourceImage);
+    const end = worldFromNormalized(geometry.end, sourceImage);
+    const control1 = worldFromNormalized(geometry.control1, sourceImage);
+    const control2 = worldFromNormalized(geometry.control2, sourceImage);
+    const points = (geometry.points || []).map(point => ({
+      point: worldFromNormalized(point.point, sourceImage),
+      handleIn: worldFromNormalized(point.handleIn, sourceImage),
+      handleOut: worldFromNormalized(point.handleOut, sourceImage),
+    }));
+    const roi = result.automaticRois.find(item => item.id === candidate.roiId);
+    const ann = {
+      id: createUniqueAnnotationId(),
+      seq: null,
+      type: 'curved',
+      style: presentation.style,
+      color: 'red',
+      arrowType: 'none',
+      lineWidth: DEFAULT_LINE_WIDTH,
+      lineTreatment: presentation.lineTreatment,
+      start, end, control1, control2, points,
+      label: computeDefaultLabelPosition({ type: 'curved', start, end, control1, control2, points }),
+      labelManual: false,
+      text: null,
+      desc: `Auto Detect Seam · ${presentation.label}`,
+      value: null,
+      auto: true,
+      sourceMode: 'auto-seam',
+      sourceImageId: sourceImage.id,
+      sourceSha256,
+      autoSeamRunId: runId,
+      autoSeamContractVersion: result.contractVersion,
+      pipelineVersion: result.pipelineVersion,
+      inputClass: clone(result.inputClass),
+      analysisLane: result.analysisLane,
+      candidateId: candidate.id,
+      semanticZone: candidate.semanticZone,
+      semanticZoneStatus: candidate.zoneStatus,
+      side: candidate.side,
+      appearanceType: candidate.appearanceType || 'zigzag',
+      stitchType: candidate.stitchType,
+      stitchClassificationStatus: candidate.classificationStatus || 'resolved',
+      geometrySource: candidate.geometrySource,
+      evidenceStatus: candidate.evidenceStatus,
+      symmetryResult: clone(candidate.symmetryResult),
+      supportingPasses: candidate.supportingPasses.slice(),
+      evidenceProvenance: clone(candidate.evidenceProvenance),
+      evidenceConfidence: clone(candidate.confidence),
+      rawGeometry: clone(candidate.rawGeometry),
+      roiTransform: clone(candidate.roiTransform),
+      automaticSemanticRoi: roi ? clone(roi) : null,
+      reviewRequired: true,
+      tdEdited: false,
+      tdApproved: false,
+      tdApprovalRequired: true,
+      approvedAt: null,
+    };
+    ensureCurveControls(ann);
+    return ann;
+  }
+
+  function isAutoSeamDraft(ann) {
+    return !!(ann && ann.auto === true && ann.sourceMode === 'auto-seam'
+      && ann.sourceImageId != null && ann.autoSeamRunId);
+  }
+
+  function isTDReviewDraft(ann) {
+    return isAutoDraft(ann) || isAutoSeamDraft(ann);
+  }
+
+  async function runAutoDetectSeam() {
+    if (state.appMode !== 'manual' || !state.sketchMode) {
+      showToast('Auto Detect Seam is available only in Manual Mode · Sketch Focus.');
+      return { status: 'wrong_context' };
+    }
+    if (state.autoSeam.running) return { status: 'busy' };
+    const sourceImage = pickAutoSourceImage();
+    if (!sourceImage || !sourceImage.img) {
+      showToast('Add or paste a source image first.');
+      return { status: 'no_source' };
+    }
+    const previous = state.annotations.filter(ann => isAutoSeamDraft(ann) && ann.sourceImageId === sourceImage.id);
+    if (previous.length) {
+      const confirmed = window.confirm(
+        `Auto Detect Seam will replace all ${previous.length} previous Auto Seam Draft${previous.length === 1 ? '' : 's'} for this image, including TD edits.\n\nManual lines, POMs, and drafts from other images will be kept.`
+      );
+      if (!confirmed) return { status: 'cancelled' };
+    }
+
+    state.autoSeam.running = true;
+    updateUI();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    try {
+      const result = analyzeAutoSeamSource(sourceImage);
+      validateAutoSeamResult(result);
+      const sourceSha256 = await autoSeamSourceSha256(sourceImage);
+      const runId = `auto-seam-${Date.now().toString(36)}-${sourceImage.id}`;
+      const nextDrafts = result.candidates.map(candidate =>
+        buildAutoSeamAnnotation(candidate, result, sourceImage, sourceSha256, runId));
+      const previousIds = new Set(previous.map(ann => ann.id));
+      state.annotations = state.annotations.filter(ann => !previousIds.has(ann.id)).concat(nextDrafts);
+      if (state.selection.kind === 'annotation' && previousIds.has(state.selection.id)) {
+        state.selection = { kind: null, id: null };
+        state.selectedAnnotationIds = [];
+      }
+      state.autoSeam.lastRun = clone({
+        sourceImageId: sourceImage.id,
+        sourceSha256,
+        runId,
+        result,
+        appliedAnnotationIds: nextDrafts.map(ann => ann.id),
+      });
+      if (previous.length || nextDrafts.length) pushHistoryIfChanged();
+      requestRender();
+      if (nextDrafts.length) {
+        showToast(`Auto Detect Seam applied ${nextDrafts.length} seam draft${nextDrafts.length === 1 ? '' : 's'} · TD review required.`);
+        return { status: 'applied', count: nextDrafts.length, result: clone(result) };
+      }
+      const reason = result.abstentions[0]?.reason || 'insufficient_evidence';
+      showToast(`Không đủ bằng chứng — ${reason}.`);
+      return { status: 'abstained', count: 0, result: clone(result) };
+    } catch (error) {
+      console.error('Auto Detect Seam failed:', error);
+      showToast(`Không đủ bằng chứng — ${error.message || 'detector failed'}.`);
+      return { status: 'error', error: String(error.message || error) };
+    } finally {
+      state.autoSeam.running = false;
+      updateUI();
+    }
   }
 
   // ---- src/auto/drafts/board-reset.js ----
@@ -46301,6 +48871,33 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         };
       },
       getAnnotations: () => clone(state.annotations),
+      // US-109 Auto Detect Seam test surface. Runtime and tests share the same
+      // analyzer/validator/action; no benchmark Oracle ROI enters this path.
+      autoSeam: {
+        analyzeImage: (imageId) => {
+          const image = getImageById(imageId) || pickAutoSourceImage();
+          return image ? clone(analyzeAutoSeamSource(image)) : null;
+        },
+        validateResult: result => validateAutoSeamResult(clone(result)),
+        run: () => runAutoDetectSeam(),
+        getLastRun: () => clone(state.autoSeam?.lastRun || null),
+        isDraft: annotationId => isAutoSeamDraft(state.annotations.find(ann => ann.id === annotationId)),
+        markTdEdit: annotationId => {
+          const ann = state.annotations.find(item => item.id === annotationId);
+          if (!ann) return null;
+          markDraftTouchedByTD(ann);
+          return clone(ann);
+        },
+        commitHistory: () => {
+          pushHistoryIfChanged();
+          return state.history.past.length;
+        },
+        historyDepth: () => state.history.past.length,
+        undo: async () => {
+          await undo();
+          return clone(state.annotations);
+        },
+      },
       // ADR 0071.
       getNotches: () => clone(state.notches || []),
       // US-095 focused browser proof. The mutation seams call the same model
@@ -49833,7 +52430,7 @@ function makeExportFileName() {
         ctx.moveTo(guide.start.x - ux * reach, guide.start.y - uy * reach);
         ctx.lineTo(guide.start.x + ux * reach, guide.start.y + uy * reach);
         ctx.stroke();
-      } else if (guide.type === 'point' && guide.point) {
+      } else if ((guide.type === 'point' || guide.type === 'intersection') && guide.point) {
         const radius = 7 / z;
         ctx.setLineDash([]);
         ctx.beginPath(); ctx.arc(guide.point.x, guide.point.y, radius, 0, Math.PI * 2); ctx.stroke();

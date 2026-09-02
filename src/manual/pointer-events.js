@@ -130,7 +130,7 @@
     }
 
     if (state.tool === 'straight' || state.tool === 'curved') {
-      handleDrawToolClick(world);
+      handleDrawToolClick(world, !!e.shiftKey);
       return;
     }
 
@@ -403,7 +403,7 @@
     }
 
     if (state.drawSession) {
-      state.drawSession.current = world;
+      updateDrawSessionPreview(world, !!e.shiftKey);
       requestRender();
     }
 
@@ -477,7 +477,7 @@
         if (!a) continue;
         restoreAnnotationMoveGeometry(a, source);
         moveAnnotation(a, aligned.dx, aligned.dy);
-        if (isAutoDraft(a)) markDraftTouchedByTD(a);
+        if (isTDReviewDraft(a)) markDraftTouchedByTD(a);
       }
       state.smartAlignGuides = aligned.guides;
       interaction.smartAlignGuides = aligned.guides;
@@ -586,10 +586,16 @@
       const off = interaction.grabOffset || { x: 0, y: 0 };
       const target = { x: world.x + off.x, y: world.y + off.y };
       if (!dragArmed(interaction, world)) return;
-      dragHandle(ann, interaction.part, target, interaction.prevWorld, e.altKey);
-      if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
+      // Smart Align has no other say over a single-endpoint drag — this is
+      // the one place a straight line's own end can snap onto where two
+      // OTHER lines cross (see computeSmartIntersectionSnapForHandle).
+      const snap = computeSmartIntersectionSnapForHandle(ann, interaction.part, target, e.altKey);
+      dragHandle(ann, interaction.part, snap.point, interaction.prevWorld, e.altKey);
+      if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
       interaction.changed = true;
-      interaction.prevWorld = target;
+      interaction.prevWorld = snap.point;
+      state.smartAlignGuides = snap.guide ? [snap.guide] : [];
+      interaction.smartAlignGuides = state.smartAlignGuides;
       refreshMeasuredValueForAnnotation(ann.id); // US-028: live Value cell
       requestRender();
       return;

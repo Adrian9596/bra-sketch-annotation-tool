@@ -222,9 +222,13 @@
         toolText = 'Select – Click an image, line, or label to select. Use wheel to zoom, double-click to fit, or hold <span class="kbd">Space</span> to pan.';
       }
     } else if (state.tool === 'straight') {
-      toolText = state.drawSession
-        ? 'Straight Line – Click second point to finish.'
-        : 'Straight Line – Click first point.';
+      toolText = state.drawSession && state.drawSession.type === 'straight'
+        ? (state.drawSession.angleLocked
+            ? 'Straight Line – Angle locked in 45° steps; click second point to finish.'
+            : 'Straight Line – Click second point to finish; hold <span class="kbd">Shift</span> to lock to 45° steps.')
+        : (state.drawSession
+            ? 'Straight Line – Click second point to finish.'
+            : 'Straight Line – Click first point; hold <span class="kbd">Shift</span> to lock to 45° steps.');
     } else if (state.tool === 'curved') {
       toolText = !state.drawSession
         ? 'Curved Line – Click the start point.'
@@ -293,9 +297,9 @@
     el.countStatus.innerHTML = '<strong>Images:</strong> ' + imageCount + ' &nbsp;•&nbsp; <strong>Annotations:</strong> ' + annotationCount + ' &nbsp;•&nbsp; <strong>Graphics:</strong> ' + (state.graphics || []).length;
     el.deleteBtn.disabled = !(selectedAnnotation || selectedNote || selectedGraphic || (selectedImage && !selectedImage.locked));
     const lineActionsEnabled = state.appMode !== 'auto';
-    el.copyLineBtn.disabled = !(selectedAnnotation && lineActionsEnabled);
+    el.copyLineBtn.disabled = !((selectedAnnotation || selectedGraphic) && lineActionsEnabled);
     el.reflectLineBtn.disabled = !(selectedAnnotation && lineActionsEnabled);
-    el.pasteLineBtn.disabled = !(hasLineClipboard() && lineActionsEnabled);
+    el.pasteLineBtn.disabled = !((hasLineClipboard() || hasGraphicClipboard()) && lineActionsEnabled);
     el.saveProjectBtn.disabled = annotationCount === 0 && imageCount === 0 && (state.graphics || []).length === 0 && (state.notes || []).length === 0;
     el.clearBtn.disabled = annotationCount === 0;
     el.fitBtn.disabled = imageCount === 0;

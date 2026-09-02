@@ -162,6 +162,12 @@
     // ---- Cradle-at-bottom-cup (POM 7 endpoints) ----
     // See src/auto/detect/pom7-cradle-cup.js for the full contract, the
     // strong / seam / dashed-guide / arc tiers and their tuned thresholds.
+    // cradleRowConfirmedAtCf: POM 6 already ran above and, via its
+    // 'direct' or 'dip' tier, independently confirmed real seam ink AT this
+    // same `cradleRow` (its 'junction' tier finds a different row and is
+    // excluded). POM 7's arc tier uses this to relax its CF-clearance floor —
+    // see pom7-cradle-cup.js for why.
+    const cradleRowConfirmedAtCf = !!cradleCfTop && !cradleCfTopJunction;
     const {
       cradleCupTop,
       cradleCupBottom,
@@ -184,6 +190,7 @@
       sideLeftCol, sideRightCol, sideLeftX, sideRightX,
       apexLeft, apexRight,
       hemNormAtColumn,
+      cradleRowConfirmedAtCf,
     });
 
     _stageMark('frontInkEndpoints');

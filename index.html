@@ -2101,6 +2101,54 @@
     font-weight:700;
   }
 
+  /* ===== Mind Map (standalone tool) =====
+     A fully separate tool (vendor/mindmap.html, embedded byte-for-byte in an
+     <iframe>) opened from a single Manual-only toolbar button. It shares no
+     code and no state with the measurement board — its own document, its
+     own localStorage namespace — and takes over the whole viewport while
+     open; the rest of the app is marked `inert` so nothing behind the
+     overlay is clickable or keyboard-reachable until the TD confirms
+     leaving via the overlay's own Exit button. See
+     src/manual/mindmap-mode.js. */
+  .mindmap-overlay{
+    position:fixed;
+    inset:0;
+    /* Below .picker-overlay's z-index:1000 (dialogs/core.js) so the Exit
+       confirm dialog — opened while this overlay is showing — always
+       layers visibly on top of it; above everything else in the app. */
+    z-index:500;
+    display:flex;
+    flex-direction:column;
+    background:#fff;
+  }
+  .mindmap-overlay-bar{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:8px 14px;
+    background:#1d1d1f;
+    color:#f5f5f7;
+    font-size:13px;
+    flex:0 0 auto;
+  }
+  .mindmap-overlay-bar strong{ font-weight:600; }
+  .mindmap-exit-btn{
+    margin-left:auto;
+    padding:6px 12px;
+    border-radius:7px;
+    border:1px solid rgba(255,255,255,0.25);
+    background:rgba(255,255,255,0.08);
+    color:inherit;
+    font-size:12px;
+    cursor:pointer;
+  }
+  .mindmap-exit-btn:hover{ background:rgba(255,255,255,0.18); }
+  .mindmap-overlay-frame{
+    flex:1 1 auto;
+    width:100%;
+    border:0;
+  }
+
   /* ===== MAIN PAGE sheet (US-068, ADR 0037; page-ified US-069, ADR 0038) =====
      A page of the tech pack, a peer of the Board — not a modal — so it gets a
      grid row of its own (see .toolbar's comment on row-3 occupants) and its
@@ -3210,6 +3258,14 @@
         aria-label="Sketch Focus — click again to return to POM Focus"
         title="Sketch Focus — sketch, construction, Template, and Treatment work: Templates, Smart Align, and stitch styles become available; POM callout numbers and the More menu hide. Click again to return to POM Focus.">Sketch</button>
     </div>
+    <div class="group manual-only group-mindmap">
+      <button id="mindMapBtn" type="button"
+        title="Mind Map — open a separate, self-contained mind-mapping tool. It has nothing to do with the measurement board: its own document, saved on its own. Leaving it back to Manual Mode asks for confirmation first.">Mind Map</button>
+    </div>
+    <div class="group manual-only sketch-mode-only group-auto-seam">
+      <button id="autoDetectSeamBtn" type="button"
+        title="Automatically detect supported seam appearances and add editable drafts. Technical flats support Plain, Single Dashed, Parallel Dashed Pair, and Zigzag; product photos remain Zigzag-only. Every result requires TD review.">Auto Detect Seam</button>
+    </div>
     <div id="autoModeBar" class="group group-auto workflow-empty">
       <button id="autoDetectBtn" data-key="1" type="button" title="Run local offline vision on the source sketch to estimate view, landmarks, and anchors">Detect</button>
       <button id="autoManageAnchorsBtn" type="button" title="Manage anchor visibility — hide all / show all, hide a group, or isolate one anchor">Anchors</button>
@@ -3304,15 +3360,11 @@
               <button id="shapeStampSaveBtn" type="button" role="menuitem" title="Save selected paths—including Scratch Area paths outside the sketch—as one editable reusable Template">Save selection as Template…</button>
             </div>
             <input id="shapeStampFileInput" type="file" accept="application/json,.json" hidden />
-            <!-- US-104: DXF import. Placed right after the Template library
-                 actions, per the story's own placement rule ("next to the
-                 existing Template Export/Import JSON actions"). Sketch-Focus
-                 only, like the rest of this group. -->
-            <div class="preset-divider sketch-mode-only" role="separator">Import</div>
-            <div class="preset-menu-actions sketch-mode-only">
-              <button id="dxfImportBtn" type="button" role="menuitem" title="Import LINE/ARC/CIRCLE/LWPOLYLINE/POLYLINE geometry from an ASCII DXF file — each piece places as its own movable Sketch Element group, never a POM">Open DXF file…</button>
-            </div>
-            <input id="dxfImportFileInput" type="file" accept=".dxf" hidden />
+            <!-- 2026-09-03: the dedicated "Open DXF file…" Tools-menu button
+                 was retired — File ▸ "Open project…" (#projectFileInput)
+                 already dispatches a .dxf to the exact same importDxfText
+                 engine, from any app mode, so the two entry points were
+                 redundant. See ADR 0087. -->
             <!-- ADR 0070: a grading-nest DXF places every size of a piece at
                  the same board position, overlapping. This opens the
                  floating panel that lists every piece so the TD can pick
@@ -3907,6 +3959,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=1eee7f39c4ba"></script>
+<script src="app.js?v=e55c2d728b4e"></script>
 </body>
 </html>

@@ -174,9 +174,11 @@ window.__DXF = (() => {
     await settle();
   };
   const importViaRealInput = async (text) => {
-    document.getElementById('toolsMenuBtn').click();
-    await settle();
-    const input = document.getElementById('dxfImportFileInput');
+    // 2026-09-03: drives the File-menu "Open project…" picker
+    // (#projectFileInput, accept=".json,.dxf,application/json") — the
+    // dedicated Tools-menu "Open DXF file…" button was retired (ADR 0087),
+    // this is the one real entry point left for a .dxf now.
+    const input = document.getElementById('projectFileInput');
     const dt = new DataTransfer();
     dt.items.add(new File([text], 'fixture.dxf', { type: 'application/octet-stream' }));
     input.files = dt.files;
@@ -915,42 +917,12 @@ window.__DXF = (() => {
   check(readout.squeezedVisible && readout.squeezedRectWidth > 0,
     `even with #toolStatus squeezed to 60px (forcing the sentence to genuinely ellipsis), the length chip must keep a real, nonzero bounding box, got width=${readout.squeezedRectWidth}`);
 
-  // ===========================================================================
-  // 8. Tools-menu visibility and Command Palette availability per focus
-  //    state — the "visible/available only in Sketch Focus" Acceptance
-  //    Criterion, equivalent to what board-toolbar-check/keyboard-shortcuts-
-  //    check assert for every other Sketch-Focus-only control.
-  // ===========================================================================
-
-  const focusGating = await s.eval(`(() => {
-    const d = window.__braAutoModeDebug;
-    document.getElementById('toolsMenuBtn').click();
-    const inSketch = {
-      sketchMode: d.getState().sketchMode,
-      btnVisible: document.getElementById('dxfImportBtn').offsetParent !== null,
-      command: d.commands.list().find(c => c.id === 'board.template.import-dxf'),
-    };
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    document.getElementById('sketchFocusBtn').click(); // -> POM Focus
-    document.getElementById('toolsMenuBtn').click();
-    const inPom = {
-      sketchMode: d.getState().sketchMode,
-      btnVisible: document.getElementById('dxfImportBtn').offsetParent !== null,
-      command: d.commands.list().find(c => c.id === 'board.template.import-dxf'),
-    };
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    document.getElementById('sketchFocusBtn').click(); // back to Sketch Focus
-    return { inSketch, inPom };
-  })()`);
-  check(focusGating.inSketch.sketchMode === true && focusGating.inSketch.btnVisible === true,
-    `"Open DXF file" must be visible in the Tools menu while in Sketch Focus, got ${JSON.stringify(focusGating.inSketch)}`);
-  check(!!focusGating.inSketch.command && focusGating.inSketch.command.availability.enabled === true,
-    `the Command Palette entry must be enabled in Sketch Focus, got ${JSON.stringify(focusGating.inSketch.command)}`);
-  check(focusGating.inPom.sketchMode === false && focusGating.inPom.btnVisible === false,
-    `"Open DXF file" must be hidden in the Tools menu outside Sketch Focus (POM Focus), got ${JSON.stringify(focusGating.inPom)}`);
-  check(!!focusGating.inPom.command && focusGating.inPom.command.availability.enabled === false
-    && /Available in Sketch Focus/i.test(focusGating.inPom.command.availability.reason),
-    `the Command Palette entry must be disabled outside Sketch Focus with the stated reason, got ${JSON.stringify(focusGating.inPom.command)}`);
+  // Section 8 (Tools-menu "Open DXF file…" button visibility + its Command
+  // Palette entry, gated to Sketch Focus) was retired 2026-09-03, ADR 0087 —
+  // that button and command no longer exist. "Open project…" (exercised
+  // below and in dxf-measurement-check.mjs) is the one entry point left and
+  // is NOT Sketch-Focus-gated (it drives the mode switch itself), so there
+  // is nothing analogous left to assert here.
 
   // ===========================================================================
   // 9. Real production file (private repo only — demo/DXF file/3380.dxf is

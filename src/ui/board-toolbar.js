@@ -129,16 +129,24 @@
 
     setBoardToolbarHidden(el.autoResetAnchorsBtn, !isAuto || !auto.detection);
     setBoardToolbarHidden(el.autoResetBoardBtn, !isAuto || isWorkingBoardEmpty());
+    if (el.autoDetectSeamBtn) {
+      el.autoDetectSeamBtn.disabled = !hasSource || !!state.autoSeam?.running;
+      el.autoDetectSeamBtn.textContent = state.autoSeam?.running
+        ? 'Detecting Seam…'
+        : 'Auto Detect Seam';
+    }
 
     // Manual selection actions occupy the toolbar only when actionable.
     const selectionMode = !isAuto && state.tool === 'select';
     setBoardToolbarHidden(el.undoBtn, !selectionMode || el.undoBtn.disabled);
     setBoardToolbarHidden(el.redoBtn, !selectionMode || el.redoBtn.disabled);
-    setBoardToolbarHidden(el.copyLineBtn, !selectionMode || !selectedAnnotation);
+    setBoardToolbarHidden(el.copyLineBtn, !selectionMode || !(selectedAnnotation || selectedGraphic));
     setBoardToolbarHidden(el.reflectLineBtn, !selectionMode || !selectedAnnotation);
     setBoardToolbarHidden(el.pasteLineBtn, !selectionMode || el.pasteLineBtn.disabled);
     // US-092: Delete is the note's only toolbar action — Copy / Reflect / Paste
-    // are line operations and stay hidden for a selected note.
+    // are line (and, for Copy/Paste, shape) operations and stay hidden for a
+    // selected note. Reflect stays annotation-only — mirroring a shape was
+    // never asked for and ADR 0054 scoped graphics ops to move/resize/delete.
     setBoardToolbarHidden(el.deleteBtn, !selectionMode || !(selectedAnnotation || selectedImage || selectedNote || selectedGraphic));
     setBoardToolbarHidden(el.lockImageBtn, !selectionMode || !selectedImage);
     const editingGraphic = !!(selectedGraphic && state.graphicEdit && state.graphicEdit.graphicId === selectedGraphic.id);

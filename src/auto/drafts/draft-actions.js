@@ -10,7 +10,7 @@
   // -------- TD review actions on drafts --------
 
   function markDraftTouchedByTD(ann) {
-    if (!isAutoDraft(ann)) return;
+    if (!isTDReviewDraft(ann)) return;
     const wasEdited = !!ann.tdEdited;
     ann.tdEdited = true;
     ann.tdApprovalRequired = true;

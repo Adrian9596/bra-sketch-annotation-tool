@@ -7,12 +7,24 @@
 // computeDefaultLabelPosition). Sibling files: annotation builders live in
 // src/manual/annotation-factory.js; label-collision nudging lives in
 // src/manual/label-layout.js; delete/clear lifecycle lives in
-// src/manual/annotation-lifecycle.js.
+// src/manual/annotation-lifecycle.js; the analogous shape clipboard
+// (copySelectedGraphic / pasteGraphicFromClipboard) lives in
+// src/manual/board-graphics.js. copySelectedLineOrGraphic and
+// pasteFromClipboard below are the single dispatchers every caller (the
+// keyboard router, the toolbar buttons, the Command Palette, and the native
+// paste event) goes through, so "last copy wins" is decided in one place —
+// see lastBoardClipboardKind.
 // Source part for app.js. Run `npm run build` after editing.
 
   // Module-scope clipboard — survives undo/redo and isn't snapshotted in
   // history. Paste always builds a fresh annotation off this template.
   let lineClipboard = null;
+  // Which internal clipboard (line or shape) was copied most recently. A
+  // plain shared flag rather than two independent "has a clipboard" checks,
+  // because a TD can copy a line, then copy a shape, then paste — paste must
+  // give the shape, not silently keep re-pasting the line. Shape-side writes
+  // live in board-graphics.js's copySelectedGraphic.
+  let lastBoardClipboardKind = null;
 
   function copySelectedAnnotation() {
     if (state.appMode === 'auto') return;
@@ -22,6 +34,7 @@
       return;
     }
     lineClipboard = anns.map(clone);
+    lastBoardClipboardKind = 'annotation';
     // Claim the OS clipboard (best-effort) so a photo copied EARLIER no
     // longer shadows this line copy on paste: onPasteEvent pastes an OS
     // image when present, otherwise the internal line clipboard — writing
@@ -210,4 +223,22 @@
 
   function hasLineClipboard() {
     return Array.isArray(lineClipboard) ? lineClipboard.length > 0 : lineClipboard != null;
+  }
+
+  // Dispatchers used by every copy/paste entry point (toolbar buttons,
+  // Command Palette, keyboard router, native paste event) so a selected
+  // shape and a selected line share the same Copy/Paste affordance instead
+  // of Copy silently doing nothing for a shape.
+  function copySelectedLineOrGraphic() {
+    if (state.selection.kind === 'graphic') copySelectedGraphic();
+    else copySelectedAnnotation();
+  }
+
+  function pasteFromClipboard() {
+    if (state.appMode === 'auto') return;
+    if (lastBoardClipboardKind === 'graphic' && hasGraphicClipboard()) {
+      pasteGraphicFromClipboard();
+      return;
+    }
+    pasteLineFromClipboard();
   }

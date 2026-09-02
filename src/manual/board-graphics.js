@@ -17,6 +17,74 @@
     return state.selection.kind === 'graphic' ? getBoardGraphicById(state.selection.id) : null;
   }
 
+  // Shape clipboard — the graphics-side sibling of annotation-clipboard.js's
+  // lineClipboard. Kept here (not there) because it needs bgNextId /
+  // normalizeBoardGraphic, which own the shape's id-assignment and
+  // normalization rules; lastBoardClipboardKind is declared in
+  // annotation-clipboard.js and shared across both files, same as any other
+  // module-scope state in this bundle. Reached only through the
+  // copySelectedLineOrGraphic / pasteFromClipboard dispatchers there.
+  let graphicClipboard = null;
+
+  function copySelectedGraphic() {
+    if (state.appMode === 'auto') return;
+    const graphic = getSelectedBoardGraphic();
+    if (!graphic) {
+      showToast('Select a shape to copy first.');
+      return;
+    }
+    graphicClipboard = clone(graphic);
+    lastBoardClipboardKind = 'graphic';
+    // Claim the OS clipboard the same way copySelectedAnnotation does, so a
+    // line copied earlier no longer shadows this shape copy on paste.
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText('[Bra Auto Measure] shape copied').catch(() => {});
+    }
+    updateUI();
+    showToast('Shape copied.');
+  }
+
+  function pasteGraphicFromClipboard() {
+    if (state.appMode === 'auto' || !graphicClipboard) {
+      showToast('Nothing to paste — copy a shape first.');
+      return;
+    }
+    const offset = 20 / state.zoom;
+    const shift = (p) => (p ? { x: p.x + offset, y: p.y + offset } : null);
+    const src = clone(graphicClipboard);
+    const raw = {
+      ...src,
+      id: bgNextId('bg'),
+      live: src.live
+        ? { center: shift(src.live.center), width: src.live.width, height: src.live.height }
+        : null,
+      subpaths: (Array.isArray(src.subpaths) ? src.subpaths : []).map(sp => ({
+        id: bgNextId('bgsp'),
+        closed: sp.closed,
+        nodes: (Array.isArray(sp.nodes) ? sp.nodes : []).map(n => ({
+          id: bgNextId('bgn'),
+          point: shift(n.point),
+          handleIn: shift(n.handleIn),
+          handleOut: shift(n.handleOut),
+          segmentType: n.segmentType,
+        })),
+      })),
+    };
+    const graphic = normalizeBoardGraphic(raw);
+    if (!graphic) return;
+    state.graphics = state.graphics || [];
+    state.graphics.push(graphic);
+    setSelection('graphic', graphic.id);
+    pushHistoryIfChanged();
+    updateUI();
+    requestRender();
+    showToast('Shape pasted.');
+  }
+
+  function hasGraphicClipboard() {
+    return graphicClipboard != null;
+  }
+
   function bgNormalizeNode(raw) {
     const point = bgClonePoint(raw && raw.point);
     return {

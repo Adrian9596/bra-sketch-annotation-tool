@@ -718,6 +718,102 @@ async function main() {
   await s.eval(HARNESS);
   await s.eval(`window.__BI_BASE = window.__braAutoModeDebug.exportProject(); 'saved'`);
 
+  // ---- US-101. Shift locks Straight Line to 45-degree increments ----
+  // Test both state transitions without pointer travel. A mousemove-only test
+  // would miss the common TD gesture of positioning first and then pressing
+  // Shift to constrain immediately before the second click.
+  const angleLock = await s.eval(`(async () => {
+    const B = window.__BI;
+    const step = Math.PI / 4;
+    const angleError = (a, b) => {
+      const angle = Math.atan2(b.y - a.y, b.x - a.x);
+      return Math.abs(angle - Math.round(angle / step) * step);
+    };
+    const key = (type, locked) => document.dispatchEvent(new KeyboardEvent(type, {
+      key: 'Shift', code: 'ShiftLeft', shiftKey: locked, bubbles: true, cancelable: true,
+    }));
+    const move = (point, locked) => {
+      const screen = B.w2s(point);
+      B.ev('mousemove', screen.x, screen.y, { buttons: 0, shiftKey: locked });
+    };
+    const copyPoint = p => p && ({ x: p.x, y: p.y });
+
+    await B.restore();
+    document.getElementById('toolStraight').click();
+    const image = B.d.getImages()[0];
+    const start = { x: image.x + image.width * 0.18, y: image.y + image.height * 0.16 };
+    const rawTarget = { x: start.x + 97, y: start.y + 31 };
+    B.click(start);
+    move(rawTarget, false);
+    const raw = B.d.getState().drawSession;
+    const rawStatus = document.getElementById('toolStatus').textContent;
+    key('keydown', true);
+    const locked = B.d.getState().drawSession;
+    const lockedStatus = document.getElementById('toolStatus').textContent;
+    key('keyup', false);
+    const released = B.d.getState().drawSession;
+    key('keydown', true);
+    const relocked = B.d.getState().drawSession;
+    const beforeCommit = B.d.getAnnotations().length;
+    B.click(rawTarget, { shiftKey: true });
+    key('keyup', false);
+    const committed = B.d.getAnnotations()[beforeCommit];
+
+    await B.restore();
+    document.getElementById('toolStraight').click();
+    const freeStart = { x: image.x + image.width * 0.18, y: image.y + image.height * 0.32 };
+    const freeTarget = { x: freeStart.x + 83, y: freeStart.y + 29 };
+    const beforeFree = B.d.getAnnotations().length;
+    B.click(freeStart);
+    move(freeTarget, false);
+    const freePreview = B.d.getState().drawSession;
+    B.click(freeTarget);
+    const freeCommitted = B.d.getAnnotations()[beforeFree];
+    // Project restore does not change the active toolbar tool. Return to Select
+    // explicitly so every pre-existing pointer section below starts in the
+    // state it owned before this US-101 setup was inserted.
+    document.getElementById('toolSelect').click();
+    await B.restore();
+
+    return {
+      rawCurrent: copyPoint(raw.rawCurrent), rawPreview: copyPoint(raw.current),
+      rawStatus, lockedStatus,
+      lockedCurrent: copyPoint(locked.current), lockedFlag: locked.angleLocked,
+      releasedCurrent: copyPoint(released.current), releasedFlag: released.angleLocked,
+      relockedCurrent: copyPoint(relocked.current),
+      committedStart: copyPoint(committed && committed.start),
+      committedEnd: copyPoint(committed && committed.end),
+      freePreview: copyPoint(freePreview.current),
+      freeRaw: copyPoint(freePreview.rawCurrent),
+      freeStart: copyPoint(freeCommitted && freeCommitted.start),
+      freeEnd: copyPoint(freeCommitted && freeCommitted.end),
+      lockedAngleError: angleError(raw.start, locked.current),
+      freeAngleError: angleError(freeCommitted.start, freeCommitted.end),
+      rawLength: Math.hypot(raw.rawCurrent.x - raw.start.x, raw.rawCurrent.y - raw.start.y),
+      lockedLength: Math.hypot(locked.current.x - locked.start.x, locked.current.y - locked.start.y),
+    };
+  })()`);
+  const pointGap = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  check(pointGap(angleLock.rawPreview, angleLock.rawCurrent) < 0.001,
+    `free Straight preview changed the cursor endpoint: ${JSON.stringify(angleLock)}`);
+  check(/hold Shift/i.test(angleLock.rawStatus),
+    `free Straight status does not explain the Shift modifier: ${JSON.stringify(angleLock.rawStatus)}`);
+  check(angleLock.lockedFlag && angleLock.lockedAngleError < 1e-9,
+    `Shift did not lock the live Straight preview to a 45-degree increment: ${JSON.stringify(angleLock)}`);
+  check(/angle locked/i.test(angleLock.lockedStatus) && /45/.test(angleLock.lockedStatus),
+    `locked Straight status does not confirm the 45-degree constraint: ${JSON.stringify(angleLock.lockedStatus)}`);
+  check(Math.abs(angleLock.lockedLength - angleLock.rawLength) < 0.001,
+    `angle lock changed line length by ${(angleLock.lockedLength - angleLock.rawLength).toFixed(3)} world px`);
+  check(!angleLock.releasedFlag && pointGap(angleLock.releasedCurrent, angleLock.rawCurrent) < 0.001,
+    `releasing Shift without moving did not restore the raw preview: ${JSON.stringify(angleLock)}`);
+  check(pointGap(angleLock.relockedCurrent, angleLock.lockedCurrent) < 0.001,
+    `pressing Shift again without moving did not restore the locked preview: ${JSON.stringify(angleLock)}`);
+  check(pointGap(angleLock.committedEnd, angleLock.lockedCurrent) < 0.001,
+    `committed endpoint differs from its locked preview: ${JSON.stringify(angleLock)}`);
+  check(pointGap(angleLock.freePreview, angleLock.freeRaw) < 0.001 && angleLock.freeAngleError > 0.05,
+    `Straight without Shift was unexpectedly angle-locked: ${JSON.stringify(angleLock)}`);
+  console.log('board-interaction-check: Straight Line Shift lock previews and commits in 45-degree steps');
+
   // ---- 0. The board holds still when the chrome around it reflows ----
   // US-088. `canvas { width:100%; height:100% }` means a backing buffer that
   // does not follow its CSS box is not clipped, it is STRETCHED — the board is

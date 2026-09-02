@@ -105,7 +105,7 @@
     } else {
       moveAnnotation(ann, dx, dy);
     }
-    if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
+    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
     if (lineNudgeSession.timer) clearTimeout(lineNudgeSession.timer);
     lineNudgeSession.timer = setTimeout(flushLineNudgeSession, LINE_NUDGE_COMMIT_MS);
     refreshMeasuredValueForAnnotation(ann.id); // US-028: live Value cell

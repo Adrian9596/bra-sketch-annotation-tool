@@ -399,7 +399,7 @@ async function section8InsertBlocksAndUnits(s) {
     const fire = (type, x, y) => canvas.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, button: 0 }));
     document.getElementById('toolsMenuBtn').click();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const input = document.getElementById('dxfImportFileInput');
+    const input = document.getElementById('projectFileInput');
     const dt = new DataTransfer();
     dt.items.add(new File([${JSON.stringify(BLOCK_CHAIN_DXF)}], 'block.dxf', { type: 'application/octet-stream' }));
     input.files = dt.files;
@@ -523,7 +523,7 @@ async function section9PieceEditInvalidation(s) {
     const importFixture = async (text) => {
       document.getElementById('toolsMenuBtn').click();
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-      const input = document.getElementById('dxfImportFileInput');
+      const input = document.getElementById('projectFileInput');
       const dt = new DataTransfer();
       dt.items.add(new File([text], 'twopiece.dxf', { type: 'application/octet-stream' }));
       input.files = dt.files;
@@ -678,7 +678,7 @@ async function section10Snap(s) {
     if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
     document.getElementById('toolsMenuBtn').click();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const input = document.getElementById('dxfImportFileInput');
+    const input = document.getElementById('projectFileInput');
     const dt = new DataTransfer();
     dt.items.add(new File([${JSON.stringify(SNAP_SQUARE_DXF)}], 'snapsquare.dxf', { type: 'application/octet-stream' }));
     input.files = dt.files;
@@ -754,7 +754,7 @@ async function section10Snap(s) {
     if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
     document.getElementById('toolsMenuBtn').click();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const input = document.getElementById('dxfImportFileInput');
+    const input = document.getElementById('projectFileInput');
     const dt = new DataTransfer();
     dt.items.add(new File([${JSON.stringify(fixtureText)}], '3380.dxf', { type: 'application/octet-stream' }));
     input.files = dt.files;
@@ -819,7 +819,7 @@ async function section10Snap(s) {
     if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
     document.getElementById('toolsMenuBtn').click();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const input = document.getElementById('dxfImportFileInput');
+    const input = document.getElementById('projectFileInput');
     const dt = new DataTransfer();
     dt.items.add(new File([${JSON.stringify(largeFixtureText)}], 'bianca.dxf', { type: 'application/octet-stream' }));
     input.files = dt.files;
@@ -881,7 +881,7 @@ async function section11MeasurementsPanel(s) {
     if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
     document.getElementById('toolsMenuBtn').click();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const input = document.getElementById('dxfImportFileInput');
+    const input = document.getElementById('projectFileInput');
     const dt = new DataTransfer();
     dt.items.add(new File([${JSON.stringify(PANEL_SQUARE_DXF)}], 'panelsquare.dxf', { type: 'application/octet-stream' }));
     input.files = dt.files;
@@ -1072,7 +1072,7 @@ async function section12SeamMatch(s) {
     if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
     document.getElementById('toolsMenuBtn').click();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const input = document.getElementById('dxfImportFileInput');
+    const input = document.getElementById('projectFileInput');
     const dt = new DataTransfer();
     dt.items.add(new File([${JSON.stringify(SEAM_FIXTURE_DXF)}], 'seamfixture.dxf', { type: 'application/octet-stream' }));
     input.files = dt.files;
@@ -1281,7 +1281,7 @@ async function section13DraggablePanels(s) {
     if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
     document.getElementById('toolsMenuBtn').click();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const input = document.getElementById('dxfImportFileInput');
+    const input = document.getElementById('projectFileInput');
     const dt = new DataTransfer();
     dt.items.add(new File([${JSON.stringify(doc([dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0)]))}], 'dragfixture.dxf', { type: 'application/octet-stream' }));
     input.files = dt.files;
@@ -1482,7 +1482,7 @@ async function section14SnapTiesAndSizeFilter(s) {
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
     const importDxf = async (text, name) => {
-      const input = document.getElementById('dxfImportFileInput');
+      const input = document.getElementById('projectFileInput');
       const dt = new DataTransfer();
       dt.items.add(new File([text], name, { type: 'application/octet-stream' }));
       input.files = dt.files;
@@ -1635,7 +1635,7 @@ async function section15SizeFilterOverlapGateAndDuplicateSegments(s) {
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
     const importDxf = async (text, name) => {
-      const input = document.getElementById('dxfImportFileInput');
+      const input = document.getElementById('projectFileInput');
       const dt = new DataTransfer();
       dt.items.add(new File([text], name, { type: 'application/octet-stream' }));
       input.files = dt.files;
@@ -1769,7 +1769,7 @@ async function section16SizeTokensAndLoopRoutes(s) {
     document.getElementById('toolsMenuBtn').click();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     const importDxf = async (text, name) => {
-      const input = document.getElementById('dxfImportFileInput');
+      const input = document.getElementById('projectFileInput');
       const dt = new DataTransfer();
       dt.items.add(new File([text], name, { type: 'application/octet-stream' }));
       input.files = dt.files;
@@ -2124,7 +2124,7 @@ async function section3Integration(s) {
     document.getElementById('modeManualBtn').click();
     document.getElementById('toolsMenuBtn').click();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const input = document.getElementById('dxfImportFileInput');
+    const input = document.getElementById('projectFileInput');
     const dt = new DataTransfer();
     dt.items.add(new File([${JSON.stringify(SQUARE_DXF)}], 'square.dxf', { type: 'application/octet-stream' }));
     input.files = dt.files;
@@ -2188,7 +2188,7 @@ async function section4RealPointerFlow(s) {
     const importFixture = async (text) => {
       document.getElementById('toolsMenuBtn').click();
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-      const input = document.getElementById('dxfImportFileInput');
+      const input = document.getElementById('projectFileInput');
       const dt = new DataTransfer();
       dt.items.add(new File([text], 'f.dxf', { type: 'application/octet-stream' }));
       input.files = dt.files;
@@ -2284,7 +2284,7 @@ async function section5Visual(s) {
     const dbg = window.__braAutoModeDebug;
     document.getElementById('toolsMenuBtn').click();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const input = document.getElementById('dxfImportFileInput');
+    const input = document.getElementById('projectFileInput');
     const dt = new DataTransfer();
     dt.items.add(new File([${JSON.stringify(CHAIN_DXF)}], 'chain.dxf', { type: 'application/octet-stream' }));
     input.files = dt.files;
@@ -2397,7 +2397,7 @@ async function section6RealFixture(s) {
     document.getElementById('modeManualBtn').click();
     document.getElementById('toolsMenuBtn').click();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const input = document.getElementById('dxfImportFileInput');
+    const input = document.getElementById('projectFileInput');
     const dt = new DataTransfer();
     dt.items.add(new File([${JSON.stringify(fixtureText)}], '3380.dxf', { type: 'application/octet-stream' }));
     input.files = dt.files;

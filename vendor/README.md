@@ -26,3 +26,24 @@ Provenance:
 Replacing this file is a **deliberate act**: re-run `npm run golden` and
 `npm run accuracy` before and after, and update the filename + this note.
 See the runtime load-order notes in [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
+
+## mindmap.html
+
+"Atlas — Mind Map", a fully self-contained mind-mapping tool (inline
+CSS + one inline `<script>`, no external requests, own `localStorage`
+namespace `atlas.mindmap.*`). Embedded byte-for-byte, unmodified, and loaded
+in an `<iframe>` from the Manual-mode "Mind Map" toolbar button — see
+`src/manual/mindmap-mode.js`. It shares no code and no state with the rest of
+this app; the two happen to sit in the same repo for offline distribution
+only.
+
+Provenance:
+
+- Source: provided directly by the project owner (not fetched from a public
+  URL), copied in unchanged on 2026-09-03.
+- SHA-256: `29427ac06ca7cf0b2ae984b3d1e602d034a21d8fc0e721e99c0eb07d35e54c4c`
+- Size: 272,770 bytes
+
+Replacing this file is a **deliberate act** the same way the OpenCV build
+above is: swap the file, verify it is still self-contained (no new external
+requests), and update this note.

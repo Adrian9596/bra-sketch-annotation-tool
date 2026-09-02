@@ -256,14 +256,7 @@
       page: 'board', mode: 'manual', target: '#shapeStampSaveBtn',
       when: () => (typeof canSaveShapeStampReason === 'function' ? canSaveShapeStampReason() : true),
       action: () => saveSelectedLineAsShape() }),
-    // US-104: DXF import is Sketch-Focus-only — no `mode`/`page` gate exists
-    // for that, so `when` carries it, matching the disabled-reason
-    // convention every other conditionally-available command already uses.
-    appCommand({ id: 'board.template.import-dxf', label: 'Open DXF file', category: 'Board · Style',
-      page: 'board', mode: 'manual', target: '#dxfImportBtn',
-      when: () => state.sketchMode ? true : 'Available in Sketch Focus',
-      action: () => appCommandClick('#dxfImportBtn') }),
-    // ADR 0070: same Sketch-Focus gate as the DXF import command above — the
+    // ADR 0070: same Sketch-Focus gate the retired DXF-import command used —
     // panel only has anything to list once a sketch-element piece exists.
     appCommand({ id: 'board.pattern-pieces.open', label: 'Pattern Pieces: Choose Sizes', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#patternPiecesBtn',
@@ -324,6 +317,12 @@
     appCommand({ id: 'board.focus.sketch.toggle', label: 'Toggle Sketch Focus', category: 'Board · View',
       page: 'board', mode: 'manual', target: '#sketchFocusBtn',
       action: () => toggleSketchMode() }),
+    appCommand({ id: 'board.auto-detect-seam', label: 'Auto Detect Seam', category: 'Board · Auto',
+      page: 'board', mode: 'manual', target: '#autoDetectSeamBtn',
+      when: () => !state.sketchMode
+        ? 'Available in Sketch Focus'
+        : (pickAutoSourceImage() ? true : 'Add or paste a source image first'),
+      action: () => runAutoDetectSeam() }),
     appCommand({ id: 'board.copy.line', label: 'Copy Selected Line/Shape', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'c', meta: true }, target: '#copyLineBtn',
       when: appCommandSelectedAnnotationOrGraphicReason, action: () => copySelectedLineOrGraphic() }),

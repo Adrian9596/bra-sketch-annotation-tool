@@ -39,9 +39,6 @@
     // Templates is the unified Library dialog now.
     shapeStampSaveBtn: document.getElementById('shapeStampSaveBtn'),
     shapeStampFileInput: document.getElementById('shapeStampFileInput'),
-    // US-104: the "Open DXF file" action, inside the Tools menu.
-    dxfImportBtn: document.getElementById('dxfImportBtn'),
-    dxfImportFileInput: document.getElementById('dxfImportFileInput'),
     // US-105: the Pattern Measure tool entries, inside the Tools menu.
     dxfMeasureAlongBtn: document.getElementById('dxfMeasureAlongBtn'),
     dxfMeasureOutBtn: document.getElementById('dxfMeasureOutBtn'),
@@ -143,6 +140,8 @@
     modeManualBtn: document.getElementById('modeManualBtn'),
     modeAutoBtn: document.getElementById('modeAutoBtn'),
     sketchFocusBtn: document.getElementById('sketchFocusBtn'),
+    mindMapBtn: document.getElementById('mindMapBtn'),
+    autoDetectSeamBtn: document.getElementById('autoDetectSeamBtn'),
     autoModeBar: document.getElementById('autoModeBar'),
     autoDetectBtn: document.getElementById('autoDetectBtn'),
     autoResetAnchorsBtn: document.getElementById('autoResetAnchorsBtn'),

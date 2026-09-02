@@ -20,6 +20,10 @@
     el.toolHexagon.addEventListener('click', () => setTool('hexagon'));
     if (el.smartAlignToggleBtn) el.smartAlignToggleBtn.addEventListener('click', toggleSmartAlign);
     if (el.sketchFocusBtn) el.sketchFocusBtn.addEventListener('click', () => toggleSketchMode());
+    if (el.mindMapBtn) el.mindMapBtn.addEventListener('click', () => openMindMap());
+    if (el.autoDetectSeamBtn) el.autoDetectSeamBtn.addEventListener('click', () => {
+      void runAutoDetectSeam();
+    });
     // US-093 / ADR 0053: only visible while a curved annotation is selected
     // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
     // no extra guard needed here.
@@ -29,7 +33,6 @@
     // US-096: the preset dropdown owns its own rows and handlers.
     bindLinePresetPanel();
     bindShapeStampPanel();
-    bindDxfImportPanel();
     bindPatternPiecesPanel();
     bindDxfMeasurePanel();
     el.styleOptionBtns.forEach((button) => {
@@ -88,8 +91,8 @@
     // tool is active — see dxfMeasureOrGlobalUndo/Redo's own comment.
     el.undoBtn.addEventListener('click', () => dxfMeasureOrGlobalUndo());
     el.redoBtn.addEventListener('click', () => dxfMeasureOrGlobalRedo());
-    el.copyLineBtn.addEventListener('click', copySelectedAnnotation);
-    el.pasteLineBtn.addEventListener('click', pasteLineFromClipboard);
+    el.copyLineBtn.addEventListener('click', copySelectedLineOrGraphic);
+    el.pasteLineBtn.addEventListener('click', pasteFromClipboard);
     el.reflectLineBtn.addEventListener('click', reflectSelectedAnnotation);
     el.deleteBtn.addEventListener('click', deleteSelected);
     el.editPathBtn.addEventListener('click', () => bgEnterEdit(getSelectedBoardGraphic()));

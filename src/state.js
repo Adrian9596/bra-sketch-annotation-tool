@@ -143,6 +143,13 @@
     // Restore, all three through src/manual/sketch-mode.js's
     // applySketchModeVisual — the one function those three sites share.
     sketchMode: false,
+    // US-109 Auto Detect Seam runtime state. Session-only: generated Board
+    // annotations persist through the ordinary project/history path, while a
+    // detector's transient running/result UI does not belong in project JSON.
+    autoSeam: {
+      running: false,
+      lastRun: null,
+    },
     // US-103: the POM-side pending arrow preference (state.arrowType), saved
     // by applySketchModeVisual the moment Sketch Focus turns on and restored
     // the moment it turns off. Session-only, like sketchMode itself — never

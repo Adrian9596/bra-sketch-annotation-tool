@@ -208,6 +208,7 @@
       // Auto-first so detection can run right away.
       state.appMode = (state.annotations.length > 0 || state.graphics.length > 0 || state.notes.length > 0) ? 'manual' : 'auto';
       state.autoMode = makeInitialAutoModeState();
+      state.autoSeam = { running: false, lastRun: null };
       state.hiddenAnnIds = [];
       state.hiddenDraftIds = [];
       // US-105: a reopened project never carries a measure session — it is

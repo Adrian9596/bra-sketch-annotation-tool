@@ -313,7 +313,7 @@
         ctx.moveTo(guide.start.x - ux * reach, guide.start.y - uy * reach);
         ctx.lineTo(guide.start.x + ux * reach, guide.start.y + uy * reach);
         ctx.stroke();
-      } else if (guide.type === 'point' && guide.point) {
+      } else if ((guide.type === 'point' || guide.type === 'intersection') && guide.point) {
         const radius = 7 / z;
         ctx.setLineDash([]);
         ctx.beginPath(); ctx.arc(guide.point.x, guide.point.y, radius, 0, Math.PI * 2); ctx.stroke();

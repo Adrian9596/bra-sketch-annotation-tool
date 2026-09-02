@@ -30,13 +30,15 @@
       }
       return;
     }
-    // No image on the OS clipboard — fall back to the internal line
-    // clipboard. copySelectedAnnotation claims the OS clipboard with a text
-    // marker, so whichever was copied LAST wins here, like a real clipboard.
-    // Never hijack a paste aimed at a text field.
-    if (inField || state.appMode === 'auto' || !hasLineClipboard()) return;
+    // No image on the OS clipboard — fall back to the internal board
+    // clipboard (a copied line or a copied shape). copySelectedAnnotation /
+    // copySelectedGraphic both claim the OS clipboard with a text marker, so
+    // whichever was copied LAST wins here, like a real clipboard; between
+    // the two internal ones, pasteFromClipboard reads lastBoardClipboardKind
+    // to decide. Never hijack a paste aimed at a text field.
+    if (inField || state.appMode === 'auto' || (!hasLineClipboard() && !hasGraphicClipboard())) return;
     e.preventDefault();
-    pasteLineFromClipboard();
+    pasteFromClipboard();
   }
 
   async function addImagesFromDataURLs(dataURLs) {

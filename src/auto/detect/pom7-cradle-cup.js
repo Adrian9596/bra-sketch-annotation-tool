@@ -32,6 +32,12 @@
       sideLeftCol, sideRightCol, sideLeftX, sideRightX,
       apexLeft, apexRight,
       hemNormAtColumn,
+      // Independent corroboration for `cradleRow` from POM 6's own CF-axis
+      // seam checks: true when findCradleCfTop confirmed a real
+      // seam AT this exact row via its 'direct' or 'dip' tier — both anchor
+      // on `cradleRow` itself (only the row-agnostic 'junction' tier does
+      // not, so it is excluded). See the ARC_MIN_CF_CLEARANCE use below.
+      cradleRowConfirmedAtCf,
     } = ctx;
 
     // ---- Cradle-at-bottom-cup (POM 7 endpoints) ----
@@ -489,7 +495,24 @@
     //
     // Scoped to the arc tier on purpose — it is the last-resort, review-flagged
     // tier (ADR 0022); the seam tiers carry their own validation.
+    //
+    // The floor has two settings. `cradleY`'s OWN reliability varies:
+    // on a genuine neckline mis-lock (the "EvelynBliss vA 1.0" case this floor
+    // was calibrated against) `cradleRow` collapsed onto a spurious peak near
+    // the chest, so a shallow clearance is exactly the mislock signature. But
+    // when POM 6's independent CF-axis seam check (`cradleRowConfirmedAtCf`)
+    // already proved real seam ink sits AT this row — a check that looks at
+    // ink continuity and baseline projection, nothing to do with clearance —
+    // a shallow clearance is no longer suspicious: it just means this style's
+    // cup bottom genuinely sits close to CF (e.g. a narrow/plunge cup), and
+    // the corroborated case measured empirically at 26% ("EvelynBliss vA 2.0",
+    // same sketch family, real cradleRow with strong ink/baseline evidence and
+    // a high-confidence POM 6 direct-tier match) should draw for TD review
+    // instead of silently dropping POM 7 entirely.
     const ARC_MIN_CF_CLEARANCE = 1 / 3;
+    const ARC_MIN_CF_CLEARANCE_CONFIRMED = 1 / 5;
+    const arcClearanceFloor = cradleRowConfirmedAtCf
+      ? ARC_MIN_CF_CLEARANCE_CONFIRMED : ARC_MIN_CF_CLEARANCE;
     if (!cradleCupTop && cradleY != null && bandY != null) {
       let arcClearanceReject = null;
       for (const side of [+1, -1]) {
@@ -508,7 +531,7 @@
             && arc.bottomY > apexPoint.y + 0.08
             && arc.bottomY >= cradleY - 0.05
             && arc.bottomY < bandY - 0.01
-            && arcCfClearance >= ARC_MIN_CF_CLEARANCE) {
+            && arcCfClearance >= arcClearanceFloor) {
           cradleCupTop = { x: arc.bottomX, y: arc.bottomY };
           // Hem-following bottom, same rule as the seam/strong tier (US-061).
           cradleCupBottom = { x: arc.bottomX, y: hemNormAtColumn(arc.bottomX * w, bandY) };
@@ -519,11 +542,11 @@
           break;
         }
         if (arc && arc.bottomX != null
-            && arcCfClearance < ARC_MIN_CF_CLEARANCE
+            && arcCfClearance < arcClearanceFloor
             && !arcClearanceReject) {
           arcClearanceReject = 'traced cup-bottom arc rejected: bottoms out '
             + Math.round(arcCfClearance * 100) + '% of the way from CF to the side seam, '
-            + 'inside the ' + Math.round(ARC_MIN_CF_CLEARANCE * 100)
+            + 'inside the ' + Math.round(arcClearanceFloor * 100)
             + '% cup-base floor (reads as the neckline curve, not a cup bottom)';
         }
       }

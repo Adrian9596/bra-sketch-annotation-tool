@@ -29,6 +29,7 @@
       }
       if (typeof ensureAutoModeStatus === 'function') ensureAutoModeStatus();
     }
+    if (state.autoSeam?.lastRun?.sourceImageId === deletedId) state.autoSeam.lastRun = null;
     return true;
   }
 
@@ -49,7 +50,7 @@
         deleteCurveAnchorAt(anchorAnn, anchor.index);
         state.selection.part = null;
         if (!anchorAnn.labelManual) anchorAnn.label = computeDefaultLabelPosition(anchorAnn);
-        if (isAutoDraft(anchorAnn)) markDraftTouchedByTD(anchorAnn);
+        if (isTDReviewDraft(anchorAnn)) markDraftTouchedByTD(anchorAnn);
         pushHistoryIfChanged();
         updateUI();
         requestRender();

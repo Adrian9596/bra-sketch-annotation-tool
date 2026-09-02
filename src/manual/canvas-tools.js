@@ -103,7 +103,7 @@
     }
     state.selection.part = 'point' + index + '.point';
     if (!ann.labelManual) ann.label = computeDefaultLabelPosition(ann);
-    if (isAutoDraft(ann)) markDraftTouchedByTD(ann);
+    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
     pushHistoryIfChanged();
     updateUI();
     requestRender();
@@ -176,7 +176,51 @@
     };
   }
 
-  function handleDrawToolClick(world) {
+  // Return the endpoint at the cursor's current radius, with its angle rounded
+  // to the nearest 45-degree increment around `start`. Keeping radius stable
+  // makes Shift an angle constraint, not an unexpected resize operation.
+  function constrainStraightEndpoint(start, current) {
+    const dx = current.x - start.x;
+    const dy = current.y - start.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 0.0001) return clonePoint(current);
+    const step = Math.PI / 4;
+    const angle = Math.round(Math.atan2(dy, dx) / step) * step;
+    return {
+      x: start.x + Math.cos(angle) * length,
+      y: start.y + Math.sin(angle) * length,
+    };
+  }
+
+  // Mouse movement is the common preview path for straight, curved, and
+  // extension sessions. Straight keeps the unconstrained cursor separately so
+  // a Shift key press/release can recompute the preview without another move.
+  function updateDrawSessionPreview(world, angleLocked) {
+    const session = state.drawSession;
+    if (!session) return;
+    if (session.type === 'straight') {
+      session.rawCurrent = clonePoint(world);
+      session.angleLocked = !!angleLocked;
+      session.current = session.angleLocked
+        ? constrainStraightEndpoint(session.start, session.rawCurrent)
+        : clonePoint(session.rawCurrent);
+      return;
+    }
+    session.current = world;
+  }
+
+  function refreshStraightDrawAngleLock(angleLocked) {
+    const session = state.drawSession;
+    if (!session || session.type !== 'straight' || !session.rawCurrent) return;
+    session.angleLocked = !!angleLocked;
+    session.current = session.angleLocked
+      ? constrainStraightEndpoint(session.start, session.rawCurrent)
+      : clonePoint(session.rawCurrent);
+    updateUI();
+    requestRender();
+  }
+
+  function handleDrawToolClick(world, angleLocked) {
     // Extension follow-up: a straight line was just committed and the tool is
     // offering an optional collinear dashed extension. A click within the axis
     // snap zone commits it as its own annotation (separate seq number); a click
@@ -222,7 +266,9 @@
         arrowType: state.arrowType,
         lineWidth: state.lineWidth,
         start: world,
-        current: world,
+        current: clonePoint(world),
+        rawCurrent: clonePoint(world),
+        angleLocked: !!angleLocked,
       };
       updateUI();
       requestRender();
@@ -255,7 +301,9 @@
     }
 
     const start = state.drawSession.start;
-    const end = world;
+    const end = angleLocked
+      ? constrainStraightEndpoint(state.drawSession.start, world)
+      : world;
     const drawSettings = state.drawSession;
     if (distance(start, end) < (4 / state.zoom)) {
       return;
