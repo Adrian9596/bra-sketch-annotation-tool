@@ -150,6 +150,7 @@
 
   function clearAllAnnotations() {
     if (!state.annotations.length) return;
+    if (state.dxfPatternSource || state.dxfMeasureSession) clearDxfPatternSource();
     state.annotations = [];
     state.deletedAutoAnnotations = [];
     state.deletedPomKeys = [];

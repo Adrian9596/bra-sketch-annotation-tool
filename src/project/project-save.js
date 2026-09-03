@@ -6,7 +6,9 @@
 // format. Unapplied Auto Mode drafts are never persisted; the save flow
 // prompts the TD to apply, discard, or cancel before writing.
 
-  function buildProjectSnapshot() {
+  function buildProjectSnapshot(options) {
+    const dxfSourceMode = options && options.dxfSourceMode === 'reference'
+      ? 'reference' : 'inline';
     return {
       format: PROJECT_FORMAT,
       version: PROJECT_VERSION,
@@ -85,6 +87,9 @@
         // US-079: Preview & Export page-inclusion checkboxes. Additive —
         // files saved before US-079 have no key and default to all enabled.
         preview: state.preview ? clone(state.preview) : null,
+        // ADR 0088: full source in downloaded/library projects; IndexedDB
+        // reference in autosave. Temporary M1/M2 remain absent from both.
+        dxfPatternSource: serializeDxfPatternSourceForProject(dxfSourceMode),
       },
     };
   }

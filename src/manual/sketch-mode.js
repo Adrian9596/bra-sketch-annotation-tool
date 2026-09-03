@@ -32,7 +32,8 @@
 //     selection.js), so tapping an arrowed POM mid-sketch cannot poison the
 //     next drawn path's arrows.
 // Session-only: absent from project JSON, autosave payloads, and undo/redo
-// history — see project-load.js (every reopen/restore forces POM Focus) and
+// history — see project-load.js (normal/legacy reopen forces POM Focus;
+// ADR 0088 source-bearing DXF reopen deliberately enters Sketch Focus) and
 // auto/mode.js (every switch to Auto forces POM Focus, since the control
 // itself is Manual-only and would otherwise leave no way to see or undo a
 // leaked Sketch Focus effect from Auto Mode). Both call applySketchModeVisual
@@ -82,6 +83,11 @@
   function setSketchModeEnabled(enabled, announce) {
     applySketchModeVisual(enabled);
     if (state.sketchMode) {
+      // Auto Mode clears temporary overlays, not the durable source. Rebuild
+      // a fresh empty session when the TD returns to Sketch Focus.
+      if (!state.dxfMeasureSession && state.dxfPatternSource) {
+        rebuildDxfMeasureSessionFromActiveSource();
+      }
       // Auto-close the Measurements panel on entry — it has nothing to show
       // in Sketch Focus work. This reuses the SAME toggle the H key/button
       // already drive (toggleSpecPanel), so a TD can still reopen it by

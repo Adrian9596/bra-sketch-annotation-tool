@@ -24,6 +24,10 @@
     if (el.autoDetectSeamBtn) el.autoDetectSeamBtn.addEventListener('click', () => {
       void runAutoDetectSeam();
     });
+    // US-121: TD Review loop (Phase C first slice).
+    if (el.autoSeamReviewBtn) el.autoSeamReviewBtn.addEventListener('click', toggleAutoSeamReview);
+    if (el.autoSeamReviewCloseBtn) el.autoSeamReviewCloseBtn.addEventListener('click', closeAutoSeamReview);
+    if (el.autoSeamReviewExportBtn) el.autoSeamReviewExportBtn.addEventListener('click', () => { void autoSeamReviewExport(); });
     // US-093 / ADR 0053: only visible while a curved annotation is selected
     // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
     // no extra guard needed here.

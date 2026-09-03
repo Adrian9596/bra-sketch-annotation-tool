@@ -147,7 +147,10 @@
     updateUI();
     await new Promise(resolve => setTimeout(resolve, 0));
     try {
-      const result = analyzeAutoSeamSource(sourceImage);
+      // US-120: same pure analysis, run in the Auto Seam Worker when it is
+      // available; `execution` records which engine actually ran and why.
+      const { result, execution } = await analyzeAutoSeamSourceAsync(sourceImage);
+      state.autoSeam.lastExecution = clone(execution);
       validateAutoSeamResult(result);
       const sourceSha256 = await autoSeamSourceSha256(sourceImage);
       const runId = `auto-seam-${Date.now().toString(36)}-${sourceImage.id}`;
@@ -164,6 +167,7 @@
         sourceSha256,
         runId,
         result,
+        execution,
         appliedAnnotationIds: nextDrafts.map(ann => ann.id),
       });
       if (previous.length || nextDrafts.length) pushHistoryIfChanged();

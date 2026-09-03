@@ -4,6 +4,9 @@
 
   const BUILTIN_AUTO_MODE_RULE_JSON = {"version":{"pom_unit":"in","template_version":"core18-2026-07-18b","rule_version":"offline-vision-rules-v3","anchor_version":"anchors-2026-08-24-hem-offset-preserved","suggestions_version":"sizeL-suggestions-v1"},"pomTemplate":{"rows":[{"id":"1","name":"1/2 Bottom band - Relax","zh":"下围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"primary","partner":"2","groupName":"1/2 Bottom band","primaryLabel":"Relax","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"2","name":"1/2 Bottom band - Extend","zh":"下围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"secondary","primary":"1"},"expected_confidence_tier":"high"},{"id":"3","name":"1/2 chest - Measure straight","zh":"胸围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"primary","partner":"4","groupName":"1/2 Chest","primaryLabel":"Measure straight","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"4","name":"1/2 chest - Extend","zh":"胸围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"secondary","primary":"3"},"expected_confidence_tier":"high"},{"id":"5","name":"Center front height","zh":"前中高度","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"6","name":"Cradle height at center front","zh":"托架前中高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"7","name":"Cradle height at bottom cup","zh":"托架底杯高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cup-top","cradle-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"8","name":"Cup height at center front","zh":"前中杯高","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cradle-cf-top"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"9","name":"Cup height","zh":"杯高","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-top","inner-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"10","name":"Cup width","zh":"杯宽","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-left","inner-cup-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"11","name":"Side seam length","zh":"侧缝长度","view":"back","refL":null,"requiredAnchors":["side-top","side-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"12","name":"Back center length","zh":"后中高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"13","name":"Back panel height","zh":"后背片高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"optionalAnchors":["back-panel-top","back-panel-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"14","name":"Shoulder strap length","zh":"肩带长度","view":"front_to_back","placementViewRole":"back","refL":null,"requiredAnchors":["strap-top","strap-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"},{"id":"15","name":"Back strap distances","zh":"后肩带间距","view":"back","refL":null,"requiredAnchors":["back-strap-left","back-strap-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"16","name":"Front apex distance","zh":"乳点间距","view":"front_outer","refL":null,"requiredAnchors":["apex-left","apex-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"17","name":"Neckline length","zh":"领口长","view":"front_outer","refL":null,"requiredAnchors":["171","172"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"18","name":"Armhole curve length","zh":"袖窿弧长","view":"front_outer","refL":null,"requiredAnchors":["181","182"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"}]},"anchorSchema":{"anchors":[{"kind":"cf-top","name":"CF top","group":"axis","hint":"Top of the center-front, where the cradle meets the chest line."},{"kind":"cf-bottom","name":"CF bottom","group":"axis","hint":"Bottom of the center front, on the underbust band.","derivation":{"method":"drop_to_line","args":["cf-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"cradle-cf-top","name":"Cradle CF","group":"axis","hint":"Where the cradle / cup-bottom seam approaches the center front. POM 6 top."},{"kind":"cradle-cup-top","name":"Cradle cup top","group":"axis","hint":"Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."},{"kind":"cradle-cup-bottom","name":"Cradle cup btm","group":"axis","hint":"Band baseline directly below the bottom-cup cradle point (POM 7 bottom).","derivation":{"method":"drop_to_line","args":["cradle-cup-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"band-left","name":"Band L","group":"band","hint":"Leftmost end of the underbust band line."},{"kind":"band-right","name":"Band R","group":"band","hint":"Rightmost end of the underbust band line."},{"kind":"chest-left","name":"Chest L","group":"chest","hint":"Left end of the chest / overbust horizontal line."},{"kind":"chest-right","name":"Chest R","group":"chest","hint":"Right end of the chest / overbust horizontal line."},{"kind":"inner-cup-top","name":"IC top","group":"inner-cup","hint":"Top of the cup (apex) on the front (outer) view — POM 9 start."},{"kind":"inner-cup-bottom","name":"IC btm","group":"inner-cup","hint":"Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."},{"kind":"inner-cup-left","name":"IC L","group":"inner-cup","hint":"Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."},{"kind":"inner-cup-right","name":"IC R","group":"inner-cup","hint":"Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."},{"kind":"side-top","name":"Side top","group":"side","hint":"Top of the side seam at the underarm."},{"kind":"side-bottom","name":"Side btm","group":"side","hint":"Bottom of the side seam at the band."},{"kind":"apex-left","name":"Apex L","group":"apex","hint":"Left shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"apex-right","name":"Apex R","group":"apex","hint":"Right shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"strap-top","name":"Front strap join","group":"strap","hint":"Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."},{"kind":"strap-bottom","name":"Back strap join","group":"strap","hint":"End of the shoulder strap at the back / back-panel join — POM 14 end."},{"kind":"back-top","name":"Back top","group":"back","hint":"Top edge of the back panel."},{"kind":"back-bottom","name":"Back btm","group":"back","hint":"Bottom edge of the back panel."},{"kind":"back-panel-top","name":"Panel top","group":"back","hint":"Upper point for back panel height."},{"kind":"back-panel-bottom","name":"Panel btm","group":"back","hint":"Lower point for back panel height."},{"kind":"back-strap-left","name":"Back strap L","group":"back","hint":"Left point of the back strap distance."},{"kind":"back-strap-right","name":"Back strap R","group":"back","hint":"Right point of the back strap distance."},{"kind":"171","name":"171","group":"neckline","hint":"Left upper neckline corner, where the cup/gore top edge meets the strap base."},{"kind":"172","name":"172","group":"neckline","hint":"Right upper neckline corner (mirror of Neckline L)."},{"kind":"181","name":"181","group":"armhole","hint":"Underarm side point at the bottom of the arm opening."},{"kind":"182","name":"182","group":"armhole","hint":"Strap/shoulder junction at the top of the arm opening."}]},"sizeLSuggestions":{"suggestions_version":"sizeL-suggestions-v1","unit":"in","provenance":{"corpus":"Measurements 2/library/_raw_intake/measurements_size_l.csv","conceptMap":"Measurements 2/library/pom_concepts.csv","tolDefaults":"Measurements 2/library/pom_tol_defaults.csv","sketchRatios":"Measurements 2/library/sketch_ratios.csv","generatedBy":"scripts/generate-sizeL-suggestions.mjs","corpusRows":2950,"styleVersions":225,"droppedRows":26,"note":"Derived from the approved Size-L corpus. Regenerate with the generator; never hand-edit. droppedRows = corpus rows whose concept is not yet canonicalized (raw_* intake phrases)."},"poms":{"1":{"concept":"band_relax","median":14,"min":12.74,"max":14.38,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"2":{"concept":"band_extended","median":19,"min":18,"max":19.25,"tol":"1/2","tolType":"min","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"3":{"concept":"chest_relax","median":17,"min":15.5,"max":17.5,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":198,"confidence":"medium","source":"library"},"4":{"concept":"chest_extended","median":22,"min":20,"max":22.77,"tol":"1/2","tolType":"min","sketchReliable":false,"n":197,"confidence":"medium","source":"library"},"5":{"concept":"cf_height","median":5.5,"min":1.32,"max":6.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":217,"confidence":"medium","source":"library"},"6":{"concept":"cradle_cf","median":2.25,"min":1.31,"max":3,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":163,"confidence":"medium","source":"library"},"7":{"concept":"cradle_under_cup","median":1.75,"min":1.11,"max":2.64,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":173,"confidence":"medium","source":"library"},"8":{"concept":"cup_height_cf","median":3,"min":1.75,"max":4,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":113,"confidence":"low","source":"library"},"9":{"concept":"cup_height","median":8,"min":5.805,"max":9.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":237,"confidence":"medium","source":"library"},"10":{"concept":"cup_width","median":8,"min":6.6,"max":9,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":221,"confidence":"medium","source":"library"},"11":{"concept":"sideseam_length","median":5.5,"min":4.5,"max":6,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":211,"confidence":"medium","source":"library"},"12":{"concept":"cb_height","median":3.75,"min":2,"max":7.24,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":239,"confidence":"medium","source":"library"},"13":{"concept":"back_panel_height","median":7.25,"min":3,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":181,"confidence":"medium","source":"library"},"14":{"concept":"strap_length","median":8,"min":4,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":155,"confidence":"low","source":"library"},"15":{"concept":"back_straps_distance","median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"16":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"17":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"18":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"}}}};
 
+  // US-120: URL of the Auto Seam Worker bundle, content-hashed like app.js?v=.
+  const AUTO_SEAM_WORKER_URL = "auto-seam-worker.js?v=4b1b83655f4c";
+
   // ---- src/auto/rules/load-rules.js ----
 // Loads TD-editable Auto Mode rules from auto_mode_rules/*.json.
 // This runs before state.js so POM_TEMPLATE/ANCHOR_SCHEMA stay synchronous.
@@ -259,6 +262,29 @@
   const NOTE_WIDTH_MODE_CONTENT = 'content';
   const NOTE_WIDTH_MODE_FIXED = 'fixed';
 
+  // US-109/120/121 Auto Detect Seam runtime state — session-only: generated
+  // Board annotations persist through the ordinary project/history path,
+  // while a detector's transient running/result/review UI does not belong in
+  // project JSON. Function declarations (hoisted) so `state` below and
+  // project-load.js's reset build the identical shape from ONE definition.
+  function autoSeamReviewInitialState() {
+    // US-121 TD Review overlay. `corrections` is keyed by Automatic ROI id:
+    // { verdict: 'correct'|'wrong', reasonCode, correctedPolygon } — TD truth,
+    // exported to a downloadable file, never fed back into the detector.
+    return { active: false, runId: null, selectedRoiId: null, editingRoiId: null, corrections: {} };
+  }
+
+  function autoSeamInitialState() {
+    return {
+      running: false,
+      lastRun: null,
+      // US-120: { engine: 'worker' | 'main-thread', reason, elapsedMs } of the
+      // most recent analysis — which engine ran and, if not the worker, why.
+      lastExecution: null,
+      review: autoSeamReviewInitialState(),
+    };
+  }
+
   const state = {
     tool: 'select',
     drawStyle: 'solid',
@@ -353,10 +379,11 @@
     // US-109 Auto Detect Seam runtime state. Session-only: generated Board
     // annotations persist through the ordinary project/history path, while a
     // detector's transient running/result UI does not belong in project JSON.
-    autoSeam: {
-      running: false,
-      lastRun: null,
-    },
+    // Built by autoSeamInitialState() below — the ONE definition of this
+    // shape. project-load.js resets it through the same factory; a literal
+    // copy there once dropped `review` and broke Review ROI after Open
+    // (US-121 recheck, 2026-09-03).
+    autoSeam: autoSeamInitialState(),
     // US-103: the POM-side pending arrow preference (state.arrowType), saved
     // by applySketchModeVisual the moment Sketch Focus turns on and restored
     // the moment it turns off. Session-only, like sketchMode itself — never
@@ -499,16 +526,22 @@
     // model (pieces of native line/arc segments, unit/unitSource), the
     // board<->native placement mapping, and the TD's temporary A/B
     // measurements for the currently-imported DXF. Session-only by design:
-    // absent from makeSnapshot/restoreSnapshot (src/project/history.js),
-    // buildProjectSnapshot/loadProject, and writeAutosave — never add a line
-    // for it in any of those four functions. Because the GLOBAL undo stack
+    // absent from makeSnapshot/restoreSnapshot and buildProjectSnapshot.
+    // ADR 0088 persists only the separate dxfPatternSource and uses it to
+    // rebuild a NEW empty session on load. Because the GLOBAL undo stack
     // restores a snapshot that never contains this field, it structurally
     // cannot undo a measurement edit; measurements use their OWN small
     // fingerprint-diff undo stack instead (see
     // src/manual/dxf-measure-session.js). null until a DXF import creates
-    // one; cleared to null on another DXF import, a fresh project load, or
-    // a mode/board reset (see the call sites listed in that file).
+    // one; cleared to null on another DXF import or a mode/board reset (see
+    // the call sites listed in that file).
     dxfMeasureSession: null,
+    // ADR 0088: durable source for the NEWEST successfully imported DXF.
+    // Unlike dxfMeasureSession, this is serialized into Project JSON (full
+    // text) and autosave (IndexedDB fingerprint reference) so reopening can
+    // build a fresh empty measurement session. It is deliberately excluded
+    // from global history; Remove/Simplify invalidate it fail-closed.
+    dxfPatternSource: null,
     // US-112: Pattern Measure snap preferences. A TD-level tool preference,
     // like smartAlignEnabled above — session-only, never saved/restored,
     // and deliberately OUTSIDE state.dxfMeasureSession so opening a new DXF
@@ -711,6 +744,14 @@
     sketchFocusBtn: document.getElementById('sketchFocusBtn'),
     mindMapBtn: document.getElementById('mindMapBtn'),
     autoDetectSeamBtn: document.getElementById('autoDetectSeamBtn'),
+    // US-121: TD Review loop (Phase C first slice) — see src/manual/auto-seam-review.js.
+    autoSeamReviewBtn: document.getElementById('autoSeamReviewBtn'),
+    autoSeamReviewPanel: document.getElementById('autoSeamReviewPanel'),
+    autoSeamReviewHead: document.getElementById('autoSeamReviewHead'),
+    autoSeamReviewBody: document.getElementById('autoSeamReviewBody'),
+    autoSeamReviewCount: document.getElementById('autoSeamReviewCount'),
+    autoSeamReviewCloseBtn: document.getElementById('autoSeamReviewCloseBtn'),
+    autoSeamReviewExportBtn: document.getElementById('autoSeamReviewExportBtn'),
     autoModeBar: document.getElementById('autoModeBar'),
     autoDetectBtn: document.getElementById('autoDetectBtn'),
     autoResetAnchorsBtn: document.getElementById('autoResetAnchorsBtn'),
@@ -17717,6 +17758,12 @@ const BOM_MATERIAL_LIBRARY = [
         ? 'Available in Sketch Focus'
         : (pickAutoSourceImage() ? true : 'Add or paste a source image first'),
       action: () => runAutoDetectSeam() }),
+    appCommand({ id: 'board.auto-seam-review.toggle', label: 'Review Seam ROI', category: 'Board · Auto',
+      page: 'board', mode: 'manual', target: '#autoSeamReviewBtn',
+      when: () => !state.sketchMode
+        ? 'Available in Sketch Focus'
+        : (state.autoSeam?.lastRun ? true : 'Run Auto Detect Seam first'),
+      action: () => toggleAutoSeamReview() }),
     appCommand({ id: 'board.copy.line', label: 'Copy Selected Line/Shape', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'c', meta: true }, target: '#copyLineBtn',
       when: appCommandSelectedAnnotationOrGraphicReason, action: () => copySelectedLineOrGraphic() }),
@@ -18136,6 +18183,14 @@ const BOM_MATERIAL_LIBRARY = [
       el.autoDetectSeamBtn.textContent = state.autoSeam?.running
         ? 'Detecting Seam…'
         : 'Auto Detect Seam';
+    }
+    // US-121: only actionable once a run exists. syncAutoSeamReviewChrome()
+    // keeps panel/button/state coherent on every UI update — closes the
+    // review when its image left the board, hides a stale panel after Open
+    // project reset the state, and re-syncs to a fresh run made while open.
+    if (el.autoSeamReviewBtn) {
+      el.autoSeamReviewBtn.disabled = !state.autoSeam?.lastRun;
+      syncAutoSeamReviewChrome();
     }
 
     // Manual selection actions occupy the toolbar only when actionable.
@@ -18961,7 +19016,7 @@ const BOM_MATERIAL_LIBRARY = [
   function setDxfMeasureMode(mode) {
     const session = state.dxfMeasureSession;
     if (!session) {
-      showToast('Import a DXF file first (Tools → Open DXF file…).');
+      showToast('Open a DXF first with File → Open project….');
       return;
     }
     session.pendingMode = mode;
@@ -19741,6 +19796,10 @@ const BOM_MATERIAL_LIBRARY = [
     if (el.autoDetectSeamBtn) el.autoDetectSeamBtn.addEventListener('click', () => {
       void runAutoDetectSeam();
     });
+    // US-121: TD Review loop (Phase C first slice).
+    if (el.autoSeamReviewBtn) el.autoSeamReviewBtn.addEventListener('click', toggleAutoSeamReview);
+    if (el.autoSeamReviewCloseBtn) el.autoSeamReviewCloseBtn.addEventListener('click', closeAutoSeamReview);
+    if (el.autoSeamReviewExportBtn) el.autoSeamReviewExportBtn.addEventListener('click', () => { void autoSeamReviewExport(); });
     // US-093 / ADR 0053: only visible while a curved annotation is selected
     // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
     // no extra guard needed here.
@@ -20276,6 +20335,247 @@ const BOM_MATERIAL_LIBRARY = [
     requestRender();
   }
 
+  // ---- src/project/dxf-pattern-source.js ----
+// Durable source contract for the newest imported DXF pattern. Pattern
+// measurements remain session-only; this record carries only the factory DXF
+// text and the import mapping needed to rebuild a fresh native session after
+// Project Open, Project Library reopen, or autosave Restore (ADR 0088).
+// Source part for app.js. Run `npm run build` after editing.
+
+  const DXF_PATTERN_SOURCE_VERSION = 1;
+  const DXF_AUTOSAVE_DB_NAME = 'bra-sketch-dxf-autosave';
+  const DXF_AUTOSAVE_DB_VERSION = 1;
+  const DXF_AUTOSAVE_STORE = 'sources';
+  const DXF_AUTOSAVE_ACTIVE_KEY = 'active';
+  let dxfAutosaveDbPromise = null;
+
+  // Two independently-seeded FNV-1a passes plus the exact string length make
+  // a compact deterministic content address without making import async.
+  function dxfPatternFingerprint(text) {
+    const value = String(text || '');
+    let a = 0x811c9dc5;
+    let b = 0x9e3779b9;
+    for (let i = 0; i < value.length; i += 1) {
+      const code = value.charCodeAt(i);
+      a ^= code;
+      a = Math.imul(a, 0x01000193);
+      b ^= code + i;
+      b = Math.imul(b, 0x85ebca6b);
+    }
+    return 'fnv1a2-' + (a >>> 0).toString(16).padStart(8, '0')
+      + (b >>> 0).toString(16).padStart(8, '0') + '-' + value.length;
+  }
+
+  function dxfPatternRound(value) {
+    return Number.isFinite(value) ? Math.round(value * 1e6) / 1e6 : null;
+  }
+
+  function dxfPatternRelativePoint(point, origin) {
+    if (!point || !origin) return null;
+    return [dxfPatternRound(point.x - origin.x), dxfPatternRound(point.y - origin.y)];
+  }
+
+  // Translation-invariant by piece: moving an entire imported piece is safe,
+  // while deleting, simplifying, or reshaping even one member changes this
+  // payload and prevents a native session from attaching to stale geometry.
+  function dxfPatternGeometryFingerprint(source) {
+    if (!source || !Array.isArray(source.pieceAnnotationIds)) return null;
+    const payload = [];
+    for (let pieceIndex = 0; pieceIndex < source.pieceAnnotationIds.length; pieceIndex += 1) {
+      const ids = source.pieceAnnotationIds[pieceIndex];
+      const groupId = source.groupIds && source.groupIds[pieceIndex];
+      if (!Array.isArray(ids) || !ids.length || !groupId) return null;
+      const annotations = ids.map(id => state.annotations.find(ann => ann && ann.id === id));
+      if (annotations.some(ann => !ann || ann.templateGroupId !== groupId || !ann.start)) return null;
+      const origin = annotations[0].start;
+      payload.push(annotations.map(ann => ({
+        id: ann.id,
+        type: ann.type,
+        start: dxfPatternRelativePoint(ann.start, origin),
+        end: dxfPatternRelativePoint(ann.end, origin),
+        control1: dxfPatternRelativePoint(ann.control1, origin),
+        control2: dxfPatternRelativePoint(ann.control2, origin),
+      })));
+    }
+    return dxfPatternFingerprint(JSON.stringify(payload));
+  }
+
+  function dxfPatternSourceIsCompatible(source) {
+    if (!source || source.version !== DXF_PATTERN_SOURCE_VERSION) return false;
+    if (!source.fingerprint || !source.geometryFingerprint) return false;
+    return dxfPatternGeometryFingerprint(source) === source.geometryFingerprint;
+  }
+
+  function makeDxfPatternSource(text, fileName, bounds, transform, pieceFirstAnnotationIds, pieceAnnotationIds, groupIds) {
+    const source = {
+      version: DXF_PATTERN_SOURCE_VERSION,
+      fileName: String(fileName || 'Imported DXF'),
+      fingerprint: dxfPatternFingerprint(text),
+      text: String(text || ''),
+      bounds: clone(bounds),
+      transform: clone(transform),
+      pieceFirstAnnotationIds: (pieceFirstAnnotationIds || []).slice(),
+      pieceAnnotationIds: (pieceAnnotationIds || []).map(ids => ids.slice()),
+      groupIds: (groupIds || []).slice(),
+      geometryFingerprint: null,
+    };
+    source.geometryFingerprint = dxfPatternGeometryFingerprint(source);
+    return source;
+  }
+
+  function setDxfPatternSource(source) {
+    state.dxfPatternSource = source || null;
+    if (source && source.text) {
+      persistDxfPatternSourceForAutosave(source).catch(err => {
+        console.warn('[dxf-source] Could not persist autosave source:', err);
+      });
+    }
+  }
+
+  function clearDxfPatternSource(options) {
+    state.dxfPatternSource = null;
+    resetDxfMeasureSession();
+    if (!options || options.clearStored !== false) {
+      deleteDxfPatternAutosaveSource().catch(() => {});
+    }
+  }
+
+  function invalidateDxfPatternSource(reason, announce) {
+    const hadSource = !!state.dxfPatternSource || !!state.dxfMeasureSession;
+    clearDxfPatternSource();
+    if (announce !== false && hadSource) {
+      showToast(reason || 'Pattern Measure cleared because the imported DXF geometry changed. Reopen the DXF to measure again.');
+    }
+  }
+
+  function serializeDxfPatternSourceForProject(mode) {
+    const source = state.dxfPatternSource;
+    if (!source) return null;
+    if (!source.text || dxfPatternFingerprint(source.text) !== source.fingerprint
+        || !dxfPatternSourceIsCompatible(source)) {
+      invalidateDxfPatternSource('Pattern Measure source no longer matches the board. Reopen the DXF to measure again.', false);
+      return null;
+    }
+    const serialized = clone(source);
+    if (mode === 'reference') {
+      serialized.text = null;
+      serialized.storage = 'indexeddb';
+    } else {
+      delete serialized.storage;
+    }
+    return serialized;
+  }
+
+  function openDxfAutosaveDB() {
+    if (dxfAutosaveDbPromise) return dxfAutosaveDbPromise;
+    dxfAutosaveDbPromise = new Promise((resolve, reject) => {
+      if (typeof indexedDB === 'undefined') {
+        reject(new Error('IndexedDB is not available in this browser.'));
+        return;
+      }
+      const req = indexedDB.open(DXF_AUTOSAVE_DB_NAME, DXF_AUTOSAVE_DB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(DXF_AUTOSAVE_STORE)) {
+          db.createObjectStore(DXF_AUTOSAVE_STORE, { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('Could not open DXF autosave storage.'));
+      req.onblocked = () => reject(new Error('DXF autosave storage is blocked by another tab.'));
+    });
+    return dxfAutosaveDbPromise;
+  }
+
+  async function persistDxfPatternSourceForAutosave(source) {
+    if (!source || !source.text || dxfPatternFingerprint(source.text) !== source.fingerprint) return false;
+    const db = await openDxfAutosaveDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(DXF_AUTOSAVE_STORE, 'readwrite');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Could not store DXF autosave source.'));
+      tx.objectStore(DXF_AUTOSAVE_STORE).put({
+        id: DXF_AUTOSAVE_ACTIVE_KEY,
+        fingerprint: source.fingerprint,
+        text: source.text,
+        savedAt: Date.now(),
+      });
+    });
+    return true;
+  }
+
+  async function readDxfPatternAutosaveSource(fingerprint) {
+    const db = await openDxfAutosaveDB();
+    const record = await new Promise((resolve, reject) => {
+      const tx = db.transaction(DXF_AUTOSAVE_STORE, 'readonly');
+      const req = tx.objectStore(DXF_AUTOSAVE_STORE).get(DXF_AUTOSAVE_ACTIVE_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error || new Error('Could not read DXF autosave source.'));
+    });
+    if (!record || record.fingerprint !== fingerprint
+        || dxfPatternFingerprint(record.text) !== fingerprint) return null;
+    return record.text;
+  }
+
+  async function deleteDxfPatternAutosaveSource() {
+    if (typeof indexedDB === 'undefined') return;
+    const db = await openDxfAutosaveDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(DXF_AUTOSAVE_STORE, 'readwrite');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Could not clear DXF autosave source.'));
+      tx.objectStore(DXF_AUTOSAVE_STORE).delete(DXF_AUTOSAVE_ACTIVE_KEY);
+    });
+  }
+
+  function rebuildDxfMeasureSessionFromActiveSource() {
+    const source = state.dxfPatternSource;
+    if (!source || !source.text || dxfPatternFingerprint(source.text) !== source.fingerprint
+        || !dxfPatternSourceIsCompatible(source)) return false;
+    resetDxfMeasureSession();
+    return !!startDxfMeasureSession(
+      source.text,
+      source.bounds,
+      source.transform,
+      source.pieceFirstAnnotationIds
+    );
+  }
+
+  async function restoreDxfPatternSource(savedSource) {
+    state.dxfPatternSource = null;
+    resetDxfMeasureSession();
+    if (!savedSource) return { ok: false, reason: 'absent' };
+    const source = clone(savedSource);
+    let text = typeof source.text === 'string' && source.text ? source.text : null;
+    if (!text && source.storage === 'indexeddb' && source.fingerprint) {
+      try { text = await readDxfPatternAutosaveSource(source.fingerprint); }
+      catch (err) { console.warn('[dxf-source] Could not read autosave source:', err); }
+    }
+    if (!text) {
+      showToast('Pattern geometry restored, but its DXF source is missing. Reopen the DXF to measure again.', 5200);
+      return { ok: false, reason: 'missing-source' };
+    }
+    if (dxfPatternFingerprint(text) !== source.fingerprint) {
+      showToast('Pattern geometry restored, but its DXF source does not match. Reopen the DXF to measure again.', 5200);
+      return { ok: false, reason: 'fingerprint-mismatch' };
+    }
+    source.text = text;
+    delete source.storage;
+    if (!dxfPatternSourceIsCompatible(source)) {
+      showToast('Pattern geometry restored, but it no longer matches the saved DXF source. Reopen the DXF to measure again.', 5200);
+      return { ok: false, reason: 'geometry-mismatch' };
+    }
+    state.dxfPatternSource = source;
+    if (!rebuildDxfMeasureSessionFromActiveSource()) {
+      state.dxfPatternSource = null;
+      return { ok: false, reason: 'native-rebuild-failed' };
+    }
+    persistDxfPatternSourceForAutosave(source).catch(err => {
+      console.warn('[dxf-source] Could not refresh autosave source:', err);
+    });
+    return { ok: true };
+  }
+
   // ---- src/project/history.js ----
 // History snapshots, undo/redo, restore-snapshot.
 // Source part for app.js. Run `npm run build` after editing.
@@ -20461,6 +20761,14 @@ const BOM_MATERIAL_LIBRARY = [
       }
     }
 
+    // The source itself is not generic history data. Never leave its native
+    // topology attached if Undo/Redo restored incompatible board geometry.
+    if (state.dxfPatternSource && !dxfPatternSourceIsCompatible(state.dxfPatternSource)) {
+      invalidateDxfPatternSource(
+        'Pattern Measure cleared because Undo/Redo changed its DXF geometry. Reopen the DXF to measure again.'
+      );
+    }
+
     state.history.restoring = false;
     updateUI();
     requestRender();
@@ -20491,7 +20799,9 @@ const BOM_MATERIAL_LIBRARY = [
 // format. Unapplied Auto Mode drafts are never persisted; the save flow
 // prompts the TD to apply, discard, or cancel before writing.
 
-  function buildProjectSnapshot() {
+  function buildProjectSnapshot(options) {
+    const dxfSourceMode = options && options.dxfSourceMode === 'reference'
+      ? 'reference' : 'inline';
     return {
       format: PROJECT_FORMAT,
       version: PROJECT_VERSION,
@@ -20570,6 +20880,9 @@ const BOM_MATERIAL_LIBRARY = [
         // US-079: Preview & Export page-inclusion checkboxes. Additive —
         // files saved before US-079 have no key and default to all enabled.
         preview: state.preview ? clone(state.preview) : null,
+        // ADR 0088: full source in downloaded/library projects; IndexedDB
+        // reference in autosave. Temporary M1/M2 remain absent from both.
+        dxfPatternSource: serializeDxfPatternSourceForProject(dxfSourceMode),
       },
     };
   }
@@ -20688,7 +21001,7 @@ const BOM_MATERIAL_LIBRARY = [
       let looksLikeJson = true;
       try { JSON.parse(text); } catch (error) { looksLikeJson = false; }
       if (looksLikeJson) openProjectFileWithGuard(file);
-      else importDxfTextIntoBoard(text);
+      else importDxfTextIntoBoard(text, file.name);
     };
     reader.onerror = () => showToast('Could not read that file.', 4200);
     reader.readAsText(file);
@@ -20734,10 +21047,10 @@ const BOM_MATERIAL_LIBRARY = [
   // import only adds annotations), so the exit dialog here exists purely to
   // let the TD settle the draft layer before the mode switch, not to guard
   // against overwriting work.
-  function importDxfTextIntoBoard(text) {
+  function importDxfTextIntoBoard(text, fileName) {
     const proceed = () => {
       if (!state.sketchMode) setSketchModeEnabled(true, false);
-      importDxfText(text);
+      importDxfText(text, undefined, fileName);
     };
 
     if (state.appMode === 'auto') {
@@ -20773,7 +21086,7 @@ const BOM_MATERIAL_LIBRARY = [
 
   function importDxfFileIntoBoard(file) {
     const reader = new FileReader();
-    reader.onload = () => importDxfTextIntoBoard(String(reader.result || ''));
+    reader.onload = () => importDxfTextIntoBoard(String(reader.result || ''), file.name);
     reader.onerror = () => showToast('Could not read that file.', 4200);
     reader.readAsText(file);
   }
@@ -20859,17 +21172,19 @@ const BOM_MATERIAL_LIBRARY = [
       // Auto-first so detection can run right away.
       state.appMode = (state.annotations.length > 0 || state.graphics.length > 0 || state.notes.length > 0) ? 'manual' : 'auto';
       state.autoMode = makeInitialAutoModeState();
-      state.autoSeam = { running: false, lastRun: null };
+      // Same factory as state.js — a literal here silently dropped the
+      // `review`/`lastExecution` fields and made Review ROI throw after Open.
+      state.autoSeam = autoSeamInitialState();
       state.hiddenAnnIds = [];
       state.hiddenDraftIds = [];
-      // US-105: a reopened project never carries a measure session — it is
-      // session-only geometry describing whatever DXF was last imported into
-      // the PREVIOUS board.
+      // The session itself is still ephemeral. ADR 0088 may rebuild a fresh,
+      // empty one from the durable source after all board fields are loaded.
       resetDxfMeasureSession();
-      // US-102: every reopened project starts in POM Focus, regardless of
-      // which focus was active before Open/Restore — Sketch Focus is a
-      // live-authoring aid, never project data (autosave Restore goes
-      // through this same function, so this covers both entry points).
+      state.dxfPatternSource = null;
+      // US-102: a normal/legacy reopened project starts in POM Focus,
+      // regardless of which focus was active before Open/Restore. ADR 0088
+      // makes one deliberate exception below: a compatible durable DXF
+      // source enters Sketch Focus so Pattern Measure is immediately usable.
       // applySketchModeVisual is the single state+body-class+button-sync
       // path the toolbar button itself uses (src/manual/sketch-mode.js), so
       // the button cannot stay showing "Sketch" active after a reopen.
@@ -20940,6 +21255,15 @@ const BOM_MATERIAL_LIBRARY = [
       if (typeof renderBom === 'function') renderBom();
       state.preview = (s.preview && typeof s.preview === 'object') ? clone(s.preview) : null;
       if (typeof ensurePreviewPage === 'function') ensurePreviewPage();
+
+      // Source-bearing projects open measure-ready in Manual + Sketch Focus.
+      // Legacy projects omit this additive field and retain POM Focus.
+      const dxfRestore = await restoreDxfPatternSource(s.dxfPatternSource);
+      if (dxfRestore.ok) {
+        state.appMode = 'manual';
+        document.body.classList.remove('app-auto');
+        applySketchModeVisual(true);
+      }
 
       // Images are in place now, so the Auto status chip can resolve
       // ready/idle correctly for the reopened board.
@@ -21035,7 +21359,14 @@ const BOM_MATERIAL_LIBRARY = [
       clearAutosave();
       return;
     }
-    const snapshot = buildProjectSnapshot();
+    // Raw factory DXF text can exceed localStorage quota. Its companion
+    // record lives in IndexedDB; this snapshot carries metadata + fingerprint.
+    if (state.dxfPatternSource) {
+      persistDxfPatternSourceForAutosave(state.dxfPatternSource).catch(err => {
+        console.warn('[autosave] Could not refresh DXF source storage:', err);
+      });
+    }
+    const snapshot = buildProjectSnapshot({ dxfSourceMode: 'reference' });
     const record = {
       savedAt: Date.now(),
       appVersion: (typeof AUTO_TEMPLATE_VERSION !== 'undefined') ? AUTO_TEMPLATE_VERSION : null,
@@ -22289,6 +22620,7 @@ const BOM_MATERIAL_LIBRARY = [
 
   function clearAllAnnotations() {
     if (!state.annotations.length) return;
+    if (state.dxfPatternSource || state.dxfMeasureSession) clearDxfPatternSource();
     state.annotations = [];
     state.deletedAutoAnnotations = [];
     state.deletedPomKeys = [];
@@ -23198,6 +23530,14 @@ function setSelection(kind, id) {
       return;
     }
 
+    // US-121: while a TD is dragging an Auto Seam Review ROI, that gesture
+    // owns the whole press-move-release — same "one active tool wins the
+    // canvas" rule as Pattern Measure above. A press outside the ROI being
+    // edited (hit-test returns false) falls through to the normal chain.
+    if (isAutoSeamReviewEditing() && autoSeamReviewOnMouseDown(world)) {
+      return;
+    }
+
     // Auto Mode: only drafts + anchors are interactive. Project annotations
     // are locked, and tool creation / erasing is disabled (see updateUI).
     if (state.appMode === 'auto') {
@@ -23552,6 +23892,11 @@ function setSelection(kind, id) {
       return;
     }
 
+    // US-121: continue an Auto Seam Review ROI drag already started above.
+    if (autoSeamReviewOnMouseMove(world)) {
+      return;
+    }
+
     if (state.drawSession) {
       updateDrawSessionPreview(world, !!e.shiftKey);
       requestRender();
@@ -23828,6 +24173,12 @@ function setSelection(kind, id) {
     state.smartAlignGuides = [];
     if (state.eraseSession) {
       commitEraseStroke();
+    }
+
+    // US-121: end an Auto Seam Review ROI drag before any other mouseup path
+    // — it never opened a normal interaction, so nothing below expects it.
+    if (autoSeamReviewOnMouseUp()) {
+      return;
     }
 
     if (dxfMeasureIsActiveTool()) {
@@ -25569,7 +25920,8 @@ function onWheel(e) {
 //     selection.js), so tapping an arrowed POM mid-sketch cannot poison the
 //     next drawn path's arrows.
 // Session-only: absent from project JSON, autosave payloads, and undo/redo
-// history — see project-load.js (every reopen/restore forces POM Focus) and
+// history — see project-load.js (normal/legacy reopen forces POM Focus;
+// ADR 0088 source-bearing DXF reopen deliberately enters Sketch Focus) and
 // auto/mode.js (every switch to Auto forces POM Focus, since the control
 // itself is Manual-only and would otherwise leave no way to see or undo a
 // leaked Sketch Focus effect from Auto Mode). Both call applySketchModeVisual
@@ -25619,6 +25971,11 @@ function onWheel(e) {
   function setSketchModeEnabled(enabled, announce) {
     applySketchModeVisual(enabled);
     if (state.sketchMode) {
+      // Auto Mode clears temporary overlays, not the durable source. Rebuild
+      // a fresh empty session when the TD returns to Sketch Focus.
+      if (!state.dxfMeasureSession && state.dxfPatternSource) {
+        rebuildDxfMeasureSessionFromActiveSource();
+      }
       // Auto-close the Measurements panel on entry — it has nothing to show
       // in Sketch Focus work. This reuses the SAME toggle the H key/button
       // already drive (toggleSpecPanel), so a TD can still reopen it by
@@ -28192,7 +28549,7 @@ function onWheel(e) {
 
   // The one entry point the Tools-menu button / test hooks call. `rect`
   // defaults to the real board viewport; tests may pass a fake one.
-  function importDxfText(text, rect) {
+  function importDxfText(text, rect, fileName) {
     const parsed = parseDxfDocument(text);
     if (!parsed.ok) {
       const toastMsg = [parsed.message, dxfBucketsToast(parsed.buckets)].filter(Boolean).join(' ');
@@ -28211,6 +28568,7 @@ function onWheel(e) {
     // originally placed it — the board annotations are the only thing that
     // actually tracks a later whole-piece move.
     const pieceFirstAnnotationIds = [];
+    const pieceAnnotationIds = [];
     // ADR 0070: one groupId per piece, in the same order as parsed.pieces, so
     // the Pattern Pieces panel (opened below) can label each row from the
     // block name recorded against that piece's instance — falling back to a
@@ -28222,6 +28580,7 @@ function onWheel(e) {
       groupIds.push(groupId);
       const pieceAnns = piece.map(seg => dxfAnnotationFromSegment(seg, bounds, transform, groupId));
       pieceFirstAnnotationIds.push(pieceAnns.length ? pieceAnns[0].id : null);
+      pieceAnnotationIds.push(pieceAnns.map(ann => ann.id));
       const blockName = piece.length ? parsed.instanceBlockNames.get(piece[0].instance) : null;
       if (blockName) {
         if (!state.templateGroupLabels) state.templateGroupLabels = {};
@@ -28247,14 +28606,24 @@ function onWheel(e) {
     state.selection = { kind: 'annotation', id: firstId };
     state.selectedAnnotationIds = allNewIds;
     state.templateGroupEditId = null;
-    pushHistoryIfChanged();
     // US-105: (re)build the native-coordinate measure session from the SAME
     // text and the SAME bounds/transform just used for the board
     // annotations above, so Pattern Measure's overlay is pixel-aligned with
     // what actually got drawn. Reset first — opening another DXF must never
     // leave a prior session's measurements dangling over new geometry.
     resetDxfMeasureSession();
-    startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds);
+    const measureSession = startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds);
+    // ADR 0088: only a successful native-model build becomes the durable,
+    // newest measurable source. A failed native build remains fail-closed.
+    if (measureSession) {
+      setDxfPatternSource(makeDxfPatternSource(
+        text, fileName, bounds, transform,
+        pieceFirstAnnotationIds, pieceAnnotationIds, groupIds
+      ));
+    } else {
+      clearDxfPatternSource();
+    }
+    pushHistoryIfChanged();
     if (typeof updateUI === 'function') updateUI();
     if (typeof requestRender === 'function') requestRender();
 
@@ -28272,7 +28641,6 @@ function onWheel(e) {
     // separate warning away after ~900ms in favor of this success message.
     // Guarded: startDxfMeasureSession can fail and leave the session null
     // (it shows its own explanation in that case).
-    const measureSession = state.dxfMeasureSession;
     const unitWarning = (measureSession && measureSession.source.unitSource !== 'dxf-header')
       ? ' Units assumed (in) — set them under Tools ▸ Pattern Measure if the file is mm/cm.'
       : '';
@@ -29129,9 +29497,10 @@ function onWheel(e) {
   // annotations) is already how a TD gets a session in the first place, so
   // losing it here costs a re-import, not lost work.
   function dxfMeasureInvalidateOnPieceEdit() {
-    if (!state.dxfMeasureSession) return;
-    resetDxfMeasureSession();
-    showToast('Pattern Measure cleared — this piece edit changed the board geometry it was reading. Re-import the DXF to measure again.');
+    if (!state.dxfMeasureSession && !state.dxfPatternSource) return;
+    invalidateDxfPatternSource(
+      'Pattern Measure cleared — this piece edit changed the board geometry it was reading. Reopen the DXF to measure again.'
+    );
   }
 
   // ---- Hit-testing a board click against native geometry --------------------
@@ -44065,7 +44434,39 @@ const AUTO_SEAM_THRESHOLDS = {
     return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
   }
 
-  function autoSeamPixelModel(sourceImage, maxDimension = 640) {
+  // US-120: this part runs in two places — app.js on the main thread and
+  // auto-seam-worker.js inside a Web Worker, where there is no document. Use
+  // the DOM canvas whenever one exists so the main-thread path draws exactly
+  // as it did before the worker existed; only a worker gets OffscreenCanvas.
+  function autoSeamCreateCanvas(width, height) {
+    if (typeof document !== 'undefined' && document && typeof document.createElement === 'function') {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      return canvas;
+    }
+    if (typeof OffscreenCanvas === 'function') return new OffscreenCanvas(width, height);
+    throw new Error('no canvas implementation available for the Auto Seam pixel model');
+  }
+
+  // US-120: the two scaled reads the pipeline performs — router.js builds the
+  // coarse 640 px model, lanes/technical-flat.js the 1600 px native model.
+  // The worker client pre-reads exactly these on the main thread; a new
+  // dimension added elsewhere without updating this list makes the worker
+  // throw (no decoded image to draw), which the client reports as
+  // `worker-failed` and auto-seam-worker-check turns into a hard failure.
+  var AUTO_SEAM_WORKER_PIXEL_DIMENSIONS = [640, 1600];
+
+  // Scaled RGBA of the source at `maxDimension`, either pre-read
+  // (sourceImage.pixels[maxDimension], produced by THIS function on the main
+  // thread and transferred to the worker) or drawn now from sourceImage.img.
+  // Pre-read pixels win, so the worker never resamples: resampling an
+  // ImageBitmap on an OffscreenCanvas was measured to differ from the DOM
+  // canvas draw by ~1e-3 in every 640 px feature (see US-120 execplan note),
+  // which would break the byte-identical contract with the main thread.
+  function autoSeamReadPixels(sourceImage, maxDimension) {
+    const pre = sourceImage && sourceImage.pixels && sourceImage.pixels[maxDimension];
+    if (pre && pre.rgba && pre.width > 0 && pre.height > 0) return pre;
     const img = sourceImage && sourceImage.img;
     if (!img) throw new Error('source image is not decoded');
     const naturalWidth = img.naturalWidth || img.width;
@@ -44074,12 +44475,15 @@ const AUTO_SEAM_THRESHOLDS = {
     const scale = Math.min(1, maxDimension / Math.max(naturalWidth, naturalHeight));
     const width = Math.max(48, Math.round(naturalWidth * scale));
     const height = Math.max(48, Math.round(naturalHeight * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    const canvas = autoSeamCreateCanvas(width, height);
     const context = canvas.getContext('2d', { willReadFrequently: true });
     context.drawImage(img, 0, 0, width, height);
     const rgba = context.getImageData(0, 0, width, height).data;
+    return { maxDimension, naturalWidth, naturalHeight, width, height, rgba };
+  }
+
+  function autoSeamPixelModel(sourceImage, maxDimension = 640) {
+    const { naturalWidth, naturalHeight, width, height, rgba } = autoSeamReadPixels(sourceImage, maxDimension);
     const luma = new Float32Array(width * height);
 
     const corner = Math.max(3, Math.round(Math.min(width, height) * 0.045));
@@ -44673,14 +45077,16 @@ const AUTO_SEAM_THRESHOLDS = {
     }
     const profile = new Float32Array(width).fill(-1);
     for (let x = bounds.left; x <= bounds.right; x += 1) {
-      const window = [];
+      // US-120: named medianWindow (was `window`) so the worker-purity gate in
+      // scripts/check.mjs can tell a local array from the DOM global.
+      const medianWindow = [];
       for (let dx = -2; dx <= 2; dx += 1) {
         const value = raw[Math.max(bounds.left, Math.min(bounds.right, x + dx))];
-        if (value >= 0) window.push(value);
+        if (value >= 0) medianWindow.push(value);
       }
-      if (!window.length) continue;
-      window.sort((a, b) => a - b);
-      profile[x] = window[Math.floor(window.length / 2)];
+      if (!medianWindow.length) continue;
+      medianWindow.sort((a, b) => a - b);
+      profile[x] = medianWindow[Math.floor(medianWindow.length / 2)];
     }
     return profile;
   }
@@ -45799,6 +46205,170 @@ const AUTO_SEAM_THRESHOLDS = {
     return result;
   }
 
+  // ---- src/manual/auto-seam-worker-client.js ----
+// US-120: Auto Seam Worker client — the main-thread side of auto-seam-worker.js.
+//
+// runAutoDetectSeam() used to call analyzeAutoSeamSource() synchronously, so
+// a 1600 px technical flat (14 native-resolution ROIs) froze the toolbar for
+// the whole analysis. analyzeAutoSeamSourceAsync() runs the SAME pure code in
+// a Web Worker. The main thread keeps the only two cheap pixel reads
+// (autoSeamReadPixels at 640 and 1600 px, the same DOM-canvas draws the
+// synchronous path does) and transfers the RGBA buffers; the worker runs the
+// heavy part — masks, histograms, gradients, 14 ROIs of per-column scanning —
+// and posts back the plain result object. Everything that touches Board
+// state (validation, drafts, history, toasts) still runs here, unchanged, in
+// src/manual/auto-seam.js.
+//
+// Behaviour-preserving by construction: both bundles are built from the same
+// src/auto/seam/* parts (AUTO_SEAM_WORKER_PARTS) and the worker sees the very
+// bytes the main thread would have analysed (it never resamples — an
+// ImageBitmap drawn on an OffscreenCanvas was measured to differ from the DOM
+// canvas by ~1e-3 in every 640 px feature). scripts/auto-seam-worker-check
+// asserts the result is byte-identical per fixture.
+//
+// The fallback is NOT silent. When the worker is disabled (?autoSeamWorker=0
+// or the debug setter), unsupported, or has failed once this session, the
+// analysis runs in-thread and the returned `execution` record says so
+// (engine + reason + elapsedMs); the record is kept on
+// state.autoSeam.lastExecution and copied into lastRun for the suites.
+// Source part for app.js. Run `npm run build` after editing.
+
+  var autoSeamWorkerHandle = null;        // lazily created Worker, reused across runs
+  var autoSeamWorkerBroken = false;       // sticky for the session after a load/runtime failure
+  var autoSeamWorkerOverride = null;      // debug/test: true/false forces on/off; null = URL flag / default
+  var autoSeamWorkerUrlOverride = null;   // debug/test: point at a different (e.g. missing) worker file
+  var autoSeamWorkerRequestSeq = 0;
+  var AUTO_SEAM_WORKER_TIMEOUT_MS = 30000;
+
+  function autoSeamWorkerUrl() {
+    if (autoSeamWorkerUrlOverride) return autoSeamWorkerUrlOverride;
+    // AUTO_SEAM_WORKER_URL is injected into the app.js header by
+    // scripts/build-app.mjs (content-hashed like app.js?v=). Absent only when
+    // a part is parsed in isolation, never in the built bundle.
+    return typeof AUTO_SEAM_WORKER_URL === 'string' ? AUTO_SEAM_WORKER_URL : '';
+  }
+
+  function autoSeamWorkerEnabled() {
+    if (autoSeamWorkerOverride != null) return !!autoSeamWorkerOverride;
+    try {
+      if (new URLSearchParams(window.location.search).get('autoSeamWorker') === '0') return false;
+    } catch (error) { /* no window.location in odd hosts: default on */ }
+    return true;
+  }
+
+  function autoSeamWorkerSupported() {
+    return typeof Worker === 'function' && autoSeamWorkerUrl().length > 0;
+  }
+
+  function autoSeamGetWorker() {
+    if (!autoSeamWorkerHandle) autoSeamWorkerHandle = new Worker(autoSeamWorkerUrl());
+    return autoSeamWorkerHandle;
+  }
+
+  function autoSeamDisposeWorker() {
+    if (!autoSeamWorkerHandle) return;
+    try { autoSeamWorkerHandle.terminate(); } catch (error) { /* already gone */ }
+    autoSeamWorkerHandle = null;
+  }
+
+  // Debug/test surface (window.__braAutoModeDebug.autoSeam.setWorkerEnabled /
+  // setWorkerUrl). Re-enabling also clears the sticky failure so a suite can
+  // exercise the broken-URL fallback and then return to the worker.
+  function autoSeamSetWorkerEnabled(enabled) {
+    autoSeamWorkerOverride = enabled == null ? null : !!enabled;
+    if (enabled) autoSeamWorkerBroken = false;
+    if (!enabled) autoSeamDisposeWorker();
+  }
+
+  function autoSeamSetWorkerUrl(url) {
+    autoSeamWorkerUrlOverride = url ? String(url) : null;
+    autoSeamWorkerBroken = false;
+    autoSeamDisposeWorker();
+  }
+
+  // The two scaled reads, done here with the same code and canvas the
+  // synchronous path uses; only their RGBA buffers travel to the worker.
+  function autoSeamPreReadPixels(sourceImage) {
+    const pixels = {};
+    const transfer = [];
+    for (const maxDimension of AUTO_SEAM_WORKER_PIXEL_DIMENSIONS) {
+      const read = autoSeamReadPixels(sourceImage, maxDimension);
+      // getImageData() hands back a fresh Uint8ClampedArray over its own
+      // buffer, so transferring it detaches nothing the page still uses.
+      pixels[maxDimension] = {
+        maxDimension: read.maxDimension,
+        naturalWidth: read.naturalWidth,
+        naturalHeight: read.naturalHeight,
+        width: read.width,
+        height: read.height,
+        buffer: read.rgba.buffer,
+      };
+      transfer.push(read.rgba.buffer);
+    }
+    return { pixels, transfer };
+  }
+
+  function autoSeamAnalyzeInWorker(sourceImage) {
+    const worker = autoSeamGetWorker();
+    return Promise.resolve().then(() => autoSeamPreReadPixels(sourceImage)).then(({ pixels, transfer }) => new Promise((resolve, reject) => {
+      const requestId = `auto-seam-req-${++autoSeamWorkerRequestSeq}`;
+      let settled = false;
+      const finish = (error, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        worker.removeEventListener('message', onMessage);
+        worker.removeEventListener('error', onError);
+        if (error) reject(error); else resolve(value);
+      };
+      const onMessage = (event) => {
+        const data = event && event.data ? event.data : {};
+        if (data.requestId !== requestId) return;
+        if (data.type === 'result') finish(null, data.result);
+        else if (data.type === 'error') finish(new Error(data.message || 'worker error'));
+      };
+      // Fires when the worker script 404s / fails to parse, or throws
+      // outside the message handler. Chrome reports a load failure here too.
+      const onError = (event) => {
+        finish(new Error(event && event.message ? event.message : 'worker failed to load or crashed'));
+      };
+      const timer = setTimeout(() => finish(new Error('worker-timeout')), AUTO_SEAM_WORKER_TIMEOUT_MS);
+      worker.addEventListener('message', onMessage);
+      worker.addEventListener('error', onError);
+      worker.postMessage({ type: 'analyze', requestId, source: { pixels } }, transfer);
+    }));
+  }
+
+  function autoSeamNow() {
+    return typeof performance !== 'undefined' && performance && typeof performance.now === 'function'
+      ? performance.now() : Date.now();
+  }
+
+  // Resolves { result, execution }. `result` is exactly what
+  // analyzeAutoSeamSource(sourceImage) returns; `execution` is
+  // { engine: 'worker' | 'main-thread', reason, elapsedMs }.
+  async function analyzeAutoSeamSourceAsync(sourceImage) {
+    const started = autoSeamNow();
+    const elapsedMs = () => Math.round((autoSeamNow() - started) * 10) / 10;
+    let reason = null;
+    if (!autoSeamWorkerEnabled()) reason = 'worker-disabled';
+    else if (!autoSeamWorkerSupported()) reason = 'worker-unavailable';
+    else if (autoSeamWorkerBroken) reason = 'worker-failed-earlier';
+    if (!reason) {
+      try {
+        const result = await autoSeamAnalyzeInWorker(sourceImage);
+        return { result, execution: { engine: 'worker', reason: 'ok', elapsedMs: elapsedMs() } };
+      } catch (error) {
+        autoSeamWorkerBroken = true;
+        autoSeamDisposeWorker();
+        reason = `worker-failed: ${error && error.message ? error.message : error}`;
+        console.warn(`Auto Detect Seam: ${reason}; analysing on the main thread for the rest of this session.`);
+      }
+    }
+    const result = analyzeAutoSeamSource(sourceImage);
+    return { result, execution: { engine: 'main-thread', reason, elapsedMs: elapsedMs() } };
+  }
+
   // ---- src/manual/auto-seam.js ----
 // US-109: Auto Detect Seam — APPLICATION LAYER. The only Auto Seam part that
 // touches Board state, history or toasts: runs the pure analysis (see
@@ -45949,7 +46519,10 @@ const AUTO_SEAM_THRESHOLDS = {
     updateUI();
     await new Promise(resolve => setTimeout(resolve, 0));
     try {
-      const result = analyzeAutoSeamSource(sourceImage);
+      // US-120: same pure analysis, run in the Auto Seam Worker when it is
+      // available; `execution` records which engine actually ran and why.
+      const { result, execution } = await analyzeAutoSeamSourceAsync(sourceImage);
+      state.autoSeam.lastExecution = clone(execution);
       validateAutoSeamResult(result);
       const sourceSha256 = await autoSeamSourceSha256(sourceImage);
       const runId = `auto-seam-${Date.now().toString(36)}-${sourceImage.id}`;
@@ -45966,6 +46539,7 @@ const AUTO_SEAM_THRESHOLDS = {
         sourceSha256,
         runId,
         result,
+        execution,
         appliedAnnotationIds: nextDrafts.map(ann => ann.id),
       });
       if (previous.length || nextDrafts.length) pushHistoryIfChanged();
@@ -45985,6 +46559,489 @@ const AUTO_SEAM_THRESHOLDS = {
       state.autoSeam.running = false;
       updateUI();
     }
+  }
+
+  // ---- src/manual/auto-seam-review.js ----
+// US-121 — TD Review loop for Auto Detect Seam (Phase C first slice, see
+// docs/stories/epics/E07-measurement-detection/US-109-photo-zigzag-detection/
+// {NEXT_ARCHITECTURE_SPEC,PHASE_PLAN}_2026-09-03.md §3/§4). Lets the TD open
+// the last Auto Detect Seam result, see every Automatic ROI the detector
+// searched, mark each zone/side correct or wrong, drag a wrong ROI to the
+// right place, and export the result as a ground-truth JSON file.
+//
+// Built in this slice: the overlay, per-row verdicts, drag-to-correct ROI
+// polygons (whole-polygon translate or single-vertex drag), and export.
+// NOT built yet (left for a later Phase C pass): writing straight into
+// scripts/groundtruth (the browser cannot touch the filesystem — the TD
+// downloads the JSON and commits it by hand, same pattern as
+// maybeShowGroundTruthLabeler in src/dev/url-bootstrap.js), gating the pilot
+// suites on td_confirmed data, and "rerun highlights already-confirmed
+// entries". A TD's drag is recorded as TRUTH ONLY — it never feeds back into
+// the detector's own output; only a developer editing a rule and rerunning
+// the whole corpus changes what the detector produces (spec §3/§4).
+// Source part for app.js. Run `npm run build` after editing.
+
+  const AUTO_SEAM_REVIEW_REASONS = Object.freeze([
+    { code: 'roi_misplaced', label: 'ROI misplaced' },
+    { code: 'false_positive', label: 'False positive — no zigzag here' },
+    { code: 'false_negative', label: 'False negative — zigzag exists, no candidate' },
+    { code: 'wrong_geometry', label: 'Right zone, wrong pixels' },
+    { code: 'not_visible', label: 'Not visible / cannot judge' },
+  ]);
+
+  const AUTO_SEAM_REVIEW_ZONE_LABELS = Object.freeze({
+    shoulder_strap: 'Shoulder strap', neckline: 'Neckline', armhole: 'Armhole',
+    cup_edge: 'Cup edge', cup_seam: 'Cup seam', underbust_band: 'Underbust band',
+    side_seam: 'Side seam', center_front: 'Center front',
+  });
+
+  function autoSeamReviewZoneLabel(zone) {
+    return AUTO_SEAM_REVIEW_ZONE_LABELS[zone] || zone;
+  }
+
+  function autoSeamReviewSideLabel(side) {
+    if (side === 'left') return 'L';
+    if (side === 'right') return 'R';
+    if (side === 'bilateral') return 'both';
+    return side || '';
+  }
+
+  // The ONLY way this file reads review state. Self-healing: if anything ever
+  // replaces state.autoSeam with a shape that lacks `review` (project-load.js
+  // did exactly that until the 2026-09-03 recheck), rebuild it from the same
+  // factory state.js uses instead of throwing inside a click handler.
+  function autoSeamReviewState() {
+    const seam = state.autoSeam;
+    if (!seam.review) seam.review = autoSeamReviewInitialState();
+    return seam.review;
+  }
+
+  // Called from the board toolbar's updateUI pass. Keeps panel, button and
+  // state coherent no matter which path changed them:
+  //   - open, but the run or its image is gone (Open project, image deleted,
+  //     board reset) -> close;
+  //   - open, and Auto Detect Seam re-ran meanwhile -> the old corrections
+  //     described a result that no longer exists: drop them, re-sync to the
+  //     new run, re-render;
+  //   - closed, but stale chrome survived a state reset -> hide it.
+  function syncAutoSeamReviewChrome() {
+    const review = autoSeamReviewState();
+    const run = autoSeamReviewLastRun();
+    if (review.active) {
+      // Review ROI is a Manual Mode · Sketch Focus tool (its button lives
+      // there and the overlay only paints there); leaving either closes it
+      // rather than leaving a panel floating over a mode that cannot use it.
+      if (state.appMode !== 'manual' || !state.sketchMode
+          || !run || !run.result || !autoSeamReviewSourceImage()) {
+        closeAutoSeamReview();
+        return;
+      }
+      if (review.runId !== run.runId) {
+        review.corrections = {};
+        review.runId = run.runId;
+        review.selectedRoiId = null;
+        review.editingRoiId = null;
+        autoSeamReviewDrag = null;
+        renderAutoSeamReviewPanel();
+        requestRender();
+      }
+      return;
+    }
+    if (el.autoSeamReviewPanel && !el.autoSeamReviewPanel.hidden) el.autoSeamReviewPanel.hidden = true;
+    if (el.autoSeamReviewBtn) el.autoSeamReviewBtn.classList.remove('active');
+  }
+
+  function isAutoSeamReviewOpen() {
+    return !!(autoSeamReviewState() && autoSeamReviewState().active);
+  }
+
+  function isAutoSeamReviewEditing() {
+    return isAutoSeamReviewOpen() && !!autoSeamReviewState().editingRoiId;
+  }
+
+  function autoSeamReviewLastRun() {
+    return state.autoSeam.lastRun || null;
+  }
+
+  function autoSeamReviewSourceImage() {
+    const run = autoSeamReviewLastRun();
+    return run ? getImageById(run.sourceImageId) : null;
+  }
+
+  // ---- Open / close ------------------------------------------------------
+
+  function toggleAutoSeamReview() {
+    if (isAutoSeamReviewOpen()) closeAutoSeamReview();
+    else openAutoSeamReview();
+  }
+
+  function openAutoSeamReview() {
+    const run = autoSeamReviewLastRun();
+    if (!run || !run.result) {
+      showToast('Run Auto Detect Seam first, then Review ROI.');
+      return;
+    }
+    if (!autoSeamReviewSourceImage()) {
+      showToast('The reviewed image is no longer on the board.');
+      return;
+    }
+    const review = autoSeamReviewState();
+    if (review.runId !== run.runId) {
+      // A new run invalidates prior corrections: they were drawn against a
+      // different result (different geometry/evidence behind the same ids).
+      review.corrections = {};
+    }
+    review.runId = run.runId;
+    review.active = true;
+    review.selectedRoiId = null;
+    review.editingRoiId = null;
+    if (el.autoSeamReviewBtn) el.autoSeamReviewBtn.classList.add('active');
+    renderAutoSeamReviewPanel();
+    requestRender();
+  }
+
+  function closeAutoSeamReview() {
+    const review = autoSeamReviewState();
+    review.active = false;
+    review.editingRoiId = null;
+    autoSeamReviewDrag = null;
+    if (el.autoSeamReviewBtn) el.autoSeamReviewBtn.classList.remove('active');
+    if (el.autoSeamReviewPanel) el.autoSeamReviewPanel.hidden = true;
+    requestRender();
+  }
+
+  // ---- Rows (one per Automatic ROI) --------------------------------------
+
+  function autoSeamReviewRows() {
+    const run = autoSeamReviewLastRun();
+    if (!run || !run.result) return [];
+    const result = run.result;
+    const corrections = autoSeamReviewState().corrections || {};
+    return (result.automaticRois || []).map(roi => {
+      const candidate = result.candidates.find(c =>
+        c.roiId === roi.id || (Array.isArray(c.roiIds) && c.roiIds.includes(roi.id)));
+      const abstention = result.abstentions.find(a =>
+        a.scope === 'zone' && a.zone === roi.zone && a.side === roi.side);
+      const correction = corrections[roi.id] || null;
+      return {
+        roi, candidate: candidate || null, abstention: abstention || null,
+        verdict: correction ? correction.verdict : null,
+        reasonCode: correction ? correction.reasonCode : null,
+        correctedPolygon: correction ? correction.correctedPolygon : null,
+      };
+    });
+  }
+
+  function autoSeamReviewRowById(roiId) {
+    if (!roiId) return null;
+    return autoSeamReviewRows().find(row => row.roi.id === roiId) || null;
+  }
+
+  function autoSeamReviewEnsureCorrection(roiId) {
+    const review = autoSeamReviewState();
+    if (!review.corrections[roiId]) {
+      review.corrections[roiId] = { verdict: null, reasonCode: null, correctedPolygon: null };
+    }
+    return review.corrections[roiId];
+  }
+
+  function autoSeamReviewSetVerdict(roiId, verdict) {
+    const correction = autoSeamReviewEnsureCorrection(roiId);
+    correction.verdict = verdict;
+    if (verdict === 'correct') {
+      // Confirmed as-is — discard any half-made correction and stop editing.
+      correction.reasonCode = null;
+      correction.correctedPolygon = null;
+      if (autoSeamReviewState().editingRoiId === roiId) autoSeamReviewState().editingRoiId = null;
+    }
+    renderAutoSeamReviewPanel();
+    requestRender();
+  }
+
+  function autoSeamReviewSetReason(roiId, reasonCode) {
+    autoSeamReviewEnsureCorrection(roiId).reasonCode = reasonCode || null;
+  }
+
+  function autoSeamReviewStartEditing(roiId) {
+    const row = autoSeamReviewRowById(roiId);
+    if (!row) return;
+    const correction = autoSeamReviewEnsureCorrection(roiId);
+    correction.verdict = 'wrong';
+    if (!correction.correctedPolygon) correction.correctedPolygon = clone(row.roi.polygon);
+    autoSeamReviewState().editingRoiId = roiId;
+    autoSeamReviewState().selectedRoiId = roiId;
+    renderAutoSeamReviewPanel();
+    requestRender();
+  }
+
+  function autoSeamReviewStopEditing() {
+    autoSeamReviewState().editingRoiId = null;
+    autoSeamReviewDrag = null;
+    renderAutoSeamReviewPanel();
+    requestRender();
+  }
+
+  function autoSeamReviewResetPolygon(roiId) {
+    const correction = autoSeamReviewEnsureCorrection(roiId);
+    correction.correctedPolygon = null;
+    if (autoSeamReviewState().editingRoiId === roiId) autoSeamReviewState().editingRoiId = null;
+    renderAutoSeamReviewPanel();
+    requestRender();
+  }
+
+  function autoSeamReviewSelectRow(roiId) {
+    autoSeamReviewState().selectedRoiId = roiId;
+    renderAutoSeamReviewPanel();
+    requestRender();
+  }
+
+  // ---- Panel --------------------------------------------------------------
+
+  function autoSeamReviewStatusText(row) {
+    if (row.candidate) return 'candidate: ' + (row.candidate.appearanceType || 'zigzag');
+    if (row.abstention) return 'abstained: ' + row.abstention.code;
+    return 'no result';
+  }
+
+  function renderAutoSeamReviewPanel() {
+    const panel = el.autoSeamReviewPanel;
+    const body = el.autoSeamReviewBody;
+    if (!panel || !body) return;
+    if (!isAutoSeamReviewOpen()) { panel.hidden = true; return; }
+    panel.hidden = false;
+    const rows = autoSeamReviewRows();
+    const reviewed = rows.filter(r => r.verdict).length;
+    if (el.autoSeamReviewCount) el.autoSeamReviewCount.textContent = reviewed + '/' + rows.length + ' reviewed';
+    const selectedId = autoSeamReviewState().selectedRoiId;
+    const editingId = autoSeamReviewState().editingRoiId;
+
+    body.innerHTML = '';
+    for (const row of rows) {
+      const item = document.createElement('div');
+      item.className = 'auto-seam-review-row';
+      if (row.roi.id === selectedId) item.classList.add('auto-seam-review-row-selected');
+      item.addEventListener('click', (e) => {
+        if (e.target.closest('button, select')) return;
+        autoSeamReviewSelectRow(row.roi.id);
+      });
+
+      const head = document.createElement('div');
+      head.className = 'auto-seam-review-row-head';
+      const title = document.createElement('span');
+      title.className = 'auto-seam-review-row-title';
+      title.textContent = autoSeamReviewZoneLabel(row.roi.zone) + ' · ' + autoSeamReviewSideLabel(row.roi.side);
+      const status = document.createElement('span');
+      status.className = 'auto-seam-review-row-status';
+      status.textContent = autoSeamReviewStatusText(row);
+      head.append(title, status);
+      item.appendChild(head);
+
+      const actions = document.createElement('div');
+      actions.className = 'auto-seam-review-row-actions';
+      actions.appendChild(anchorMiniBtn('Correct', 'Confirm the detector got this right',
+        () => autoSeamReviewSetVerdict(row.roi.id, 'correct'),
+        row.verdict === 'correct' ? 'background:#dcfce7;border-color:#16a34a;color:#166534;' : ''));
+      actions.appendChild(anchorMiniBtn('Wrong', 'Mark this wrong and drag the ROI to the right place',
+        () => autoSeamReviewStartEditing(row.roi.id),
+        row.verdict === 'wrong' ? 'background:#fee2e2;border-color:#dc2626;color:#991b1b;' : ''));
+      if (row.correctedPolygon) {
+        actions.appendChild(anchorMiniBtn('Revert', 'Discard the drag, go back to the detected ROI',
+          () => autoSeamReviewResetPolygon(row.roi.id)));
+      }
+      if (editingId === row.roi.id) {
+        actions.appendChild(anchorMiniBtn('Done', 'Stop dragging this ROI', () => autoSeamReviewStopEditing(),
+          'background:#e0e7ff;border-color:#4f46e5;color:#3730a3;'));
+      }
+      item.appendChild(actions);
+
+      if (row.verdict === 'wrong') {
+        const select = document.createElement('select');
+        select.className = 'auto-seam-review-reason';
+        const blank = document.createElement('option');
+        blank.value = ''; blank.textContent = 'Why is it wrong?';
+        select.appendChild(blank);
+        for (const reason of AUTO_SEAM_REVIEW_REASONS) {
+          const opt = document.createElement('option');
+          opt.value = reason.code; opt.textContent = reason.label;
+          if (row.reasonCode === reason.code) opt.selected = true;
+          select.appendChild(opt);
+        }
+        select.addEventListener('click', (e) => e.stopPropagation());
+        select.addEventListener('change', () => autoSeamReviewSetReason(row.roi.id, select.value));
+        item.appendChild(select);
+      }
+
+      body.appendChild(item);
+    }
+  }
+
+  // ---- Canvas hit-testing + drag-to-correct -------------------------------
+
+  const AUTO_SEAM_REVIEW_VERTEX_RADIUS_PX = 7;
+
+  function autoSeamReviewNormalizedFromWorld(world, image) {
+    return { x: clamp((world.x - image.x) / image.width, 0, 1), y: clamp((world.y - image.y) / image.height, 0, 1) };
+  }
+
+  function autoSeamReviewPointInPolygon(point, polygonWorld) {
+    let inside = false;
+    for (let i = 0, j = polygonWorld.length - 1; i < polygonWorld.length; j = i, i += 1) {
+      const a = polygonWorld[i], b = polygonWorld[j];
+      const crosses = (a.y > point.y) !== (b.y > point.y);
+      if (!crosses) continue;
+      const xIntersect = a.x + (point.y - a.y) * (b.x - a.x) / (b.y - a.y);
+      if (point.x < xIntersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function autoSeamReviewHitTest(world) {
+    const review = autoSeamReviewState();
+    const row = autoSeamReviewRowById(review.editingRoiId);
+    const image = autoSeamReviewSourceImage();
+    if (!row || !image) return null;
+    const polygon = row.correctedPolygon || row.roi.polygon;
+    const polygonWorld = polygon.map(p => worldFromNormalized(p, image));
+    const radiusWorld = AUTO_SEAM_REVIEW_VERTEX_RADIUS_PX / Math.max(state.zoom, 0.1);
+    for (let i = 0; i < polygonWorld.length; i += 1) {
+      if (Math.hypot(polygonWorld[i].x - world.x, polygonWorld[i].y - world.y) <= radiusWorld) {
+        return { mode: 'vertex', index: i };
+      }
+    }
+    if (autoSeamReviewPointInPolygon(world, polygonWorld)) return { mode: 'translate' };
+    return null;
+  }
+
+  // { roiId, mode, index, startWorld, startPolygon } while a drag is live.
+  let autoSeamReviewDrag = null;
+
+  function autoSeamReviewOnMouseDown(world) {
+    const hit = autoSeamReviewHitTest(world);
+    if (!hit) return false;
+    const review = autoSeamReviewState();
+    const row = autoSeamReviewRowById(review.editingRoiId);
+    autoSeamReviewDrag = {
+      roiId: review.editingRoiId,
+      mode: hit.mode,
+      index: hit.index,
+      startWorld: world,
+      startPolygon: clone(row.correctedPolygon || row.roi.polygon),
+    };
+    return true;
+  }
+
+  function autoSeamReviewOnMouseMove(world) {
+    if (!autoSeamReviewDrag) return false;
+    const image = autoSeamReviewSourceImage();
+    if (!image) return true;
+    const correction = autoSeamReviewEnsureCorrection(autoSeamReviewDrag.roiId);
+    if (autoSeamReviewDrag.mode === 'vertex') {
+      const next = clone(autoSeamReviewDrag.startPolygon);
+      next[autoSeamReviewDrag.index] = autoSeamReviewNormalizedFromWorld(world, image);
+      correction.correctedPolygon = next;
+    } else {
+      const dxNorm = (world.x - autoSeamReviewDrag.startWorld.x) / image.width;
+      const dyNorm = (world.y - autoSeamReviewDrag.startWorld.y) / image.height;
+      correction.correctedPolygon = autoSeamReviewDrag.startPolygon.map(p => ({
+        x: clamp(p.x + dxNorm, 0, 1), y: clamp(p.y + dyNorm, 0, 1),
+      }));
+    }
+    requestRender();
+    return true;
+  }
+
+  function autoSeamReviewOnMouseUp() {
+    if (!autoSeamReviewDrag) return false;
+    autoSeamReviewDrag = null;
+    renderAutoSeamReviewPanel();
+    return true;
+  }
+
+  // ---- Export --------------------------------------------------------------
+
+  // Builds and downloads a technical-flat-stitch-groundtruth/1 file (plus the
+  // additive `roiReview` field the pilot's validator ignores, since it only
+  // checks the fields it cares about — see scripts/photo-stitch-technical-
+  // flat-pilot.mjs's validateGroundTruth). The TD moves the downloaded file
+  // into scripts/groundtruth/technical-flat-stitch/ by hand; nothing here
+  // touches the filesystem or the network.
+  async function autoSeamReviewExport() {
+    const run = autoSeamReviewLastRun();
+    const image = autoSeamReviewSourceImage();
+    if (!run || !image) { showToast('Nothing to export — run Auto Detect Seam first.'); return null; }
+    const rows = autoSeamReviewRows();
+    const reviewed = rows.filter(r => r.verdict);
+    if (!reviewed.length) { showToast('Review at least one zone before exporting.'); return null; }
+
+    const observedZigzagZones = [];
+    const confirmedNoZigzagZones = [];
+    const roiReview = [];
+    for (const row of reviewed) {
+      const candidateIsZigzag = !!(row.candidate && row.candidate.appearanceType === 'zigzag');
+      if (row.verdict === 'correct' && candidateIsZigzag) observedZigzagZones.push({ zone: row.roi.zone, side: row.roi.side });
+      else if (row.verdict === 'correct') confirmedNoZigzagZones.push({ zone: row.roi.zone, side: row.roi.side });
+      else if (row.reasonCode === 'false_negative') observedZigzagZones.push({ zone: row.roi.zone, side: row.roi.side });
+      else if (row.reasonCode === 'false_positive') confirmedNoZigzagZones.push({ zone: row.roi.zone, side: row.roi.side });
+      roiReview.push({
+        zone: row.roi.zone, side: row.roi.side, roiId: row.roi.id,
+        verdict: row.verdict, reasonCode: row.reasonCode || null,
+        detected: clone(row.roi.polygon),
+        corrected: row.correctedPolygon ? clone(row.correctedPolygon) : null,
+      });
+    }
+
+    const sourceSha256 = await autoSeamSourceSha256(image);
+    const naturalWidth = image.img ? (image.img.naturalWidth || image.img.width) : null;
+    const naturalHeight = image.img ? (image.img.naturalHeight || image.img.height) : null;
+    const suggested = (window.__braGroundTruthName || 'seam-review') + '.json';
+    const name = window.prompt('Ground-truth file name (match the image, e.g. image6.png.json):', suggested);
+    if (!name) return null;
+    const labeledBy = window.prompt('Your name (labeledBy):', window.__braGroundTruthLabeler || '') || null;
+    if (labeledBy) window.__braGroundTruthLabeler = labeledBy;
+
+    const gt = {
+      schemaVersion: 'technical-flat-stitch-groundtruth/1',
+      image: name.replace(/\.json$/i, ''),
+      source: 'td_confirmed',
+      corpusVersion: 'us109-technical-flat-pilot-1',
+      sourceSha256,
+      width: naturalWidth,
+      height: naturalHeight,
+      labeledAt: new Date().toISOString(),
+      labeledBy,
+      unjudgeable: false,
+      unjudgeableReason: null,
+      visualCharacter: null,
+      observedZigzagZones,
+      confirmedNoZigzagZones,
+      knownGaps: [],
+      roiReview,
+      notes: 'TD Review Loop export (Auto Detect Seam · Review ROI). '
+        + reviewed.length + '/' + rows.length + ' ROI rows reviewed. Rows marked "wrong" for a reason other than '
+        + 'false_positive/false_negative (roi_misplaced, wrong_geometry, not_visible) affect neither '
+        + 'observedZigzagZones nor confirmedNoZigzagZones — see roiReview for detail. Move this file into '
+        + 'scripts/groundtruth/technical-flat-stitch/ to add it to npm run photo-stitch-technical-flat-pilot.',
+    };
+
+    const safe = String(name).replace(/[^\w.\-]+/g, '_');
+    const fileName = /\.json$/i.test(safe) ? safe : safe + '.json';
+    try {
+      const blob = new Blob([JSON.stringify(gt, null, 2) + '\n'], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fileName;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast('Saved TD review: ' + fileName + ' (' + reviewed.length + '/' + rows.length + ' reviewed).', 5000);
+    } catch (err) {
+      console.warn('[Auto Seam Review] export failed:', err);
+      showToast('Could not save the review JSON.', 4200);
+    }
+    return gt;
+  }
+
+  if (el.autoSeamReviewPanel && el.autoSeamReviewHead) {
+    makeDraggablePanel(el.autoSeamReviewPanel, el.autoSeamReviewHead, '.anchor-panel-close');
   }
 
   // ---- src/auto/drafts/board-reset.js ----
@@ -46052,6 +47109,7 @@ const AUTO_SEAM_THRESHOLDS = {
     }
     if (!window.confirm('Reset the working board? This deletes all photos and lines so you can start a new bra sketch. Undo will bring them back.')) return;
 
+    if (state.dxfPatternSource || state.dxfMeasureSession) clearDxfPatternSource();
     state.annotations = [];
     state.graphics = [];
     state.deletedAutoAnnotations = [];
@@ -46098,6 +47156,7 @@ const AUTO_SEAM_THRESHOLDS = {
       return;
     }
 
+    if (state.dxfPatternSource || state.dxfMeasureSession) clearDxfPatternSource();
     state.annotations = [];
     state.deletedAutoAnnotations = [];
     state.autoMode.draftAnnotations = [];
@@ -48878,6 +49937,18 @@ const AUTO_SEAM_THRESHOLDS = {
           const image = getImageById(imageId) || pickAutoSourceImage();
           return image ? clone(analyzeAutoSeamSource(image)) : null;
         },
+        // US-120: the worker path. Resolves { result, execution }; `result` must
+        // equal analyzeImage() for the same image — auto-seam-worker-check
+        // asserts it. setWorkerEnabled(false) / setWorkerUrl('missing.js')
+        // drive the two fallback branches from a suite.
+        analyzeImageAsync: async (imageId) => {
+          const image = getImageById(imageId) || pickAutoSourceImage();
+          return image ? clone(await analyzeAutoSeamSourceAsync(image)) : null;
+        },
+        setWorkerEnabled: enabled => { autoSeamSetWorkerEnabled(enabled); return autoSeamWorkerEnabled(); },
+        setWorkerUrl: url => { autoSeamSetWorkerUrl(url); return autoSeamWorkerUrl(); },
+        workerSupported: () => autoSeamWorkerSupported(),
+        getLastExecution: () => clone(state.autoSeam?.lastExecution || null),
         validateResult: result => validateAutoSeamResult(clone(result)),
         run: () => runAutoDetectSeam(),
         getLastRun: () => clone(state.autoSeam?.lastRun || null),
@@ -49136,7 +50207,9 @@ const AUTO_SEAM_THRESHOLDS = {
         parse: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text)) : null),
         computePlacement: (bounds, rect, centerWorld, zoom) => (typeof computeDxfPlacementTransform === 'function'
           ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld, zoom)) : null),
-        importText: (text, rect) => (typeof importDxfText === 'function' ? clone(importDxfText(text, rect)) : null),
+        importText: (text, rect, fileName) => (typeof importDxfText === 'function'
+          ? clone(importDxfText(text, rect, fileName)) : null),
+        source: () => (state.dxfPatternSource ? clone(state.dxfPatternSource) : null),
         // ADR 0070: the Pattern Pieces panel's pure state operations, exposed
         // independently of the real DOM panel (src/ui/pattern-pieces-panel.js)
         // so a headless suite can assert the group-list/remove logic without
@@ -53435,6 +54508,101 @@ function makeExportFileName() {
     ctx.restore();
   }
 
+  // ---- src/render/auto-seam-review-overlay.js ----
+// US-121 — TD Review overlay for Auto Detect Seam: draws every Automatic ROI
+// from the last analysis, color-coded by the TD's verdict, with draggable
+// vertex handles on the ROI currently being corrected. Read-only over the
+// detector's own output — see src/manual/auto-seam-review.js for the state
+// this reads and the drag handlers that write `correctedPolygon`, which is
+// TD truth, never fed back into the detector.
+// Source part for app.js. Run `npm run build` after editing.
+
+  const AUTO_SEAM_REVIEW_COLORS = Object.freeze({
+    unreviewed: { stroke: 'rgba(100, 116, 139, 0.85)', fill: 'rgba(100, 116, 139, 0.07)' },
+    correct: { stroke: 'rgba(22, 163, 74, 0.9)', fill: 'rgba(22, 163, 74, 0.10)' },
+    wrong: { stroke: 'rgba(234, 88, 12, 0.9)', fill: 'rgba(234, 88, 12, 0.10)' },
+    corrected: { stroke: 'rgba(124, 58, 237, 0.95)', fill: 'rgba(124, 58, 237, 0.12)' },
+  });
+
+  function autoSeamReviewStrokePolygon(points) {
+    if (!points.length) return;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i += 1) ctx.lineTo(points[i].x, points[i].y);
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  function autoSeamReviewFillPolygon(points) {
+    if (!points.length) return;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i += 1) ctx.lineTo(points[i].x, points[i].y);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawAutoSeamReviewOverlay() {
+    if (!isAutoSeamReviewOpen()) return;
+    const image = autoSeamReviewSourceImage();
+    if (!image) return;
+    const rows = autoSeamReviewRows();
+    if (!rows.length) return;
+    const px = 1 / Math.max(state.zoom, 0.1);
+    const review = autoSeamReviewState();
+
+    ctx.save();
+    for (const row of rows) {
+      const polygonNorm = row.correctedPolygon || row.roi.polygon;
+      const polygon = polygonNorm.map(p => worldFromNormalized(p, image));
+      const isSelected = row.roi.id === review.selectedRoiId;
+      const isEditing = row.roi.id === review.editingRoiId;
+      const style = row.correctedPolygon ? AUTO_SEAM_REVIEW_COLORS.corrected
+        : row.verdict === 'correct' ? AUTO_SEAM_REVIEW_COLORS.correct
+        : row.verdict === 'wrong' ? AUTO_SEAM_REVIEW_COLORS.wrong
+        : AUTO_SEAM_REVIEW_COLORS.unreviewed;
+
+      // Corrected rows also show the ORIGINAL detected polygon, thin and
+      // dashed, so the TD can see exactly how far they moved it.
+      if (row.correctedPolygon) {
+        const detected = row.roi.polygon.map(p => worldFromNormalized(p, image));
+        ctx.strokeStyle = 'rgba(100, 116, 139, 0.55)';
+        ctx.lineWidth = 1 * px;
+        ctx.setLineDash([3 * px, 3 * px]);
+        autoSeamReviewStrokePolygon(detected);
+        ctx.setLineDash([]);
+      }
+
+      ctx.strokeStyle = style.stroke;
+      ctx.fillStyle = style.fill;
+      ctx.lineWidth = (isSelected || isEditing ? 2.4 : 1.4) * px;
+      autoSeamReviewFillPolygon(polygon);
+      autoSeamReviewStrokePolygon(polygon);
+
+      // Zone/side label at the polygon's topmost point.
+      const top = polygon.reduce((a, b) => (b.y < a.y ? b : a), polygon[0]);
+      const label = autoSeamReviewZoneLabel(row.roi.zone) + ' · ' + autoSeamReviewSideLabel(row.roi.side);
+      ctx.font = '700 ' + (11 * px).toFixed(1) + 'px system-ui, sans-serif';
+      ctx.textBaseline = 'bottom';
+      const textW = ctx.measureText(label).width;
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillRect(top.x - 2 * px, top.y - 16 * px, textW + 6 * px, 14 * px);
+      ctx.fillStyle = style.stroke;
+      ctx.fillText(label, top.x + px, top.y - 3 * px);
+
+      // Draggable vertex handles only for the ROI currently being edited.
+      if (isEditing) {
+        ctx.fillStyle = style.stroke;
+        for (const point of polygon) {
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 4.5 * px, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
   // ---- src/render/anchor-pins.js ----
 // Auto Mode draft line rendering + its dedicated label pass + hit-testing,
 // and the draggable anchor pins (what a TD actually drags to correct
@@ -54258,6 +55426,13 @@ function requestRender() {
         if (isDraftHidden(draft.id)) continue;
         drawAutoDraftLabel(draft);
       }
+    }
+
+    // US-121: TD Review overlay for Auto Detect Seam — above the applied seam
+    // drafts (ordinary red annotations by now, ADR 0081) so the ROI boxes and
+    // their drag handles are never hidden under a drawn line.
+    if (state.appMode !== 'auto') {
+      drawAutoSeamReviewOverlay();
     }
 
     if (state.drawSession) {

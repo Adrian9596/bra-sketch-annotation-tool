@@ -1015,7 +1015,7 @@
 
   // The one entry point the Tools-menu button / test hooks call. `rect`
   // defaults to the real board viewport; tests may pass a fake one.
-  function importDxfText(text, rect) {
+  function importDxfText(text, rect, fileName) {
     const parsed = parseDxfDocument(text);
     if (!parsed.ok) {
       const toastMsg = [parsed.message, dxfBucketsToast(parsed.buckets)].filter(Boolean).join(' ');
@@ -1034,6 +1034,7 @@
     // originally placed it — the board annotations are the only thing that
     // actually tracks a later whole-piece move.
     const pieceFirstAnnotationIds = [];
+    const pieceAnnotationIds = [];
     // ADR 0070: one groupId per piece, in the same order as parsed.pieces, so
     // the Pattern Pieces panel (opened below) can label each row from the
     // block name recorded against that piece's instance — falling back to a
@@ -1045,6 +1046,7 @@
       groupIds.push(groupId);
       const pieceAnns = piece.map(seg => dxfAnnotationFromSegment(seg, bounds, transform, groupId));
       pieceFirstAnnotationIds.push(pieceAnns.length ? pieceAnns[0].id : null);
+      pieceAnnotationIds.push(pieceAnns.map(ann => ann.id));
       const blockName = piece.length ? parsed.instanceBlockNames.get(piece[0].instance) : null;
       if (blockName) {
         if (!state.templateGroupLabels) state.templateGroupLabels = {};
@@ -1070,14 +1072,24 @@
     state.selection = { kind: 'annotation', id: firstId };
     state.selectedAnnotationIds = allNewIds;
     state.templateGroupEditId = null;
-    pushHistoryIfChanged();
     // US-105: (re)build the native-coordinate measure session from the SAME
     // text and the SAME bounds/transform just used for the board
     // annotations above, so Pattern Measure's overlay is pixel-aligned with
     // what actually got drawn. Reset first — opening another DXF must never
     // leave a prior session's measurements dangling over new geometry.
     resetDxfMeasureSession();
-    startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds);
+    const measureSession = startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds);
+    // ADR 0088: only a successful native-model build becomes the durable,
+    // newest measurable source. A failed native build remains fail-closed.
+    if (measureSession) {
+      setDxfPatternSource(makeDxfPatternSource(
+        text, fileName, bounds, transform,
+        pieceFirstAnnotationIds, pieceAnnotationIds, groupIds
+      ));
+    } else {
+      clearDxfPatternSource();
+    }
+    pushHistoryIfChanged();
     if (typeof updateUI === 'function') updateUI();
     if (typeof requestRender === 'function') requestRender();
 
@@ -1095,7 +1107,6 @@
     // separate warning away after ~900ms in favor of this success message.
     // Guarded: startDxfMeasureSession can fail and leave the session null
     // (it shows its own explanation in that case).
-    const measureSession = state.dxfMeasureSession;
     const unitWarning = (measureSession && measureSession.source.unitSource !== 'dxf-header')
       ? ' Units assumed (in) — set them under Tools ▸ Pattern Measure if the file is mm/cm.'
       : '';

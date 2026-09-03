@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SOURCE_PARTS } from './source-parts.mjs';
+import { SOURCE_PARTS, AUTO_SEAM_WORKER_PARTS } from './source-parts.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(scriptDir, '..');
@@ -58,17 +58,19 @@ for (const file of jsFiles) {
 }
 
 // Membership gate: every src/**/*.js on disk must be registered in
-// source-parts.mjs, or it silently never ships (an unregistered part has no
-// compiler to complain — this is the only place that catches it).
-const registered = new Set(SOURCE_PARTS);
+// source-parts.mjs — in SOURCE_PARTS (app.js) or AUTO_SEAM_WORKER_PARTS
+// (auto-seam-worker.js, US-120) — or it silently never ships (an unregistered
+// part has no compiler to complain — this is the only place that catches it).
+const allParts = [...new Set([...SOURCE_PARTS, ...AUTO_SEAM_WORKER_PARTS])];
+const registered = new Set(allParts);
 for (const file of listJsFiles(path.join(appDir, 'src'))) {
   const relative = path.relative(appDir, file).split(path.sep).join('/');
   if (!registered.has(relative)) {
-    failures.push(`Unregistered source part: ${relative} exists under src/ but is not listed in scripts/source-parts.mjs (it will never be bundled into app.js).`);
+    failures.push(`Unregistered source part: ${relative} exists under src/ but is not listed in scripts/source-parts.mjs (it will never be bundled into app.js or auto-seam-worker.js).`);
   }
 }
 
-for (const file of SOURCE_PARTS) {
+for (const file of allParts) {
   const absolute = path.join(appDir, file);
   if (!existsSync(absolute)) {
     failures.push(`Missing source part: ${file}`);
@@ -89,14 +91,37 @@ for (const file of SOURCE_PARTS) {
 // to catch a collision or an ordering mistake. These two gates cover the only
 // two ways that scope can bite silently — neither produces a syntax error, so
 // nothing else in this file would notice.
-failures.push(...validateSharedScope(appDir));
+// Each bundle is its own IIFE, so the gates run per bundle: a name may live in
+// both bundles (the seam parts do, by design) but only once within each.
+failures.push(...validateSharedScope(appDir, SOURCE_PARTS, 'app.js'));
+failures.push(...validateSharedScope(appDir, AUTO_SEAM_WORKER_PARTS, 'auto-seam-worker.js'));
 
-const appCheck = spawnSync(process.execPath, ['--check', path.join(appDir, 'app.js')], {
-  cwd: appDir,
-  encoding: 'utf8',
-});
-if (appCheck.status !== 0) {
-  failures.push(`Generated app.js syntax failed:\n${appCheck.stderr || appCheck.stdout}`);
+// US-120: the worker bundle must not carry Board code. The seam parts are
+// pure by contract (ARCHITECTURE.md "Auto Seam" row); this gate keeps the
+// worker-only entry honest too. `typeof document` feature checks are allowed
+// (pixel-model.js uses one to pick DOM canvas vs OffscreenCanvas).
+for (const rel of AUTO_SEAM_WORKER_PARTS) {
+  const absolute = path.join(appDir, rel);
+  if (!existsSync(absolute)) continue;
+  const code = blankNonCode(readFileSync(absolute, 'utf8'));
+  const lines = code.split('\n');
+  for (let n = 0; n < lines.length; n += 1) {
+    const line = lines[n];
+    if (/\bstate\.[A-Za-z_$]/.test(line) || /\bshowToast\s*\(/.test(line) || /\bpushHistoryIfChanged\s*\(/.test(line)
+      || /\bwindow\.(?!location\b)/.test(line)) {
+      failures.push(`Worker bundle: ${rel}:${n + 1} touches Board/DOM state (\`${line.trim()}\`) but is part of auto-seam-worker.js, which has no Board, no DOM and no window. Keep src/auto/seam/* pure; Board code belongs in src/manual/auto-seam.js.`);
+    }
+  }
+}
+
+for (const generated of ['app.js', 'auto-seam-worker.js']) {
+  const generatedCheck = spawnSync(process.execPath, ['--check', path.join(appDir, generated)], {
+    cwd: appDir,
+    encoding: 'utf8',
+  });
+  if (generatedCheck.status !== 0) {
+    failures.push(`Generated ${generated} syntax failed:\n${generatedCheck.stderr || generatedCheck.stdout}`);
+  }
 }
 
 const htmlPath = path.join(appDir, 'index.html');
@@ -235,11 +260,11 @@ function validateRuleContract(pomTemplate, anchorSchema) {
 //
 // Both gates work off a comment/string/regex-blanked copy of each part, so
 // identifiers inside comments and string literals are never matched.
-function validateSharedScope(dir) {
+function validateSharedScope(dir, parts = SOURCE_PARTS, bundleName = 'app.js') {
   const out = [];
   const code = new Map();
   const decls = new Map();
-  for (const rel of SOURCE_PARTS) {
+  for (const rel of parts) {
     const absolute = path.join(dir, rel);
     if (!existsSync(absolute)) continue; // already reported by the membership gate
     const blanked = blankNonCode(readFileSync(absolute, 'utf8'));
@@ -248,7 +273,7 @@ function validateSharedScope(dir) {
   }
 
   const sitesByName = new Map();
-  for (const rel of SOURCE_PARTS) {
+  for (const rel of parts) {
     for (const decl of decls.get(rel) || []) {
       if (!sitesByName.has(decl.name)) sitesByName.set(decl.name, []);
       sitesByName.get(decl.name).push({ ...decl, file: rel });
@@ -260,26 +285,26 @@ function validateSharedScope(dir) {
     if (sites.length < 2) continue;
     const where = sites.map(s => `${s.file}:${s.line} (${s.kind})`).join(', ');
     out.push(
-      `Shared scope: "${name}" is declared at top level in ${sites.length} parts — ${where}. `
+      `Shared scope (${bundleName}): "${name}" is declared at top level in ${sites.length} parts — ${where}. `
       + 'All parts share one scope, so the last declaration silently wins for every caller. '
       + 'Keep exactly one and let the others call it.'
     );
   }
 
   // Gate 2 — load-time use of a later, non-hoisted binding.
-  const order = new Map(SOURCE_PARTS.map((rel, i) => [rel, i]));
+  const order = new Map(parts.map((rel, i) => [rel, i]));
   for (const [name, sites] of sitesByName) {
     for (const site of sites) {
       if (site.kind === 'function' || site.kind === 'var') continue; // hoisted
-      for (const rel of SOURCE_PARTS) {
+      for (const rel of parts) {
         if ((order.get(rel) ?? 0) >= (order.get(site.file) ?? 0)) continue;
         const line = firstLoadTimeReference(code.get(rel) || '', name);
         if (line == null) continue;
         out.push(
-          `Shared scope: ${rel}:${line} reads "${name}" while the bundle is still loading, `
+          `Shared scope (${bundleName}): ${rel}:${line} reads "${name}" while the bundle is still loading, `
           + `but "${name}" is a ${site.kind} declared later in ${site.file}:${site.line}. `
           + 'const/let/class do not hoist, so this throws a TDZ ReferenceError at load. '
-          + `Either move ${site.file} earlier in SOURCE_PARTS, or defer the read into a function body.`
+          + `Either move ${site.file} earlier in the parts list, or defer the read into a function body.`
         );
         break;
       }

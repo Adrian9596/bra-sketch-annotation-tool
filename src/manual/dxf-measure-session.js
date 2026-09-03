@@ -408,9 +408,10 @@
   // annotations) is already how a TD gets a session in the first place, so
   // losing it here costs a re-import, not lost work.
   function dxfMeasureInvalidateOnPieceEdit() {
-    if (!state.dxfMeasureSession) return;
-    resetDxfMeasureSession();
-    showToast('Pattern Measure cleared — this piece edit changed the board geometry it was reading. Re-import the DXF to measure again.');
+    if (!state.dxfMeasureSession && !state.dxfPatternSource) return;
+    invalidateDxfPatternSource(
+      'Pattern Measure cleared — this piece edit changed the board geometry it was reading. Reopen the DXF to measure again.'
+    );
   }
 
   // ---- Hit-testing a board click against native geometry --------------------

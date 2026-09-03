@@ -171,6 +171,7 @@ async function main() {
   await section14SnapTiesAndSizeFilter(s);
   await section15SizeFilterOverlapGateAndDuplicateSegments(s);
   await section16SizeTokensAndLoopRoutes(s);
+  await section17DurablePatternSource(s);
 
   const errors = await s.eval('window.__dxfMeasureErrors');
   check(Array.isArray(errors) && errors.length === 0, 'no uncaught browser errors: ' + JSON.stringify(errors));
@@ -182,6 +183,152 @@ async function main() {
   } else {
     console.log(`PASS  dxf-measurement-check   ${passed}/${passed} assertions ok`);
   }
+}
+
+// ---- Section 17: ADR 0088 durable source / ephemeral measurements ----------
+async function section17DurablePatternSource(s) {
+  const result = await s.eval(`(async () => {
+    const dbg = window.__braAutoModeDebug;
+    document.getElementById('modeManualBtn').click();
+    if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    const imported = dbg.dxf.importText(${JSON.stringify(SQUARE_DXF)},
+      { left: 0, top: 0, width: 1200, height: 800 }, 'durable-square.dxf');
+    await new Promise(r => setTimeout(r, 120));
+
+    // Create a real temporary M1 through the production button + pointer path.
+    const canvas = document.getElementById('boardCanvas');
+    const view = dbg.getView();
+    const rect = canvas.getBoundingClientRect();
+    const toScreen = p => ({ x: rect.left + p.x * view.zoom + view.panX, y: rect.top + p.y * view.zoom + view.panY });
+    const clickWorld = p => {
+      const q = toScreen(p);
+      canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: q.x, clientY: q.y, bubbles: true, button: 0 }));
+      canvas.dispatchEvent(new MouseEvent('mouseup', { clientX: q.x, clientY: q.y, bubbles: true, button: 0 }));
+    };
+    document.getElementById('dxfMeasureOutBtn').click();
+    clickWorld(dbg.dxf.measure.nativeToBoardLive({ x: 0, y: 0 }, 0));
+    clickWorld(dbg.dxf.measure.nativeToBoardLive({ x: 10, y: 10 }, 0));
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const temporaryCount = dbg.dxf.measure.getSession().measurementCount;
+
+    const full = dbg.exportProject();
+    const fullSource = full.state.dxfPatternSource;
+    await dbg.loadProject(full);
+    const reopenedSession = dbg.dxf.measure.getSession();
+    const reopened = {
+      session: reopenedSession,
+      sketchMode: dbg.getState().sketchMode,
+      alongDisabled: document.getElementById('dxfMeasureAlongBtn').disabled,
+      outDisabled: document.getElementById('dxfMeasureOutBtn').disabled,
+    };
+
+    dbg.autosave.flush();
+    await new Promise(r => setTimeout(r, 120));
+    const autosaveRecord = JSON.parse(dbg.autosave.peek());
+    const autosaveSource = autosaveRecord.snapshot.state.dxfPatternSource;
+    await dbg.loadProject(autosaveRecord.snapshot);
+    const autosaveRestoredSession = dbg.dxf.measure.getSession();
+
+    const legacy = dbg.exportProject();
+    delete legacy.state.dxfPatternSource;
+    await dbg.loadProject(legacy);
+    const legacySession = dbg.dxf.measure.getSession();
+
+    const mismatch = JSON.parse(JSON.stringify(full));
+    mismatch.state.dxfPatternSource.fingerprint = 'fnv1a2-deadbeefdeadbeef-1';
+    await dbg.loadProject(mismatch);
+    const mismatchSession = dbg.dxf.measure.getSession();
+
+    dbg.dxf.importText(${JSON.stringify(SQUARE_DXF)},
+      { left: 0, top: 0, width: 1200, height: 800 }, 'remove-square.dxf');
+    const removeGroup = dbg.dxf.patternPieces.groups().slice(-1)[0];
+    dbg.dxf.patternPieces.remove([removeGroup.groupId]);
+    const afterRemove = { source: dbg.dxf.source(), session: dbg.dxf.measure.getSession() };
+
+    return {
+      imported, temporaryCount,
+      fullSource: fullSource && {
+        fileName: fullSource.fileName,
+        text: fullSource.text,
+        fingerprint: fullSource.fingerprint,
+        geometryFingerprint: fullSource.geometryFingerprint,
+      },
+      reopened,
+      autosaveSource,
+      autosaveRestoredSession,
+      legacySession,
+      mismatchSession,
+      afterRemove,
+    };
+  })()`);
+
+  check(result.imported && result.imported.ok, 'durable-source fixture imports successfully');
+  check(result.temporaryCount === 1, 'pre-save session contains one real temporary measurement');
+  check(result.fullSource && result.fullSource.fileName === 'durable-square.dxf'
+    && result.fullSource.text === SQUARE_DXF
+    && /^fnv1a2-/.test(result.fullSource.fingerprint)
+    && /^fnv1a2-/.test(result.fullSource.geometryFingerprint),
+  'Project JSON embeds a complete named, fingerprinted DXF Pattern Source');
+  check(result.reopened.session && result.reopened.session.pieceCount === 1
+    && result.reopened.session.measurementCount === 0,
+  'Project reopen rebuilds native topology but not prior M1/M2');
+  check(result.reopened.sketchMode === true && result.reopened.alongDisabled === false
+    && result.reopened.outDisabled === false,
+  'source-bearing reopen enters Sketch Focus with Along/Out enabled');
+  check(result.autosaveSource && result.autosaveSource.text === null
+    && result.autosaveSource.storage === 'indexeddb'
+    && result.autosaveSource.fingerprint === result.fullSource.fingerprint,
+  'localStorage autosave contains only the IndexedDB source reference: '
+    + JSON.stringify(result.autosaveSource));
+  check(result.autosaveRestoredSession && result.autosaveRestoredSession.pieceCount === 1
+    && result.autosaveRestoredSession.measurementCount === 0,
+  'autosave reference resolves from IndexedDB into a fresh empty native session');
+  check(result.legacySession === null, 'legacy project without source remains loadable and fail-closed');
+  check(result.mismatchSession === null, 'source fingerprint mismatch fails closed');
+  check(result.afterRemove.source === null && result.afterRemove.session === null,
+  'Remove invalidates both durable source and live measurement session');
+
+  let factoryText = null;
+  try { factoryText = await readFile(path.join(appDir, 'demo/DXF file/3380.dxf'), 'utf8'); }
+  catch { /* public mirror may omit demo fixtures */ }
+  if (factoryText) {
+    const factory = await s.eval(`(async () => {
+      const dbg = window.__braAutoModeDebug;
+      const empty = dbg.exportProject();
+      empty.state.annotations = [];
+      delete empty.state.dxfPatternSource;
+      await dbg.loadProject(empty);
+      document.getElementById('modeManualBtn').click();
+      if (!dbg.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+      const imported = dbg.dxf.importText(${JSON.stringify(factoryText)},
+        { left: 0, top: 0, width: 1366, height: 900 }, '3380.dxf');
+      const saved = dbg.exportProject();
+      const started = performance.now();
+      await dbg.loadProject(saved);
+      const elapsedMs = performance.now() - started;
+      return {
+        imported,
+        elapsedMs,
+        sourceFile: dbg.dxf.source() && dbg.dxf.source().fileName,
+        session: dbg.dxf.measure.getSession(),
+        alongEnabled: !document.getElementById('dxfMeasureAlongBtn').disabled,
+        outEnabled: !document.getElementById('dxfMeasureOutBtn').disabled,
+      };
+    })()`);
+    check(factory.imported && factory.imported.pieceCount === 6
+      && factory.imported.annotationCount === 1252,
+    '3380 imports as the real 6-piece/1252-line project fixture');
+    check(factory.sourceFile === '3380.dxf' && factory.session
+      && factory.session.pieceCount === 6
+      && factory.session.pieceSegmentCounts.reduce((sum, count) => sum + count, 0) === 1240
+      && factory.session.measurementCount === 0,
+    '3380 Project round-trip rebuilds all 1240 native segments with no M1/M2');
+    check(factory.alongEnabled && factory.outEnabled,
+    '3380 Project round-trip leaves Along Path and Out of Path enabled');
+    check(Number.isFinite(factory.elapsedMs) && factory.elapsedMs < 2000,
+    '3380 Project source rebuild completes within 2s, got ' + factory.elapsedMs + 'ms');
+  }
+  console.log('PASS  section 17 (ADR 0088 durable DXF source lifecycle)');
 }
 
 async function section7ViewportZoomMatrix(s) {

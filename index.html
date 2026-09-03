@@ -386,7 +386,7 @@
      (not wired, not requested) never shows a "move" cursor it can't honor.
      touch-action:none stops the browser trying to scroll/pan the page on a
      touchmove that starts here, so the pointermove drag reads clean. */
-  #patternPiecesHead, #dxfMeasurementsHead{ cursor:move; touch-action:none; user-select:none; }
+  #patternPiecesHead, #dxfMeasurementsHead, #autoSeamReviewHead{ cursor:move; touch-action:none; user-select:none; }
   .anchor-panel.anchor-panel-dragging{ opacity:0.92; }
   /* ADR 0070: Pattern Pieces panel reuses the .anchor-panel shell, docked on
      the opposite corner so the two floating panels never overlap. */
@@ -412,6 +412,25 @@
      docked at the third free corner (Anchor Manager top-left, Pattern
      Pieces top-right, this bottom-right). */
   .dxf-measurements-panel{ left:auto; right:12px; top:auto; bottom:12px; }
+  /* US-121: TD Review panel reuses the .anchor-panel shell, docked at the
+     fourth free corner (Anchor Manager top-left, Pattern Pieces top-right,
+     Pattern Measurements bottom-right, this bottom-left). */
+  .auto-seam-review-panel{ top:auto; bottom:12px; left:12px; width:320px; }
+  .auto-seam-review-row{
+    padding:7px 10px; border-top:1px solid #f4f6fa; cursor:pointer;
+  }
+  .auto-seam-review-row:first-child{ border-top:0; }
+  .auto-seam-review-row.auto-seam-review-row-selected{ background:#eef2ff; }
+  .auto-seam-review-row-head{
+    display:flex; align-items:baseline; justify-content:space-between; gap:6px;
+  }
+  .auto-seam-review-row-title{ font-weight:600; color:#0f172a; }
+  .auto-seam-review-row-status{ font-size:10.5px; color:#64748b; white-space:nowrap; }
+  .auto-seam-review-row-actions{ display:flex; gap:5px; margin-top:4px; flex-wrap:wrap; }
+  .auto-seam-review-reason{
+    margin-top:5px; width:100%; font-size:11px; padding:3px 5px;
+    border:1px solid #cbd5e1; border-radius:5px; color:#334155; background:#fff;
+  }
   .dxf-measurement-row{
     display:flex; align-items:center; gap:6px; padding:5px 10px;
     font-size:12px; border-top:1px solid #f4f6fa; cursor:pointer;
@@ -3265,6 +3284,8 @@
     <div class="group manual-only sketch-mode-only group-auto-seam">
       <button id="autoDetectSeamBtn" type="button"
         title="Automatically detect supported seam appearances and add editable drafts. Technical flats support Plain, Single Dashed, Parallel Dashed Pair, and Zigzag; product photos remain Zigzag-only. Every result requires TD review.">Auto Detect Seam</button>
+      <button id="autoSeamReviewBtn" type="button"
+        title="Review the search box (ROI) the detector used for each zone/side: mark each correct or drag it to the right place, then export a ground-truth file. Your drags are recorded as truth only — they never change what the detector produces.">Review ROI</button>
     </div>
     <div id="autoModeBar" class="group group-auto workflow-empty">
       <button id="autoDetectBtn" data-key="1" type="button" title="Run local offline vision on the source sketch to estimate view, landmarks, and anchors">Detect</button>
@@ -3725,6 +3746,26 @@
           </div>
           <div id="dxfMeasurementsBody" class="anchor-panel-body"></div>
         </div>
+        <!-- US-121: TD Review loop for Auto Detect Seam (Phase C first slice)
+             — reuses the .anchor-panel shell, docked at the fourth free
+             corner (Anchor Manager top-left, Pattern Pieces top-right, Pattern
+             Measurements bottom-right, this bottom-left). Freely draggable by
+             its head; see src/manual/auto-seam-review.js. -->
+        <div id="autoSeamReviewPanel" class="anchor-panel auto-seam-review-panel" hidden aria-label="Auto Seam ROI review">
+          <div id="autoSeamReviewHead" class="anchor-panel-head" title="Drag to move">
+            <div class="anchor-panel-titles">
+              <div class="anchor-panel-title">Review ROI</div>
+              <div class="anchor-panel-sub">TD-only — a drag here is recorded as truth, never sent to the detector</div>
+            </div>
+            <button id="autoSeamReviewCloseBtn" type="button" class="anchor-panel-close" title="Close">×</button>
+          </div>
+          <div class="anchor-panel-actions">
+            <span id="autoSeamReviewCount" class="anchor-panel-count">0/0 reviewed</span>
+            <span class="anchor-panel-spacer"></span>
+            <button id="autoSeamReviewExportBtn" type="button" class="anchor-panel-btn">Export ground truth</button>
+          </div>
+          <div id="autoSeamReviewBody" class="anchor-panel-body auto-seam-review-body"></div>
+        </div>
         <div id="boardEmpty" class="board-empty" aria-hidden="true">
           <div class="board-empty-icon">
             <svg viewBox="0 0 48 48" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -3959,6 +4000,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=e55c2d728b4e"></script>
+<script src="app.js?v=074b98b062c8"></script>
 </body>
 </html>

@@ -182,6 +182,14 @@
       }
     }
 
+    // The source itself is not generic history data. Never leave its native
+    // topology attached if Undo/Redo restored incompatible board geometry.
+    if (state.dxfPatternSource && !dxfPatternSourceIsCompatible(state.dxfPatternSource)) {
+      invalidateDxfPatternSource(
+        'Pattern Measure cleared because Undo/Redo changed its DXF geometry. Reopen the DXF to measure again.'
+      );
+    }
+
     state.history.restoring = false;
     updateUI();
     requestRender();

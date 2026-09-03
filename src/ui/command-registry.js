@@ -323,6 +323,12 @@
         ? 'Available in Sketch Focus'
         : (pickAutoSourceImage() ? true : 'Add or paste a source image first'),
       action: () => runAutoDetectSeam() }),
+    appCommand({ id: 'board.auto-seam-review.toggle', label: 'Review Seam ROI', category: 'Board · Auto',
+      page: 'board', mode: 'manual', target: '#autoSeamReviewBtn',
+      when: () => !state.sketchMode
+        ? 'Available in Sketch Focus'
+        : (state.autoSeam?.lastRun ? true : 'Run Auto Detect Seam first'),
+      action: () => toggleAutoSeamReview() }),
     appCommand({ id: 'board.copy.line', label: 'Copy Selected Line/Shape', category: 'Board · Edit',
       page: 'board', mode: 'manual', shortcut: { key: 'c', meta: true }, target: '#copyLineBtn',
       when: appCommandSelectedAnnotationOrGraphicReason, action: () => copySelectedLineOrGraphic() }),

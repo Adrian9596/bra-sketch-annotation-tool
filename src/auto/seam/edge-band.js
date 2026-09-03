@@ -23,14 +23,16 @@
     }
     const profile = new Float32Array(width).fill(-1);
     for (let x = bounds.left; x <= bounds.right; x += 1) {
-      const window = [];
+      // US-120: named medianWindow (was `window`) so the worker-purity gate in
+      // scripts/check.mjs can tell a local array from the DOM global.
+      const medianWindow = [];
       for (let dx = -2; dx <= 2; dx += 1) {
         const value = raw[Math.max(bounds.left, Math.min(bounds.right, x + dx))];
-        if (value >= 0) window.push(value);
+        if (value >= 0) medianWindow.push(value);
       }
-      if (!window.length) continue;
-      window.sort((a, b) => a - b);
-      profile[x] = window[Math.floor(window.length / 2)];
+      if (!medianWindow.length) continue;
+      medianWindow.sort((a, b) => a - b);
+      profile[x] = medianWindow[Math.floor(medianWindow.length / 2)];
     }
     return profile;
   }

@@ -112,6 +112,18 @@
           const image = getImageById(imageId) || pickAutoSourceImage();
           return image ? clone(analyzeAutoSeamSource(image)) : null;
         },
+        // US-120: the worker path. Resolves { result, execution }; `result` must
+        // equal analyzeImage() for the same image — auto-seam-worker-check
+        // asserts it. setWorkerEnabled(false) / setWorkerUrl('missing.js')
+        // drive the two fallback branches from a suite.
+        analyzeImageAsync: async (imageId) => {
+          const image = getImageById(imageId) || pickAutoSourceImage();
+          return image ? clone(await analyzeAutoSeamSourceAsync(image)) : null;
+        },
+        setWorkerEnabled: enabled => { autoSeamSetWorkerEnabled(enabled); return autoSeamWorkerEnabled(); },
+        setWorkerUrl: url => { autoSeamSetWorkerUrl(url); return autoSeamWorkerUrl(); },
+        workerSupported: () => autoSeamWorkerSupported(),
+        getLastExecution: () => clone(state.autoSeam?.lastExecution || null),
         validateResult: result => validateAutoSeamResult(clone(result)),
         run: () => runAutoDetectSeam(),
         getLastRun: () => clone(state.autoSeam?.lastRun || null),
@@ -370,7 +382,9 @@
         parse: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text)) : null),
         computePlacement: (bounds, rect, centerWorld, zoom) => (typeof computeDxfPlacementTransform === 'function'
           ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld, zoom)) : null),
-        importText: (text, rect) => (typeof importDxfText === 'function' ? clone(importDxfText(text, rect)) : null),
+        importText: (text, rect, fileName) => (typeof importDxfText === 'function'
+          ? clone(importDxfText(text, rect, fileName)) : null),
+        source: () => (state.dxfPatternSource ? clone(state.dxfPatternSource) : null),
         // ADR 0070: the Pattern Pieces panel's pure state operations, exposed
         // independently of the real DOM panel (src/ui/pattern-pieces-panel.js)
         // so a headless suite can assert the group-list/remove logic without

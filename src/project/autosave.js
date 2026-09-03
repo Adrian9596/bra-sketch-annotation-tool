@@ -77,7 +77,14 @@
       clearAutosave();
       return;
     }
-    const snapshot = buildProjectSnapshot();
+    // Raw factory DXF text can exceed localStorage quota. Its companion
+    // record lives in IndexedDB; this snapshot carries metadata + fingerprint.
+    if (state.dxfPatternSource) {
+      persistDxfPatternSourceForAutosave(state.dxfPatternSource).catch(err => {
+        console.warn('[autosave] Could not refresh DXF source storage:', err);
+      });
+    }
+    const snapshot = buildProjectSnapshot({ dxfSourceMode: 'reference' });
     const record = {
       savedAt: Date.now(),
       appVersion: (typeof AUTO_TEMPLATE_VERSION !== 'undefined') ? AUTO_TEMPLATE_VERSION : null,

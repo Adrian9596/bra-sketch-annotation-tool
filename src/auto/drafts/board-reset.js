@@ -62,6 +62,7 @@
     }
     if (!window.confirm('Reset the working board? This deletes all photos and lines so you can start a new bra sketch. Undo will bring them back.')) return;
 
+    if (state.dxfPatternSource || state.dxfMeasureSession) clearDxfPatternSource();
     state.annotations = [];
     state.graphics = [];
     state.deletedAutoAnnotations = [];
@@ -108,6 +109,7 @@
       return;
     }
 
+    if (state.dxfPatternSource || state.dxfMeasureSession) clearDxfPatternSource();
     state.annotations = [];
     state.deletedAutoAnnotations = [];
     state.autoMode.draftAnnotations = [];

@@ -20,7 +20,39 @@
     return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
   }
 
-  function autoSeamPixelModel(sourceImage, maxDimension = 640) {
+  // US-120: this part runs in two places — app.js on the main thread and
+  // auto-seam-worker.js inside a Web Worker, where there is no document. Use
+  // the DOM canvas whenever one exists so the main-thread path draws exactly
+  // as it did before the worker existed; only a worker gets OffscreenCanvas.
+  function autoSeamCreateCanvas(width, height) {
+    if (typeof document !== 'undefined' && document && typeof document.createElement === 'function') {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      return canvas;
+    }
+    if (typeof OffscreenCanvas === 'function') return new OffscreenCanvas(width, height);
+    throw new Error('no canvas implementation available for the Auto Seam pixel model');
+  }
+
+  // US-120: the two scaled reads the pipeline performs — router.js builds the
+  // coarse 640 px model, lanes/technical-flat.js the 1600 px native model.
+  // The worker client pre-reads exactly these on the main thread; a new
+  // dimension added elsewhere without updating this list makes the worker
+  // throw (no decoded image to draw), which the client reports as
+  // `worker-failed` and auto-seam-worker-check turns into a hard failure.
+  var AUTO_SEAM_WORKER_PIXEL_DIMENSIONS = [640, 1600];
+
+  // Scaled RGBA of the source at `maxDimension`, either pre-read
+  // (sourceImage.pixels[maxDimension], produced by THIS function on the main
+  // thread and transferred to the worker) or drawn now from sourceImage.img.
+  // Pre-read pixels win, so the worker never resamples: resampling an
+  // ImageBitmap on an OffscreenCanvas was measured to differ from the DOM
+  // canvas draw by ~1e-3 in every 640 px feature (see US-120 execplan note),
+  // which would break the byte-identical contract with the main thread.
+  function autoSeamReadPixels(sourceImage, maxDimension) {
+    const pre = sourceImage && sourceImage.pixels && sourceImage.pixels[maxDimension];
+    if (pre && pre.rgba && pre.width > 0 && pre.height > 0) return pre;
     const img = sourceImage && sourceImage.img;
     if (!img) throw new Error('source image is not decoded');
     const naturalWidth = img.naturalWidth || img.width;
@@ -29,12 +61,15 @@
     const scale = Math.min(1, maxDimension / Math.max(naturalWidth, naturalHeight));
     const width = Math.max(48, Math.round(naturalWidth * scale));
     const height = Math.max(48, Math.round(naturalHeight * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    const canvas = autoSeamCreateCanvas(width, height);
     const context = canvas.getContext('2d', { willReadFrequently: true });
     context.drawImage(img, 0, 0, width, height);
     const rgba = context.getImageData(0, 0, width, height).data;
+    return { maxDimension, naturalWidth, naturalHeight, width, height, rgba };
+  }
+
+  function autoSeamPixelModel(sourceImage, maxDimension = 640) {
+    const { naturalWidth, naturalHeight, width, height, rgba } = autoSeamReadPixels(sourceImage, maxDimension);
     const luma = new Float32Array(width * height);
 
     const corner = Math.max(3, Math.round(Math.min(width, height) * 0.045));

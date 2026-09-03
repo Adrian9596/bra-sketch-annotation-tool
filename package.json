@@ -72,6 +72,7 @@
     "photo-stitch-roi-pilot": "node scripts/photo-stitch-roi-pilot.mjs",
     "photo-stitch-browser": "node scripts/photo-stitch-browser.mjs",
     "auto-seam-technical-flat-check": "node scripts/auto-seam-technical-flat-check.mjs",
+    "auto-seam-worker-check": "node scripts/auto-seam-worker-check.mjs",
     "photo-stitch-technical-flat-pilot": "node scripts/photo-stitch-technical-flat-pilot.mjs",
     "auto-seam-probe": "node scripts/auto-seam-probe.mjs"
   },

@@ -48,6 +48,14 @@
       return;
     }
 
+    // US-121: while a TD is dragging an Auto Seam Review ROI, that gesture
+    // owns the whole press-move-release — same "one active tool wins the
+    // canvas" rule as Pattern Measure above. A press outside the ROI being
+    // edited (hit-test returns false) falls through to the normal chain.
+    if (isAutoSeamReviewEditing() && autoSeamReviewOnMouseDown(world)) {
+      return;
+    }
+
     // Auto Mode: only drafts + anchors are interactive. Project annotations
     // are locked, and tool creation / erasing is disabled (see updateUI).
     if (state.appMode === 'auto') {
@@ -402,6 +410,11 @@
       return;
     }
 
+    // US-121: continue an Auto Seam Review ROI drag already started above.
+    if (autoSeamReviewOnMouseMove(world)) {
+      return;
+    }
+
     if (state.drawSession) {
       updateDrawSessionPreview(world, !!e.shiftKey);
       requestRender();
@@ -678,6 +691,12 @@
     state.smartAlignGuides = [];
     if (state.eraseSession) {
       commitEraseStroke();
+    }
+
+    // US-121: end an Auto Seam Review ROI drag before any other mouseup path
+    // — it never opened a normal interaction, so nothing below expects it.
+    if (autoSeamReviewOnMouseUp()) {
+      return;
     }
 
     if (dxfMeasureIsActiveTool()) {

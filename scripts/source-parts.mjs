@@ -81,6 +81,7 @@ export const SOURCE_PARTS = [
   'src/ui/pattern-pieces-panel.js',
   'src/ui/dxf-measurements-panel.js',
   'src/ui/bindings.js',
+  'src/project/dxf-pattern-source.js',
   'src/project/history.js',
   'src/project/project-save.js',
   'src/project/project-load.js',
@@ -172,7 +173,15 @@ export const SOURCE_PARTS = [
   'src/auto/seam/lanes/product-photo.js',
   'src/auto/seam/lanes/technical-flat.js',
   'src/auto/seam/router.js',
+  // US-120: main-thread client that runs the router above inside the Auto Seam
+  // Worker (auto-seam-worker.js) and falls back to the same code in-thread.
+  'src/manual/auto-seam-worker-client.js',
   'src/manual/auto-seam.js',
+  // US-121: TD Review loop (Phase C first slice) — Board-touching, app.js
+  // only (never the worker bundle). Needs makeDraggablePanel (ui/draggable-
+  // panel.js, loaded earlier) and autoSeamSourceSha256 (auto-seam.js, just
+  // above); read by src/render/auto-seam-review-overlay.js below.
+  'src/manual/auto-seam-review.js',
   'src/auto/drafts/board-reset.js',
   'src/auto/drafts/generate-drafts-action.js',
   'src/auto/learning/acceptance-stats.js',
@@ -197,10 +206,22 @@ export const SOURCE_PARTS = [
   'src/render/render-notes.js',
   'src/render/render-dxf-measurements.js',
   'src/render/detection-overlay.js',
+  'src/render/auto-seam-review-overlay.js',
   'src/render/anchor-pins.js',
   'src/render/render-images.js',
   'src/render/viewport.js',
   'src/render/render-loop.js',
   'src/bootstrap.js',
   'src/dev/url-bootstrap.js',
+];
+
+// US-120: the second bundle. scripts/build-app.mjs concatenates these into
+// auto-seam-worker.js, which app.js loads as a Web Worker. It is the pure
+// src/auto/seam/* pipeline (every part that app.js also ships — the SAME
+// files, so both bundles run identical detection code) plus one worker-only
+// entry part that is deliberately NOT in SOURCE_PARTS. The worker bundle has
+// its own shared scope, so scripts/check.mjs validates it separately.
+export const AUTO_SEAM_WORKER_PARTS = [
+  ...SOURCE_PARTS.filter(part => part.startsWith('src/auto/seam/')),
+  'src/auto/seam/worker-entry.js',
 ];

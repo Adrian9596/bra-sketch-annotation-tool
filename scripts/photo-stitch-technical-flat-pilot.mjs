@@ -2,6 +2,16 @@
 // US-109 / ADR 0083 follow-up: real technical-flat raster pilot fixtures
 // (positive/negative/mixed), run through the actual offline runtime.
 //
+// Corpus (scripts/groundtruth/technical-flat-stitch/, EXPECTED_FIXTURES below):
+// the four 2026-09-02 fixtures plus, since 2026-09-03 (US-109 Phase A),
+// image6.png (line-art front closure: dashed-topstitch armholes read as
+// zigzag, hem zigzag drawn outside the outline), image6-filled.png (a colour
+// filled flat WITH zigzag that the classifier still routes to product_photo)
+// and Sketch image1.png (two-panel front+back — `unjudgeable`, must abstain
+// at image scope). A fixture routed off the technical-flat lane is accepted
+// only while it documents an `input_classification` knownGap; otherwise the
+// routing is a classifier regression and fails here.
+//
 // This is the technical-flat-lane sibling of photo-stitch-roi-pilot.mjs: it
 // never invents an accuracy threshold and never silently pins a known defect
 // as "correct". Ground truth here is primarily existence-only and stays
@@ -50,6 +60,9 @@ const SOURCES = new Set(['draft_pending_td', 'td_confirmed']);
 const GAP_KINDS = new Set(['false_positive', 'false_negative', 'input_classification', 'wrong_geometry']);
 const EXISTENCE_GAP_KINDS = new Set(['false_positive', 'false_negative']);
 const key = (zone, side) => `${zone}::${side}`;
+// Every file the corpus must contain — a missing ground-truth JSON is a
+// corpus regression, not a smaller run.
+const EXPECTED_FIXTURES = ['Sketch image1.png', 'image2.png', 'image3.png', 'image5.png', 'image6-filled.png', 'image6.png', 'photo4.png'];
 
 function validateZoneSideList(list, label) {
   check(Array.isArray(list), `${label} must be an array`);
@@ -96,7 +109,16 @@ async function main() {
     check(actualHash === gt.sourceSha256, `${name}: sourceSha256 does not match ${gt.image} (expected ${actualHash}) — corpus is stale or the photo changed`);
     fixtures.push({ name, gt });
   }
-  check(fixtures.length === 4, `expected the 4 technical-flat pilot fixtures, got ${fixtures.length}`);
+  // Superset, not equality: every EXPECTED fixture must be present (a missing
+  // one is a corpus regression), while extra ground-truth files — e.g. a TD's
+  // Review ROI export (US-121) dropped into the corpus directory — are run
+  // too, without a code edit. Extras are listed so a stray file is visible.
+  const present = fixtures.map(f => f.gt.image).sort();
+  const missing = EXPECTED_FIXTURES.filter(name => !present.includes(name));
+  check(missing.length === 0,
+    `technical-flat pilot corpus is missing ${JSON.stringify(missing)} (present: ${JSON.stringify(present)})`);
+  const extras = present.filter(name => !EXPECTED_FIXTURES.includes(name));
+  if (extras.length) console.log(`  corpus has ${extras.length} fixture(s) beyond EXPECTED_FIXTURES: ${extras.join(', ')} — run as well; add to EXPECTED_FIXTURES once they are meant to be permanent`);
 
   app = await launchHeadlessApp({ appDir, query: 'technical-flat-pilot', profilePrefix: 'technical-flat-pilot-' });
   const { session } = app;
@@ -105,9 +127,37 @@ async function main() {
   let gapsStillReproducing = 0, gapsNoLongerReproducing = 0;
   for (const { gt } of fixtures) {
     const result = await analyzeSeamFixture(session, { relativePath: `demo/photos for seam detection/${gt.image}` });
-    check(result?.contractVersion === 'auto-seam-candidate/3', `${gt.image}: Candidate V3 must be emitted`);
     check(await session.eval(`window.__braAutoModeDebug.autoSeam.validateResult(${JSON.stringify(result)})`) === true,
-      `${gt.image}: Candidate V3 result must validate`);
+      `${gt.image}: result must validate against its lane's contract`);
+
+    if (gt.unjudgeable) {
+      // A fixture the runtime must refuse as a whole (Sketch image1.png: two
+      // garments, front + back, on one image — ADR 0083 multi-garment). Truth
+      // is "abstain at image scope, draw nothing"; per-zone labels do not
+      // apply, so the zone lists stay empty and the zone checks are skipped.
+      const imageAbstention = result.abstentions.find(a => a.scope === 'image');
+      check(result.inputEligible === false, `${gt.image}: unjudgeable fixture must be ineligible, got inputEligible=${result.inputEligible}`);
+      check(result.candidates.length === 0, `${gt.image}: unjudgeable fixture must produce no candidate, got ${result.candidates.length}`);
+      check(!!imageAbstention, `${gt.image}: unjudgeable fixture must record an image-scope abstention`);
+      console.log(`  ${gt.image.padEnd(18)} inputClass=${result.inputClass.value.padEnd(13)} lane=${String(result.analysisLane).padEnd(14)} UNJUDGEABLE (${gt.unjudgeableReason}) -> image abstention ${imageAbstention.code}: ${imageAbstention.reason}`);
+      predictions.push({
+        image: gt.image, sourceSha256: gt.sourceSha256, unjudgeable: true,
+        inputClass: result.inputClass, analysisLane: result.analysisLane, inputEligible: result.inputEligible,
+        candidates: [],
+        abstentions: result.abstentions.map(a => ({ scope: a.scope, zone: a.zone ?? null, side: a.side ?? null, code: a.code })),
+      });
+      continue;
+    }
+
+    if (result.analysisLane === 'technical_flat') {
+      check(result.contractVersion === 'auto-seam-candidate/3', `${gt.image}: Candidate V3 must be emitted`);
+    } else {
+      // Routed off the technical-flat lane. Tolerated only while the fixture
+      // documents it (image6-filled.png); an undocumented re-route is a
+      // classifier regression.
+      check(gt.knownGaps.some(gap => gap.kind === 'input_classification'),
+        `${gt.image}: routed to lane ${result.analysisLane} (${result.inputClass.value}, ${result.inputClass.ruleId || result.inputClass.rule || 'rule n/a'}) without an input_classification knownGap — classifier regression`);
+    }
     check(result.candidates.every(candidate => candidate.roiTransform.roundTripMaxErrorPx <= 0.01),
       `${gt.image}: every candidate must retain a reversible ROI/source transform`);
 

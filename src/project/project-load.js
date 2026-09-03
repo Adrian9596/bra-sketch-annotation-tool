@@ -37,7 +37,7 @@
       let looksLikeJson = true;
       try { JSON.parse(text); } catch (error) { looksLikeJson = false; }
       if (looksLikeJson) openProjectFileWithGuard(file);
-      else importDxfTextIntoBoard(text);
+      else importDxfTextIntoBoard(text, file.name);
     };
     reader.onerror = () => showToast('Could not read that file.', 4200);
     reader.readAsText(file);
@@ -83,10 +83,10 @@
   // import only adds annotations), so the exit dialog here exists purely to
   // let the TD settle the draft layer before the mode switch, not to guard
   // against overwriting work.
-  function importDxfTextIntoBoard(text) {
+  function importDxfTextIntoBoard(text, fileName) {
     const proceed = () => {
       if (!state.sketchMode) setSketchModeEnabled(true, false);
-      importDxfText(text);
+      importDxfText(text, undefined, fileName);
     };
 
     if (state.appMode === 'auto') {
@@ -122,7 +122,7 @@
 
   function importDxfFileIntoBoard(file) {
     const reader = new FileReader();
-    reader.onload = () => importDxfTextIntoBoard(String(reader.result || ''));
+    reader.onload = () => importDxfTextIntoBoard(String(reader.result || ''), file.name);
     reader.onerror = () => showToast('Could not read that file.', 4200);
     reader.readAsText(file);
   }
@@ -208,17 +208,19 @@
       // Auto-first so detection can run right away.
       state.appMode = (state.annotations.length > 0 || state.graphics.length > 0 || state.notes.length > 0) ? 'manual' : 'auto';
       state.autoMode = makeInitialAutoModeState();
-      state.autoSeam = { running: false, lastRun: null };
+      // Same factory as state.js — a literal here silently dropped the
+      // `review`/`lastExecution` fields and made Review ROI throw after Open.
+      state.autoSeam = autoSeamInitialState();
       state.hiddenAnnIds = [];
       state.hiddenDraftIds = [];
-      // US-105: a reopened project never carries a measure session — it is
-      // session-only geometry describing whatever DXF was last imported into
-      // the PREVIOUS board.
+      // The session itself is still ephemeral. ADR 0088 may rebuild a fresh,
+      // empty one from the durable source after all board fields are loaded.
       resetDxfMeasureSession();
-      // US-102: every reopened project starts in POM Focus, regardless of
-      // which focus was active before Open/Restore — Sketch Focus is a
-      // live-authoring aid, never project data (autosave Restore goes
-      // through this same function, so this covers both entry points).
+      state.dxfPatternSource = null;
+      // US-102: a normal/legacy reopened project starts in POM Focus,
+      // regardless of which focus was active before Open/Restore. ADR 0088
+      // makes one deliberate exception below: a compatible durable DXF
+      // source enters Sketch Focus so Pattern Measure is immediately usable.
       // applySketchModeVisual is the single state+body-class+button-sync
       // path the toolbar button itself uses (src/manual/sketch-mode.js), so
       // the button cannot stay showing "Sketch" active after a reopen.
@@ -289,6 +291,15 @@
       if (typeof renderBom === 'function') renderBom();
       state.preview = (s.preview && typeof s.preview === 'object') ? clone(s.preview) : null;
       if (typeof ensurePreviewPage === 'function') ensurePreviewPage();
+
+      // Source-bearing projects open measure-ready in Manual + Sketch Focus.
+      // Legacy projects omit this additive field and retain POM Focus.
+      const dxfRestore = await restoreDxfPatternSource(s.dxfPatternSource);
+      if (dxfRestore.ok) {
+        state.appMode = 'manual';
+        document.body.classList.remove('app-auto');
+        applySketchModeVisual(true);
+      }
 
       // Images are in place now, so the Auto status chip can resolve
       // ready/idle correctly for the reopened board.

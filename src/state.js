@@ -52,6 +52,29 @@
   const NOTE_WIDTH_MODE_CONTENT = 'content';
   const NOTE_WIDTH_MODE_FIXED = 'fixed';
 
+  // US-109/120/121 Auto Detect Seam runtime state — session-only: generated
+  // Board annotations persist through the ordinary project/history path,
+  // while a detector's transient running/result/review UI does not belong in
+  // project JSON. Function declarations (hoisted) so `state` below and
+  // project-load.js's reset build the identical shape from ONE definition.
+  function autoSeamReviewInitialState() {
+    // US-121 TD Review overlay. `corrections` is keyed by Automatic ROI id:
+    // { verdict: 'correct'|'wrong', reasonCode, correctedPolygon } — TD truth,
+    // exported to a downloadable file, never fed back into the detector.
+    return { active: false, runId: null, selectedRoiId: null, editingRoiId: null, corrections: {} };
+  }
+
+  function autoSeamInitialState() {
+    return {
+      running: false,
+      lastRun: null,
+      // US-120: { engine: 'worker' | 'main-thread', reason, elapsedMs } of the
+      // most recent analysis — which engine ran and, if not the worker, why.
+      lastExecution: null,
+      review: autoSeamReviewInitialState(),
+    };
+  }
+
   const state = {
     tool: 'select',
     drawStyle: 'solid',
@@ -146,10 +169,11 @@
     // US-109 Auto Detect Seam runtime state. Session-only: generated Board
     // annotations persist through the ordinary project/history path, while a
     // detector's transient running/result UI does not belong in project JSON.
-    autoSeam: {
-      running: false,
-      lastRun: null,
-    },
+    // Built by autoSeamInitialState() below — the ONE definition of this
+    // shape. project-load.js resets it through the same factory; a literal
+    // copy there once dropped `review` and broke Review ROI after Open
+    // (US-121 recheck, 2026-09-03).
+    autoSeam: autoSeamInitialState(),
     // US-103: the POM-side pending arrow preference (state.arrowType), saved
     // by applySketchModeVisual the moment Sketch Focus turns on and restored
     // the moment it turns off. Session-only, like sketchMode itself — never
@@ -292,16 +316,22 @@
     // model (pieces of native line/arc segments, unit/unitSource), the
     // board<->native placement mapping, and the TD's temporary A/B
     // measurements for the currently-imported DXF. Session-only by design:
-    // absent from makeSnapshot/restoreSnapshot (src/project/history.js),
-    // buildProjectSnapshot/loadProject, and writeAutosave — never add a line
-    // for it in any of those four functions. Because the GLOBAL undo stack
+    // absent from makeSnapshot/restoreSnapshot and buildProjectSnapshot.
+    // ADR 0088 persists only the separate dxfPatternSource and uses it to
+    // rebuild a NEW empty session on load. Because the GLOBAL undo stack
     // restores a snapshot that never contains this field, it structurally
     // cannot undo a measurement edit; measurements use their OWN small
     // fingerprint-diff undo stack instead (see
     // src/manual/dxf-measure-session.js). null until a DXF import creates
-    // one; cleared to null on another DXF import, a fresh project load, or
-    // a mode/board reset (see the call sites listed in that file).
+    // one; cleared to null on another DXF import or a mode/board reset (see
+    // the call sites listed in that file).
     dxfMeasureSession: null,
+    // ADR 0088: durable source for the NEWEST successfully imported DXF.
+    // Unlike dxfMeasureSession, this is serialized into Project JSON (full
+    // text) and autosave (IndexedDB fingerprint reference) so reopening can
+    // build a fresh empty measurement session. It is deliberately excluded
+    // from global history; Remove/Simplify invalidate it fail-closed.
+    dxfPatternSource: null,
     // US-112: Pattern Measure snap preferences. A TD-level tool preference,
     // like smartAlignEnabled above — session-only, never saved/restored,
     // and deliberately OUTSIDE state.dxfMeasureSession so opening a new DXF
