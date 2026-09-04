@@ -17,6 +17,8 @@ export const SOURCE_PARTS = [
   'src/curves.js',
   'src/geometry/math.js',
   'src/geometry/dxf-path-kernel.js',
+  'src/geometry/dxf-pattern-classify.js',
+  'src/geometry/dxf-parse.js',
   'src/manual/board-graphics.js',
   'src/ui/toast.js',
   'src/ui/dialogs/core.js',
@@ -41,6 +43,7 @@ export const SOURCE_PARTS = [
   'src/ui/dialogs/grading-rules-model.js',
   'src/ui/dialogs/size-run-dialog.js',
   'src/ui/dialogs/export-size-dialog.js',
+  'src/ui/dialogs/dxf-pattern-picker-dialog.js',
   'src/ui/dialogs/grading-dialog.js',
   'src/ui/dialogs/view-roles-dialog.js',
   'src/auto/measure/fusion.js',
@@ -112,6 +115,7 @@ export const SOURCE_PARTS = [
   'src/manual/shape-stamps.js',
   'src/manual/dxf-import.js',
   'src/manual/dxf-native-parser.js',
+  'src/manual/dxf-worker-client.js',
   'src/manual/dxf-measure-session.js',
   'src/manual/dxf-measure-snap.js',
   'src/manual/dxf-measure-interaction.js',
@@ -224,4 +228,20 @@ export const SOURCE_PARTS = [
 export const AUTO_SEAM_WORKER_PARTS = [
   ...SOURCE_PARTS.filter(part => part.startsWith('src/auto/seam/')),
   'src/auto/seam/worker-entry.js',
+];
+
+// US-124 Phase 5 (ADR 0091): the third bundle. dxf-worker.js runs the SAME
+// pure DXF parse layer app.js ships (math, the pattern classifier, the parse
+// layer split out of dxf-import.js, the native measurement parser) plus one
+// worker-only entry part, so a >120-pattern file (or any file the TD asks
+// to route there) parses off the main thread and the result is byte-identical
+// to the synchronous path by construction — same files, same functions.
+// Board code (src/manual/dxf-import.js, the client, dialogs) stays out.
+export const DXF_WORKER_PARTS = [
+  'src/geometry/math.js',
+  'src/geometry/dxf-path-kernel.js',
+  'src/geometry/dxf-pattern-classify.js',
+  'src/geometry/dxf-parse.js',
+  'src/manual/dxf-native-parser.js',
+  'src/manual/dxf-worker-entry.js',
 ];

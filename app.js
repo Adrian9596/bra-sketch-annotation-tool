@@ -7,6 +7,9 @@
   // US-120: URL of the Auto Seam Worker bundle, content-hashed like app.js?v=.
   const AUTO_SEAM_WORKER_URL = "auto-seam-worker.js?v=4b1b83655f4c";
 
+  // US-124: URL of the DXF Worker bundle, content-hashed like app.js?v=.
+  const DXF_WORKER_URL = "dxf-worker.js?v=deaf90c819c6";
+
   // ---- src/auto/rules/load-rules.js ----
 // Loads TD-editable Auto Mode rules from auto_mode_rules/*.json.
 // This runs before state.js so POM_TEMPLATE/ANCHOR_SCHEMA stay synchronous.
@@ -314,6 +317,17 @@
     // like templateGroupEditId above: it describes the sketch itself, so it
     // is persisted with the project (see buildProjectSnapshot/loadProject).
     templateGroupLabels: {},
+    // Phase 3 of US-124 (ADR 0091): templateGroupId -> what the DXF said
+    // about the piece — the ASTM annotation (PIECE NAME / SIZE / QUANTITY),
+    // the classification (kind, boundary layer, class counts, notch chains)
+    // and what dedupe dropped. Display/provenance for the Pattern Pieces
+    // panel; never read by grouping or measurement. Sparse like
+    // templateGroupLabels and persisted the same way.
+    templateGroupMeta: {},
+    // Phase 3: import-time options for the next DXF import. keepQualityCurves
+    // places ASTM 84/85/86/87 quality-validation twins instead of dropping
+    // them; the value used for an import travels with its dxfPatternSource.
+    dxfImportOptions: { keepQualityCurves: false },
     // US-095: visual vector construction shapes. Deliberately separate from
     // annotations, which are the measurement/POM collection.
     graphics: [],
@@ -2313,6 +2327,2016 @@
       const seg = segments[step.segIndex];
       return sum + (seg ? dxfPartialLength(seg, step.t0, step.t1, tolerance) : NaN);
     }, 0);
+  }
+
+  // ---- src/geometry/dxf-pattern-classify.js ----
+// US-124 / ADR 0091: DXF pattern identity is a classified closed outline.
+//
+// Pure, DOM-free grouping shared by BOTH DXF parsers (src/manual/dxf-import.js
+// for the board, src/manual/dxf-native-parser.js for Pattern Measure) so the
+// two can never disagree about what a pattern is — makeDxfMeasureSession pairs
+// board pieces with native pieces BY INDEX, so a grouping difference between
+// the two would silently null every pieceAnchor.
+//
+// Why this exists: the pre-ADR-0091 grouping (now dxfBuildPiecesLegacy in
+// dxf-import.js — endpoint connectivity + bounding-box containment, never
+// across a placement instance per ADR 0069) has no notion of which closed
+// contour is the piece BOUNDARY. On every ASTM D6673 / AAMA-292 layered
+// export (CLO, AccuMark, BUYI-TECH, RP_Design — 33 of the 36 parseable real
+// files in demo/DXF file/**) a pattern's own grain line (layer 7) and
+// internal lines (layers 8/85) routinely poke outside the boundary's
+// bounding box and survive as separate "pieces": VeraLifting v.B 3.0.dxf
+// (57 real patterns) read as 133 and was rejected by the 120-piece cap;
+// BiancaBra 108 vs 41, SofyLift 105 vs 48, 3708 85 vs 48. See the story
+// packet docs/stories/epics/E01-manual-mode/US-124-*/ for the corpus table.
+//
+// The rule (ADR 0091):
+//   1. Per placement instance, the boundary layer is ASTM 1 ("piece
+//      boundary"); 84 (its quality-validation twin) only when 1 is absent.
+//   2. Every CLOSED simple chain on the boundary layer is one pattern's
+//      outline. An instance with no closed boundary chain falls back — for
+//      that instance only — to dxfBuildPiecesLegacy, byte-identical to the
+//      pre-ADR-0091 result (3380.dxf, 2927.dxf, 2892XL-new.dxf have no layer
+//      1 at all and must not change).
+//   3. Every other chain in the instance (any layer, including an OPEN
+//      boundary-layer chain) is assigned to the outline that contains the
+//      largest fraction of its sample points (point-in-polygon, with an edge
+//      tolerance so a chain drawn ON the boundary — a sew line, a QV twin —
+//      counts as inside). Ties → the smaller outline, the same preference
+//      the legacy containment merge had. Below the 50% score, a SHORT chain
+//      whose endpoint touches an outline is a notch and joins it.
+//   4. Anything still unassigned becomes its own pattern flagged `orphan` —
+//      listed and drawn, never silently dropped — so a wrong assignment is
+//      visible. The corpus oracle asserts orphans === 0 on every layered file.
+//
+// Layer classes are provenance for the Pattern Pieces panel and the import
+// toast (Phase 3/4 of US-124); Phase 2 (this file) only needs "boundary or
+// not" to decide grouping. Duplicate/QV-twin removal is Phase 3 and does
+// not live here yet.
+//
+// Cross-part symbols used (all `function` declarations, hoisted bundle-wide
+// per CLAUDE.md): distance, pointToSegmentDistance (src/geometry/math.js);
+// dxfSegmentEndpoints, dxfPointOnArcSegment, dxfBoundsOfSegments,
+// dxfBoundsOfPoints, dxfUnionFind, dxfBuildPiecesLegacy
+// (src/manual/dxf-import.js).
+// Source part for app.js. Run `npm run build` after editing.
+
+  // ASTM D6673-10 / AAMA-292 layer table, verified against the corpus
+  // (docs/stories/epics/E01-manual-mode/US-124-*/design.md). 8x = the
+  // "quality validation curve" twins of 1/8/11/14.
+  const DXF_PATTERN_LAYER_CLASS = {
+    '1': 'boundary', '84': 'boundary-qv',
+    '8': 'internal', '85': 'internal-qv',
+    '14': 'sew', '87': 'sew-qv',
+    '11': 'cutout', '86': 'cutout-qv',
+    '7': 'grain', '5': 'gradeRef', '6': 'mirror',
+    '15': 'annotation',
+  };
+  // Preference order for the boundary layer of an instance.
+  const DXF_PATTERN_BOUNDARY_LAYERS = ['1', '84'];
+  // Connectivity tolerance — the SAME relative figure dxfConnectedComponents
+  // uses (fraction of the WHOLE drawing's diagonal), so the legacy fallback
+  // and the classified path judge "touching" identically.
+  const DXF_PATTERN_CONNECT_TOL_RATIO = 0.0001;
+  // A sample point within this fraction of the OUTLINE's diagonal of the
+  // outline itself counts as inside (sew lines and QV twins sit on/along it).
+  const DXF_PATTERN_EDGE_TOL_RATIO = 0.002;
+  // Notch rule: a chain no longer than this fraction of the INSTANCE
+  // diagonal whose endpoint lies within the notch tolerance of an outline.
+  const DXF_PATTERN_NOTCH_MAX_LEN_RATIO = 0.02;
+  const DXF_PATTERN_NOTCH_TOL_RATIO = 0.005;
+  const DXF_PATTERN_ASSIGN_MIN_SCORE = 0.5;
+  // Sampling density for the containment score / polygon flattening.
+  const DXF_PATTERN_SAMPLES_PER_CURVE = 8;
+  const DXF_PATTERN_MAX_SAMPLES = 400;
+  // Phase 3 (ADR 0091, owner decision 2): duplicates. Which copy of an EXACT
+  // duplicate survives — lower rank wins (CLO exports layer 14 "sew line" as
+  // a vertex-for-vertex copy of layer 1: keep the boundary, drop the sew
+  // copy). QV twins rank last so a primary always beats its twin.
+  const DXF_PATTERN_CLASS_RANK = {
+    boundary: 0, sew: 1, internal: 2, cutout: 3, grain: 4, gradeRef: 5, mirror: 5,
+    notch: 6, annotation: 7, unknown: 8,
+    'boundary-qv': 9, 'sew-qv': 9, 'internal-qv': 9, 'cutout-qv': 9,
+  };
+  // A chain on an ASTM quality-validation layer (84/85/87/86) is a twin of
+  // its pattern's primary geometry BY DEFINITION of the layer table; the
+  // geometry check is only a sanity guard against a mislabelled layer, not
+  // the classifier. Measured 2026-09-04 (one-sided Hausdorff / pattern
+  // diagonal): real 84→1 twins deviate up to 4.0% (VeraLifting, 2.4× denser
+  // re-tessellation of the same curve) while a genuinely different internal
+  // line (8→1) sits as close as 0.03% — no distance threshold separates them,
+  // so the layer decides and 10% only rejects the absurd.
+  const DXF_PATTERN_QV_SANITY_RATIO = 0.10;
+
+  function dxfPatternIsQvClass(cls) { return typeof cls === 'string' && cls.slice(-3) === '-qv'; }
+  function dxfPatternClassRank(cls) {
+    const r = DXF_PATTERN_CLASS_RANK[cls];
+    return Number.isFinite(r) ? r : 8;
+  }
+
+  function dxfPatternLayerKey(layer) {
+    return layer == null ? null : String(layer).trim();
+  }
+
+  function dxfPatternLayerClass(layer) {
+    const key = dxfPatternLayerKey(layer);
+    if (key == null || key === '') return 'unknown';
+    return DXF_PATTERN_LAYER_CLASS[key] || 'unknown';
+  }
+
+  function dxfPatternCubicPoint(seg, t) {
+    const mt = 1 - t;
+    const a = mt * mt * mt, b = 3 * mt * mt * t, c = 3 * mt * t * t, d = t * t * t;
+    return {
+      x: a * seg.p0.x + b * seg.c1.x + c * seg.c2.x + d * seg.p3.x,
+      y: a * seg.p0.y + b * seg.c1.y + c * seg.c2.y + d * seg.p3.y,
+    };
+  }
+
+  // n+1 points from t=0 to t=1 along the segment, in the segment's own
+  // authored direction. A straight segment only ever needs its two ends.
+  function dxfPatternSamplePoints(seg, n) {
+    if (seg.kind === 'straight') return [seg.a, seg.b];
+    const out = [];
+    for (let i = 0; i <= n; i += 1) {
+      const t = i / n;
+      out.push(seg.kind === 'arc' ? dxfPointOnArcSegment(seg, t) : dxfPatternCubicPoint(seg, t));
+    }
+    return out;
+  }
+
+  function dxfPatternSegmentLength(seg) {
+    if (seg.kind === 'straight') return distance(seg.a, seg.b);
+    if (seg.kind === 'arc') return Math.abs(seg.sweep) * seg.radius;
+    const pts = dxfPatternSamplePoints(seg, DXF_PATTERN_SAMPLES_PER_CURVE);
+    let len = 0;
+    for (let i = 1; i < pts.length; i += 1) len += distance(pts[i - 1], pts[i]);
+    return len;
+  }
+
+  // Greedy grid clustering of endpoints: two points within `tol` share a
+  // vertex id. O(k) via a cell hash (cell = tol, 3x3 neighbourhood) instead
+  // of the legacy O(k^2) all-pairs scan — a real CLO instance has up to a
+  // few thousand endpoints and a corpus file up to ~18k segments.
+  function dxfPatternClusterPoints(points, tol) {
+    const cell = tol > 0 ? tol : 1e-9;
+    const grid = new Map();
+    const ids = new Array(points.length).fill(-1);
+    let next = 0;
+    for (let i = 0; i < points.length; i += 1) {
+      const p = points[i];
+      const cx = Math.floor(p.x / cell), cy = Math.floor(p.y / cell);
+      let found = -1;
+      for (let dx = -1; dx <= 1 && found === -1; dx += 1) {
+        for (let dy = -1; dy <= 1 && found === -1; dy += 1) {
+          const bucket = grid.get((cx + dx) + ',' + (cy + dy));
+          if (!bucket) continue;
+          for (const j of bucket) {
+            if (distance(p, points[j]) <= tol) { found = ids[j]; break; }
+          }
+        }
+      }
+      ids[i] = found === -1 ? next++ : found;
+      const key = cx + ',' + cy;
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(i);
+    }
+    return { ids, count: next };
+  }
+
+  function dxfPatternMidpoint(seg) {
+    if (seg.kind === 'straight') return { x: (seg.a.x + seg.b.x) / 2, y: (seg.a.y + seg.b.y) / 2 };
+    if (seg.kind === 'arc') return dxfPointOnArcSegment(seg, 0.5);
+    return dxfPatternCubicPoint(seg, 0.5);
+  }
+
+  // Endpoint-connected chains among `segIdxs`. `closed` means a SIMPLE loop:
+  // every vertex has degree exactly 2 in the chain's TOPOLOGY. A figure-eight
+  // or a chain with a dangling spur is not an outline; it goes to the pool.
+  //
+  // Two kinds of segment are members of the chain but NOT part of its
+  // topology (measured on the corpus, 2026-09-04 — both made real closed
+  // boundaries read as "not simple" and dropped whole files to legacy):
+  //   - degenerate: both ends in one vertex cluster. `3708.dxf` closes every
+  //     layer-1 POLYLINE with flag 1 AND repeats the first vertex as the last,
+  //     so the closing edge has zero length and its vertex counted degree 4.
+  //   - duplicate: same two vertices AND the same midpoint as an earlier
+  //     segment — a stacked re-trace of one edge (`SN1252-MFB253` traces one
+  //     rectangle 4x, see ADR 0073's kernel dedupe). A lens (two DIFFERENT
+  //     arcs between the same two points) has different midpoints and stays
+  //     two real edges, as ADR 0079's counter-case requires.
+  // Neither is removed from the pattern — that is Phase 3's dedupe decision —
+  // they simply do not vote on whether the boundary is closed.
+  function dxfPatternChains(segments, segIdxs, tol) {
+    if (!segIdxs.length) return [];
+    const ends = segIdxs.map(i => dxfSegmentEndpoints(segments[i]));
+    const { ids } = dxfPatternClusterPoints(ends.flat(), tol);
+    const midIds = dxfPatternClusterPoints(segIdxs.map(i => dxfPatternMidpoint(segments[i])), tol).ids;
+    const topo = new Array(segIdxs.length).fill(true);
+    const seenEdge = new Set();
+    for (let k = 0; k < segIdxs.length; k += 1) {
+      const v0 = ids[2 * k], v1 = ids[2 * k + 1];
+      if (v0 === v1) { topo[k] = false; continue; }
+      const key = Math.min(v0, v1) + ':' + Math.max(v0, v1) + ':' + midIds[k];
+      if (seenEdge.has(key)) { topo[k] = false; continue; }
+      seenEdge.add(key);
+    }
+    const uf = dxfUnionFind(segIdxs.length);
+    const firstAtVertex = new Map();
+    for (let k = 0; k < segIdxs.length; k += 1) {
+      for (let e = 0; e < 2; e += 1) {
+        const v = ids[2 * k + e];
+        if (firstAtVertex.has(v)) uf.union(k, firstAtVertex.get(v));
+        else firstAtVertex.set(v, k);
+      }
+    }
+    const groups = new Map();
+    for (let k = 0; k < segIdxs.length; k += 1) {
+      const root = uf.find(k);
+      if (!groups.has(root)) groups.set(root, []);
+      groups.get(root).push(k);
+    }
+    const chains = [];
+    for (const members of groups.values()) {
+      const topoMembers = members.filter(k => topo[k]);
+      const degree = new Map();
+      for (const k of topoMembers) {
+        for (let e = 0; e < 2; e += 1) {
+          const v = ids[2 * k + e];
+          degree.set(v, (degree.get(v) || 0) + 1);
+        }
+      }
+      let simpleLoop = topoMembers.length > 0;
+      for (const d of degree.values()) if (d !== 2) { simpleLoop = false; break; }
+      // A single segment whose two ends coincide (a full circle) is a loop
+      // with ONE vertex of degree 2 — but it is also "degenerate" by the
+      // cluster test above. Keep it closed: one topo-less member whose
+      // segment is an arc/curve of real length.
+      if (!topoMembers.length && members.length === 1) {
+        const seg = segments[segIdxs[members[0]]];
+        if (seg.kind !== 'straight' && dxfPatternSegmentLength(seg) > tol) simpleLoop = true;
+      }
+      chains.push({
+        members,
+        topoMembers: topoMembers.length ? topoMembers : members,
+        segIdxs: members.map(k => segIdxs[k]),
+        vertexIds: members.map(k => [ids[2 * k], ids[2 * k + 1]]),
+        topoVertexIds: (topoMembers.length ? topoMembers : members).map(k => [ids[2 * k], ids[2 * k + 1]]),
+        topoSegIdxs: (topoMembers.length ? topoMembers : members).map(k => segIdxs[k]),
+        closed: simpleLoop,
+        oddVertices: Array.from(degree.values()).filter(d => d !== 2).length,
+      });
+    }
+    return chains;
+  }
+
+  // Walk a simple loop in traversal order and flatten it to a polygon
+  // (curves sampled, straight segments contribute their far end only).
+  function dxfPatternLoopPolygon(segments, chain) {
+    // Walk the TOPOLOGY only (degenerate / stacked-duplicate members would
+    // stall the walk at a vertex of degree 4).
+    const segIdxs = chain.topoSegIdxs, vertexIds = chain.topoVertexIds;
+    const n = segIdxs.length;
+    const atVertex = new Map();
+    for (let m = 0; m < n; m += 1) {
+      for (const v of vertexIds[m]) {
+        if (!atVertex.has(v)) atVertex.set(v, []);
+        atVertex.get(v).push(m);
+      }
+    }
+    const poly = [];
+    const used = new Array(n).fill(false);
+    let m = 0;
+    let enterVertex = vertexIds[0][0];
+    for (let step = 0; step < n; step += 1) {
+      used[m] = true;
+      const seg = segments[segIdxs[m]];
+      const [v0, v1] = vertexIds[m];
+      const forward = v0 === enterVertex;
+      const pts = dxfPatternSamplePoints(seg, DXF_PATTERN_SAMPLES_PER_CURVE);
+      if (!forward) pts.reverse();
+      for (let i = 1; i < pts.length; i += 1) poly.push(pts[i]);
+      const exitVertex = forward ? v1 : v0;
+      const nextCandidates = atVertex.get(exitVertex) || [];
+      let next = -1;
+      for (const c of nextCandidates) if (!used[c]) { next = c; break; }
+      if (next === -1) break;
+      m = next;
+      enterVertex = exitVertex;
+    }
+    return poly;
+  }
+
+  function dxfPatternPolygonArea(poly) {
+    let s = 0;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+      s += (poly[j].x + poly[i].x) * (poly[j].y - poly[i].y);
+    }
+    return Math.abs(s) / 2;
+  }
+
+  function dxfPatternPointInPolygon(p, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+      const a = poly[i], b = poly[j];
+      if ((a.y > p.y) !== (b.y > p.y)) {
+        const x = a.x + ((p.y - a.y) * (b.x - a.x)) / (b.y - a.y);
+        if (p.x < x) inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  function dxfPatternDistanceToPolygon(p, poly) {
+    let best = Infinity;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+      const d = pointToSegmentDistance(p, poly[j], poly[i]);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  function dxfPatternMakeOutline(segments, chain) {
+    const poly = dxfPatternLoopPolygon(segments, chain);
+    const bounds = dxfBoundsOfPoints(poly);
+    const diag = Math.hypot(bounds.width, bounds.height) || 1;
+    return {
+      segIdxs: chain.segIdxs.slice(),
+      poly,
+      bounds,
+      area: dxfPatternPolygonArea(poly),
+      edgeTol: DXF_PATTERN_EDGE_TOL_RATIO * diag,
+    };
+  }
+
+  function dxfPatternInsideOrOn(p, outline) {
+    const b = outline.bounds, t = outline.edgeTol;
+    if (p.x < b.x - t || p.x > b.x + b.width + t || p.y < b.y - t || p.y > b.y + b.height + t) return false;
+    if (dxfPatternPointInPolygon(p, outline.poly)) return true;
+    return dxfPatternDistanceToPolygon(p, outline.poly) <= t;
+  }
+
+  // Sample points along a chain, capped so a 2000-segment internal mesh does
+  // not turn the containment score into the dominant cost.
+  function dxfPatternChainSamples(segments, chain) {
+    const all = [];
+    for (const i of chain.segIdxs) {
+      const seg = segments[i];
+      const pts = seg.kind === 'straight'
+        ? [seg.a, { x: (seg.a.x + seg.b.x) / 2, y: (seg.a.y + seg.b.y) / 2 }, seg.b]
+        : dxfPatternSamplePoints(seg, DXF_PATTERN_SAMPLES_PER_CURVE);
+      all.push(...pts);
+    }
+    if (all.length <= DXF_PATTERN_MAX_SAMPLES) return all;
+    const stride = all.length / DXF_PATTERN_MAX_SAMPLES;
+    const out = [];
+    for (let k = 0; k < DXF_PATTERN_MAX_SAMPLES; k += 1) out.push(all[Math.floor(k * stride)]);
+    return out;
+  }
+
+  function dxfPatternChainClass(segments, chain) {
+    const counts = new Map();
+    for (const i of chain.segIdxs) {
+      const cls = dxfPatternLayerClass(segments[i].layer);
+      counts.set(cls, (counts.get(cls) || 0) + 1);
+    }
+    let best = 'unknown', bestN = -1;
+    for (const [cls, n] of counts) if (n > bestN) { best = cls; bestN = n; }
+    return best;
+  }
+
+  function dxfPatternBump(counts, key, n) {
+    counts[key] = (counts[key] || 0) + n;
+  }
+
+  // Flatten a segment to straight chords (curves sampled) for point-to-
+  // geometry distance queries.
+  function dxfPatternSegmentChords(seg) {
+    if (seg.kind === 'straight') return [[seg.a, seg.b]];
+    const pts = dxfPatternSamplePoints(seg, DXF_PATTERN_SAMPLES_PER_CURVE);
+    const out = [];
+    for (let i = 1; i < pts.length; i += 1) out.push([pts[i - 1], pts[i]]);
+    return out;
+  }
+
+  function dxfPatternDistanceToChords(p, chords) {
+    let best = Infinity;
+    for (const [a, b] of chords) {
+      const d = pointToSegmentDistance(p, a, b);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  // Duplicate removal for ONE classified pattern (Phase 3 of US-124).
+  // `entries` = every segment of the pattern as { segIdx, cls, chainKey }
+  // (the outline's segments carry cls 'boundary' and chainKey 'outline').
+  // Returns Map<segIdx, 'exact' | 'qvTwin'>.
+  //   1. EXACT: same two endpoint clusters AND same midpoint cluster (within
+  //      the connectivity tolerance) → one copy survives, chosen by class
+  //      rank (boundary > sew > internal > … > qv), then file order. A lens
+  //      (two different arcs between the same two points) has different
+  //      midpoints and keeps both — ADR 0079's counter-case.
+  //   2. QV TWIN (unless keepQualityCurves): every not-yet-dropped chain whose
+  //      class is a quality-validation layer, provided the pattern still has
+  //      primary geometry and the chain runs within DXF_PATTERN_QV_SANITY_RATIO
+  //      of that primary geometry (one-sided Hausdorff over the chain's
+  //      samples). Whole chains, never partial — a twin is a curve, not a
+  //      segment.
+  function dxfPatternDedupe(segments, entries, tol, patternDiag, keepQualityCurves) {
+    const dropped = new Map();
+    if (entries.length < 2) return dropped;
+    const pts = [];
+    for (const e of entries) {
+      const seg = segments[e.segIdx];
+      const ends = dxfSegmentEndpoints(seg);
+      pts.push(ends[0], ends[1], dxfPatternMidpoint(seg));
+    }
+    const { ids } = dxfPatternClusterPoints(pts, tol);
+    const byKey = new Map();
+    for (let k = 0; k < entries.length; k += 1) {
+      const v0 = ids[3 * k], v1 = ids[3 * k + 1], m = ids[3 * k + 2];
+      const key = Math.min(v0, v1) + ':' + Math.max(v0, v1) + ':' + m;
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push(k);
+    }
+    for (const group of byKey.values()) {
+      if (group.length < 2) continue;
+      group.sort((a, b) => (dxfPatternClassRank(entries[a].cls) - dxfPatternClassRank(entries[b].cls))
+        || (entries[a].segIdx - entries[b].segIdx));
+      for (let g = 1; g < group.length; g += 1) dropped.set(entries[group[g]].segIdx, 'exact');
+    }
+    if (keepQualityCurves) return dropped;
+
+    const primaryChords = [];
+    const qvChains = new Map(); // chainKey -> entries
+    for (const e of entries) {
+      if (dropped.has(e.segIdx)) continue;
+      if (dxfPatternIsQvClass(e.cls)) {
+        if (!qvChains.has(e.chainKey)) qvChains.set(e.chainKey, []);
+        qvChains.get(e.chainKey).push(e);
+      } else {
+        primaryChords.push(...dxfPatternSegmentChords(segments[e.segIdx]));
+      }
+    }
+    if (!primaryChords.length || !qvChains.size) return dropped;
+    const limit = DXF_PATTERN_QV_SANITY_RATIO * (patternDiag || 1);
+    for (const chainEntries of qvChains.values()) {
+      const pseudoChain = { segIdxs: chainEntries.map(e => e.segIdx) };
+      const samples = dxfPatternChainSamples(segments, pseudoChain);
+      let worst = 0;
+      for (const p of samples) {
+        const d = dxfPatternDistanceToChords(p, primaryChords);
+        if (d > worst) { worst = d; if (worst > limit) break; }
+      }
+      if (worst <= limit) for (const e of chainEntries) dropped.set(e.segIdx, 'qvTwin');
+    }
+    return dropped;
+  }
+
+  // One instance -> { legacy: true, diag } or { legacy: false, patterns, diag }.
+  // `diag` is the per-instance boundary diagnosis the debug hook and the
+  // corpus suite read: how many boundary-layer segments/chains there were and
+  // why none closed, so "fell back to legacy" is never a silent outcome.
+  function dxfClassifyInstance(segments, idxs, tol, instance, options) {
+    const keepQualityCurves = !!(options && options.keepQualityCurves);
+    let outlines = null, boundaryLayer = null;
+    const diag = { instance, segments: idxs.length, boundary: {} };
+    for (const layer of DXF_PATTERN_BOUNDARY_LAYERS) {
+      const bIdxs = idxs.filter(i => dxfPatternLayerKey(segments[i].layer) === layer);
+      if (!bIdxs.length) continue;
+      const chains = dxfPatternChains(segments, bIdxs, tol);
+      const closed = chains.filter(c => c.closed);
+      diag.boundary[layer] = {
+        segments: bIdxs.length, chains: chains.length, closed: closed.length,
+        openChains: chains.filter(c => !c.closed).map(c => ({ segments: c.segIdxs.length, topo: c.topoSegIdxs.length, oddVertices: c.oddVertices })).slice(0, 8),
+      };
+      if (!closed.length) continue;
+      boundaryLayer = layer;
+      outlines = closed.map(c => dxfPatternMakeOutline(segments, c));
+      break;
+    }
+    if (!outlines) return { legacy: true, diag };
+
+    const instBounds = dxfBoundsOfSegments(idxs.map(i => segments[i]));
+    const instDiag = Math.hypot(instBounds.width, instBounds.height) || 1;
+    const notchMaxLen = DXF_PATTERN_NOTCH_MAX_LEN_RATIO * instDiag;
+    const notchTol = DXF_PATTERN_NOTCH_TOL_RATIO * instDiag;
+
+    const inOutline = new Set();
+    for (const o of outlines) for (const i of o.segIdxs) inOutline.add(i);
+    const poolIdxs = idxs.filter(i => !inOutline.has(i));
+    const poolChains = dxfPatternChains(segments, poolIdxs, tol);
+
+    const patterns = outlines.map((o, oi) => ({
+      kind: 'classified',
+      instance,
+      boundaryLayer,
+      orphan: false,
+      outlineIndex: oi,
+      outlineSegCount: o.segIdxs.length,
+      segIdxs: o.segIdxs.slice(),
+      classCounts: { boundary: o.segIdxs.length },
+      notchChains: 0,
+      // Every assigned chain with its class, for the dedupe pass below.
+      entries: o.segIdxs.map(i => ({ segIdx: i, cls: 'boundary', chainKey: 'outline' })),
+    }));
+    const orphans = [];
+
+    let chainSerial = 0;
+    for (const chain of poolChains) {
+      const cls = dxfPatternChainClass(segments, chain);
+      const chainKey = 'c' + (chainSerial++);
+      let target = -1;
+      let isNotch = false;
+      let bestScore = -1;
+      if (outlines.length === 1) {
+        // The block IS the piece: a placement instance with exactly one
+        // boundary outline owns everything placed with it, wherever it sits.
+        // Measured on VeraLifting v.B 3.0.dxf: CLO exports the grain line
+        // (layer 7) as ONE long LINE up to 8.6x the piece's own diagonal,
+        // ending ~4 diagonals away from the outline — geometrically "outside"
+        // by any containment score, yet unambiguously this piece's grain line
+        // (49 of 57 would otherwise be orphans; BiancaBra 38, SofyLift 45).
+        target = 0;
+      } else {
+        const samples = dxfPatternChainSamples(segments, chain);
+        let best = -1, bestArea = Infinity;
+        for (let oi = 0; oi < outlines.length; oi += 1) {
+          const o = outlines[oi];
+          let hit = 0;
+          for (const p of samples) if (dxfPatternInsideOrOn(p, o)) hit += 1;
+          const score = samples.length ? hit / samples.length : 0;
+          if (score > bestScore + 1e-12 || (Math.abs(score - bestScore) <= 1e-12 && o.area < bestArea)) {
+            best = oi; bestScore = score; bestArea = o.area;
+          }
+        }
+        if (bestScore >= DXF_PATTERN_ASSIGN_MIN_SCORE) target = best;
+        // A chain the ASTM layer table already names (grain, sew, internal,
+        // cutout, their QV twins…) is a MARK by definition — it belongs to
+        // whichever outline it touches at all, even when most of it runs
+        // outside (the CLO grain-line case above, in a multi-outline
+        // instance). Only an `unknown`-layer chain has to earn the 50%.
+        else if (cls !== 'unknown' && bestScore > 0) target = best;
+      }
+      if (target === -1) {
+        let len = 0;
+        for (const i of chain.segIdxs) len += dxfPatternSegmentLength(segments[i]);
+        if (len <= notchMaxLen) {
+          let nearest = -1, nearestD = Infinity;
+          for (let oi = 0; oi < outlines.length; oi += 1) {
+            for (const i of chain.segIdxs) {
+              for (const p of dxfSegmentEndpoints(segments[i])) {
+                const d = dxfPatternDistanceToPolygon(p, outlines[oi].poly);
+                if (d < nearestD) { nearestD = d; nearest = oi; }
+              }
+            }
+          }
+          if (nearest !== -1 && nearestD <= notchTol) { target = nearest; isNotch = true; }
+        }
+      }
+      if (target !== -1) {
+        const pat = patterns[target];
+        pat.segIdxs.push(...chain.segIdxs);
+        const effectiveCls = isNotch ? 'notch' : cls;
+        dxfPatternBump(pat.classCounts, effectiveCls, chain.segIdxs.length);
+        if (isNotch) pat.notchChains += 1;
+        // Dedupe ranks and reports by each SEGMENT's own layer class, not the
+        // chain's majority: CLO's layer-8 internal line and its layer-85 twin
+        // share every vertex and so chain together — by majority class alone
+        // the primary could lose the rank tie to its own twin and the report
+        // would call the dropped twin "internal".
+        for (const i of chain.segIdxs) {
+          const own = isNotch ? 'notch' : dxfPatternLayerClass(segments[i].layer);
+          pat.entries.push({ segIdx: i, cls: own === 'unknown' ? effectiveCls : own, chainKey });
+        }
+      } else {
+        const classCounts = {};
+        dxfPatternBump(classCounts, cls, chain.segIdxs.length);
+        orphans.push({
+          kind: 'orphan', instance, boundaryLayer, orphan: true,
+          outlineSegCount: 0, segIdxs: chain.segIdxs.slice(), classCounts, notchChains: 0,
+          keptSegIdxs: chain.segIdxs.slice(), dropped: { exact: 0, qvTwin: 0 }, droppedByClass: {},
+        });
+      }
+    }
+
+    // Phase 3: duplicates. Per pattern; orphans and legacy pieces are never
+    // deduped (nothing is known about what they are).
+    for (const pat of patterns) {
+      const o = outlines[pat.outlineIndex];
+      const patternDiag = Math.hypot(o.bounds.width, o.bounds.height) || 1;
+      const droppedMap = dxfPatternDedupe(segments, pat.entries, tol, patternDiag, keepQualityCurves);
+      pat.dropped = { exact: 0, qvTwin: 0 };
+      pat.droppedByClass = {};
+      for (const e of pat.entries) {
+        const reason = droppedMap.get(e.segIdx);
+        if (!reason) continue;
+        pat.dropped[reason] += 1;
+        dxfPatternBump(pat.droppedByClass, e.cls, 1);
+      }
+      pat.keptSegIdxs = pat.segIdxs.filter(i => !droppedMap.has(i));
+      delete pat.entries;
+    }
+
+    const byFirst = (a, b) => Math.min(...a.segIdxs) - Math.min(...b.segIdxs);
+    for (const p of patterns) { p.segIdxs.sort((a, b) => a - b); p.keptSegIdxs.sort((a, b) => a - b); }
+    for (const p of orphans) p.segIdxs.sort((a, b) => a - b);
+    patterns.sort(byFirst);
+    orphans.sort(byFirst);
+    diag.outlines = outlines.length;
+    diag.orphans = orphans.length;
+    return { legacy: false, patterns: patterns.concat(orphans), diag };
+  }
+
+  // segments -> { pieces, patterns, stats }. `pieces` has the exact shape
+  // dxfBuildPieces always returned (array of arrays of the caller's own
+  // segment objects) so parseDxfDocument / parseDxfNativeModel keep every
+  // downstream cap and placement step unchanged; `patterns[i]` describes
+  // `pieces[i]` (same index, same order).
+  // `options.diagnostics` adds `stats.instances` (one dxfClassifyInstance
+  // `diag` per instance) — off by default so a normal parse result stays
+  // small; the debug hook turns it on for suites and corpus audits.
+  // `options.keepQualityCurves` (Phase 3) keeps ASTM 84/85/86/87 twins in the
+  // pieces; default drops them. Exact duplicates are always dropped.
+  function dxfClassifyPatterns(segments, options) {
+    const wantDiag = !!(options && options.diagnostics);
+    const stats = {
+      patternCount: 0, classifiedInstances: 0, legacyInstances: 0,
+      classifiedPatterns: 0, legacyPieces: 0, orphans: 0,
+      byClass: {}, boundaryLayers: {},
+      totalSegments: segments ? segments.length : 0, keptSegments: 0,
+      dropped: { exact: 0, qvTwin: 0 }, droppedByClass: {},
+      keepQualityCurves: !!(options && options.keepQualityCurves),
+    };
+    if (wantDiag) stats.instances = [];
+    stats.pipelineVersion = (options && options.pipelineVersion === 1) ? 1 : 2;
+    // Phase 6 (owner decision 5): a saved pre-ADR-0091 source re-groups the
+    // way its board was built — ONE global legacy pass over every segment
+    // (instance-guarded connectivity + containment, root order), no dedupe,
+    // no exclusions, no classification. This is the exact pre-change
+    // dxfBuildPieces body, so the saved pieceFirstAnnotationIds keep pairing
+    // by index with the rebuilt native pieces.
+    if (stats.pipelineVersion === 1) {
+      const legacyPieces = (segments && segments.length) ? dxfBuildPiecesLegacy(segments) : [];
+      const patterns = legacyPieces.map(piece => ({
+        kind: 'legacy', instance: piece.length ? (piece[0].instance == null ? 0 : piece[0].instance) : 0,
+        boundaryLayer: null, orphan: false, outlineSegCount: 0, segCount: piece.length, totalSegCount: piece.length,
+        classCounts: { unknown: piece.length }, notchChains: 0, dropped: { exact: 0, qvTwin: 0 }, droppedByClass: {},
+      }));
+      stats.patternCount = legacyPieces.length;
+      stats.legacyPieces = legacyPieces.length;
+      stats.legacyInstances = new Set(patterns.map(p => p.instance)).size;
+      stats.keptSegments = legacyPieces.reduce((s, p) => s + p.length, 0);
+      return { pieces: legacyPieces, patterns, stats };
+    }
+    // Phase 4 (ADR 0091, owner decision 3): the pre-placement pick. A TD who
+    // hits DXF_TOTAL_OUTPUT_CAP deselects whole placement instances (a graded
+    // size, a piece); both parsers receive the same list, so the pieces they
+    // produce stay index-aligned. Instance 0 (direct ENTITIES) is one unit.
+    const excluded = new Set(Array.isArray(options && options.excludeInstances) ? options.excludeInstances : []);
+    stats.excludedInstances = 0;
+    if (!segments || !segments.length) return { pieces: [], patterns: [], stats };
+    const allBounds = dxfBoundsOfSegments(segments);
+    const tol = DXF_PATTERN_CONNECT_TOL_RATIO * (Math.hypot(allBounds.width, allBounds.height) || 1);
+
+    const byInstance = new Map();
+    for (let i = 0; i < segments.length; i += 1) {
+      const key = segments[i].instance == null ? 0 : segments[i].instance;
+      if (!byInstance.has(key)) byInstance.set(key, []);
+      byInstance.get(key).push(i);
+    }
+    const instanceKeys = Array.from(byInstance.keys()).sort((a, b) => a - b);
+
+    const pieces = [];
+    const patterns = [];
+    // Phase 5: per-instance progress for the worker (one call per instance,
+    // including excluded ones, so `done` reaches `total`). Pure — a callback
+    // the caller owns; the synchronous path passes none.
+    const onProgress = (options && typeof options.onProgress === 'function') ? options.onProgress : null;
+    let progressDone = 0;
+    for (const instance of instanceKeys) {
+      progressDone += 1;
+      if (onProgress) onProgress(progressDone, instanceKeys.length);
+      if (excluded.has(instance)) { stats.excludedInstances += 1; continue; }
+      const idxs = byInstance.get(instance);
+      const result = dxfClassifyInstance(segments, idxs, tol, instance, options);
+      if (wantDiag) stats.instances.push(Object.assign({ legacy: result.legacy }, result.diag));
+      if (result.legacy) {
+        stats.legacyInstances += 1;
+        const legacyPieces = dxfBuildPiecesLegacy(idxs.map(i => segments[i]), tol);
+        for (const piece of legacyPieces) {
+          pieces.push(piece);
+          patterns.push({
+            kind: 'legacy', instance, boundaryLayer: null, orphan: false,
+            outlineSegCount: 0, segCount: piece.length, totalSegCount: piece.length,
+            classCounts: { unknown: piece.length }, notchChains: 0,
+            dropped: { exact: 0, qvTwin: 0 }, droppedByClass: {},
+          });
+          stats.legacyPieces += 1;
+          stats.keptSegments += piece.length;
+        }
+        continue;
+      }
+      stats.classifiedInstances += 1;
+      for (const pat of result.patterns) {
+        const kept = pat.keptSegIdxs || pat.segIdxs;
+        pieces.push(kept.map(i => segments[i]));
+        stats.keptSegments += kept.length;
+        stats.dropped.exact += pat.dropped.exact;
+        stats.dropped.qvTwin += pat.dropped.qvTwin;
+        for (const key of Object.keys(pat.droppedByClass)) dxfPatternBump(stats.droppedByClass, key, pat.droppedByClass[key]);
+        const record = {
+          kind: pat.kind, instance, boundaryLayer: pat.boundaryLayer, orphan: pat.orphan,
+          outlineSegCount: pat.outlineSegCount, segCount: kept.length, totalSegCount: pat.segIdxs.length,
+          classCounts: pat.classCounts, notchChains: pat.notchChains,
+          dropped: pat.dropped, droppedByClass: pat.droppedByClass,
+        };
+        patterns.push(record);
+        if (pat.orphan) stats.orphans += 1; else stats.classifiedPatterns += 1;
+        dxfPatternBump(stats.boundaryLayers, pat.boundaryLayer, 1);
+        for (const key of Object.keys(pat.classCounts)) dxfPatternBump(stats.byClass, key, pat.classCounts[key]);
+      }
+    }
+    stats.patternCount = pieces.length;
+    return { pieces, patterns, stats };
+  }
+
+  // ---- src/geometry/dxf-parse.js ----
+// US-124 Phase 5 (ADR 0091): the PURE DXF parse layer, split out of
+// src/manual/dxf-import.js so it can be bundled into dxf-worker.js as well as
+// app.js. Nothing in this part touches Board state, the DOM or window — the
+// worker purity gate in scripts/check.mjs enforces that — and every function
+// here is a hoisted declaration, so the board layer (dxf-import.js, later in
+// SOURCE_PARTS) and the native measurement parser (dxf-native-parser.js) call
+// them unchanged. A pure move: the corpus oracle (scripts/dxf-corpus-oracle.json)
+// is byte-identical before and after the split.
+//
+// Contents: text normalization + group-code tokenizing, section scan,
+// per-entity converters, INSERT->BLOCK resolution (k-th definition), byte
+// decoding, marks/annotation collection, Y-flip, the legacy grouping
+// (dxfBuildPiecesLegacy), placement transform, parseDxfDocument and the
+// over-cap report. The original file header follows for its history.
+//
+// US-104: "Open DXF file" import in Sketch Focus.
+//
+// Parses a constrained, explicitly-planar subset of ASCII DXF (LINE, ARC,
+// CIRCLE, LWPOLYLINE, legacy POLYLINE+VERTEX+SEQEND) and places each
+// connected pattern piece as its own independently movable group of
+// `purpose: 'sketch-element'` annotations — never a Template, never a POM.
+// The full contract (entity scope, planarity gate, malformed-entity rules,
+// piece detection, placement formula, output caps) is
+// docs/stories/epics/E01-manual-mode/US-104-dxf-import.md; this file is the
+// authority for HOW those rules are implemented, not a restatement of WHY.
+//
+// Split deliberately into three layers so each is independently testable:
+//   1. parseDxfDocument(text)              — pure text -> pieces (local
+//      drawing space: DXF's own units, Y already flipped to screen-down).
+//   2. computeDxfPlacementTransform(...)    — pure bounds+viewport+zoom -> one
+//      shared scale/offset, DXF's own DXF_FIT_RATIO (round 11 — no longer
+//      createImageRecord's numbers; see the function's own comment).
+//   3. importDxfText(text, rect)            — orchestrates 1 + 2, builds real
+//      annotation objects, and performs the one board mutation.
+// Sibling file: the Tools-menu button / FileReader glue is
+// src/ui/dxf-import-panel.js.
+// Source part for app.js. Run `npm run build` after editing.
+
+  // US-124 Phase 6 (ADR 0091, owner decision 5): the grouping pipeline a
+  // saved dxfPatternSource was built with. 1 = pre-ADR-0091 (global
+  // connectivity+containment grouping, same-named BLOCK definitions
+  // concatenated, no dedupe, no exclusions); 2 = classified outlines. A
+  // project saved before this field existed carries none and means 1. The
+  // native measurement model rebuilt on reopen MUST use the source's own
+  // version — its pieces pair with the saved board pieces by index — so a
+  // pre-change project keeps live pieceAnchors without any migration.
+  const DXF_PIPELINE_VERSION = 2;
+
+  // Shared number formatting for the parse-layer messages and the board
+  // toasts (Phase 5: lives here so dxf-worker.js has it too).
+  function dxfFormatCount(n) {
+    return Number(n || 0).toLocaleString('en-US');
+  }
+
+  // ---- Text normalization + group-code tokenizing ---------------------------
+
+  const DXF_BINARY_SENTINEL = 'AutoCAD Binary DXF';
+  const DXF_PLANAR_EPS = 1e-6;
+  // Per-piece: NOT normalizeShapeStamp's Template-member cap (80) — a real
+  // digitized garment pattern piece traces its cutting curves as many short
+  // straight segments rather than arcs/bulges, and routinely exceeds 80 on
+  // its own. Verified against a real production file (demo/DXF file/
+  // 3380.dxf, 25 POLYLINE + 42 LINE entities): with no cap it resolves to 6
+  // real pieces sized [103, 149, 167, 263, 275, 295] segments — the 80 figure
+  // would have rejected every one of them.
+  //
+  // Revised 1000 -> 2500 (ADR 0068 Follow-Up): ADR 0068's INSERT->BLOCK
+  // resolution exposes far more real geometry per file than this cap was
+  // ever sized against. `demo/DXF file/dxf/1290. Flexcamo .dxf` (30 blocks,
+  // single size, real garment pieces) has a legitimate 1914-segment piece;
+  // `demo/DXF file/dxf/2892XL-new.dxf` (no blocks, just an unusually
+  // detailed direct-entity file) has real pieces up to 1886. 2500 clears
+  // both with headroom while staying well below the 3835-17182-segment
+  // "pieces" seen on `DM7549-LACE--STRIKE COST.dxf` /
+  // `SN0004-BRA0978--STRIKE COST VER D.dxf` / `SN1252-MFB253--BACK-STRIKE
+  // COST.dxf` — those are a DIFFERENT, deliberately NOT-fixed-here failure
+  // mode: a grading-nest file whose same-position, overlapping same-size
+  // blocks get fused into one merged blob by dxfMergeContainedComponents.
+  // A piece THIS large, saved as a Template later, still truncates at
+  // normalizeShapeStamp's own 80 — that pre-existing, unrelated limit is
+  // unchanged; see the Acceptance Criteria note below.
+  const DXF_PER_PIECE_CAP = 2500;
+  // Revised 40 -> 120 (ADR 0068 Follow-Up): the real file above needed only
+  // 6, but two other real files now resolvable via INSERT->BLOCK need more:
+  // `1290. Flexcamo .dxf` legitimately decomposes into 75 pieces (many tiny
+  // — notches/grainline marks that never touch the outline) and
+  // `SofyLift v.A 1.0_Pattern.dxf` into 96. 120 clears both with headroom.
+  //
+  // ADR 0091 / US-124 Phase 4 (owner decision 3): NO LONGER A REJECTION.
+  // Pattern count alone never refuses a file — the numbers above were
+  // over-counts (Flexcamo is 30 patterns, SofyLift 48; VeraLifting read 133
+  // for 57 and was refused). 120 is now the threshold above which the import
+  // is routed to the batched Web-Worker path (Phase 5); below it the
+  // synchronous path runs exactly as before. DXF_TOTAL_OUTPUT_CAP (board
+  // performance) is the only remaining hard stop, and it is reported per
+  // placement instance so the TD can deselect sizes/pieces before placement
+  // (openDxfPatternPickerDialog) instead of being turned away.
+  const DXF_PATTERN_BATCH_THRESHOLD = 120;
+  // Board-performance backstop. Revised 3000 -> 16000 (ADR 0068 Follow-Up):
+  // `2892XL-new.dxf` (24 real pieces, no blocks) totals 13894 segments with
+  // both caps above cleared; verified in a real headless-Chrome import that
+  // this renders, pans, and drags with no lag or corruption at that count
+  // (previously blocked at the old 3000 combined limit).
+  //
+  // Revised 16000 -> 20000 (ADR 0069): once the instance-boundary fix (see
+  // dxfConnectedComponents) correctly split `SN1252-MFB253--BACK-STRIKE
+  // COST.dxf`'s 28 blocks into 28 real, individually-small pieces (none
+  // near the per-piece cap), their real combined total came to 17182 —
+  // just over the old 16000. 20000 clears it with headroom. The
+  // instance-boundary check also makes this cap CHEAPER to reach than
+  // before: it short-circuits the O(n^2) connectivity scan for the vast
+  // majority of pairs (different placed instances), so a grading-nest
+  // file's real parse time dropped rather than rose (SN0004-BRA0978--
+  // STRIKE COST VER D.dxf: 4448ms -> 937ms measured before/after).
+  const DXF_TOTAL_OUTPUT_CAP = 20000;
+  // Round 11 (user-reported): a technical pattern has no "sits beside other
+  // photos" reason to stay small, and shrinking it packs more of a
+  // tessellated curve's points into the same screen distance — the opposite
+  // of what round 10's crowding fix wants. See computeDxfPlacementTransform
+  // for the full formula this feeds.
+  const DXF_FIT_RATIO = 0.85;
+
+  // BOM/CRLF/trailing-newline normalization has to happen BEFORE the
+  // even/odd group-code pairing check below, or an ordinary, well-formed
+  // file (one trailing newline, or authored on Windows) reads as corrupt:
+  // a lone trailing "\n" splits into one extra empty final line, making an
+  // otherwise-even line count odd.
+  function dxfNormalizeText(text) {
+    let s = String(text == null ? '' : text);
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    return s.replace(/\r\n?/g, '\n');
+  }
+
+  function dxfTokenizePairs(text) {
+    const lines = dxfNormalizeText(text).split('\n');
+    // Strip every trailing blank line, not just one — a file can end with
+    // more than one newline (an editor-added blank line, a re-save) and none
+    // of that is a corrupt group-code stream.
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    if (lines.length === 0 || lines.length % 2 !== 0) return null;
+    const pairs = [];
+    for (let i = 0; i < lines.length; i += 2) {
+      const code = Number(lines[i].trim());
+      if (!Number.isInteger(code)) return null;
+      pairs.push({ code, value: lines[i + 1] });
+    }
+    return pairs;
+  }
+
+  function dxfFirst(pairs, code) {
+    for (const p of pairs) if (p.code === code) return p.value;
+    return undefined;
+  }
+
+  function dxfNum(pairs, code) {
+    const raw = dxfFirst(pairs, code);
+    return raw === undefined ? undefined : Number(String(raw).trim());
+  }
+
+  // Same as dxfNum, but for a group that is OPTIONAL-with-a-DXF-default
+  // (thickness, elevation, extrusion). Absent -> the spec's default; PRESENT
+  // but unparsable -> NaN, deliberately, so the caller can flag it malformed
+  // rather than silently treating garbage as "0, so this must be flat."
+  function dxfOptNum(pairs, code, fallback) {
+    const raw = dxfFirst(pairs, code);
+    return raw === undefined ? fallback : Number(String(raw).trim());
+  }
+
+  function dxfExtrusion(pairs) {
+    const x = dxfOptNum(pairs, 210, 0);
+    const y = dxfOptNum(pairs, 220, 0);
+    const z = dxfOptNum(pairs, 230, 1);
+    return { x, y, z, finite: Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) };
+  }
+
+  function dxfPlanarOk(zValues, thickness, ext) {
+    for (const z of zValues) if (Math.abs(z) > DXF_PLANAR_EPS) return false;
+    if (Math.abs(thickness) > DXF_PLANAR_EPS) return false;
+    if (Math.abs(ext.x) > DXF_PLANAR_EPS || Math.abs(ext.y) > DXF_PLANAR_EPS
+      || Math.abs(ext.z - 1) > DXF_PLANAR_EPS) return false;
+    return true;
+  }
+
+  // ---- Section scoping + entity-record collection ----------------------------
+
+  // Groups the flat pair stream into per-entity records, restricted to the
+  // ENTITIES section only. POLYLINE swallows its own VERTEX children up to
+  // SEQEND — a POLYLINE with no SEQEND is a whole-file structural problem
+  // (its VERTEX children have no other way to know where they end), so it is
+  // reported as a scan error, not a skipped entity.
+  // Generalized so a BLOCK's own body (terminated by ENDBLK, not ENDSEC) can
+  // reuse the exact same entity/POLYLINE-vertex collection logic as the
+  // top-level ENTITIES section — see dxfCollectBlocksBody below. Delegating
+  // dxfCollectEntitiesBody to this keeps its own observable output
+  // byte-for-byte identical (same records shape, same error string).
+  function dxfCollectEntityRecordsUntil(pairs, startIdx, stopType, notFoundMessage) {
+    const records = [];
+    let idx = startIdx;
+    const n = pairs.length;
+    while (idx < n) {
+      const pair = pairs[idx];
+      if (pair.code === 0 && String(pair.value).trim() === stopType) {
+        return { records, nextIndex: idx };
+      }
+      if (pair.code !== 0) { idx += 1; continue; }
+      const type = String(pair.value).trim();
+      idx += 1;
+      const bodyPairs = [];
+      while (idx < n && pairs[idx].code !== 0) { bodyPairs.push(pairs[idx]); idx += 1; }
+      if (type === 'POLYLINE') {
+        const vertices = [];
+        let sawSeqend = false;
+        while (idx < n) {
+          const p = pairs[idx];
+          if (p.code === 0 && String(p.value).trim() === 'VERTEX') {
+            idx += 1;
+            const vPairs = [];
+            while (idx < n && pairs[idx].code !== 0) { vPairs.push(pairs[idx]); idx += 1; }
+            vertices.push(vPairs);
+            continue;
+          }
+          if (p.code === 0 && String(p.value).trim() === 'SEQEND') { idx += 1; sawSeqend = true; }
+          break;
+        }
+        if (!sawSeqend) return { error: 'a POLYLINE has no matching SEQEND' };
+        records.push({ type, pairs: bodyPairs, vertices });
+        continue;
+      }
+      records.push({ type, pairs: bodyPairs });
+    }
+    return { error: notFoundMessage };
+  }
+
+  function dxfCollectEntitiesBody(pairs, startIdx) {
+    return dxfCollectEntityRecordsUntil(pairs, startIdx, 'ENDSEC', 'the ENTITIES section has no matching ENDSEC');
+  }
+
+  // A named BLOCK definition's body is entities exactly like ENTITIES',
+  // terminated by ENDBLK instead of ENDSEC. Real garment-CAD DXF exports
+  // (Gerber/Lectra/Rich-style) put every pattern piece's actual geometry
+  // here, one block per piece, and merely reference it once via INSERT in
+  // ENTITIES — see dxfConvertInsertEntity below for why that reference must
+  // be resolved rather than treated as an unsupported entity type.
+  function dxfCollectBlocksBody(pairs, startIdx) {
+    const blocks = new Map();
+    let idx = startIdx;
+    const n = pairs.length;
+    while (idx < n) {
+      const pair = pairs[idx];
+      if (pair.code === 0 && String(pair.value).trim() === 'ENDSEC') return { blocks, nextIndex: idx };
+      if (pair.code === 0 && String(pair.value).trim() === 'BLOCK') {
+        idx += 1;
+        let name = null;
+        while (idx < n && pairs[idx].code !== 0) {
+          if (pairs[idx].code === 2 && name == null) name = String(pairs[idx].value).trim();
+          idx += 1;
+        }
+        if (name == null) return { error: 'a BLOCK has no name (group 2)' };
+        const body = dxfCollectEntityRecordsUntil(pairs, idx, 'ENDBLK', 'a BLOCK has no matching ENDBLK');
+        if (body.error) return { error: body.error };
+        idx = body.nextIndex;
+        if (idx >= n) return { error: 'a BLOCK has no matching ENDBLK' };
+        idx += 1; // step past the ENDBLK marker
+        while (idx < n && pairs[idx].code !== 0) idx += 1; // ENDBLK's own fields, if any
+        // One entry per DEFINITION, never concatenated (ADR 0091 follow-up,
+        // 2026-09-04): 7 of the 36 real corpus files (BUYI-TECH exports —
+        // 2827, 3039, 3087, 3114, 3179, 3286, 1290. Flexcamo) define the SAME
+        // block name several times, one per graded size/piece, and reference
+        // each once via INSERT in the same order. Concatenating them drew
+        // every duplicate-named piece for every INSERT (2844: 6 INSERTs read
+        // as 10 pieces; Flexcamo 30 → 97). See dxfBlockRecordsFor.
+        if (!blocks.has(name)) blocks.set(name, []);
+        blocks.get(name).push(body.records);
+        continue;
+      }
+      idx += 1;
+    }
+    return { error: 'the BLOCKS section has no matching ENDSEC' };
+  }
+
+  function dxfScanSections(pairs) {
+    let idx = 0;
+    const n = pairs.length;
+    let sectionOpen = false;
+    let currentSection = null;
+    let sawEntities = false;
+    let sawBlocks = false;
+    const entityRecords = [];
+    const blocks = new Map();
+    while (idx < n) {
+      const pair = pairs[idx];
+      if (pair.code === 0 && String(pair.value).trim() === 'SECTION') {
+        if (sectionOpen) return { error: 'a SECTION opens before the previous one closed' };
+        sectionOpen = true;
+        idx += 1;
+        currentSection = (idx < n && pairs[idx].code === 2) ? String(pairs[idx].value).trim() : null;
+        if (currentSection != null) idx += 1;
+        if (currentSection === 'ENTITIES') {
+          if (sawEntities) return { error: 'more than one ENTITIES section' };
+          sawEntities = true;
+          const body = dxfCollectEntitiesBody(pairs, idx);
+          if (body.error) return { error: body.error };
+          entityRecords.push(...body.records);
+          idx = body.nextIndex;
+        } else if (currentSection === 'BLOCKS') {
+          if (sawBlocks) return { error: 'more than one BLOCKS section' };
+          sawBlocks = true;
+          const body = dxfCollectBlocksBody(pairs, idx);
+          if (body.error) return { error: body.error };
+          for (const [name, definitions] of body.blocks) {
+            if (!blocks.has(name)) blocks.set(name, []);
+            blocks.get(name).push(...definitions);
+          }
+          idx = body.nextIndex;
+        }
+        continue;
+      }
+      if (pair.code === 0 && String(pair.value).trim() === 'ENDSEC') {
+        if (!sectionOpen) return { error: 'an ENDSEC has no matching SECTION' };
+        sectionOpen = false;
+        currentSection = null;
+        idx += 1;
+        continue;
+      }
+      idx += 1;
+    }
+    if (sectionOpen) return { error: 'a SECTION has no matching ENDSEC' };
+    if (!sawEntities) return { error: 'no ENTITIES section' };
+    return { entityRecords, blocks };
+  }
+
+  // `blocks` maps a name to its list of DEFINITIONS (see dxfCollectBlocksBody).
+  // `ordinal` is how many top-level INSERTs of this name preceded the one
+  // being resolved: the k-th INSERT of a duplicated name takes the k-th
+  // definition. Verified exact on every duplicate-name file in the corpus —
+  // in all 7 the ordered BLOCK-name sequence equals the ordered INSERT-name
+  // sequence. More INSERTs than definitions (not seen) clamp to the last
+  // definition rather than fail: a block genuinely placed N times has ONE
+  // definition and ordinal 0..N-1, and must keep resolving. Nested INSERTs
+  // (inside a block body) pass no ordinal and take the first definition.
+  // `ordinal === 'all'` (Phase 6, pipelineVersion 1) reproduces the
+  // pre-ADR-0091 behaviour exactly — every definition of the name
+  // concatenated — so a saved v1 source re-parses to the piece list its
+  // board was built from.
+  function dxfBlockRecordsFor(blocks, name, ordinal) {
+    const definitions = blocks.get(name);
+    if (!definitions || !definitions.length) return null;
+    if (ordinal === 'all') return definitions.flat();
+    const k = Number.isInteger(ordinal) && ordinal > 0 ? Math.min(ordinal, definitions.length - 1) : 0;
+    return definitions[k];
+  }
+
+  function dxfPipelineVersionOf(options) {
+    return options && options.pipelineVersion === 1 ? 1 : DXF_PIPELINE_VERSION;
+  }
+
+  // ---- Byte-level decoding (ADR 0091 follow-up) -------------------------------
+  //
+  // FileReader.readAsText() decodes as UTF-8 and silently replaces every
+  // undecodable byte with U+FFFD. Real Chinese-vendor exports name their
+  // blocks in GBK (e.g. "2844裁片.前片.S"), so two DIFFERENT names of the same
+  // byte length decoded to the SAME "2844��…" string and their
+  // INSERTs resolved to one block: measured 2026-09-04 on the corpus —
+  // 1290. Flexcamo .dxf 30 blocks → 13 distinct names after lossy decoding,
+  // 2844 6 → 4, 637L 7 → 4, 721 9 → 7, 3179 11 → 9, 3114 11 → 10. Geometry
+  // is ASCII, so only names/annotation text are at stake — but names decide
+  // which block an INSERT draws. Strict UTF-8 first (a UTF-8 file is never
+  // misread), then the file's own $DWGCODEPAGE, then GBK (this repo's
+  // vendors), then windows-1252, which cannot fail.
+  const DXF_CODEPAGE_TO_ENCODING = {
+    ANSI_936: 'gbk', ANSI_950: 'big5', ANSI_932: 'shift_jis', ANSI_949: 'euc-kr',
+    ANSI_1250: 'windows-1250', ANSI_1251: 'windows-1251', ANSI_1252: 'windows-1252',
+    ANSI_1253: 'windows-1253', ANSI_1254: 'windows-1254', ANSI_1257: 'windows-1257',
+    ANSI_874: 'windows-874', ANSI_1258: 'windows-1258',
+  };
+
+  function dxfCodepageToEncoding(label) {
+    if (!label) return null;
+    const key = String(label).trim().toUpperCase();
+    return DXF_CODEPAGE_TO_ENCODING[key] || null;
+  }
+
+  function decodeDxfBytes(buffer) {
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    const tryDecode = (label) => {
+      try { return new TextDecoder(label, { fatal: true }).decode(bytes); } catch (error) { return null; }
+    };
+    const strictUtf8 = tryDecode('utf-8');
+    if (strictUtf8 != null) return { text: strictUtf8, encoding: 'utf-8' };
+    const lossy = new TextDecoder('utf-8').decode(bytes);
+    const match = /\$DWGCODEPAGE\s*\r?\n\s*3\s*\r?\n\s*([^\s]+)/i.exec(lossy);
+    const declared = dxfCodepageToEncoding(match && match[1]);
+    for (const label of [declared, 'gbk', 'windows-1252']) {
+      if (!label) continue;
+      const text = tryDecode(label);
+      if (text != null) return { text, encoding: label, declaredCodepage: match ? match[1] : null };
+    }
+    return { text: lossy, encoding: 'utf-8-lossy', declaredCodepage: match ? match[1] : null };
+  }
+
+  // ---- Per-entity outcome helpers --------------------------------------------
+
+  function dxfOk(segments) { return { ok: true, segments }; }
+  function dxfSkip(bucket, reason) { return { ok: false, bucket, reason }; }
+  function dxfMalformed(reason) { return dxfSkip('malformed', reason); }
+  function dxfNonPlanar(reason) { return dxfSkip('nonPlanar', reason); }
+  function dxfUnsupportedType(reason) { return dxfSkip('unsupportedType', reason); }
+  function dxfUnsupportedFit(reason) { return dxfSkip('unsupportedFit', reason); }
+
+  // ---- Arc / bulge -> cubic Bézier geometry ----------------------------------
+  //
+  // One shared chunker for ARC, CIRCLE and a polyline bulge alike: given a
+  // center, radius, start angle and a SIGNED sweep (radians, CCW positive,
+  // magnitude < 2*PI), split into pieces no wider than 90 degrees and convert
+  // each with the standard tangent-based cubic approximation. All of this
+  // runs in native DXF (Y-up) coordinates; the caller flips Y on the
+  // resulting points afterward, uniformly, for every segment in the drawing.
+  // Bézier curves are affine-covariant, so negating Y on the four control
+  // points of an already-correct curve reproduces the curve's mirrored image
+  // exactly — there is no separate "flip the sweep sign" step to get wrong.
+  function dxfArcChunkToBezier(cx, cy, r, a0, a1) {
+    const theta = a1 - a0;
+    const alpha = (4 / 3) * Math.tan(theta / 4);
+    const p0 = { x: cx + r * Math.cos(a0), y: cy + r * Math.sin(a0) };
+    const p3 = { x: cx + r * Math.cos(a1), y: cy + r * Math.sin(a1) };
+    const c1 = { x: p0.x - alpha * r * Math.sin(a0), y: p0.y + alpha * r * Math.cos(a0) };
+    const c2 = { x: p3.x + alpha * r * Math.sin(a1), y: p3.y - alpha * r * Math.cos(a1) };
+    return { kind: 'curve', p0, c1, c2, p3 };
+  }
+
+  function dxfArcToBezierChunks(cx, cy, r, startAngle, sweep) {
+    const maxChunk = Math.PI / 2;
+    const count = Math.max(1, Math.ceil(Math.abs(sweep) / maxChunk - 1e-9));
+    const chunkSweep = sweep / count;
+    const chunks = [];
+    let a = startAngle;
+    for (let i = 0; i < count; i += 1) {
+      chunks.push(dxfArcChunkToBezier(cx, cy, r, a, a + chunkSweep));
+      a += chunkSweep;
+    }
+    return chunks;
+  }
+
+  // Bulge -> arc center/radius/angles, derived and numerically verified
+  // against the DXF spec's own definition (bulge = tan(sweep/4), positive =
+  // CCW from the vertex to the next one) rather than assumed: for a chord
+  // P1->P2 with unit direction u and left-normal v = (-u.y, u.x), the CCW
+  // sweep theta = 4*atan(bulge), radius r = d / (2*|sin(theta/2)|), and the
+  // signed offset from the chord midpoint to the center along v is
+  // h = sign(bulge) * r * cos(theta/2) — confirmed against the theta=180°
+  // case (h=0, center exactly on the midpoint) and against a theta=90° case
+  // solved by hand (center reproduces both P1 and P2 exactly under a CCW
+  // sweep of theta from the recovered start angle).
+  //
+  // US-105: split out of dxfBulgeToBezierChunks so the native-coordinate
+  // measurement kernel (src/manual/dxf-native-parser.js) can get the exact
+  // {center, radius, startAngle, sweep} an ARC entity would carry, without
+  // going through a Bézier-chunked approximation it does not need — arcs and
+  // bulges are already exactly circular, so the measurement kernel's arc
+  // length can stay analytic. Returns null for the same degenerate case
+  // dxfBulgeToBezierChunks used to return [] for.
+  function dxfBulgeToArcParams(p1, p2, bulge) {
+    const d = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    if (!(d > 1e-9)) return null;
+    const theta = 4 * Math.atan(bulge);
+    const ux = (p2.x - p1.x) / d, uy = (p2.y - p1.y) / d;
+    const vx = -uy, vy = ux;
+    const r = d / (2 * Math.abs(Math.sin(theta / 2)));
+    const s = bulge < 0 ? -1 : 1;
+    const h = s * r * Math.cos(theta / 2);
+    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+    const cx = mx + vx * h, cy = my + vy * h;
+    const a0 = Math.atan2(p1.y - cy, p1.x - cx);
+    return { cx, cy, r, a0, sweep: theta };
+  }
+
+  function dxfBulgeToBezierChunks(p1, p2, bulge) {
+    const params = dxfBulgeToArcParams(p1, p2, bulge);
+    if (!params) return [];
+    return dxfArcToBezierChunks(params.cx, params.cy, params.r, params.a0, params.sweep);
+  }
+
+  // ---- Per-entity converters --------------------------------------------------
+
+  function convertDxfLineEntity(rec) {
+    const x1 = dxfNum(rec.pairs, 10), y1 = dxfNum(rec.pairs, 20);
+    const x2 = dxfNum(rec.pairs, 11), y2 = dxfNum(rec.pairs, 21);
+    if ([x1, y1, x2, y2].some(v => v === undefined)) return dxfMalformed('LINE missing 10/20 or 11/21');
+    if (![x1, y1, x2, y2].every(Number.isFinite)) return dxfMalformed('LINE has a non-finite coordinate');
+    const z1 = dxfOptNum(rec.pairs, 30, 0), z2 = dxfOptNum(rec.pairs, 31, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(z1) || !Number.isFinite(z2) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('LINE has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([z1, z2], thickness, ext)) return dxfNonPlanar('LINE is not flat');
+    return dxfOk([{ kind: 'straight', a: { x: x1, y: y1 }, b: { x: x2, y: y2 } }]);
+  }
+
+  function convertDxfArcEntity(rec) {
+    const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
+    const r = dxfNum(rec.pairs, 40);
+    const a0Deg = dxfNum(rec.pairs, 50), a1Deg = dxfNum(rec.pairs, 51);
+    if ([cx, cy, r, a0Deg, a1Deg].some(v => v === undefined)) return dxfMalformed('ARC missing 10/20/40/50/51');
+    if (![cx, cy, r, a0Deg, a1Deg].every(Number.isFinite)) return dxfMalformed('ARC has a non-finite value');
+    if (!(r > 0)) return dxfMalformed('ARC radius <= 0');
+    const z = dxfOptNum(rec.pairs, 30, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(z) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('ARC has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('ARC is not flat');
+    // Always CCW from start to end per the DXF spec — this handles a
+    // 350deg -> 10deg wraparound as a 20deg sweep, not a naive -340deg.
+    const sweepDeg = ((a1Deg - a0Deg) % 360 + 360) % 360;
+    if (!(sweepDeg > 1e-9)) return dxfMalformed('ARC has zero sweep');
+    const sweepRad = sweepDeg * Math.PI / 180;
+    const startRad = a0Deg * Math.PI / 180;
+    return dxfOk(dxfArcToBezierChunks(cx, cy, r, startRad, sweepRad));
+  }
+
+  function convertDxfCircleEntity(rec) {
+    const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
+    const r = dxfNum(rec.pairs, 40);
+    if ([cx, cy, r].some(v => v === undefined)) return dxfMalformed('CIRCLE missing 10/20/40');
+    if (![cx, cy, r].every(Number.isFinite)) return dxfMalformed('CIRCLE has a non-finite value');
+    if (!(r > 0)) return dxfMalformed('CIRCLE radius <= 0');
+    const z = dxfOptNum(rec.pairs, 30, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(z) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('CIRCLE has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('CIRCLE is not flat');
+    // Always exactly four 90-degree quadrants, per the product contract —
+    // not "chunked to <=90", a fixed four, so every CIRCLE outputs the same
+    // shape regardless of an arbitrary starting angle.
+    const chunks = [];
+    for (let i = 0; i < 4; i += 1) chunks.push(dxfArcChunkToBezier(cx, cy, r, i * (Math.PI / 2), (i + 1) * (Math.PI / 2)));
+    return dxfOk(chunks);
+  }
+
+  function dxfParseLwpolylineVertices(pairs) {
+    const vertices = [];
+    let current = null;
+    for (const p of pairs) {
+      if (p.code === 10) {
+        current = { x: Number(String(p.value).trim()), y: undefined, bulge: 0 };
+        vertices.push(current);
+      } else if (p.code === 20 && current) {
+        current.y = Number(String(p.value).trim());
+      } else if (p.code === 42 && current) {
+        current.bulge = Number(String(p.value).trim());
+      }
+    }
+    return vertices;
+  }
+
+  function dxfPolylineVerticesToSegments(vertices, closed) {
+    const segs = [];
+    const n = vertices.length;
+    const last = closed ? n : n - 1;
+    for (let i = 0; i < last; i += 1) {
+      const a = vertices[i];
+      const b = vertices[(i + 1) % n];
+      if (a.bulge) segs.push(...dxfBulgeToBezierChunks(a, b, a.bulge));
+      else segs.push({ kind: 'straight', a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } });
+    }
+    return segs;
+  }
+
+  function convertDxfLwpolylineEntity(rec) {
+    const declaredRaw = dxfFirst(rec.pairs, 90);
+    if (declaredRaw === undefined) return dxfMalformed('LWPOLYLINE missing group 90 vertex count');
+    const declared = Number(String(declaredRaw).trim());
+    if (!Number.isFinite(declared)) return dxfMalformed('LWPOLYLINE group 90 is not a finite number');
+    const flags = dxfOptNum(rec.pairs, 70, 0);
+    if (!Number.isFinite(flags)) return dxfMalformed('LWPOLYLINE has a non-finite flag value');
+    const vertices = dxfParseLwpolylineVertices(rec.pairs);
+    if (declared !== vertices.length) return dxfMalformed('LWPOLYLINE group-90 count does not match its vertex pairs');
+    if (vertices.length < 2) return dxfMalformed('LWPOLYLINE has fewer than 2 vertices');
+    for (const v of vertices) {
+      if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.bulge)) {
+        return dxfMalformed('LWPOLYLINE has a non-finite vertex or bulge value');
+      }
+    }
+    const elevation = dxfOptNum(rec.pairs, 38, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(elevation) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('LWPOLYLINE has a non-finite planarity field');
+    }
+    if (!dxfPlanarOk([elevation], thickness, ext)) return dxfNonPlanar('LWPOLYLINE is not flat');
+    const closed = (Math.trunc(flags) & 1) === 1;
+    return dxfOk(dxfPolylineVerticesToSegments(vertices, closed));
+  }
+
+  function convertDxfPolylineEntity(rec) {
+    const flagsRaw = dxfOptNum(rec.pairs, 70, 0);
+    if (!Number.isFinite(flagsRaw)) return dxfMalformed('POLYLINE has a non-finite flag value');
+    const flags = Math.trunc(flagsRaw);
+    if ((flags & 2) || (flags & 4)) return dxfUnsupportedFit('POLYLINE has the curve-fit or spline-fit flag set');
+    if ((flags & 8) || (flags & 16) || (flags & 64)) return dxfNonPlanar('POLYLINE is 3D/mesh (flag bit 3, 4, or 6)');
+    const closed = (flags & 1) === 1;
+    const headerZ = dxfOptNum(rec.pairs, 30, 0);
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(headerZ) || !Number.isFinite(thickness) || !ext.finite) {
+      return dxfMalformed('POLYLINE has a non-finite planarity field');
+    }
+    const rawVertices = Array.isArray(rec.vertices) ? rec.vertices : [];
+    if (rawVertices.length < 2) return dxfMalformed('POLYLINE has fewer than 2 vertices');
+    const vertices = [];
+    for (const vPairs of rawVertices) {
+      const x = dxfNum(vPairs, 10), y = dxfNum(vPairs, 20);
+      if (x === undefined || y === undefined) return dxfMalformed('POLYLINE VERTEX missing 10/20');
+      const z = dxfOptNum(vPairs, 30, 0);
+      const bulge = dxfOptNum(vPairs, 42, 0);
+      if (![x, y, z, bulge].every(Number.isFinite)) return dxfMalformed('POLYLINE VERTEX has a non-finite value');
+      vertices.push({ x, y, z, bulge });
+    }
+    if (!dxfPlanarOk([headerZ, ...vertices.map(v => v.z)], thickness, ext)) return dxfNonPlanar('POLYLINE is not flat');
+    return dxfOk(dxfPolylineVerticesToSegments(vertices, closed));
+  }
+
+  function convertDxfEntity(rec) {
+    switch (rec.type) {
+      case 'LINE': return convertDxfLineEntity(rec);
+      case 'ARC': return convertDxfArcEntity(rec);
+      case 'CIRCLE': return convertDxfCircleEntity(rec);
+      case 'LWPOLYLINE': return convertDxfLwpolylineEntity(rec);
+      case 'POLYLINE': return convertDxfPolylineEntity(rec);
+      // Phase 3 (ADR 0091): ASTM turn/curve points, notches, drill holes and
+      // annotation text are standard non-geometry, not "unsupported" — they
+      // are counted by dxfCollectMarks and reported as what they are.
+      case 'POINT': case 'TEXT': case 'MTEXT':
+        return dxfSkip('nonGeometry', rec.type + ' is a mark/annotation, not drawn geometry');
+      default: return dxfUnsupportedType('entity type "' + rec.type + '" is not supported');
+    }
+  }
+
+  // ---- Marks and annotation text (Phase 3) ------------------------------------
+  //
+  // A second, cheap pass over the scanned records — independent of geometry
+  // conversion so neither parser's converter signatures change — that counts
+  // POINT/TEXT per instance and pulls the ASTM piece annotation
+  // (`PIECE NAME:` / `SIZE:` / `QUANTITY:`, the CLO convention) out of the
+  // TEXT that shares a block with the piece. Same instance/ordinal scheme as
+  // parseDxfDocument so `labelsByInstance` lines up with `instanceBlockNames`.
+  const DXF_POINT_LAYER_CLASS = { '2': 'turn', '3': 'curve', '4': 'notch', '13': 'drill' };
+
+  function dxfMarkText(rec) {
+    const parts = [];
+    for (const p of rec.pairs) if (p.code === 3) parts.push(String(p.value));
+    for (const p of rec.pairs) if (p.code === 1) parts.push(String(p.value));
+    return parts.join('').trim();
+  }
+
+  function dxfParseAnnotationLabel(texts) {
+    const label = { pieceName: null, size: null, quantity: null };
+    for (const t of texts) {
+      let m = /^\s*PIECE\s*NAME\s*:\s*(.+?)\s*$/i.exec(t);
+      if (m) { label.pieceName = m[1]; continue; }
+      m = /^\s*SIZE\s*:\s*(.+?)\s*$/i.exec(t);
+      if (m) { label.size = m[1]; continue; }
+      m = /^\s*QUANTITY\s*:\s*(\d+)\s*$/i.exec(t);
+      if (m) { label.quantity = Number(m[1]); continue; }
+    }
+    return (label.pieceName || label.size || label.quantity != null) ? label : null;
+  }
+
+  function dxfCollectMarks(scan) {
+    const marks = {
+      points: { total: 0, byClass: {} },
+      texts: { total: 0 },
+      labelsByInstance: {},
+      textsByInstance: {},
+    };
+    const insertOrdinals = new Map();
+    let nextInstance = 1;
+    const visit = (records, instance) => {
+      const texts = [];
+      for (const rec of records) {
+        if (rec.type === 'POINT') {
+          marks.points.total += 1;
+          const layer = dxfFirst(rec.pairs, 8);
+          const cls = DXF_POINT_LAYER_CLASS[layer == null ? '' : String(layer).trim()] || 'other';
+          marks.points.byClass[cls] = (marks.points.byClass[cls] || 0) + 1;
+        } else if (rec.type === 'TEXT' || rec.type === 'MTEXT') {
+          marks.texts.total += 1;
+          const t = dxfMarkText(rec);
+          if (t) texts.push(t);
+        }
+      }
+      if (texts.length) {
+        marks.textsByInstance[instance] = (marks.textsByInstance[instance] || []).concat(texts);
+        const label = dxfParseAnnotationLabel(texts);
+        if (label) marks.labelsByInstance[instance] = label;
+      }
+    };
+    const direct = [];
+    for (const rec of scan.entityRecords) {
+      if (rec.type !== 'INSERT') { direct.push(rec); continue; }
+      const instance = nextInstance++;
+      const name = dxfInsertParams(rec).blockName;
+      const ordinal = insertOrdinals.get(name) || 0;
+      insertOrdinals.set(name, ordinal + 1);
+      const records = dxfBlockRecordsFor(scan.blocks, name, ordinal);
+      if (records) visit(records, instance);
+    }
+    visit(direct, 0);
+    return marks;
+  }
+
+  // ---- INSERT -> BLOCK resolution ---------------------------------------------
+  //
+  // Real garment-CAD DXF exports (Gerber/Lectra/Rich-style) are the dominant
+  // real-world shape this importer sees: every pattern piece's actual
+  // LINE/POLYLINE geometry sits inside a named BLOCKS definition, and
+  // ENTITIES only carries one INSERT per piece referencing it (see 2026-08-31
+  // audit in docs/decisions/0067-dxf-grading-nest-import.md). Left
+  // unresolved, a file built this way has ZERO directly-supported entities
+  // and is rejected outright ("no supported entities were found") even
+  // though it is a completely ordinary, valid pattern file — this is the bug
+  // being fixed here. Deliberately scoped to a plain instance placement
+  // (translate + uniform scale + rotation, bounded recursive nesting): a
+  // non-uniform scale or MINSERT array is rejected with a stated reason
+  // rather than silently producing distorted or duplicated geometry, since
+  // no real sample file needs either.
+  const DXF_INSERT_MAX_DEPTH = 8; // generous bound against a circular BLOCK/INSERT reference; no real file needs more than 1-2 levels
+
+  function dxfInsertParams(rec) {
+    const blockNameRaw = dxfFirst(rec.pairs, 2);
+    return {
+      blockName: blockNameRaw == null ? null : String(blockNameRaw).trim(),
+      ix: dxfOptNum(rec.pairs, 10, 0),
+      iy: dxfOptNum(rec.pairs, 20, 0),
+      sx: dxfOptNum(rec.pairs, 41, 1),
+      sy: dxfOptNum(rec.pairs, 42, 1),
+      angleRad: dxfOptNum(rec.pairs, 50, 0) * Math.PI / 180,
+      colCount: dxfOptNum(rec.pairs, 70, 1),
+      rowCount: dxfOptNum(rec.pairs, 71, 1),
+    };
+  }
+
+  // Scale about the block-local origin, then rotate, then translate to the
+  // insertion point — the standard DXF INSERT transform order. Affine, so it
+  // maps a straight segment's endpoints or a curve's Bézier control points
+  // exactly, including a mirrored (negative-scale) instance of the block.
+  function dxfInsertTransformPoint(p, ins) {
+    const sx = p.x * ins.sx, sy = p.y * ins.sy;
+    const cos = Math.cos(ins.angleRad), sin = Math.sin(ins.angleRad);
+    return { x: ins.ix + sx * cos - sy * sin, y: ins.iy + sx * sin + sy * cos };
+  }
+
+  // Object.assign over the source segment (ADR 0091): `layer`/`entityType`
+  // provenance stamped by dxfConvertEntityResolvingBlocks on the child entity
+  // must survive the placement transform, or every block-resolved segment
+  // reaches the classifier layer-less and the whole file silently falls back
+  // to the legacy grouping — the same shape of bug ADR 0069 hit with
+  // `instance` in dxfFlipSegmentY.
+  function dxfApplyInsertTransformToSegment(seg, ins) {
+    return seg.kind === 'straight'
+      ? Object.assign({}, seg, { a: dxfInsertTransformPoint(seg.a, ins), b: dxfInsertTransformPoint(seg.b, ins) })
+      : Object.assign({}, seg, {
+        p0: dxfInsertTransformPoint(seg.p0, ins), c1: dxfInsertTransformPoint(seg.c1, ins),
+        c2: dxfInsertTransformPoint(seg.c2, ins), p3: dxfInsertTransformPoint(seg.p3, ins),
+      });
+  }
+
+  // `buckets` is shared mutable state the caller also increments into — a
+  // block's own unsupported/malformed children (e.g. TEXT alongside LINE)
+  // are counted here as they're found, so one bucket total covers both
+  // directly-placed and block-resolved entities uniformly. `instance`
+  // (ADR 0069) is opaque here — always the SAME value this call's own
+  // caller was given, propagated unchanged to every child so a piece
+  // assembled from nested INSERTs still shares one instance boundary; see
+  // dxfConnectedComponents/dxfMergeContainedComponents for what it's for.
+  function dxfConvertInsertEntity(rec, blocks, depth, buckets, instance, ordinal) {
+    const p = dxfInsertParams(rec);
+    if (p.blockName == null) return dxfMalformed('INSERT missing block name (group 2)');
+    if (![p.ix, p.iy, p.sx, p.sy, p.angleRad].every(Number.isFinite)) return dxfMalformed('INSERT has a non-finite placement field');
+    if (Math.abs(p.sx) < 1e-9 || Math.abs(p.sy) < 1e-9) return dxfMalformed('INSERT has a zero scale factor');
+    if (Math.abs(Math.abs(p.sx) - Math.abs(p.sy)) > 1e-6) {
+      return dxfUnsupportedType('INSERT has non-uniform scale (X and Y scale differ), not supported');
+    }
+    if ((p.colCount && p.colCount !== 1) || (p.rowCount && p.rowCount !== 1)) {
+      return dxfUnsupportedType('INSERT is a rectangular array (MINSERT), not supported');
+    }
+    const blockRecords = dxfBlockRecordsFor(blocks, p.blockName, ordinal);
+    if (!blockRecords) return dxfMalformed('INSERT references an undefined block "' + p.blockName + '"');
+    if (depth >= DXF_INSERT_MAX_DEPTH) return dxfMalformed('INSERT nesting is too deep (possible circular BLOCK reference)');
+    const segments = [];
+    for (const childRec of blockRecords) {
+      const result = dxfConvertEntityResolvingBlocks(childRec, blocks, depth + 1, buckets, instance);
+      if (!result.ok) { buckets[result.bucket] += 1; continue; }
+      segments.push(...result.segments);
+    }
+    if (!segments.length) return dxfMalformed('INSERT\'s block "' + p.blockName + '" has no supported geometry');
+    return dxfOk(segments.map(seg => dxfApplyInsertTransformToSegment(seg, p)));
+  }
+
+  // Stamps every accepted segment with its placement `instance` (ADR 0069)
+  // regardless of which branch produced it — the one place this needs to
+  // happen, since dxfConvertInsertEntity's own return (after
+  // dxfApplyInsertTransformToSegment rebuilds fresh segment objects) would
+  // otherwise lose it.
+  function dxfConvertEntityResolvingBlocks(rec, blocks, depth, buckets, instance, ordinal) {
+    const result = rec.type === 'INSERT'
+      ? dxfConvertInsertEntity(rec, blocks, depth, buckets, instance, ordinal)
+      : convertDxfEntity(rec);
+    if (!result.ok) return result;
+    if (rec.type === 'INSERT') {
+      // Children were already stamped with their own layer/entityType on the
+      // way up; only the instance is (re)applied here.
+      return { ok: true, segments: result.segments.map(seg => Object.assign({}, seg, { instance })) };
+    }
+    // ADR 0091: layer provenance (group 8) and the source entity type ride on
+    // every segment so dxfClassifyPatterns can tell a piece boundary (ASTM
+    // layer 1) from a grain line, sew line or internal mark. The native
+    // parser has stamped `layer` since US-105; this brings the board parser
+    // to parity so both feed the classifier the same facts.
+    const layerRaw = dxfFirst(rec.pairs, 8);
+    const layer = layerRaw == null ? null : String(layerRaw).trim();
+    return {
+      ok: true,
+      segments: result.segments.map(seg => Object.assign({}, seg, { instance, layer, entityType: rec.type })),
+    };
+  }
+
+  // ---- Y-flip (DXF Y-up -> board Y-down) -------------------------------------
+
+  function dxfFlipPointY(p) { return { x: p.x, y: -p.y }; }
+
+  // ADR 0069: preserves `instance` (set by dxfConvertEntityResolvingBlocks,
+  // read by dxfConnectedComponents/dxfMergeContainedComponents) — dropping
+  // it here would silently turn every segment's instance to `undefined`
+  // before piece detection ever runs, making the whole instance-boundary
+  // rule a no-op. Caught by this exact regression during development: the
+  // fix initially had zero effect on any real file until this was found.
+  //
+  // ADR 0091 generalizes the lesson: copy EVERY non-geometry field
+  // (`instance`, `layer`, `entityType`) via Object.assign rather than
+  // re-listing them, so the next provenance field cannot be dropped here.
+  function dxfFlipSegmentY(seg) {
+    return seg.kind === 'straight'
+      ? Object.assign({}, seg, { a: dxfFlipPointY(seg.a), b: dxfFlipPointY(seg.b) })
+      : Object.assign({}, seg, { p0: dxfFlipPointY(seg.p0), c1: dxfFlipPointY(seg.c1), c2: dxfFlipPointY(seg.c2), p3: dxfFlipPointY(seg.p3) });
+  }
+
+  // US-105: a point at native arc parameter t in [0,1] — center + radius at
+  // (startAngle + sweep*t). Shared by the native measurement kernel and, here,
+  // by dxfSegmentEndpoints/dxfSegmentPoints below so an 'arc'-kind segment
+  // (the native, non-Bézier representation the measurement parser emits) can
+  // reuse the existing piece-detection primitives (dxfConnectedComponents,
+  // dxfMergeContainedComponents, dxfBoundsOfSegments) unchanged. Never called
+  // by parseDxfDocument's own pipeline, which only ever produces 'straight'/
+  // 'curve' segments — this is purely additive.
+  function dxfPointOnArcSegment(seg, t) {
+    const a = seg.startAngle + seg.sweep * t;
+    return { x: seg.center.x + seg.radius * Math.cos(a), y: seg.center.y + seg.radius * Math.sin(a) };
+  }
+
+  function dxfSegmentEndpoints(seg) {
+    if (seg.kind === 'straight') return [seg.a, seg.b];
+    if (seg.kind === 'arc') return [dxfPointOnArcSegment(seg, 0), dxfPointOnArcSegment(seg, 1)];
+    return [seg.p0, seg.p3];
+  }
+
+  // Every point that defines the segment's painted extent, handles included
+  // — mirrors shapeStampGeometryPoints's reasoning: a curve's bulge can sit
+  // outside the a/b chord, so a bounds box built from endpoints alone can
+  // clip or under-fit it. For 'arc' (US-105), the two corners of the full
+  // circle's own bounding box are a deliberate, always-safe over-approximation
+  // — cheaper than computing the arc's true axis-aligned extent and never
+  // under-fits it, which is all dxfConnectedComponents/dxfMergeContainedComponents
+  // need this for (an endpoint-touch tolerance and a containment test, neither
+  // of which requires a pixel-exact box).
+  function dxfSegmentPoints(seg) {
+    if (seg.kind === 'straight') return [seg.a, seg.b];
+    if (seg.kind === 'arc') {
+      return [
+        { x: seg.center.x - seg.radius, y: seg.center.y - seg.radius },
+        { x: seg.center.x + seg.radius, y: seg.center.y + seg.radius },
+      ];
+    }
+    return [seg.p0, seg.c1, seg.c2, seg.p3];
+  }
+
+  function dxfBoundsOfPoints(points) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of points) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    if (!Number.isFinite(minX)) return { x: 0, y: 0, width: 0, height: 0 };
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+
+  function dxfBoundsOfSegments(segments) {
+    return dxfBoundsOfPoints(segments.flatMap(dxfSegmentPoints));
+  }
+
+  // ---- Piece detection: connected components, then containment merge --------
+
+  function dxfUnionFind(n) {
+    const parent = Array.from({ length: n }, (_, i) => i);
+    function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+    function union(a, b) { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+    return { find, union };
+  }
+
+  // A relative tolerance (fraction of the whole drawing's diagonal), not an
+  // absolute one — a DXF can be authored at any unit scale (mm, m, unitless)
+  // and an absolute pixel-ish tolerance would either miss real joins on a
+  // huge drawing or over-merge on a tiny one.
+  //
+  // ADR 0069: never union two segments from a DIFFERENT placed `instance`
+  // (see dxfInstanceForEntity below) even if they geometrically touch or
+  // nest. A grading-nest DXF places every size/piece as its own INSERT, all
+  // at the SAME (usually identity) transform, so different sizes' outlines
+  // routinely touch or cross within this relative tolerance — measured on
+  // real files (SN0004-BRA0978--STRIKE COST VER D.dxf) a single raw
+  // component ballooned to 2180 segments this way, several real sizes
+  // fused into one. `instance` is `0` for every entity placed directly in
+  // ENTITIES (matches this function's pre-existing behavior exactly — a
+  // real multi-entity piece like 3380.dxf's is built from many direct
+  // LINE/POLYLINE entities that must still freely connect) and a distinct
+  // id per top-level INSERT (nested INSERTs inherit their parent's id, so
+  // a piece assembled from nested reusable sub-blocks still connects as
+  // one). Segments the native measurement parser (dxf-native-parser.js)
+  // produces never set `instance` at all (`undefined`), so this guard is a
+  // no-op there — untouched per ADR 0068's decision to scope block
+  // resolution to board import only.
+  //
+  // `tolOverride` (ADR 0091): dxfClassifyPatterns runs the legacy grouping
+  // per instance and must pass in the WHOLE-drawing tolerance it computed, or
+  // the fallback would judge "touching" against a per-instance diagonal and
+  // stop being byte-identical to the pre-ADR-0091 result on a single-instance
+  // file (3380.dxf). Omitted -> computed from `segments` exactly as before.
+  function dxfConnectedComponents(segments, tolOverride) {
+    const endpoints = segments.map(dxfSegmentEndpoints);
+    const allPts = endpoints.flat();
+    const bbox = dxfBoundsOfPoints(allPts);
+    const diag = Math.hypot(bbox.width, bbox.height) || 1;
+    const tol = Number.isFinite(tolOverride) ? tolOverride : 0.0001 * diag;
+    const uf = dxfUnionFind(segments.length);
+    for (let i = 0; i < segments.length; i += 1) {
+      for (let j = i + 1; j < segments.length; j += 1) {
+        if (segments[i].instance !== segments[j].instance) continue;
+        let touch = false;
+        for (const p of endpoints[i]) {
+          for (const q of endpoints[j]) if (distance(p, q) <= tol) { touch = true; break; }
+          if (touch) break;
+        }
+        if (touch) uf.union(i, j);
+      }
+    }
+    const groups = new Map();
+    for (let i = 0; i < segments.length; i += 1) {
+      const root = uf.find(i);
+      if (!groups.has(root)) groups.set(root, []);
+      groups.get(root).push(i);
+    }
+    return Array.from(groups.values()).map(segIdxs => ({
+      segIdxs,
+      bounds: dxfBoundsOfPoints(segIdxs.flatMap(i => dxfSegmentPoints(segments[i]))),
+      // Every member's instance is identical by construction (the union
+      // loop above never crosses instances), so any member's value is the
+      // whole component's value.
+      instance: segments[segIdxs[0]].instance,
+    }));
+  }
+
+  // A drill hole, grainline, or other internal mark never touches its
+  // panel's outline, so connectivity alone would split a real pattern piece
+  // into several. Fully-contained components merge into the smallest
+  // containing one; a merely-overlapping pair (not fully contained either
+  // way) is deliberately left as two separate pieces, so two genuinely
+  // different pieces whose boxes happen to graze never get wrongly fused.
+  // Bounding-box containment, not point-in-polygon — a mark in the "cutout"
+  // of a concave outline could be merged incorrectly; accepted for v1.
+  function dxfMergeContainedComponents(components) {
+    const n = components.length;
+    const uf = dxfUnionFind(n);
+    const contains = (outer, inner) => (
+      inner.x >= outer.x - 1e-9 && inner.y >= outer.y - 1e-9
+      && inner.x + inner.width <= outer.x + outer.width + 1e-9
+      && inner.y + inner.height <= outer.y + outer.height + 1e-9
+    );
+    for (let i = 0; i < n; i += 1) {
+      let bestJ = -1, bestArea = Infinity;
+      for (let j = 0; j < n; j += 1) {
+        if (i === j) continue;
+        // ADR 0069: same instance-boundary rule as dxfConnectedComponents
+        // above — a bounding-box nesting alone is not enough evidence two
+        // components are "outline + internal mark," and area-ratio
+        // thresholds were tried and rejected (measured, real: a legitimate
+        // lining piece in 2927.dxf nests at 68.67% area ratio, well inside
+        // the range grading-nest false merges occupy in other real files —
+        // no threshold separates the two cases reliably). Placement
+        // instance does: real drill holes/grainlines are always defined
+        // INSIDE the same block/placement as their outline, never as a
+        // separate INSERT.
+        if (components[i].instance !== components[j].instance) continue;
+        if (!contains(components[j].bounds, components[i].bounds)) continue;
+        const area = components[j].bounds.width * components[j].bounds.height;
+        if (area < bestArea) { bestArea = area; bestJ = j; }
+      }
+      if (bestJ !== -1) uf.union(i, bestJ);
+    }
+    const groups = new Map();
+    for (let i = 0; i < n; i += 1) {
+      const root = uf.find(i);
+      if (!groups.has(root)) groups.set(root, []);
+      groups.get(root).push(...components[i].segIdxs);
+    }
+    return Array.from(groups.values());
+  }
+
+  // segments -> array of pieces, each an array of segments (still in local
+  // drawing space — no viewport transform applied yet).
+  //
+  // ADR 0091: this is now the LEGACY grouping — connectivity + bounding-box
+  // containment, the pre-2026-09-04 definition of a piece. dxfClassifyPatterns
+  // (src/geometry/dxf-pattern-classify.js) calls it, per instance, for any
+  // instance with no closed ASTM boundary-layer chain (3380.dxf, 2927.dxf,
+  // 2892XL-new.dxf have no layer 1 at all), passing the whole-drawing
+  // tolerance so the result stays byte-identical to what this function
+  // produced on those files before. Do not call it directly from a parser.
+  function dxfBuildPiecesLegacy(segments, tolOverride) {
+    const components = dxfConnectedComponents(segments, tolOverride);
+    const pieceSegIdxLists = dxfMergeContainedComponents(components);
+    return pieceSegIdxLists.map(idxs => idxs.map(i => segments[i]));
+  }
+
+  // The one grouping entry point both parsers call. Same return shape as
+  // before (array of arrays of the caller's segment objects); the richer
+  // per-piece classification is available via dxfClassifyPatterns directly.
+  function dxfBuildPieces(segments) {
+    return dxfClassifyPatterns(segments).pieces;
+  }
+
+  // ---- Placement transform ----------------------------------------------------
+
+  // Round 11 (user-reported, then a follow-up review caught a real bug in
+  // the first fix): this used to reuse createImageRecord's own
+  // first-image-on-empty-board numbers verbatim (42%/180px floor) — sized
+  // for a photo that might sit beside other photos, needlessly small for a
+  // technical pattern that has no such neighbor and benefits from filling
+  // most of the canvas (it also packs more of a tessellated curve's points
+  // into the same screen distance, working against round 10's crowding
+  // fix). DXF placement now has its own, larger DXF_FIT_RATIO and NO floor
+  // — a "fit" that can force overflow at a tiny viewport (the old 180px
+  // floor did exactly that) isn't a fit, and with an 85% ratio a floor is
+  // already nearly always moot for a real viewport.
+  //
+  // `rect` is SCREEN-space (`getViewportRect()`, CSS pixels) but this
+  // function's output (`outputWidth`/`outputHeight`/`originX`/`originY`) is
+  // WORLD-space — the coordinate system annotations are stored in, which the
+  // render loop then multiplies by the board zoom to get screen pixels. "Fit
+  // to N% of the viewport" is therefore only true at zoom 1 unless the
+  // current zoom is divided back out here: at zoom 2, an output sized for
+  // 85% of a 1000px-wide viewport (850 world-px) would render at 1700
+  // screen-px and overflow. Dividing the whole `rect * ratio` term by `zoom`
+  // keeps `outputWidth * zoom` constant across any zoom the board happens to
+  // be at when the import runs (verified in dxf-import-check.mjs at
+  // 0.5x/1x/2x) — `zoom` defaults to 1 so existing callers (and the pure
+  // debug-API test entry point) that don't pass it are unaffected.
+  //
+  // Unlike a raster image, DXF vector data has no native pixel resolution to
+  // cap upscaling against, so there is no `Math.min(scale, 1)` "never
+  // upscale" clause either — that remains an image-only concern.
+  //
+  // `centerWorld` is optional (tests pass one to get deterministic numbers
+  // without a live pan/zoom); the real call site omits it and gets the
+  // live `screenToWorld` result.
+  function computeDxfPlacementTransform(bounds, rect, centerWorld, zoom) {
+    const w = Math.max(bounds.width, 1e-9);
+    const h = Math.max(bounds.height, 1e-9);
+    const z = Math.max(0.0001, zoom || 1);
+    const maxW = (rect.width * DXF_FIT_RATIO) / z;
+    const maxH = (rect.height * DXF_FIT_RATIO) / z;
+    const scale = Math.min(maxW / w, maxH / h);
+    const outputWidth = w * scale;
+    const outputHeight = h * scale;
+    const center = centerWorld || screenToWorld(rect.width / 2, rect.height / 2);
+    return {
+      scale,
+      originX: center.x - outputWidth / 2,
+      originY: center.y - outputHeight / 2,
+      outputWidth,
+      outputHeight,
+    };
+  }
+
+  function applyDxfTransform(p, bounds, transform) {
+    return {
+      x: transform.originX + (p.x - bounds.x) * transform.scale,
+      y: transform.originY + (p.y - bounds.y) * transform.scale,
+    };
+  }
+
+  // US-105: the missing inverse of applyDxfTransform — no board/world point
+  // has ever needed to map BACK to the local (already-Y-flipped) drawing
+  // space this transform's `bounds`/`transform` were computed against, until
+  // Pattern Measure needs to turn a pointer click into "which native DXF
+  // coordinate is under the cursor." Exact algebraic inverse of the affine
+  // fit above; `transform.scale` is always > 0 for a real drawing (computed
+  // from a non-degenerate bounds by computeDxfPlacementTransform), so no
+  // separate degenerate-scale guard is needed here beyond the caller already
+  // requiring a live measure session (which implies a successful prior parse).
+  function invertDxfPlacementTransform(p, bounds, transform) {
+    return {
+      x: bounds.x + (p.x - transform.originX) / transform.scale,
+      y: bounds.y + (p.y - transform.originY) / transform.scale,
+    };
+  }
+
+  // ---- Document-level parse (pure; no state/DOM) -----------------------------
+
+  // text -> { ok, pieces, buckets, ... } | { ok:false, atomic:true, reason,
+  // message, buckets }. `pieces` (when ok) is an array of per-piece segment
+  // arrays in LOCAL drawing space (already Y-flipped), each already under
+  // the per-piece cap and the whole set already under the piece-count and
+  // total-output caps — the only work left for the caller is the viewport
+  // transform and building real annotation objects.
+  function parseDxfDocument(text, options) {
+    const normalized = dxfNormalizeText(text);
+    if (normalized.slice(0, DXF_BINARY_SENTINEL.length) === DXF_BINARY_SENTINEL) {
+      return {
+        ok: false, atomic: true, reason: 'binary',
+        message: 'This looks like a binary DXF file. Re-export as ASCII DXF and try again.',
+      };
+    }
+    const pairs = dxfTokenizePairs(normalized);
+    if (!pairs) {
+      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file.' };
+    }
+    const scan = dxfScanSections(pairs);
+    if (scan.error) {
+      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file (' + scan.error + ').' };
+    }
+    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, nonGeometry: 0 };
+    const acceptedSegments = [];
+    // ADR 0069: instance 0 is the single shared "placed directly in
+    // ENTITIES" group (matches this loop's pre-INSERT-support behavior —
+    // every direct entity could always freely connect/contain against any
+    // other). Each top-level INSERT gets its own fresh, never-reused id, so
+    // dxfConnectedComponents/dxfMergeContainedComponents never fuse two
+    // separately-placed instances together.
+    //
+    // ADR 0070: a top-level INSERT's own block name (group 2) is the only
+    // human-readable identity a grading-nest piece carries — real files name
+    // blocks like "CUP_36C" or "BACKIN_38D" (see ADR 0067's Context). Recorded
+    // here, keyed by instance, purely so the Pattern Pieces panel can label a
+    // piece for the TD instead of an anonymous "Piece 3"; never read by parsing
+    // or piece-detection itself. Instance 0 (direct entities, no INSERT) never
+    // gets an entry — dxfBuildPieces callers fall back to a positional label.
+    const instanceBlockNames = new Map();
+    let nextDxfInstanceId = 1;
+    // k-th top-level INSERT of a name -> k-th BLOCK definition of that name
+    // (see dxfBlockRecordsFor).
+    const insertOrdinals = new Map();
+    const pipelineVersion = dxfPipelineVersionOf(options);
+    for (const rec of scan.entityRecords) {
+      const instance = rec.type === 'INSERT' ? nextDxfInstanceId++ : 0;
+      let ordinal = 0;
+      if (rec.type === 'INSERT') {
+        const blockName = dxfInsertParams(rec).blockName;
+        instanceBlockNames.set(instance, blockName);
+        ordinal = insertOrdinals.get(blockName) || 0;
+        insertOrdinals.set(blockName, ordinal + 1);
+        if (pipelineVersion === 1) ordinal = 'all';
+      }
+      const result = dxfConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, ordinal);
+      if (!result.ok) { buckets[result.bucket] += 1; continue; }
+      acceptedSegments.push(...result.segments);
+    }
+    if (!acceptedSegments.length) {
+      return { ok: false, atomic: true, reason: 'empty', message: 'No supported entities were found in this DXF file.', buckets };
+    }
+    const flipped = acceptedSegments.map(dxfFlipSegmentY);
+    // ADR 0091: classified grouping (closed boundary outline + assigned marks
+    // per pattern), with the legacy grouping as a per-instance fallback.
+    // `classified.patterns[i]` describes `classified.pieces[i]`.
+    const classified = dxfClassifyPatterns(flipped, {
+      diagnostics: !!(options && options.diagnostics),
+      keepQualityCurves: !!(options && options.keepQualityCurves),
+      excludeInstances: (options && Array.isArray(options.excludeInstances)) ? options.excludeInstances : [],
+      onProgress: (options && typeof options.onProgress === 'function') ? options.onProgress : null,
+      pipelineVersion,
+    });
+    const marks = dxfCollectMarks(scan);
+    const allPieces = classified.pieces;
+    // Phase 4: count alone never rejects; the flag routes >120 to the worker
+    // path once Phase 5 lands (until then both run synchronously).
+    classified.stats.overBatchThreshold = allPieces.length > DXF_PATTERN_BATCH_THRESHOLD;
+    classified.stats.batchThreshold = DXF_PATTERN_BATCH_THRESHOLD;
+    const keptPieces = [];
+    const keptPatterns = [];
+    let skippedOversizedPieces = 0;
+    for (let i = 0; i < allPieces.length; i += 1) {
+      const piece = allPieces[i];
+      // ADR 0091: the per-piece cap was sized against FUSED grading-nest
+      // blobs (ADR 0069 — 3835..17182-segment "pieces" that were several
+      // real pieces wrongly merged). A classified pattern cannot be such a
+      // blob: it is one closed boundary plus the marks assigned to it, so
+      // its size is real geometry and is bounded by DXF_TOTAL_OUTPUT_CAP
+      // like everything else. Dropping a whole real pattern here would be
+      // silent data loss (VeraLifting's 11_64_M is a legitimate 3,529-
+      // segment pattern once its sew/QV twins are counted). Legacy pieces
+      // and orphan chains keep the cap exactly as before.
+      if (piece.length > DXF_PER_PIECE_CAP && classified.patterns[i].kind !== 'classified') { skippedOversizedPieces += 1; continue; }
+      keptPieces.push(piece);
+      keptPatterns.push(classified.patterns[i]);
+    }
+    if (!keptPieces.length) {
+      return {
+        ok: false, atomic: true, reason: 'empty-after-piece-cap', buckets,
+        message: 'Every piece in this DXF exceeded the ' + DXF_PER_PIECE_CAP + '-line per-piece limit. Import rejected.',
+      };
+    }
+    const totalOutputCount = keptPieces.reduce((sum, piece) => sum + piece.length, 0);
+    if (totalOutputCount > DXF_TOTAL_OUTPUT_CAP) {
+      return {
+        ok: false, atomic: true, reason: 'total-cap', buckets, stats: classified.stats,
+        message: 'This DXF would place ' + dxfFormatCount(totalOutputCount) + ' lines, over the ' + dxfFormatCount(DXF_TOTAL_OUTPUT_CAP) + '-line combined limit.',
+        // Phase 4: per-instance report for the pre-placement picker.
+        overCap: dxfOverCapReport(keptPieces, keptPatterns, instanceBlockNames, marks, totalOutputCount),
+      };
+    }
+    return {
+      ok: true, pieces: keptPieces, buckets, skippedOversizedPieces, instanceBlockNames,
+      // ADR 0091: per-piece classification (same index as `pieces`) and the
+      // file-level tally the toast / Pattern Pieces panel / suites read.
+      patterns: keptPatterns, stats: classified.stats,
+      // Phase 3: POINT/TEXT counts and the per-instance piece annotation.
+      marks,
+    };
+  }
+
+  // Phase 4: what the TD sees when DXF_TOTAL_OUTPUT_CAP is exceeded — one row
+  // per placement instance (the unit a deselection removes, in BOTH parsers),
+  // with its block name, ASTM annotation, size token (ADR 0084's rule), the
+  // patterns it holds and the lines it would place. Instance 0 (direct
+  // ENTITIES) is a single all-or-nothing row.
+  function dxfOverCapReport(pieces, patterns, instanceBlockNames, marks, total) {
+    const rows = new Map();
+    for (let i = 0; i < pieces.length; i += 1) {
+      const instance = pieces[i].length ? (pieces[i][0].instance == null ? 0 : pieces[i][0].instance) : 0;
+      if (!rows.has(instance)) {
+        const blockName = instanceBlockNames && instanceBlockNames.get(instance);
+        const annotation = (instance !== 0 && marks && marks.labelsByInstance) ? marks.labelsByInstance[instance] : null;
+        rows.set(instance, {
+          instance,
+          blockName: blockName || null,
+          sizeToken: (blockName && typeof dxfMeasureSizeToken === 'function') ? dxfMeasureSizeToken(blockName) : null,
+          pieceName: annotation ? annotation.pieceName : null,
+          size: annotation ? annotation.size : null,
+          quantity: annotation ? annotation.quantity : null,
+          patterns: 0, lines: 0, kinds: {},
+        });
+      }
+      const row = rows.get(instance);
+      row.patterns += 1;
+      row.lines += pieces[i].length;
+      const kind = patterns[i] ? patterns[i].kind : 'legacy';
+      row.kinds[kind] = (row.kinds[kind] || 0) + 1;
+    }
+    return { total, cap: DXF_TOTAL_OUTPUT_CAP, instances: Array.from(rows.values()) };
   }
 
   // ---- src/manual/board-graphics.js ----
@@ -6739,6 +8763,157 @@
     dlg.panel.appendChild(body);
     dlg.panel.appendChild(footer);
     dlg.open();
+  }
+
+  // ---- src/ui/dialogs/dxf-pattern-picker-dialog.js ----
+// US-124 Phase 4 (ADR 0091, owner decision 3): the pre-placement pattern
+// picker. Opens from importDxfText when a DXF would place more lines than
+// DXF_TOTAL_OUTPUT_CAP (board performance, the one remaining hard stop).
+// Instead of "Import rejected", the TD sees one row per PLACEMENT INSTANCE —
+// a graded size, a piece — with its block name, ASTM annotation and line
+// count, unchecks rows until the total fits, and imports the rest. The
+// unit is the instance (not the pattern) because that is what both parsers
+// can skip identically (dxfClassifyPatterns `excludeInstances`), keeping the
+// board↔native piece pairing intact; instance 0 (direct ENTITIES) is one
+// all-or-nothing row, so a file with no INSERTs cannot be split here — the
+// dialog says so rather than pretending.
+//
+// Modelled on export-size-dialog.js (same buildDialog shell, same presets
+// shape: one button per size token, ADR 0084's after-the-last-underscore
+// rule). Source part for app.js. Run `npm run build` after editing.
+
+  function dxfPickerFormat(n) {
+    return Number(n || 0).toLocaleString('en-US');
+  }
+
+  function openDxfPatternPickerDialog(overCap, handlers) {
+    // The report may come from dxf-worker.js, which has no dxfMeasureSizeToken
+    // (Board code) — derive the ADR 0084 size token here when it is missing.
+    const rows = ((overCap && Array.isArray(overCap.instances)) ? overCap.instances : []).map(r => Object.assign({}, r, {
+      sizeToken: r.sizeToken || (r.blockName && typeof dxfMeasureSizeToken === 'function' ? dxfMeasureSizeToken(r.blockName) : null),
+    }));
+    const cap = overCap && overCap.cap ? overCap.cap : DXF_TOTAL_OUTPUT_CAP;
+    const already = new Set((handlers && handlers.alreadyExcluded) || []);
+    const dlg = buildDialog({
+      title: 'Too many lines to place at once',
+      sub: (handlers && handlers.fileName ? handlers.fileName + ' — ' : '')
+        + 'this DXF would place ' + dxfPickerFormat(overCap.total) + ' lines; the board holds ' + dxfPickerFormat(cap)
+        + '. Untick sizes or pieces until it fits, then import the rest.',
+    });
+    dlg.overlay.classList.add('dxf-pattern-picker');
+
+    const body = document.createElement('div');
+    body.className = 'dialog-body';
+    body.style.cssText = 'display:flex;flex-direction:column;gap:10px;min-width:520px;max-width:720px;';
+
+    const tokens = Array.from(new Set(rows.map(r => r.sizeToken).filter(Boolean)));
+    const boxByInstance = new Map();
+
+    if (tokens.length >= 2) {
+      const presets = document.createElement('div');
+      presets.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;align-items:center;';
+      const lab = document.createElement('span');
+      lab.style.cssText = 'font-size:12px;color:#444;margin-right:4px;';
+      lab.textContent = 'Keep only size:';
+      presets.appendChild(lab);
+      for (const token of tokens) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'picker-btn';
+        btn.textContent = token;
+        btn.addEventListener('click', () => {
+          for (const r of rows) boxByInstance.get(r.instance).checked = r.sizeToken === token;
+          updateFooter();
+        });
+        presets.appendChild(btn);
+      }
+      const all = document.createElement('button');
+      all.type = 'button';
+      all.className = 'picker-btn';
+      all.textContent = 'All';
+      all.addEventListener('click', () => { for (const r of rows) boxByInstance.get(r.instance).checked = true; updateFooter(); });
+      presets.appendChild(all);
+      body.appendChild(presets);
+    }
+
+    const list = document.createElement('div');
+    list.className = 'dxf-pattern-picker-list';
+    list.style.cssText = 'max-height:52vh;overflow:auto;border:1px solid #e2e8f0;border-radius:6px;';
+    for (const r of rows) {
+      const row = document.createElement('label');
+      row.className = 'dxf-pattern-picker-row';
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 10px;border-top:1px solid #f1f5f9;font-size:12px;cursor:pointer;';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = !already.has(r.instance);
+      box.dataset.instance = String(r.instance);
+      box.addEventListener('change', updateFooter);
+      boxByInstance.set(r.instance, box);
+      row.appendChild(box);
+      const name = document.createElement('span');
+      name.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      const title = r.blockName || (r.instance === 0 ? 'Direct entities (no block)' : 'Instance ' + r.instance);
+      const meta = [r.pieceName, r.size, r.quantity != null ? 'qty ' + r.quantity : null].filter(Boolean).join(' · ');
+      name.textContent = title + (meta ? '  —  ' + meta : '');
+      name.title = name.textContent;
+      row.appendChild(name);
+      const count = document.createElement('span');
+      count.style.cssText = 'flex:0 0 auto;color:#64748b;font-size:11px;';
+      count.textContent = r.patterns + (r.patterns === 1 ? ' pattern · ' : ' patterns · ') + dxfPickerFormat(r.lines) + ' lines';
+      row.appendChild(count);
+      list.appendChild(row);
+    }
+    body.appendChild(list);
+
+    if (rows.length === 1) {
+      const note = document.createElement('div');
+      note.style.cssText = 'font-size:11px;color:#b45309;';
+      note.textContent = rows[0].instance === 0
+        ? 'This file places all its geometry directly (no INSERT blocks), so it cannot be split by piece or size here. Reduce it in the CAD tool and re-export.'
+        : 'This file has a single placement instance that is itself over the limit. Reduce it in the CAD tool and re-export.';
+      body.appendChild(note);
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'picker-footer';
+    footer.style.cssText = 'display:flex;gap:8px;align-items:center;';
+    const summary = document.createElement('span');
+    summary.className = 'dxf-pattern-picker-summary';
+    summary.style.cssText = 'font-size:12px;flex:1;';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'picker-btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', () => { dlg.close(); if (handlers && handlers.onCancel) handlers.onCancel(); });
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.className = 'picker-btn picker-btn-primary dxf-pattern-picker-ok';
+    okBtn.textContent = 'Import selected';
+    okBtn.addEventListener('click', () => {
+      const excludeInstances = rows.filter(r => !boxByInstance.get(r.instance).checked).map(r => r.instance);
+      if (excludeInstances.length === rows.length) return;
+      dlg.close();
+      if (handlers && handlers.onConfirm) handlers.onConfirm(excludeInstances);
+    });
+    footer.appendChild(summary);
+    footer.appendChild(cancelBtn);
+    footer.appendChild(okBtn);
+
+    function updateFooter() {
+      let lines = 0, n = 0;
+      for (const r of rows) if (boxByInstance.get(r.instance).checked) { lines += r.lines; n += 1; }
+      const over = lines > cap;
+      summary.textContent = n + ' of ' + rows.length + ' selected · ' + dxfPickerFormat(lines) + ' of ' + dxfPickerFormat(cap) + ' lines'
+        + (over ? ' — still over the limit' : '');
+      summary.style.color = over ? '#dc2626' : '#166534';
+      okBtn.disabled = over || n === 0;
+    }
+    updateFooter();
+
+    dlg.panel.appendChild(body);
+    dlg.panel.appendChild(footer);
+    dlg.open();
+    return dlg;
   }
 
   // ---- src/ui/dialogs/grading-dialog.js ----
@@ -19243,8 +21418,36 @@ const BOM_MATERIAL_LIBRARY = [
     return order.map((gid, i) => {
       const g = byId.get(gid);
       const label = (state.templateGroupLabels && state.templateGroupLabels[gid]) || ('Piece ' + (i + 1));
-      return { groupId: gid, label, count: g.ids.length, ids: g.ids.slice() };
+      // US-124 Phase 3/4: what the DXF said about the piece and how it was
+      // classified — display only; null for Template placements.
+      const meta = (state.templateGroupMeta && state.templateGroupMeta[gid]) || null;
+      return { groupId: gid, label, count: g.ids.length, ids: g.ids.slice(), meta };
     });
+  }
+
+  // One-line summary under a row's label: the ASTM annotation, then the
+  // classification (outline / marks / dropped). Empty string when nothing is
+  // known (a Template group).
+  function patternPieceSubtitle(meta) {
+    if (!meta) return '';
+    const parts = [];
+    const ann = [meta.pieceName, meta.size, meta.quantity != null ? 'qty ' + meta.quantity : null].filter(Boolean).join(' · ');
+    if (ann) parts.push(ann);
+    if (meta.kind === 'legacy') {
+      parts.push('legacy grouping');
+    } else if (meta.classCounts) {
+      const c = meta.classCounts;
+      const bits = [];
+      if (c.boundary) bits.push('outline ' + c.boundary);
+      const internal = (c.internal || 0) + (c.sew || 0) + (c.cutout || 0);
+      if (internal) bits.push('internal ' + internal);
+      if (c.grain) bits.push('grain ' + c.grain);
+      if (meta.notchChains) bits.push('notch ' + meta.notchChains);
+      const dropped = (meta.dropped ? (meta.dropped.exact || 0) + (meta.dropped.qvTwin || 0) : 0);
+      if (dropped) bits.push('−' + dropped + ' dup');
+      if (bits.length) parts.push(bits.join(' · '));
+    }
+    return parts.join('  —  ');
   }
 
   function isPatternPiecesPanelOpen() {
@@ -19298,6 +21501,9 @@ const BOM_MATERIAL_LIBRARY = [
     if (state.templateGroupLabels) {
       for (const gid of kill) delete state.templateGroupLabels[gid];
     }
+    if (state.templateGroupMeta) {
+      for (const gid of kill) delete state.templateGroupMeta[gid];
+    }
     if (state.selection && state.selection.kind === 'annotation'
         && !state.annotations.some(a => a.id === state.selection.id)) {
       state.selection = { kind: null, id: null };
@@ -19327,10 +21533,20 @@ const BOM_MATERIAL_LIBRARY = [
   // Anchor Manager's live-refresh) — a checkbox's unchecked state lives only
   // in this render's own closure until Apply reads it, matching the shape of
   // a one-shot "review this list, then act" tool rather than a live view.
+  // Phase 3 (ADR 0091, owner decision 2): the "keep quality curves" import
+  // toggle lives in this panel because this is where a TD looks at what an
+  // import produced. It applies to the NEXT import (nothing can be added back
+  // to an already-placed pattern), and its label says so.
+  function syncPatternPiecesImportOptions() {
+    const box = document.getElementById('patternPiecesKeepQvChk');
+    if (box) box.checked = !!(state.dxfImportOptions && state.dxfImportOptions.keepQualityCurves);
+  }
+
   function renderPatternPiecesPanel() {
     const panel = el.patternPiecesPanel;
     const body = el.patternPiecesBody;
     if (!panel || !body) return;
+    syncPatternPiecesImportOptions();
     const groups = patternPieceGroups();
     if (!groups.length) { closePatternPiecesPanel(); return; }
     if (el.patternPiecesCount) {
@@ -19352,12 +21568,30 @@ const BOM_MATERIAL_LIBRARY = [
       });
       row.appendChild(box);
 
+      const labelWrap = document.createElement('div');
+      labelWrap.className = 'pattern-piece-label-wrap';
       const label = document.createElement('span');
       label.className = 'pattern-piece-label';
       label.textContent = g.label;
       label.title = g.label + ' — click to select on the board';
       label.addEventListener('click', (e) => { e.stopPropagation(); selectPatternPieceGroup(g.ids); });
-      row.appendChild(label);
+      labelWrap.appendChild(label);
+      if (g.meta && g.meta.orphan) {
+        const badge = document.createElement('span');
+        badge.className = 'pattern-piece-badge pattern-piece-badge-orphan';
+        badge.textContent = 'orphan';
+        badge.title = 'No outline in this block could claim these lines — check them before keeping';
+        label.appendChild(badge);
+      }
+      const subtitle = patternPieceSubtitle(g.meta);
+      if (subtitle) {
+        const sub = document.createElement('span');
+        sub.className = 'pattern-piece-sub';
+        sub.textContent = subtitle;
+        sub.title = subtitle;
+        labelWrap.appendChild(sub);
+      }
+      row.appendChild(labelWrap);
 
       const count = document.createElement('span');
       count.className = 'pattern-piece-count';
@@ -19404,6 +21638,17 @@ const BOM_MATERIAL_LIBRARY = [
       });
     }
     if (el.patternPiecesCloseBtn) el.patternPiecesCloseBtn.addEventListener('click', closePatternPiecesPanel);
+    const keepQv = document.getElementById('patternPiecesKeepQvChk');
+    if (keepQv) {
+      keepQv.addEventListener('change', () => {
+        if (!state.dxfImportOptions) state.dxfImportOptions = { keepQualityCurves: false };
+        state.dxfImportOptions.keepQualityCurves = !!keepQv.checked;
+        showToast(keepQv.checked
+          ? 'Next DXF import keeps ASTM quality-curve twins (layers 84/85/87).'
+          : 'Next DXF import drops ASTM quality-curve twins (default).');
+      });
+      syncPatternPiecesImportOptions();
+    }
     makeDraggablePanel(el.patternPiecesPanel, el.patternPiecesHead, '.anchor-panel-close');
   }
 
@@ -20406,7 +22651,7 @@ const BOM_MATERIAL_LIBRARY = [
     return dxfPatternGeometryFingerprint(source) === source.geometryFingerprint;
   }
 
-  function makeDxfPatternSource(text, fileName, bounds, transform, pieceFirstAnnotationIds, pieceAnnotationIds, groupIds) {
+  function makeDxfPatternSource(text, fileName, bounds, transform, pieceFirstAnnotationIds, pieceAnnotationIds, groupIds, importOptions) {
     const source = {
       version: DXF_PATTERN_SOURCE_VERSION,
       fileName: String(fileName || 'Imported DXF'),
@@ -20417,6 +22662,18 @@ const BOM_MATERIAL_LIBRARY = [
       pieceFirstAnnotationIds: (pieceFirstAnnotationIds || []).slice(),
       pieceAnnotationIds: (pieceAnnotationIds || []).map(ids => ids.slice()),
       groupIds: (groupIds || []).slice(),
+      // Phase 3 (ADR 0091): additive. The native rebuild must drop the same
+      // quality-curve twins the board import did; absent (older source) means
+      // the default, drop.
+      importOptions: {
+        keepQualityCurves: !!(importOptions && importOptions.keepQualityCurves),
+        // Phase 4: the placement instances the TD deselected in the
+        // pre-placement picker; the native rebuild must skip the same ones.
+        excludeInstances: (importOptions && Array.isArray(importOptions.excludeInstances)) ? importOptions.excludeInstances.slice() : [],
+      },
+      // Phase 6 (ADR 0091): which grouping built this board. Additive —
+      // sources saved before the field existed have none and mean 1.
+      pipelineVersion: (importOptions && importOptions.pipelineVersion === 1) ? 1 : DXF_PIPELINE_VERSION,
       geometryFingerprint: null,
     };
     source.geometryFingerprint = dxfPatternGeometryFingerprint(source);
@@ -20533,11 +22790,16 @@ const BOM_MATERIAL_LIBRARY = [
     if (!source || !source.text || dxfPatternFingerprint(source.text) !== source.fingerprint
         || !dxfPatternSourceIsCompatible(source)) return false;
     resetDxfMeasureSession();
+    // Phase 6: the rebuild parses with the SOURCE's own pipeline version (a
+    // pre-ADR-0091 project carries none → 1), so the native pieces pair with
+    // the saved board pieces by index instead of silently nulling every
+    // pieceAnchor.
     return !!startDxfMeasureSession(
       source.text,
       source.bounds,
       source.transform,
-      source.pieceFirstAnnotationIds
+      source.pieceFirstAnnotationIds,
+      Object.assign({}, source.importOptions || {}, { pipelineVersion: source.pipelineVersion === 2 ? 2 : 1 })
     );
   }
 
@@ -20608,6 +22870,9 @@ const BOM_MATERIAL_LIBRARY = [
       // gone — the panel would show a positional "Piece N" fallback for a
       // piece that still has a real name.
       templateGroupLabels: clone(state.templateGroupLabels || {}),
+      // US-124 Phase 3: same reasoning as the labels — undo of a removal
+      // must bring the piece's classification/annotation back with it.
+      templateGroupMeta: clone(state.templateGroupMeta || {}),
       // ADR 0071.
       notches: clone(state.notches || []),
       graphics: clone(state.graphics || []),
@@ -20696,6 +22961,8 @@ const BOM_MATERIAL_LIBRARY = [
     state.annotations.forEach(ensureCurveControls);
     state.templateGroupLabels = (snapshot.templateGroupLabels && typeof snapshot.templateGroupLabels === 'object')
       ? clone(snapshot.templateGroupLabels) : {};
+    state.templateGroupMeta = (snapshot.templateGroupMeta && typeof snapshot.templateGroupMeta === 'object')
+      ? clone(snapshot.templateGroupMeta) : {};
     state.notches = (snapshot.notches || []).map(normalizeNotch).filter(Boolean);
     state.graphics = normalizeBoardGraphics(snapshot.graphics || []);
     state.graphicEdit = null;
@@ -20813,6 +23080,9 @@ const BOM_MATERIAL_LIBRARY = [
         // ADR 0070: sparse groupId -> label map (DXF block names). Additive —
         // files saved before this existed have no key and default to {}.
         templateGroupLabels: clone(state.templateGroupLabels || {}),
+        // US-124 Phase 3: additive, sparse, same lifecycle as the labels.
+        templateGroupMeta: clone(state.templateGroupMeta || {}),
+        dxfImportOptions: { keepQualityCurves: !!(state.dxfImportOptions && state.dxfImportOptions.keepQualityCurves) },
         graphics: clone(state.graphics || []),
         images: state.images.map(img => ({
           id: img.id, dataURL: img.dataURL,
@@ -20997,14 +23267,18 @@ const BOM_MATERIAL_LIBRARY = [
     }
     const reader = new FileReader();
     reader.onload = () => {
-      const text = String(reader.result || '');
+      // Sniff on a lossy UTF-8 pass (JSON is always UTF-8); if it is a DXF,
+      // decode the SAME bytes properly — see decodeDxfBytes for why
+      // readAsText's silent U+FFFD replacement is not acceptable for a DXF.
+      const buffer = reader.result;
+      const lossy = new TextDecoder('utf-8').decode(new Uint8Array(buffer));
       let looksLikeJson = true;
-      try { JSON.parse(text); } catch (error) { looksLikeJson = false; }
+      try { JSON.parse(lossy); } catch (error) { looksLikeJson = false; }
       if (looksLikeJson) openProjectFileWithGuard(file);
-      else importDxfTextIntoBoard(text, file.name);
+      else importDxfTextIntoBoard(decodeDxfBytes(buffer).text, file.name);
     };
     reader.onerror = () => showToast('Could not read that file.', 4200);
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }
 
   function openProjectFileWithGuard(file) {
@@ -21084,11 +23358,15 @@ const BOM_MATERIAL_LIBRARY = [
     proceed();
   }
 
+  // Bytes, not readAsText (ADR 0091 follow-up): GBK block names from Chinese
+  // vendor exports collided after lossy UTF-8 decoding and made INSERTs draw
+  // the wrong block — decodeDxfBytes (src/manual/dxf-import.js) picks the
+  // charset from strict UTF-8 → $DWGCODEPAGE → GBK → windows-1252.
   function importDxfFileIntoBoard(file) {
     const reader = new FileReader();
-    reader.onload = () => importDxfTextIntoBoard(String(reader.result || ''), file.name);
+    reader.onload = () => importDxfTextIntoBoard(decodeDxfBytes(reader.result).text, file.name);
     reader.onerror = () => showToast('Could not read that file.', 4200);
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }
 
   function readAndLoadProjectFile(file) {
@@ -21125,6 +23403,10 @@ const BOM_MATERIAL_LIBRARY = [
       // ADR 0070: additive — a file saved before this existed has no key.
       state.templateGroupLabels = (s.templateGroupLabels && typeof s.templateGroupLabels === 'object')
         ? clone(s.templateGroupLabels) : {};
+      // US-124 Phase 3: additive — a file saved before this existed has no key.
+      state.templateGroupMeta = (s.templateGroupMeta && typeof s.templateGroupMeta === 'object')
+        ? clone(s.templateGroupMeta) : {};
+      state.dxfImportOptions = { keepQualityCurves: !!(s.dxfImportOptions && s.dxfImportOptions.keepQualityCurves) };
       // US-095 additive migration: pre-shape projects omit this key.
       state.graphics = normalizeBoardGraphics(s.graphics || []);
       state.graphicEdit = null;
@@ -27532,969 +29814,15 @@ function onWheel(e) {
   }
 
   // ---- src/manual/dxf-import.js ----
-// US-104: "Open DXF file" import in Sketch Focus.
-//
-// Parses a constrained, explicitly-planar subset of ASCII DXF (LINE, ARC,
-// CIRCLE, LWPOLYLINE, legacy POLYLINE+VERTEX+SEQEND) and places each
-// connected pattern piece as its own independently movable group of
-// `purpose: 'sketch-element'` annotations — never a Template, never a POM.
-// The full contract (entity scope, planarity gate, malformed-entity rules,
-// piece detection, placement formula, output caps) is
-// docs/stories/epics/E01-manual-mode/US-104-dxf-import.md; this file is the
-// authority for HOW those rules are implemented, not a restatement of WHY.
-//
-// Split deliberately into three layers so each is independently testable:
-//   1. parseDxfDocument(text)              — pure text -> pieces (local
-//      drawing space: DXF's own units, Y already flipped to screen-down).
-//   2. computeDxfPlacementTransform(...)    — pure bounds+viewport+zoom -> one
-//      shared scale/offset, DXF's own DXF_FIT_RATIO (round 11 — no longer
-//      createImageRecord's numbers; see the function's own comment).
-//   3. importDxfText(text, rect)            — orchestrates 1 + 2, builds real
-//      annotation objects, and performs the one board mutation.
-// Sibling file: the Tools-menu button / FileReader glue is
-// src/ui/dxf-import-panel.js.
-// Source part for app.js. Run `npm run build` after editing.
-
-  // ---- Text normalization + group-code tokenizing ---------------------------
-
-  const DXF_BINARY_SENTINEL = 'AutoCAD Binary DXF';
-  const DXF_PLANAR_EPS = 1e-6;
-  // Per-piece: NOT normalizeShapeStamp's Template-member cap (80) — a real
-  // digitized garment pattern piece traces its cutting curves as many short
-  // straight segments rather than arcs/bulges, and routinely exceeds 80 on
-  // its own. Verified against a real production file (demo/DXF file/
-  // 3380.dxf, 25 POLYLINE + 42 LINE entities): with no cap it resolves to 6
-  // real pieces sized [103, 149, 167, 263, 275, 295] segments — the 80 figure
-  // would have rejected every one of them.
-  //
-  // Revised 1000 -> 2500 (ADR 0068 Follow-Up): ADR 0068's INSERT->BLOCK
-  // resolution exposes far more real geometry per file than this cap was
-  // ever sized against. `demo/DXF file/dxf/1290. Flexcamo .dxf` (30 blocks,
-  // single size, real garment pieces) has a legitimate 1914-segment piece;
-  // `demo/DXF file/dxf/2892XL-new.dxf` (no blocks, just an unusually
-  // detailed direct-entity file) has real pieces up to 1886. 2500 clears
-  // both with headroom while staying well below the 3835-17182-segment
-  // "pieces" seen on `DM7549-LACE--STRIKE COST.dxf` /
-  // `SN0004-BRA0978--STRIKE COST VER D.dxf` / `SN1252-MFB253--BACK-STRIKE
-  // COST.dxf` — those are a DIFFERENT, deliberately NOT-fixed-here failure
-  // mode: a grading-nest file whose same-position, overlapping same-size
-  // blocks get fused into one merged blob by dxfMergeContainedComponents.
-  // A piece THIS large, saved as a Template later, still truncates at
-  // normalizeShapeStamp's own 80 — that pre-existing, unrelated limit is
-  // unchanged; see the Acceptance Criteria note below.
-  const DXF_PER_PIECE_CAP = 2500;
-  // Revised 40 -> 120 (ADR 0068 Follow-Up): the real file above needed only
-  // 6, but two other real files now resolvable via INSERT->BLOCK need more:
-  // `1290. Flexcamo .dxf` legitimately decomposes into 75 pieces (many tiny
-  // — notches/grainline marks that never touch the outline) and
-  // `SofyLift v.A 1.0_Pattern.dxf` into 96. 120 clears both with headroom.
-  const DXF_PIECE_COUNT_CAP = 120;
-  // Board-performance backstop. Revised 3000 -> 16000 (ADR 0068 Follow-Up):
-  // `2892XL-new.dxf` (24 real pieces, no blocks) totals 13894 segments with
-  // both caps above cleared; verified in a real headless-Chrome import that
-  // this renders, pans, and drags with no lag or corruption at that count
-  // (previously blocked at the old 3000 combined limit).
-  //
-  // Revised 16000 -> 20000 (ADR 0069): once the instance-boundary fix (see
-  // dxfConnectedComponents) correctly split `SN1252-MFB253--BACK-STRIKE
-  // COST.dxf`'s 28 blocks into 28 real, individually-small pieces (none
-  // near the per-piece cap), their real combined total came to 17182 —
-  // just over the old 16000. 20000 clears it with headroom. The
-  // instance-boundary check also makes this cap CHEAPER to reach than
-  // before: it short-circuits the O(n^2) connectivity scan for the vast
-  // majority of pairs (different placed instances), so a grading-nest
-  // file's real parse time dropped rather than rose (SN0004-BRA0978--
-  // STRIKE COST VER D.dxf: 4448ms -> 937ms measured before/after).
-  const DXF_TOTAL_OUTPUT_CAP = 20000;
-  // Round 11 (user-reported): a technical pattern has no "sits beside other
-  // photos" reason to stay small, and shrinking it packs more of a
-  // tessellated curve's points into the same screen distance — the opposite
-  // of what round 10's crowding fix wants. See computeDxfPlacementTransform
-  // for the full formula this feeds.
-  const DXF_FIT_RATIO = 0.85;
-
-  // BOM/CRLF/trailing-newline normalization has to happen BEFORE the
-  // even/odd group-code pairing check below, or an ordinary, well-formed
-  // file (one trailing newline, or authored on Windows) reads as corrupt:
-  // a lone trailing "\n" splits into one extra empty final line, making an
-  // otherwise-even line count odd.
-  function dxfNormalizeText(text) {
-    let s = String(text == null ? '' : text);
-    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
-    return s.replace(/\r\n?/g, '\n');
-  }
-
-  function dxfTokenizePairs(text) {
-    const lines = dxfNormalizeText(text).split('\n');
-    // Strip every trailing blank line, not just one — a file can end with
-    // more than one newline (an editor-added blank line, a re-save) and none
-    // of that is a corrupt group-code stream.
-    while (lines.length && lines[lines.length - 1] === '') lines.pop();
-    if (lines.length === 0 || lines.length % 2 !== 0) return null;
-    const pairs = [];
-    for (let i = 0; i < lines.length; i += 2) {
-      const code = Number(lines[i].trim());
-      if (!Number.isInteger(code)) return null;
-      pairs.push({ code, value: lines[i + 1] });
-    }
-    return pairs;
-  }
-
-  function dxfFirst(pairs, code) {
-    for (const p of pairs) if (p.code === code) return p.value;
-    return undefined;
-  }
-
-  function dxfNum(pairs, code) {
-    const raw = dxfFirst(pairs, code);
-    return raw === undefined ? undefined : Number(String(raw).trim());
-  }
-
-  // Same as dxfNum, but for a group that is OPTIONAL-with-a-DXF-default
-  // (thickness, elevation, extrusion). Absent -> the spec's default; PRESENT
-  // but unparsable -> NaN, deliberately, so the caller can flag it malformed
-  // rather than silently treating garbage as "0, so this must be flat."
-  function dxfOptNum(pairs, code, fallback) {
-    const raw = dxfFirst(pairs, code);
-    return raw === undefined ? fallback : Number(String(raw).trim());
-  }
-
-  function dxfExtrusion(pairs) {
-    const x = dxfOptNum(pairs, 210, 0);
-    const y = dxfOptNum(pairs, 220, 0);
-    const z = dxfOptNum(pairs, 230, 1);
-    return { x, y, z, finite: Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) };
-  }
-
-  function dxfPlanarOk(zValues, thickness, ext) {
-    for (const z of zValues) if (Math.abs(z) > DXF_PLANAR_EPS) return false;
-    if (Math.abs(thickness) > DXF_PLANAR_EPS) return false;
-    if (Math.abs(ext.x) > DXF_PLANAR_EPS || Math.abs(ext.y) > DXF_PLANAR_EPS
-      || Math.abs(ext.z - 1) > DXF_PLANAR_EPS) return false;
-    return true;
-  }
-
-  // ---- Section scoping + entity-record collection ----------------------------
-
-  // Groups the flat pair stream into per-entity records, restricted to the
-  // ENTITIES section only. POLYLINE swallows its own VERTEX children up to
-  // SEQEND — a POLYLINE with no SEQEND is a whole-file structural problem
-  // (its VERTEX children have no other way to know where they end), so it is
-  // reported as a scan error, not a skipped entity.
-  // Generalized so a BLOCK's own body (terminated by ENDBLK, not ENDSEC) can
-  // reuse the exact same entity/POLYLINE-vertex collection logic as the
-  // top-level ENTITIES section — see dxfCollectBlocksBody below. Delegating
-  // dxfCollectEntitiesBody to this keeps its own observable output
-  // byte-for-byte identical (same records shape, same error string).
-  function dxfCollectEntityRecordsUntil(pairs, startIdx, stopType, notFoundMessage) {
-    const records = [];
-    let idx = startIdx;
-    const n = pairs.length;
-    while (idx < n) {
-      const pair = pairs[idx];
-      if (pair.code === 0 && String(pair.value).trim() === stopType) {
-        return { records, nextIndex: idx };
-      }
-      if (pair.code !== 0) { idx += 1; continue; }
-      const type = String(pair.value).trim();
-      idx += 1;
-      const bodyPairs = [];
-      while (idx < n && pairs[idx].code !== 0) { bodyPairs.push(pairs[idx]); idx += 1; }
-      if (type === 'POLYLINE') {
-        const vertices = [];
-        let sawSeqend = false;
-        while (idx < n) {
-          const p = pairs[idx];
-          if (p.code === 0 && String(p.value).trim() === 'VERTEX') {
-            idx += 1;
-            const vPairs = [];
-            while (idx < n && pairs[idx].code !== 0) { vPairs.push(pairs[idx]); idx += 1; }
-            vertices.push(vPairs);
-            continue;
-          }
-          if (p.code === 0 && String(p.value).trim() === 'SEQEND') { idx += 1; sawSeqend = true; }
-          break;
-        }
-        if (!sawSeqend) return { error: 'a POLYLINE has no matching SEQEND' };
-        records.push({ type, pairs: bodyPairs, vertices });
-        continue;
-      }
-      records.push({ type, pairs: bodyPairs });
-    }
-    return { error: notFoundMessage };
-  }
-
-  function dxfCollectEntitiesBody(pairs, startIdx) {
-    return dxfCollectEntityRecordsUntil(pairs, startIdx, 'ENDSEC', 'the ENTITIES section has no matching ENDSEC');
-  }
-
-  // A named BLOCK definition's body is entities exactly like ENTITIES',
-  // terminated by ENDBLK instead of ENDSEC. Real garment-CAD DXF exports
-  // (Gerber/Lectra/Rich-style) put every pattern piece's actual geometry
-  // here, one block per piece, and merely reference it once via INSERT in
-  // ENTITIES — see dxfConvertInsertEntity below for why that reference must
-  // be resolved rather than treated as an unsupported entity type.
-  function dxfCollectBlocksBody(pairs, startIdx) {
-    const blocks = new Map();
-    let idx = startIdx;
-    const n = pairs.length;
-    while (idx < n) {
-      const pair = pairs[idx];
-      if (pair.code === 0 && String(pair.value).trim() === 'ENDSEC') return { blocks, nextIndex: idx };
-      if (pair.code === 0 && String(pair.value).trim() === 'BLOCK') {
-        idx += 1;
-        let name = null;
-        while (idx < n && pairs[idx].code !== 0) {
-          if (pairs[idx].code === 2 && name == null) name = String(pairs[idx].value).trim();
-          idx += 1;
-        }
-        if (name == null) return { error: 'a BLOCK has no name (group 2)' };
-        const body = dxfCollectEntityRecordsUntil(pairs, idx, 'ENDBLK', 'a BLOCK has no matching ENDBLK');
-        if (body.error) return { error: body.error };
-        idx = body.nextIndex;
-        if (idx >= n) return { error: 'a BLOCK has no matching ENDBLK' };
-        idx += 1; // step past the ENDBLK marker
-        while (idx < n && pairs[idx].code !== 0) idx += 1; // ENDBLK's own fields, if any
-        if (!blocks.has(name)) blocks.set(name, []);
-        blocks.get(name).push(...body.records);
-        continue;
-      }
-      idx += 1;
-    }
-    return { error: 'the BLOCKS section has no matching ENDSEC' };
-  }
-
-  function dxfScanSections(pairs) {
-    let idx = 0;
-    const n = pairs.length;
-    let sectionOpen = false;
-    let currentSection = null;
-    let sawEntities = false;
-    let sawBlocks = false;
-    const entityRecords = [];
-    const blocks = new Map();
-    while (idx < n) {
-      const pair = pairs[idx];
-      if (pair.code === 0 && String(pair.value).trim() === 'SECTION') {
-        if (sectionOpen) return { error: 'a SECTION opens before the previous one closed' };
-        sectionOpen = true;
-        idx += 1;
-        currentSection = (idx < n && pairs[idx].code === 2) ? String(pairs[idx].value).trim() : null;
-        if (currentSection != null) idx += 1;
-        if (currentSection === 'ENTITIES') {
-          if (sawEntities) return { error: 'more than one ENTITIES section' };
-          sawEntities = true;
-          const body = dxfCollectEntitiesBody(pairs, idx);
-          if (body.error) return { error: body.error };
-          entityRecords.push(...body.records);
-          idx = body.nextIndex;
-        } else if (currentSection === 'BLOCKS') {
-          if (sawBlocks) return { error: 'more than one BLOCKS section' };
-          sawBlocks = true;
-          const body = dxfCollectBlocksBody(pairs, idx);
-          if (body.error) return { error: body.error };
-          for (const [name, records] of body.blocks) {
-            if (!blocks.has(name)) blocks.set(name, []);
-            blocks.get(name).push(...records);
-          }
-          idx = body.nextIndex;
-        }
-        continue;
-      }
-      if (pair.code === 0 && String(pair.value).trim() === 'ENDSEC') {
-        if (!sectionOpen) return { error: 'an ENDSEC has no matching SECTION' };
-        sectionOpen = false;
-        currentSection = null;
-        idx += 1;
-        continue;
-      }
-      idx += 1;
-    }
-    if (sectionOpen) return { error: 'a SECTION has no matching ENDSEC' };
-    if (!sawEntities) return { error: 'no ENTITIES section' };
-    return { entityRecords, blocks };
-  }
-
-  // ---- Per-entity outcome helpers --------------------------------------------
-
-  function dxfOk(segments) { return { ok: true, segments }; }
-  function dxfSkip(bucket, reason) { return { ok: false, bucket, reason }; }
-  function dxfMalformed(reason) { return dxfSkip('malformed', reason); }
-  function dxfNonPlanar(reason) { return dxfSkip('nonPlanar', reason); }
-  function dxfUnsupportedType(reason) { return dxfSkip('unsupportedType', reason); }
-  function dxfUnsupportedFit(reason) { return dxfSkip('unsupportedFit', reason); }
-
-  // ---- Arc / bulge -> cubic Bézier geometry ----------------------------------
-  //
-  // One shared chunker for ARC, CIRCLE and a polyline bulge alike: given a
-  // center, radius, start angle and a SIGNED sweep (radians, CCW positive,
-  // magnitude < 2*PI), split into pieces no wider than 90 degrees and convert
-  // each with the standard tangent-based cubic approximation. All of this
-  // runs in native DXF (Y-up) coordinates; the caller flips Y on the
-  // resulting points afterward, uniformly, for every segment in the drawing.
-  // Bézier curves are affine-covariant, so negating Y on the four control
-  // points of an already-correct curve reproduces the curve's mirrored image
-  // exactly — there is no separate "flip the sweep sign" step to get wrong.
-  function dxfArcChunkToBezier(cx, cy, r, a0, a1) {
-    const theta = a1 - a0;
-    const alpha = (4 / 3) * Math.tan(theta / 4);
-    const p0 = { x: cx + r * Math.cos(a0), y: cy + r * Math.sin(a0) };
-    const p3 = { x: cx + r * Math.cos(a1), y: cy + r * Math.sin(a1) };
-    const c1 = { x: p0.x - alpha * r * Math.sin(a0), y: p0.y + alpha * r * Math.cos(a0) };
-    const c2 = { x: p3.x + alpha * r * Math.sin(a1), y: p3.y - alpha * r * Math.cos(a1) };
-    return { kind: 'curve', p0, c1, c2, p3 };
-  }
-
-  function dxfArcToBezierChunks(cx, cy, r, startAngle, sweep) {
-    const maxChunk = Math.PI / 2;
-    const count = Math.max(1, Math.ceil(Math.abs(sweep) / maxChunk - 1e-9));
-    const chunkSweep = sweep / count;
-    const chunks = [];
-    let a = startAngle;
-    for (let i = 0; i < count; i += 1) {
-      chunks.push(dxfArcChunkToBezier(cx, cy, r, a, a + chunkSweep));
-      a += chunkSweep;
-    }
-    return chunks;
-  }
-
-  // Bulge -> arc center/radius/angles, derived and numerically verified
-  // against the DXF spec's own definition (bulge = tan(sweep/4), positive =
-  // CCW from the vertex to the next one) rather than assumed: for a chord
-  // P1->P2 with unit direction u and left-normal v = (-u.y, u.x), the CCW
-  // sweep theta = 4*atan(bulge), radius r = d / (2*|sin(theta/2)|), and the
-  // signed offset from the chord midpoint to the center along v is
-  // h = sign(bulge) * r * cos(theta/2) — confirmed against the theta=180°
-  // case (h=0, center exactly on the midpoint) and against a theta=90° case
-  // solved by hand (center reproduces both P1 and P2 exactly under a CCW
-  // sweep of theta from the recovered start angle).
-  //
-  // US-105: split out of dxfBulgeToBezierChunks so the native-coordinate
-  // measurement kernel (src/manual/dxf-native-parser.js) can get the exact
-  // {center, radius, startAngle, sweep} an ARC entity would carry, without
-  // going through a Bézier-chunked approximation it does not need — arcs and
-  // bulges are already exactly circular, so the measurement kernel's arc
-  // length can stay analytic. Returns null for the same degenerate case
-  // dxfBulgeToBezierChunks used to return [] for.
-  function dxfBulgeToArcParams(p1, p2, bulge) {
-    const d = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-    if (!(d > 1e-9)) return null;
-    const theta = 4 * Math.atan(bulge);
-    const ux = (p2.x - p1.x) / d, uy = (p2.y - p1.y) / d;
-    const vx = -uy, vy = ux;
-    const r = d / (2 * Math.abs(Math.sin(theta / 2)));
-    const s = bulge < 0 ? -1 : 1;
-    const h = s * r * Math.cos(theta / 2);
-    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
-    const cx = mx + vx * h, cy = my + vy * h;
-    const a0 = Math.atan2(p1.y - cy, p1.x - cx);
-    return { cx, cy, r, a0, sweep: theta };
-  }
-
-  function dxfBulgeToBezierChunks(p1, p2, bulge) {
-    const params = dxfBulgeToArcParams(p1, p2, bulge);
-    if (!params) return [];
-    return dxfArcToBezierChunks(params.cx, params.cy, params.r, params.a0, params.sweep);
-  }
-
-  // ---- Per-entity converters --------------------------------------------------
-
-  function convertDxfLineEntity(rec) {
-    const x1 = dxfNum(rec.pairs, 10), y1 = dxfNum(rec.pairs, 20);
-    const x2 = dxfNum(rec.pairs, 11), y2 = dxfNum(rec.pairs, 21);
-    if ([x1, y1, x2, y2].some(v => v === undefined)) return dxfMalformed('LINE missing 10/20 or 11/21');
-    if (![x1, y1, x2, y2].every(Number.isFinite)) return dxfMalformed('LINE has a non-finite coordinate');
-    const z1 = dxfOptNum(rec.pairs, 30, 0), z2 = dxfOptNum(rec.pairs, 31, 0);
-    const thickness = dxfOptNum(rec.pairs, 39, 0);
-    const ext = dxfExtrusion(rec.pairs);
-    if (!Number.isFinite(z1) || !Number.isFinite(z2) || !Number.isFinite(thickness) || !ext.finite) {
-      return dxfMalformed('LINE has a non-finite planarity field');
-    }
-    if (!dxfPlanarOk([z1, z2], thickness, ext)) return dxfNonPlanar('LINE is not flat');
-    return dxfOk([{ kind: 'straight', a: { x: x1, y: y1 }, b: { x: x2, y: y2 } }]);
-  }
-
-  function convertDxfArcEntity(rec) {
-    const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
-    const r = dxfNum(rec.pairs, 40);
-    const a0Deg = dxfNum(rec.pairs, 50), a1Deg = dxfNum(rec.pairs, 51);
-    if ([cx, cy, r, a0Deg, a1Deg].some(v => v === undefined)) return dxfMalformed('ARC missing 10/20/40/50/51');
-    if (![cx, cy, r, a0Deg, a1Deg].every(Number.isFinite)) return dxfMalformed('ARC has a non-finite value');
-    if (!(r > 0)) return dxfMalformed('ARC radius <= 0');
-    const z = dxfOptNum(rec.pairs, 30, 0);
-    const thickness = dxfOptNum(rec.pairs, 39, 0);
-    const ext = dxfExtrusion(rec.pairs);
-    if (!Number.isFinite(z) || !Number.isFinite(thickness) || !ext.finite) {
-      return dxfMalformed('ARC has a non-finite planarity field');
-    }
-    if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('ARC is not flat');
-    // Always CCW from start to end per the DXF spec — this handles a
-    // 350deg -> 10deg wraparound as a 20deg sweep, not a naive -340deg.
-    const sweepDeg = ((a1Deg - a0Deg) % 360 + 360) % 360;
-    if (!(sweepDeg > 1e-9)) return dxfMalformed('ARC has zero sweep');
-    const sweepRad = sweepDeg * Math.PI / 180;
-    const startRad = a0Deg * Math.PI / 180;
-    return dxfOk(dxfArcToBezierChunks(cx, cy, r, startRad, sweepRad));
-  }
-
-  function convertDxfCircleEntity(rec) {
-    const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
-    const r = dxfNum(rec.pairs, 40);
-    if ([cx, cy, r].some(v => v === undefined)) return dxfMalformed('CIRCLE missing 10/20/40');
-    if (![cx, cy, r].every(Number.isFinite)) return dxfMalformed('CIRCLE has a non-finite value');
-    if (!(r > 0)) return dxfMalformed('CIRCLE radius <= 0');
-    const z = dxfOptNum(rec.pairs, 30, 0);
-    const thickness = dxfOptNum(rec.pairs, 39, 0);
-    const ext = dxfExtrusion(rec.pairs);
-    if (!Number.isFinite(z) || !Number.isFinite(thickness) || !ext.finite) {
-      return dxfMalformed('CIRCLE has a non-finite planarity field');
-    }
-    if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('CIRCLE is not flat');
-    // Always exactly four 90-degree quadrants, per the product contract —
-    // not "chunked to <=90", a fixed four, so every CIRCLE outputs the same
-    // shape regardless of an arbitrary starting angle.
-    const chunks = [];
-    for (let i = 0; i < 4; i += 1) chunks.push(dxfArcChunkToBezier(cx, cy, r, i * (Math.PI / 2), (i + 1) * (Math.PI / 2)));
-    return dxfOk(chunks);
-  }
-
-  function dxfParseLwpolylineVertices(pairs) {
-    const vertices = [];
-    let current = null;
-    for (const p of pairs) {
-      if (p.code === 10) {
-        current = { x: Number(String(p.value).trim()), y: undefined, bulge: 0 };
-        vertices.push(current);
-      } else if (p.code === 20 && current) {
-        current.y = Number(String(p.value).trim());
-      } else if (p.code === 42 && current) {
-        current.bulge = Number(String(p.value).trim());
-      }
-    }
-    return vertices;
-  }
-
-  function dxfPolylineVerticesToSegments(vertices, closed) {
-    const segs = [];
-    const n = vertices.length;
-    const last = closed ? n : n - 1;
-    for (let i = 0; i < last; i += 1) {
-      const a = vertices[i];
-      const b = vertices[(i + 1) % n];
-      if (a.bulge) segs.push(...dxfBulgeToBezierChunks(a, b, a.bulge));
-      else segs.push({ kind: 'straight', a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } });
-    }
-    return segs;
-  }
-
-  function convertDxfLwpolylineEntity(rec) {
-    const declaredRaw = dxfFirst(rec.pairs, 90);
-    if (declaredRaw === undefined) return dxfMalformed('LWPOLYLINE missing group 90 vertex count');
-    const declared = Number(String(declaredRaw).trim());
-    if (!Number.isFinite(declared)) return dxfMalformed('LWPOLYLINE group 90 is not a finite number');
-    const flags = dxfOptNum(rec.pairs, 70, 0);
-    if (!Number.isFinite(flags)) return dxfMalformed('LWPOLYLINE has a non-finite flag value');
-    const vertices = dxfParseLwpolylineVertices(rec.pairs);
-    if (declared !== vertices.length) return dxfMalformed('LWPOLYLINE group-90 count does not match its vertex pairs');
-    if (vertices.length < 2) return dxfMalformed('LWPOLYLINE has fewer than 2 vertices');
-    for (const v of vertices) {
-      if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.bulge)) {
-        return dxfMalformed('LWPOLYLINE has a non-finite vertex or bulge value');
-      }
-    }
-    const elevation = dxfOptNum(rec.pairs, 38, 0);
-    const thickness = dxfOptNum(rec.pairs, 39, 0);
-    const ext = dxfExtrusion(rec.pairs);
-    if (!Number.isFinite(elevation) || !Number.isFinite(thickness) || !ext.finite) {
-      return dxfMalformed('LWPOLYLINE has a non-finite planarity field');
-    }
-    if (!dxfPlanarOk([elevation], thickness, ext)) return dxfNonPlanar('LWPOLYLINE is not flat');
-    const closed = (Math.trunc(flags) & 1) === 1;
-    return dxfOk(dxfPolylineVerticesToSegments(vertices, closed));
-  }
-
-  function convertDxfPolylineEntity(rec) {
-    const flagsRaw = dxfOptNum(rec.pairs, 70, 0);
-    if (!Number.isFinite(flagsRaw)) return dxfMalformed('POLYLINE has a non-finite flag value');
-    const flags = Math.trunc(flagsRaw);
-    if ((flags & 2) || (flags & 4)) return dxfUnsupportedFit('POLYLINE has the curve-fit or spline-fit flag set');
-    if ((flags & 8) || (flags & 16) || (flags & 64)) return dxfNonPlanar('POLYLINE is 3D/mesh (flag bit 3, 4, or 6)');
-    const closed = (flags & 1) === 1;
-    const headerZ = dxfOptNum(rec.pairs, 30, 0);
-    const thickness = dxfOptNum(rec.pairs, 39, 0);
-    const ext = dxfExtrusion(rec.pairs);
-    if (!Number.isFinite(headerZ) || !Number.isFinite(thickness) || !ext.finite) {
-      return dxfMalformed('POLYLINE has a non-finite planarity field');
-    }
-    const rawVertices = Array.isArray(rec.vertices) ? rec.vertices : [];
-    if (rawVertices.length < 2) return dxfMalformed('POLYLINE has fewer than 2 vertices');
-    const vertices = [];
-    for (const vPairs of rawVertices) {
-      const x = dxfNum(vPairs, 10), y = dxfNum(vPairs, 20);
-      if (x === undefined || y === undefined) return dxfMalformed('POLYLINE VERTEX missing 10/20');
-      const z = dxfOptNum(vPairs, 30, 0);
-      const bulge = dxfOptNum(vPairs, 42, 0);
-      if (![x, y, z, bulge].every(Number.isFinite)) return dxfMalformed('POLYLINE VERTEX has a non-finite value');
-      vertices.push({ x, y, z, bulge });
-    }
-    if (!dxfPlanarOk([headerZ, ...vertices.map(v => v.z)], thickness, ext)) return dxfNonPlanar('POLYLINE is not flat');
-    return dxfOk(dxfPolylineVerticesToSegments(vertices, closed));
-  }
-
-  function convertDxfEntity(rec) {
-    switch (rec.type) {
-      case 'LINE': return convertDxfLineEntity(rec);
-      case 'ARC': return convertDxfArcEntity(rec);
-      case 'CIRCLE': return convertDxfCircleEntity(rec);
-      case 'LWPOLYLINE': return convertDxfLwpolylineEntity(rec);
-      case 'POLYLINE': return convertDxfPolylineEntity(rec);
-      default: return dxfUnsupportedType('entity type "' + rec.type + '" is not supported');
-    }
-  }
-
-  // ---- INSERT -> BLOCK resolution ---------------------------------------------
-  //
-  // Real garment-CAD DXF exports (Gerber/Lectra/Rich-style) are the dominant
-  // real-world shape this importer sees: every pattern piece's actual
-  // LINE/POLYLINE geometry sits inside a named BLOCKS definition, and
-  // ENTITIES only carries one INSERT per piece referencing it (see 2026-08-31
-  // audit in docs/decisions/0067-dxf-grading-nest-import.md). Left
-  // unresolved, a file built this way has ZERO directly-supported entities
-  // and is rejected outright ("no supported entities were found") even
-  // though it is a completely ordinary, valid pattern file — this is the bug
-  // being fixed here. Deliberately scoped to a plain instance placement
-  // (translate + uniform scale + rotation, bounded recursive nesting): a
-  // non-uniform scale or MINSERT array is rejected with a stated reason
-  // rather than silently producing distorted or duplicated geometry, since
-  // no real sample file needs either.
-  const DXF_INSERT_MAX_DEPTH = 8; // generous bound against a circular BLOCK/INSERT reference; no real file needs more than 1-2 levels
-
-  function dxfInsertParams(rec) {
-    const blockNameRaw = dxfFirst(rec.pairs, 2);
-    return {
-      blockName: blockNameRaw == null ? null : String(blockNameRaw).trim(),
-      ix: dxfOptNum(rec.pairs, 10, 0),
-      iy: dxfOptNum(rec.pairs, 20, 0),
-      sx: dxfOptNum(rec.pairs, 41, 1),
-      sy: dxfOptNum(rec.pairs, 42, 1),
-      angleRad: dxfOptNum(rec.pairs, 50, 0) * Math.PI / 180,
-      colCount: dxfOptNum(rec.pairs, 70, 1),
-      rowCount: dxfOptNum(rec.pairs, 71, 1),
-    };
-  }
-
-  // Scale about the block-local origin, then rotate, then translate to the
-  // insertion point — the standard DXF INSERT transform order. Affine, so it
-  // maps a straight segment's endpoints or a curve's Bézier control points
-  // exactly, including a mirrored (negative-scale) instance of the block.
-  function dxfInsertTransformPoint(p, ins) {
-    const sx = p.x * ins.sx, sy = p.y * ins.sy;
-    const cos = Math.cos(ins.angleRad), sin = Math.sin(ins.angleRad);
-    return { x: ins.ix + sx * cos - sy * sin, y: ins.iy + sx * sin + sy * cos };
-  }
-
-  function dxfApplyInsertTransformToSegment(seg, ins) {
-    return seg.kind === 'straight'
-      ? { kind: 'straight', a: dxfInsertTransformPoint(seg.a, ins), b: dxfInsertTransformPoint(seg.b, ins) }
-      : {
-        kind: 'curve',
-        p0: dxfInsertTransformPoint(seg.p0, ins), c1: dxfInsertTransformPoint(seg.c1, ins),
-        c2: dxfInsertTransformPoint(seg.c2, ins), p3: dxfInsertTransformPoint(seg.p3, ins),
-      };
-  }
-
-  // `buckets` is shared mutable state the caller also increments into — a
-  // block's own unsupported/malformed children (e.g. TEXT alongside LINE)
-  // are counted here as they're found, so one bucket total covers both
-  // directly-placed and block-resolved entities uniformly. `instance`
-  // (ADR 0069) is opaque here — always the SAME value this call's own
-  // caller was given, propagated unchanged to every child so a piece
-  // assembled from nested INSERTs still shares one instance boundary; see
-  // dxfConnectedComponents/dxfMergeContainedComponents for what it's for.
-  function dxfConvertInsertEntity(rec, blocks, depth, buckets, instance) {
-    const p = dxfInsertParams(rec);
-    if (p.blockName == null) return dxfMalformed('INSERT missing block name (group 2)');
-    if (![p.ix, p.iy, p.sx, p.sy, p.angleRad].every(Number.isFinite)) return dxfMalformed('INSERT has a non-finite placement field');
-    if (Math.abs(p.sx) < 1e-9 || Math.abs(p.sy) < 1e-9) return dxfMalformed('INSERT has a zero scale factor');
-    if (Math.abs(Math.abs(p.sx) - Math.abs(p.sy)) > 1e-6) {
-      return dxfUnsupportedType('INSERT has non-uniform scale (X and Y scale differ), not supported');
-    }
-    if ((p.colCount && p.colCount !== 1) || (p.rowCount && p.rowCount !== 1)) {
-      return dxfUnsupportedType('INSERT is a rectangular array (MINSERT), not supported');
-    }
-    const blockRecords = blocks.get(p.blockName);
-    if (!blockRecords) return dxfMalformed('INSERT references an undefined block "' + p.blockName + '"');
-    if (depth >= DXF_INSERT_MAX_DEPTH) return dxfMalformed('INSERT nesting is too deep (possible circular BLOCK reference)');
-    const segments = [];
-    for (const childRec of blockRecords) {
-      const result = dxfConvertEntityResolvingBlocks(childRec, blocks, depth + 1, buckets, instance);
-      if (!result.ok) { buckets[result.bucket] += 1; continue; }
-      segments.push(...result.segments);
-    }
-    if (!segments.length) return dxfMalformed('INSERT\'s block "' + p.blockName + '" has no supported geometry');
-    return dxfOk(segments.map(seg => dxfApplyInsertTransformToSegment(seg, p)));
-  }
-
-  // Stamps every accepted segment with its placement `instance` (ADR 0069)
-  // regardless of which branch produced it — the one place this needs to
-  // happen, since dxfConvertInsertEntity's own return (after
-  // dxfApplyInsertTransformToSegment rebuilds fresh segment objects) would
-  // otherwise lose it.
-  function dxfConvertEntityResolvingBlocks(rec, blocks, depth, buckets, instance) {
-    const result = rec.type === 'INSERT'
-      ? dxfConvertInsertEntity(rec, blocks, depth, buckets, instance)
-      : convertDxfEntity(rec);
-    if (!result.ok) return result;
-    return { ok: true, segments: result.segments.map(seg => Object.assign({}, seg, { instance })) };
-  }
-
-  // ---- Y-flip (DXF Y-up -> board Y-down) -------------------------------------
-
-  function dxfFlipPointY(p) { return { x: p.x, y: -p.y }; }
-
-  // ADR 0069: preserves `instance` (set by dxfConvertEntityResolvingBlocks,
-  // read by dxfConnectedComponents/dxfMergeContainedComponents) — dropping
-  // it here would silently turn every segment's instance to `undefined`
-  // before piece detection ever runs, making the whole instance-boundary
-  // rule a no-op. Caught by this exact regression during development: the
-  // fix initially had zero effect on any real file until this was found.
-  function dxfFlipSegmentY(seg) {
-    return seg.kind === 'straight'
-      ? { kind: 'straight', a: dxfFlipPointY(seg.a), b: dxfFlipPointY(seg.b), instance: seg.instance }
-      : { kind: 'curve', p0: dxfFlipPointY(seg.p0), c1: dxfFlipPointY(seg.c1), c2: dxfFlipPointY(seg.c2), p3: dxfFlipPointY(seg.p3), instance: seg.instance };
-  }
-
-  // US-105: a point at native arc parameter t in [0,1] — center + radius at
-  // (startAngle + sweep*t). Shared by the native measurement kernel and, here,
-  // by dxfSegmentEndpoints/dxfSegmentPoints below so an 'arc'-kind segment
-  // (the native, non-Bézier representation the measurement parser emits) can
-  // reuse the existing piece-detection primitives (dxfConnectedComponents,
-  // dxfMergeContainedComponents, dxfBoundsOfSegments) unchanged. Never called
-  // by parseDxfDocument's own pipeline, which only ever produces 'straight'/
-  // 'curve' segments — this is purely additive.
-  function dxfPointOnArcSegment(seg, t) {
-    const a = seg.startAngle + seg.sweep * t;
-    return { x: seg.center.x + seg.radius * Math.cos(a), y: seg.center.y + seg.radius * Math.sin(a) };
-  }
-
-  function dxfSegmentEndpoints(seg) {
-    if (seg.kind === 'straight') return [seg.a, seg.b];
-    if (seg.kind === 'arc') return [dxfPointOnArcSegment(seg, 0), dxfPointOnArcSegment(seg, 1)];
-    return [seg.p0, seg.p3];
-  }
-
-  // Every point that defines the segment's painted extent, handles included
-  // — mirrors shapeStampGeometryPoints's reasoning: a curve's bulge can sit
-  // outside the a/b chord, so a bounds box built from endpoints alone can
-  // clip or under-fit it. For 'arc' (US-105), the two corners of the full
-  // circle's own bounding box are a deliberate, always-safe over-approximation
-  // — cheaper than computing the arc's true axis-aligned extent and never
-  // under-fits it, which is all dxfConnectedComponents/dxfMergeContainedComponents
-  // need this for (an endpoint-touch tolerance and a containment test, neither
-  // of which requires a pixel-exact box).
-  function dxfSegmentPoints(seg) {
-    if (seg.kind === 'straight') return [seg.a, seg.b];
-    if (seg.kind === 'arc') {
-      return [
-        { x: seg.center.x - seg.radius, y: seg.center.y - seg.radius },
-        { x: seg.center.x + seg.radius, y: seg.center.y + seg.radius },
-      ];
-    }
-    return [seg.p0, seg.c1, seg.c2, seg.p3];
-  }
-
-  function dxfBoundsOfPoints(points) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of points) {
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
-    }
-    if (!Number.isFinite(minX)) return { x: 0, y: 0, width: 0, height: 0 };
-    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-  }
-
-  function dxfBoundsOfSegments(segments) {
-    return dxfBoundsOfPoints(segments.flatMap(dxfSegmentPoints));
-  }
-
-  // ---- Piece detection: connected components, then containment merge --------
-
-  function dxfUnionFind(n) {
-    const parent = Array.from({ length: n }, (_, i) => i);
-    function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
-    function union(a, b) { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
-    return { find, union };
-  }
-
-  // A relative tolerance (fraction of the whole drawing's diagonal), not an
-  // absolute one — a DXF can be authored at any unit scale (mm, m, unitless)
-  // and an absolute pixel-ish tolerance would either miss real joins on a
-  // huge drawing or over-merge on a tiny one.
-  //
-  // ADR 0069: never union two segments from a DIFFERENT placed `instance`
-  // (see dxfInstanceForEntity below) even if they geometrically touch or
-  // nest. A grading-nest DXF places every size/piece as its own INSERT, all
-  // at the SAME (usually identity) transform, so different sizes' outlines
-  // routinely touch or cross within this relative tolerance — measured on
-  // real files (SN0004-BRA0978--STRIKE COST VER D.dxf) a single raw
-  // component ballooned to 2180 segments this way, several real sizes
-  // fused into one. `instance` is `0` for every entity placed directly in
-  // ENTITIES (matches this function's pre-existing behavior exactly — a
-  // real multi-entity piece like 3380.dxf's is built from many direct
-  // LINE/POLYLINE entities that must still freely connect) and a distinct
-  // id per top-level INSERT (nested INSERTs inherit their parent's id, so
-  // a piece assembled from nested reusable sub-blocks still connects as
-  // one). Segments the native measurement parser (dxf-native-parser.js)
-  // produces never set `instance` at all (`undefined`), so this guard is a
-  // no-op there — untouched per ADR 0068's decision to scope block
-  // resolution to board import only.
-  function dxfConnectedComponents(segments) {
-    const endpoints = segments.map(dxfSegmentEndpoints);
-    const allPts = endpoints.flat();
-    const bbox = dxfBoundsOfPoints(allPts);
-    const diag = Math.hypot(bbox.width, bbox.height) || 1;
-    const tol = 0.0001 * diag;
-    const uf = dxfUnionFind(segments.length);
-    for (let i = 0; i < segments.length; i += 1) {
-      for (let j = i + 1; j < segments.length; j += 1) {
-        if (segments[i].instance !== segments[j].instance) continue;
-        let touch = false;
-        for (const p of endpoints[i]) {
-          for (const q of endpoints[j]) if (distance(p, q) <= tol) { touch = true; break; }
-          if (touch) break;
-        }
-        if (touch) uf.union(i, j);
-      }
-    }
-    const groups = new Map();
-    for (let i = 0; i < segments.length; i += 1) {
-      const root = uf.find(i);
-      if (!groups.has(root)) groups.set(root, []);
-      groups.get(root).push(i);
-    }
-    return Array.from(groups.values()).map(segIdxs => ({
-      segIdxs,
-      bounds: dxfBoundsOfPoints(segIdxs.flatMap(i => dxfSegmentPoints(segments[i]))),
-      // Every member's instance is identical by construction (the union
-      // loop above never crosses instances), so any member's value is the
-      // whole component's value.
-      instance: segments[segIdxs[0]].instance,
-    }));
-  }
-
-  // A drill hole, grainline, or other internal mark never touches its
-  // panel's outline, so connectivity alone would split a real pattern piece
-  // into several. Fully-contained components merge into the smallest
-  // containing one; a merely-overlapping pair (not fully contained either
-  // way) is deliberately left as two separate pieces, so two genuinely
-  // different pieces whose boxes happen to graze never get wrongly fused.
-  // Bounding-box containment, not point-in-polygon — a mark in the "cutout"
-  // of a concave outline could be merged incorrectly; accepted for v1.
-  function dxfMergeContainedComponents(components) {
-    const n = components.length;
-    const uf = dxfUnionFind(n);
-    const contains = (outer, inner) => (
-      inner.x >= outer.x - 1e-9 && inner.y >= outer.y - 1e-9
-      && inner.x + inner.width <= outer.x + outer.width + 1e-9
-      && inner.y + inner.height <= outer.y + outer.height + 1e-9
-    );
-    for (let i = 0; i < n; i += 1) {
-      let bestJ = -1, bestArea = Infinity;
-      for (let j = 0; j < n; j += 1) {
-        if (i === j) continue;
-        // ADR 0069: same instance-boundary rule as dxfConnectedComponents
-        // above — a bounding-box nesting alone is not enough evidence two
-        // components are "outline + internal mark," and area-ratio
-        // thresholds were tried and rejected (measured, real: a legitimate
-        // lining piece in 2927.dxf nests at 68.67% area ratio, well inside
-        // the range grading-nest false merges occupy in other real files —
-        // no threshold separates the two cases reliably). Placement
-        // instance does: real drill holes/grainlines are always defined
-        // INSIDE the same block/placement as their outline, never as a
-        // separate INSERT.
-        if (components[i].instance !== components[j].instance) continue;
-        if (!contains(components[j].bounds, components[i].bounds)) continue;
-        const area = components[j].bounds.width * components[j].bounds.height;
-        if (area < bestArea) { bestArea = area; bestJ = j; }
-      }
-      if (bestJ !== -1) uf.union(i, bestJ);
-    }
-    const groups = new Map();
-    for (let i = 0; i < n; i += 1) {
-      const root = uf.find(i);
-      if (!groups.has(root)) groups.set(root, []);
-      groups.get(root).push(...components[i].segIdxs);
-    }
-    return Array.from(groups.values());
-  }
-
-  // segments -> array of pieces, each an array of segments (still in local
-  // drawing space — no viewport transform applied yet).
-  function dxfBuildPieces(segments) {
-    const components = dxfConnectedComponents(segments);
-    const pieceSegIdxLists = dxfMergeContainedComponents(components);
-    return pieceSegIdxLists.map(idxs => idxs.map(i => segments[i]));
-  }
-
-  // ---- Placement transform ----------------------------------------------------
-
-  // Round 11 (user-reported, then a follow-up review caught a real bug in
-  // the first fix): this used to reuse createImageRecord's own
-  // first-image-on-empty-board numbers verbatim (42%/180px floor) — sized
-  // for a photo that might sit beside other photos, needlessly small for a
-  // technical pattern that has no such neighbor and benefits from filling
-  // most of the canvas (it also packs more of a tessellated curve's points
-  // into the same screen distance, working against round 10's crowding
-  // fix). DXF placement now has its own, larger DXF_FIT_RATIO and NO floor
-  // — a "fit" that can force overflow at a tiny viewport (the old 180px
-  // floor did exactly that) isn't a fit, and with an 85% ratio a floor is
-  // already nearly always moot for a real viewport.
-  //
-  // `rect` is SCREEN-space (`getViewportRect()`, CSS pixels) but this
-  // function's output (`outputWidth`/`outputHeight`/`originX`/`originY`) is
-  // WORLD-space — the coordinate system annotations are stored in, which the
-  // render loop then multiplies by `state.zoom` to get screen pixels. "Fit
-  // to N% of the viewport" is therefore only true at zoom 1 unless the
-  // current zoom is divided back out here: at zoom 2, an output sized for
-  // 85% of a 1000px-wide viewport (850 world-px) would render at 1700
-  // screen-px and overflow. Dividing the whole `rect * ratio` term by `zoom`
-  // keeps `outputWidth * zoom` constant across any zoom the board happens to
-  // be at when the import runs (verified in dxf-import-check.mjs at
-  // 0.5x/1x/2x) — `zoom` defaults to 1 so existing callers (and the pure
-  // debug-API test entry point) that don't pass it are unaffected.
-  //
-  // Unlike a raster image, DXF vector data has no native pixel resolution to
-  // cap upscaling against, so there is no `Math.min(scale, 1)` "never
-  // upscale" clause either — that remains an image-only concern.
-  //
-  // `centerWorld` is optional (tests pass one to get deterministic numbers
-  // without a live pan/zoom); the real call site omits it and gets the
-  // live `screenToWorld` result.
-  function computeDxfPlacementTransform(bounds, rect, centerWorld, zoom) {
-    const w = Math.max(bounds.width, 1e-9);
-    const h = Math.max(bounds.height, 1e-9);
-    const z = Math.max(0.0001, zoom || 1);
-    const maxW = (rect.width * DXF_FIT_RATIO) / z;
-    const maxH = (rect.height * DXF_FIT_RATIO) / z;
-    const scale = Math.min(maxW / w, maxH / h);
-    const outputWidth = w * scale;
-    const outputHeight = h * scale;
-    const center = centerWorld || screenToWorld(rect.width / 2, rect.height / 2);
-    return {
-      scale,
-      originX: center.x - outputWidth / 2,
-      originY: center.y - outputHeight / 2,
-      outputWidth,
-      outputHeight,
-    };
-  }
-
-  function applyDxfTransform(p, bounds, transform) {
-    return {
-      x: transform.originX + (p.x - bounds.x) * transform.scale,
-      y: transform.originY + (p.y - bounds.y) * transform.scale,
-    };
-  }
-
-  // US-105: the missing inverse of applyDxfTransform — no board/world point
-  // has ever needed to map BACK to the local (already-Y-flipped) drawing
-  // space this transform's `bounds`/`transform` were computed against, until
-  // Pattern Measure needs to turn a pointer click into "which native DXF
-  // coordinate is under the cursor." Exact algebraic inverse of the affine
-  // fit above; `transform.scale` is always > 0 for a real drawing (computed
-  // from a non-degenerate bounds by computeDxfPlacementTransform), so no
-  // separate degenerate-scale guard is needed here beyond the caller already
-  // requiring a live measure session (which implies a successful prior parse).
-  function invertDxfPlacementTransform(p, bounds, transform) {
-    return {
-      x: bounds.x + (p.x - transform.originX) / transform.scale,
-      y: bounds.y + (p.y - transform.originY) / transform.scale,
-    };
-  }
-
-  // ---- Document-level parse (pure; no state/DOM) -----------------------------
-
-  // text -> { ok, pieces, buckets, ... } | { ok:false, atomic:true, reason,
-  // message, buckets }. `pieces` (when ok) is an array of per-piece segment
-  // arrays in LOCAL drawing space (already Y-flipped), each already under
-  // the per-piece cap and the whole set already under the piece-count and
-  // total-output caps — the only work left for the caller is the viewport
-  // transform and building real annotation objects.
-  function parseDxfDocument(text) {
-    const normalized = dxfNormalizeText(text);
-    if (normalized.slice(0, DXF_BINARY_SENTINEL.length) === DXF_BINARY_SENTINEL) {
-      return {
-        ok: false, atomic: true, reason: 'binary',
-        message: 'This looks like a binary DXF file. Re-export as ASCII DXF and try again.',
-      };
-    }
-    const pairs = dxfTokenizePairs(normalized);
-    if (!pairs) {
-      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file.' };
-    }
-    const scan = dxfScanSections(pairs);
-    if (scan.error) {
-      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file (' + scan.error + ').' };
-    }
-    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0 };
-    const acceptedSegments = [];
-    // ADR 0069: instance 0 is the single shared "placed directly in
-    // ENTITIES" group (matches this loop's pre-INSERT-support behavior —
-    // every direct entity could always freely connect/contain against any
-    // other). Each top-level INSERT gets its own fresh, never-reused id, so
-    // dxfConnectedComponents/dxfMergeContainedComponents never fuse two
-    // separately-placed instances together.
-    //
-    // ADR 0070: a top-level INSERT's own block name (group 2) is the only
-    // human-readable identity a grading-nest piece carries — real files name
-    // blocks like "CUP_36C" or "BACKIN_38D" (see ADR 0067's Context). Recorded
-    // here, keyed by instance, purely so the Pattern Pieces panel can label a
-    // piece for the TD instead of an anonymous "Piece 3"; never read by parsing
-    // or piece-detection itself. Instance 0 (direct entities, no INSERT) never
-    // gets an entry — dxfBuildPieces callers fall back to a positional label.
-    const instanceBlockNames = new Map();
-    let nextDxfInstanceId = 1;
-    for (const rec of scan.entityRecords) {
-      const instance = rec.type === 'INSERT' ? nextDxfInstanceId++ : 0;
-      if (rec.type === 'INSERT') instanceBlockNames.set(instance, dxfInsertParams(rec).blockName);
-      const result = dxfConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance);
-      if (!result.ok) { buckets[result.bucket] += 1; continue; }
-      acceptedSegments.push(...result.segments);
-    }
-    if (!acceptedSegments.length) {
-      return { ok: false, atomic: true, reason: 'empty', message: 'No supported entities were found in this DXF file.', buckets };
-    }
-    const flipped = acceptedSegments.map(dxfFlipSegmentY);
-    const allPieces = dxfBuildPieces(flipped);
-    if (allPieces.length > DXF_PIECE_COUNT_CAP) {
-      return {
-        ok: false, atomic: true, reason: 'piece-cap', buckets,
-        message: 'This DXF has ' + allPieces.length + ' pieces, over the ' + DXF_PIECE_COUNT_CAP + '-piece limit. Import rejected.',
-      };
-    }
-    const keptPieces = [];
-    let skippedOversizedPieces = 0;
-    for (const piece of allPieces) {
-      if (piece.length > DXF_PER_PIECE_CAP) { skippedOversizedPieces += 1; continue; }
-      keptPieces.push(piece);
-    }
-    if (!keptPieces.length) {
-      return {
-        ok: false, atomic: true, reason: 'empty-after-piece-cap', buckets,
-        message: 'Every piece in this DXF exceeded the ' + DXF_PER_PIECE_CAP + '-line per-piece limit. Import rejected.',
-      };
-    }
-    const totalOutputCount = keptPieces.reduce((sum, piece) => sum + piece.length, 0);
-    if (totalOutputCount > DXF_TOTAL_OUTPUT_CAP) {
-      return {
-        ok: false, atomic: true, reason: 'total-cap', buckets,
-        message: 'This DXF would place ' + totalOutputCount + ' lines, over the ' + DXF_TOTAL_OUTPUT_CAP + '-line combined limit. Import rejected.',
-      };
-    }
-    return { ok: true, pieces: keptPieces, buckets, skippedOversizedPieces, instanceBlockNames };
-  }
+// US-104: DXF import — the BOARD layer. The pure parse layer (tokenizer,
+// section scan, converters, INSERT resolution, decoding, marks, legacy
+// grouping, placement transform, parseDxfDocument) moved to
+// src/geometry/dxf-parse.js in US-124 Phase 5 so dxf-worker.js can run it
+// off the main thread; this part keeps everything that mutates state:
+// annotation building, the one-shot board mutation (importDxfText /
+// dxfPlaceParsedDocument), the measure-session hand-off, the toast, and the
+// pre-placement picker + worker hand-offs. Source part for app.js. Run
+// `npm run build` after editing.
 
   // ---- Board mutation (real annotations, real state) -------------------------
 
@@ -28538,24 +29866,120 @@ function onWheel(e) {
     }
   }
 
-  function dxfBucketsToast(buckets) {
+  // (dxfFormatCount lives in the pure parse layer, src/geometry/dxf-parse.js —
+  // parseDxfDocument's total-cap message uses it too, in the worker.)
+
+  // Phase 3: the skip summary names what was skipped (quality-curve twins,
+  // exact duplicates, points by ASTM class, annotation text) instead of
+  // lumping a standard file's 6,949 POINT/TEXT entities into "unsupported
+  // type". `stats`/`marks` are optional so a rejection toast (no stats) still
+  // reads the plain buckets.
+  function dxfBucketsToast(buckets, stats, marks) {
     const parts = [];
+    if (stats && stats.dropped) {
+      if (stats.dropped.qvTwin) parts.push(dxfFormatCount(stats.dropped.qvTwin) + ' quality-curve twin lines (ASTM 84/85/87)');
+      if (stats.dropped.exact) parts.push(dxfFormatCount(stats.dropped.exact) + ' exact duplicate lines');
+    }
+    if (marks && marks.points && marks.points.total) {
+      const by = marks.points.byClass || {};
+      const detail = ['turn', 'curve', 'notch', 'drill', 'other'].filter(k => by[k]).map(k => dxfFormatCount(by[k]) + ' ' + k);
+      parts.push(dxfFormatCount(marks.points.total) + ' points' + (detail.length ? ' (' + detail.join(' · ') + ')' : ''));
+    }
+    if (marks && marks.texts && marks.texts.total) parts.push(dxfFormatCount(marks.texts.total) + ' texts');
+    if (!marks && buckets && buckets.nonGeometry) parts.push(dxfFormatCount(buckets.nonGeometry) + ' points/texts');
     for (const key of ['unsupportedType', 'nonPlanar', 'unsupportedFit', 'malformed']) {
       const count = buckets && buckets[key];
-      if (count) parts.push(count + ' ' + dxfBucketLabel(key));
+      if (count) parts.push(dxfFormatCount(count) + ' ' + dxfBucketLabel(key));
     }
     return parts.length ? 'Skipped: ' + parts.join(', ') + '.' : '';
   }
 
   // The one entry point the Tools-menu button / test hooks call. `rect`
   // defaults to the real board viewport; tests may pass a fake one.
-  function importDxfText(text, rect, fileName) {
-    const parsed = parseDxfDocument(text);
+  // `extra` (Phase 4): `{ excludeInstances }` chosen in the pre-placement
+  // picker; the picker calls back into this same function with it.
+  function importDxfText(text, rect, fileName, extra) {
+    // Phase 3: the import options travel with the source so the native
+    // measurement model (built below and again on every project reopen)
+    // drops exactly the same twins — and, Phase 4, skips exactly the same
+    // instances — the board did.
+    const importOptions = {
+      keepQualityCurves: !!(state.dxfImportOptions && state.dxfImportOptions.keepQualityCurves),
+      excludeInstances: (extra && Array.isArray(extra.excludeInstances)) ? extra.excludeInstances.slice() : [],
+      // Phase 6: always the current pipeline for a real import. `1` is a
+      // test-only door (debug hook) that builds a board the way the pre-ADR-
+      // 0091 code did, so the reopen-compatibility suite has a genuine v1
+      // project to open without a checked-in binary fixture.
+      pipelineVersion: (extra && extra.pipelineVersion === 1) ? 1 : DXF_PIPELINE_VERSION,
+    };
+    // Phase 5: route. A file with more top-level INSERTs than
+    // DXF_PATTERN_BATCH_THRESHOLD (or a forced route) parses in dxf-worker.js;
+    // the SAME parse functions run there, and the board mutation below runs
+    // here once the whole result is back. `extra.afterWorkerFailure` marks
+    // the in-thread retry after a worker failure so it cannot loop.
+    const route = (extra && extra.afterWorkerFailure)
+      ? { useWorker: false, reason: extra.afterWorkerFailure, estimate: extra.estimate == null ? null : extra.estimate }
+      : (typeof dxfWorkerRoute === 'function' ? dxfWorkerRoute(text) : { useWorker: false, reason: 'no-worker-client', estimate: null });
+    const started = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const elapsed = () => Math.round((((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - started) * 10) / 10;
+    if (route.useWorker) {
+      const progress = openDxfImportProgressDialog(fileName, route.estimate, () => {
+        dxfCancelActiveWorkerImport();
+        dxfRecordImportExecution({ engine: 'worker', reason: 'cancelled', estimate: route.estimate, elapsedMs: elapsed(), fileName: fileName || null });
+        showToast('DXF import cancelled — nothing was placed.');
+      });
+      dxfWorkerParse(text, importOptions, (stage, done, total) => progress.update(stage, done, total))
+        .then((result) => {
+          if (progress.isCancelled()) return;
+          progress.close();
+          const execution = { engine: 'worker', reason: 'ok', estimate: route.estimate, elapsedMs: elapsed(), progressEvents: result.progressEvents, fileName: fileName || null };
+          dxfHandleParsedDocument(result.board, result.native, text, rect, fileName, importOptions, execution);
+        })
+        .catch((error) => {
+          if (error && error.message === 'cancelled') return;
+          progress.close();
+          if (typeof dxfMarkWorkerBroken === 'function') dxfMarkWorkerBroken();
+          const reason = 'worker-failed: ' + (error && error.message ? error.message : error);
+          console.warn('DXF import: ' + reason + '; parsing on the main thread for the rest of this session.');
+          importDxfText(text, rect, fileName, Object.assign({}, extra || {}, { afterWorkerFailure: reason, estimate: route.estimate }));
+        });
+      return { ok: false, reason: 'pending-worker', pending: true, estimate: route.estimate };
+    }
+    const parsed = parseDxfDocument(text, importOptions);
+    const execution = { engine: 'main-thread', reason: route.reason, estimate: route.estimate, elapsedMs: elapsed(), fileName: fileName || null };
+    return dxfHandleParsedDocument(parsed, null, text, rect, fileName, importOptions, execution);
+  }
+
+  // Shared by both routes: rejection handling (the total-cap picker, the
+  // toast) and then the one board mutation. `precomputedNative` is the
+  // worker's parseDxfNativeModel result; null on the synchronous path.
+  function dxfHandleParsedDocument(parsed, precomputedNative, text, rect, fileName, importOptions, execution) {
+    if (execution) dxfRecordImportExecution(execution);
     if (!parsed.ok) {
+      if (parsed.reason === 'total-cap' && parsed.overCap && typeof openDxfPatternPickerDialog === 'function') {
+        // Phase 4 (owner decision 3): never turn the TD away — let them pick
+        // which placement instances (sizes / pieces) to place. The dialog
+        // re-enters importDxfText with the exclusions; cancel leaves the
+        // board untouched.
+        openDxfPatternPickerDialog(parsed.overCap, {
+          fileName,
+          alreadyExcluded: importOptions.excludeInstances,
+          onConfirm: (excludeInstances) => importDxfText(text, rect, fileName, { excludeInstances }),
+          onCancel: () => showToast('DXF import cancelled — nothing was placed.'),
+        });
+        return { ok: false, reason: 'total-cap', pending: true, overCap: parsed.overCap, message: parsed.message };
+      }
       const toastMsg = [parsed.message, dxfBucketsToast(parsed.buckets)].filter(Boolean).join(' ');
       showToast(toastMsg);
       return { ok: false, reason: parsed.reason, message: parsed.message, buckets: parsed.buckets || null };
     }
+    return dxfPlaceParsedDocument(parsed, precomputedNative, text, rect, fileName, importOptions, execution);
+  }
+
+  // The one board mutation, identical for both routes: annotations, labels,
+  // meta, selection, the native measure session, the durable source, one
+  // history push, the toast, the panel.
+  function dxfPlaceParsedDocument(parsed, precomputedNative, text, rect, fileName, importOptions, execution) {
     const viewportRect = rect || getViewportRect();
     const bounds = dxfBoundsOfSegments(parsed.pieces.flat());
     const transform = computeDxfPlacementTransform(bounds, viewportRect, undefined, state.zoom);
@@ -28575,16 +29999,43 @@ function onWheel(e) {
     // plain per-position label when the piece came from instance 0 (direct
     // ENTITIES, no INSERT) or an unnamed block.
     const groupIds = [];
-    for (const piece of parsed.pieces) {
+    for (let pieceIndex = 0; pieceIndex < parsed.pieces.length; pieceIndex += 1) {
+      const piece = parsed.pieces[pieceIndex];
       const groupId = 'dxf-' + state.idCounter++;
       groupIds.push(groupId);
       const pieceAnns = piece.map(seg => dxfAnnotationFromSegment(seg, bounds, transform, groupId));
       pieceFirstAnnotationIds.push(pieceAnns.length ? pieceAnns[0].id : null);
       pieceAnnotationIds.push(pieceAnns.map(ann => ann.id));
-      const blockName = piece.length ? parsed.instanceBlockNames.get(piece[0].instance) : null;
+      const instance = piece.length ? piece[0].instance : null;
+      const blockName = instance != null ? parsed.instanceBlockNames.get(instance) : null;
       if (blockName) {
         if (!state.templateGroupLabels) state.templateGroupLabels = {};
+        // The label stays the block NAME — dxfMeasureSizeToken (ADR 0084)
+        // reads the size token after its last underscore. The parsed
+        // PIECE NAME/SIZE/QUANTITY annotation and the classification live in
+        // templateGroupMeta (Phase 3) for the Pattern Pieces panel to show.
         state.templateGroupLabels[groupId] = blockName;
+      }
+      const pattern = parsed.patterns && parsed.patterns[pieceIndex];
+      // Block-scoped only: instance 0 is the file's direct ENTITIES, whose TEXT
+      // is style-level (STYLE NAME, AUTHOR…) and would otherwise stamp every
+      // legacy piece of a 3380-style file with the same "piece" annotation.
+      const annotation = (instance != null && instance !== 0 && parsed.marks && parsed.marks.labelsByInstance)
+        ? parsed.marks.labelsByInstance[instance] : null;
+      if (pattern || annotation) {
+        if (!state.templateGroupMeta) state.templateGroupMeta = {};
+        state.templateGroupMeta[groupId] = {
+          pieceName: annotation ? annotation.pieceName : null,
+          size: annotation ? annotation.size : null,
+          quantity: annotation ? annotation.quantity : null,
+          kind: pattern ? pattern.kind : null,
+          orphan: !!(pattern && pattern.orphan),
+          boundaryLayer: pattern ? pattern.boundaryLayer : null,
+          classCounts: pattern ? clone(pattern.classCounts) : {},
+          notchChains: pattern ? pattern.notchChains : 0,
+          dropped: pattern ? clone(pattern.dropped) : { exact: 0, qvTwin: 0 },
+          totalSegCount: pattern ? pattern.totalSegCount : piece.length,
+        };
       }
       // One sourceImageId per PIECE (not per segment), matching
       // createAnnotationFromTemplateMember's own convention: landing outside
@@ -28612,13 +30063,13 @@ function onWheel(e) {
     // what actually got drawn. Reset first — opening another DXF must never
     // leave a prior session's measurements dangling over new geometry.
     resetDxfMeasureSession();
-    const measureSession = startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds);
+    const measureSession = startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNative || null);
     // ADR 0088: only a successful native-model build becomes the durable,
     // newest measurable source. A failed native build remains fail-closed.
     if (measureSession) {
       setDxfPatternSource(makeDxfPatternSource(
         text, fileName, bounds, transform,
-        pieceFirstAnnotationIds, pieceAnnotationIds, groupIds
+        pieceFirstAnnotationIds, pieceAnnotationIds, groupIds, importOptions
       ));
     } else {
       clearDxfPatternSource();
@@ -28630,7 +30081,7 @@ function onWheel(e) {
     const pieceCount = parsed.pieces.length;
     const pieceWord = pieceCount === 1 ? 'piece' : 'pieces';
     const lineWord = allNewIds.length === 1 ? 'line' : 'lines';
-    const skipParts = [dxfBucketsToast(parsed.buckets)];
+    const skipParts = [dxfBucketsToast(parsed.buckets, parsed.stats, parsed.marks)];
     if (parsed.skippedOversizedPieces) {
       skipParts.push(parsed.skippedOversizedPieces + ' oversized piece'
         + (parsed.skippedOversizedPieces === 1 ? '' : 's') + ' (over ' + DXF_PER_PIECE_CAP + ' lines each).');
@@ -28654,6 +30105,7 @@ function onWheel(e) {
     if (pieceCount > 1 && typeof openPatternPiecesPanel === 'function') openPatternPiecesPanel();
     return {
       ok: true,
+      execution: execution || null,
       pieceCount,
       annotationCount: allNewIds.length,
       annotationIds: allNewIds.slice(),
@@ -28920,7 +30372,7 @@ function onWheel(e) {
   // block (however deeply nested) inherits the placing INSERT's own order,
   // while keeping the child entity's layer/handle (nothing downstream
   // consumes entityOrder today; it stays pure provenance).
-  function dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order) {
+  function dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order, ordinal) {
     const p = dxfInsertParams(rec);
     if (p.blockName == null) return dxfMalformed('INSERT missing block name (group 2)');
     if (![p.ix, p.iy, p.sx, p.sy, p.angleRad].every(Number.isFinite)) return dxfMalformed('INSERT has a non-finite placement field');
@@ -28931,7 +30383,8 @@ function onWheel(e) {
     if ((p.colCount && p.colCount !== 1) || (p.rowCount && p.rowCount !== 1)) {
       return dxfUnsupportedType('INSERT is a rectangular array (MINSERT), not supported');
     }
-    const blockRecords = blocks.get(p.blockName);
+    // Same k-th-definition rule as the board parser (dxfBlockRecordsFor).
+    const blockRecords = dxfBlockRecordsFor(blocks, p.blockName, ordinal);
     if (!blockRecords) return dxfMalformed('INSERT references an undefined block "' + p.blockName + '"');
     if (depth >= DXF_INSERT_MAX_DEPTH) return dxfMalformed('INSERT nesting is too deep (possible circular BLOCK reference)');
     const segments = [];
@@ -28958,9 +30411,9 @@ function onWheel(e) {
   // board wrapper's `{ok, segments}`-only return shape: this parser's
   // converters also report `rejectedDegenerateSegments` (RB-4), and dropping
   // that field here would silently zero the bucket for every entity.
-  function dxfNativeConvertEntityResolvingBlocks(rec, blocks, depth, buckets, instance, order) {
+  function dxfNativeConvertEntityResolvingBlocks(rec, blocks, depth, buckets, instance, order, ordinal) {
     const result = rec.type === 'INSERT'
-      ? dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order)
+      ? dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order, ordinal)
       : dxfNativeConvertEntity(rec, order);
     if (!result.ok) return result;
     return {
@@ -28983,6 +30436,9 @@ function onWheel(e) {
         case 'CIRCLE': return dxfNativeConvertCircleEntity(rec);
         case 'LWPOLYLINE': return dxfNativeConvertLwpolylineEntity(rec);
         case 'POLYLINE': return dxfNativeConvertPolylineEntity(rec);
+        // Phase 3 (ADR 0091): same non-geometry bucket as the board parser.
+        case 'POINT': case 'TEXT': case 'MTEXT':
+          return dxfSkip('nonGeometry', rec.type + ' is a mark/annotation, not drawn geometry');
         default: return dxfUnsupportedType('entity type "' + rec.type + '" is not supported');
       }
     })();
@@ -29007,7 +30463,10 @@ function onWheel(e) {
   // atomic-vs-partial behavior) so the two parses never disagree about
   // whether a given file is acceptable — only about what SHAPE the accepted
   // geometry takes.
-  function parseDxfNativeModel(text) {
+  // `options.keepQualityCurves` (Phase 3) must be the SAME value the board
+  // import used — importDxfText passes it, and dxfPatternSource carries it
+  // for every later rebuild — or the two parsers' pieces stop matching.
+  function parseDxfNativeModel(text, options) {
     const normalized = dxfNormalizeText(text);
     if (normalized.slice(0, DXF_BINARY_SENTINEL.length) === DXF_BINARY_SENTINEL) {
       return {
@@ -29025,7 +30484,7 @@ function onWheel(e) {
     }
     const insunits = dxfReadInsunits(pairs);
     const unitInfo = dxfResolveNativeToInch(insunits);
-    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, rejectedDegenerateSegments: 0 };
+    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, nonGeometry: 0, rejectedDegenerateSegments: 0 };
     const acceptedSegments = [];
     // ADR 0073: same instance-id scheme as parseDxfDocument (ADR 0069) —
     // instance 0 for every directly-placed entity, a fresh id per top-level
@@ -29033,9 +30492,18 @@ function onWheel(e) {
     // groups the native pieces exactly the way it groups the board's,
     // keeping makeDxfMeasureSession's count-based pieceAnchors pairing alive.
     let nativeNextInstanceId = 1;
+    const nativeInsertOrdinals = new Map();
+    const pipelineVersion = dxfPipelineVersionOf(options);
     scan.entityRecords.forEach((rec, order) => {
       const instance = rec.type === 'INSERT' ? nativeNextInstanceId++ : 0;
-      const result = dxfNativeConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, order);
+      let ordinal = 0;
+      if (rec.type === 'INSERT') {
+        const blockName = dxfInsertParams(rec).blockName;
+        ordinal = nativeInsertOrdinals.get(blockName) || 0;
+        nativeInsertOrdinals.set(blockName, ordinal + 1);
+        if (pipelineVersion === 1) ordinal = 'all';
+      }
+      const result = dxfNativeConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, order, ordinal);
       if (!result.ok) { buckets[result.bucket] += 1; return; }
       buckets.rejectedDegenerateSegments += result.rejectedDegenerateSegments || 0;
       acceptedSegments.push(...result.segments);
@@ -29048,18 +30516,34 @@ function onWheel(e) {
     // dxfSegmentEndpoints/dxfSegmentPoints — both extended for the 'arc' kind
     // this file emits. No Y-flip here: native space stays exactly as
     // authored (see this file's header comment).
-    const allPieces = dxfBuildPieces(acceptedSegments);
-    if (allPieces.length > DXF_PIECE_COUNT_CAP) {
-      return {
-        ok: false, atomic: true, reason: 'piece-cap', buckets,
-        message: 'This DXF has ' + allPieces.length + ' pieces, over the ' + DXF_PIECE_COUNT_CAP + '-piece limit. Import rejected.',
-      };
-    }
+    //
+    // ADR 0091: the same dxfClassifyPatterns the board parser runs, on the
+    // same `instance`/`layer`-stamped segments — the ONLY thing keeping the
+    // count-and-order pairing in makeDxfMeasureSession alive is that both
+    // parsers group through this one function. Point-in-polygon containment
+    // is invariant under the board's Y-flip, so the two agree without it.
+    const classified = dxfClassifyPatterns(acceptedSegments, {
+      keepQualityCurves: !!(options && options.keepQualityCurves),
+      excludeInstances: (options && Array.isArray(options.excludeInstances)) ? options.excludeInstances : [],
+      onProgress: (options && typeof options.onProgress === 'function') ? options.onProgress : null,
+      pipelineVersion,
+    });
+    const allPieces = classified.pieces;
+    // Phase 4: no piece-count rejection here either (see
+    // DXF_PATTERN_BATCH_THRESHOLD in dxf-import.js) — the board import that
+    // preceded this call already decided the file is placeable.
     const keptPieces = [];
+    const keptPatterns = [];
     let skippedOversizedPieces = 0;
-    for (const piece of allPieces) {
-      if (piece.length > DXF_PER_PIECE_CAP) { skippedOversizedPieces += 1; continue; }
+    for (let i = 0; i < allPieces.length; i += 1) {
+      const piece = allPieces[i];
+      // Same exemption as parseDxfDocument (ADR 0091): a classified pattern
+      // is never dropped by the per-piece cap — the two parsers must keep
+      // the identical piece list or makeDxfMeasureSession's index pairing
+      // breaks.
+      if (piece.length > DXF_PER_PIECE_CAP && classified.patterns[i].kind !== 'classified') { skippedOversizedPieces += 1; continue; }
       keptPieces.push(piece);
+      keptPatterns.push(classified.patterns[i]);
     }
     if (!keptPieces.length) {
       return {
@@ -29077,6 +30561,8 @@ function onWheel(e) {
     return {
       ok: true,
       pieces: keptPieces.map(segments => ({ segments })),
+      patterns: keptPatterns,
+      stats: classified.stats,
       unit: unitInfo.factor,
       unitSource: unitInfo.unitSource,
       unitDiagnostic: unitInfo.diagnostic,
@@ -29084,6 +30570,222 @@ function onWheel(e) {
       buckets,
       skippedOversizedPieces,
     };
+  }
+
+  // ---- src/manual/dxf-worker-client.js ----
+// US-124 Phase 5 (ADR 0091): DXF Worker client — the main-thread side of
+// dxf-worker.js. Modelled on src/manual/auto-seam-worker-client.js.
+//
+// importDxfText() parses synchronously on the main thread, which freezes the
+// tab for the duration — fine for the corpus's ≤1 s files, not for a
+// full-size-run nest (the 16–36 MB 齐码 exports) or anything with hundreds
+// of placement instances. When a file looks large (more top-level INSERTs
+// than DXF_PATTERN_BATCH_THRESHOLD, or the TD/debug forces it), the SAME
+// pure parse runs in the worker: parseDxfDocument + parseDxfNativeModel on
+// the same text with the same options, posting one progress message per
+// classified instance. The board mutation (dxfPlaceParsedDocument) still
+// runs here, unchanged, once the whole result is back — all-or-nothing, so
+// Cancel can never leave a half-placed board.
+//
+// Behaviour-preserving by construction: both bundles are built from the same
+// parts (DXF_WORKER_PARTS) — scripts/dxf-worker-check.mjs asserts the parse
+// result is byte-identical per corpus file. The fallback is NOT silent: a
+// disabled/unsupported/failed worker parses in-thread and the execution
+// record (state.dxfLastImportExecution) says engine + reason.
+// Source part for app.js. Run `npm run build` after editing.
+
+  var dxfWorkerHandle = null;         // lazily created Worker, reused across imports
+  var dxfWorkerBroken = false;        // sticky for the session after a load/runtime failure
+  var dxfWorkerOverride = null;       // debug/test: true/false forces on/off; null = URL flag / default
+  var dxfWorkerForce = false;         // debug/test: route EVERY import to the worker regardless of size
+  var dxfWorkerUrlOverride = null;    // debug/test: point at a different (e.g. missing) worker file
+  var dxfWorkerRequestSeq = 0;
+  var dxfWorkerActiveRequest = null;  // { requestId, cancelled } for the import in flight
+  var DXF_WORKER_TIMEOUT_MS = 180000; // a 36 MB nest can legitimately take minutes
+
+  function dxfWorkerUrl() {
+    if (dxfWorkerUrlOverride) return dxfWorkerUrlOverride;
+    return typeof DXF_WORKER_URL === 'string' ? DXF_WORKER_URL : '';
+  }
+
+  function dxfWorkerEnabled() {
+    if (dxfWorkerOverride != null) return !!dxfWorkerOverride;
+    try {
+      if (new URLSearchParams(window.location.search).get('dxfWorker') === '0') return false;
+    } catch (error) { /* no window.location in odd hosts: default on */ }
+    return true;
+  }
+
+  function dxfWorkerSupported() {
+    return typeof Worker === 'function' && dxfWorkerUrl().length > 0;
+  }
+
+  function dxfGetWorker() {
+    if (!dxfWorkerHandle) dxfWorkerHandle = new Worker(dxfWorkerUrl());
+    return dxfWorkerHandle;
+  }
+
+  function dxfDisposeWorker() {
+    if (!dxfWorkerHandle) return;
+    try { dxfWorkerHandle.terminate(); } catch (error) { /* already gone */ }
+    dxfWorkerHandle = null;
+  }
+
+  function dxfSetWorkerEnabled(enabled) {
+    dxfWorkerOverride = enabled == null ? null : !!enabled;
+    if (enabled) dxfWorkerBroken = false;
+    if (enabled === false) dxfDisposeWorker();
+  }
+
+  function dxfSetWorkerForce(force) { dxfWorkerForce = !!force; }
+
+  // Sticky for the session after a load/runtime failure (the client's own
+  // catch and importDxfText's retry both call this).
+  function dxfMarkWorkerBroken() {
+    dxfWorkerBroken = true;
+    dxfDisposeWorker();
+  }
+
+  function dxfSetWorkerUrl(url) {
+    dxfWorkerUrlOverride = url ? String(url) : null;
+    dxfWorkerBroken = false;
+    dxfDisposeWorker();
+  }
+
+  // Cheap size estimate WITHOUT parsing: top-level INSERTs in ENTITIES. For
+  // every grading-nest / CLO export in the corpus one INSERT is one placement
+  // instance is one pattern, so this is the pattern count the 120 threshold
+  // means. A no-INSERT file estimates 0 and stays synchronous (its cost is
+  // the legacy O(n²) grouping, not this story's target).
+  function dxfEstimateInstanceCount(text) {
+    const s = String(text || '');
+    const entities = s.search(/\n\s*2\s*\r?\n\s*ENTITIES\s*\r?\n/);
+    if (entities < 0) return 0;
+    const tail = s.slice(entities);
+    const m = tail.match(/\n\s*0\s*\r?\n\s*INSERT\s*\r?\n/g);
+    return m ? m.length : 0;
+  }
+
+  // The routing decision importDxfText makes before parsing. Returns
+  // { useWorker, reason, estimate }.
+  function dxfWorkerRoute(text) {
+    const estimate = dxfEstimateInstanceCount(text);
+    const large = dxfWorkerForce || estimate > DXF_PATTERN_BATCH_THRESHOLD;
+    if (!large) return { useWorker: false, reason: 'under-threshold', estimate };
+    if (!dxfWorkerEnabled()) return { useWorker: false, reason: 'worker-disabled', estimate };
+    if (!dxfWorkerSupported()) return { useWorker: false, reason: 'worker-unavailable', estimate };
+    if (dxfWorkerBroken) return { useWorker: false, reason: 'worker-failed-earlier', estimate };
+    return { useWorker: true, reason: 'ok', estimate };
+  }
+
+  // Resolves { board, native, elapsedMs, progressEvents }; rejects on worker
+  // load/runtime failure or timeout. `onProgress(stage, done, total)` is
+  // optional. A cancelled request rejects with Error('cancelled') and the
+  // worker is terminated so the heavy parse actually stops.
+  function dxfWorkerParse(text, options, onProgress) {
+    const worker = dxfGetWorker();
+    return new Promise((resolve, reject) => {
+      const requestId = 'dxf-req-' + (++dxfWorkerRequestSeq);
+      const request = { requestId, cancelled: false };
+      dxfWorkerActiveRequest = request;
+      let settled = false;
+      let progressEvents = 0;
+      const finish = (error, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        worker.removeEventListener('message', onMessage);
+        worker.removeEventListener('error', onError);
+        if (dxfWorkerActiveRequest === request) dxfWorkerActiveRequest = null;
+        if (error) reject(error); else resolve(value);
+      };
+      request.cancel = () => {
+        request.cancelled = true;
+        dxfDisposeWorker();
+        finish(new Error('cancelled'));
+      };
+      const onMessage = (event) => {
+        const data = event && event.data ? event.data : {};
+        if (data.requestId !== requestId) return;
+        if (data.type === 'progress') { progressEvents += 1; if (onProgress) onProgress(data.stage, data.done, data.total); }
+        else if (data.type === 'result') finish(null, { board: data.board, native: data.native, elapsedMs: data.elapsedMs, progressEvents });
+        else if (data.type === 'error') finish(new Error(data.message || 'worker error'));
+      };
+      const onError = (event) => {
+        finish(new Error(event && event.message ? event.message : 'worker failed to load or crashed'));
+      };
+      const timer = setTimeout(() => finish(new Error('worker-timeout')), DXF_WORKER_TIMEOUT_MS);
+      worker.addEventListener('message', onMessage);
+      worker.addEventListener('error', onError);
+      worker.postMessage({ type: 'parse', requestId, text, options: options || {} });
+    });
+  }
+
+  function dxfCancelActiveWorkerImport() {
+    if (dxfWorkerActiveRequest && dxfWorkerActiveRequest.cancel) dxfWorkerActiveRequest.cancel();
+  }
+
+  // The progress dialog — buildDialog's shell so Esc / click-outside behave
+  // like every other modal. Closing it by any route cancels the import: the
+  // result is discarded (never placed) and the worker terminated.
+  function openDxfImportProgressDialog(fileName, estimate, onCancel) {
+    const dlg = buildDialog({
+      title: 'Importing large DXF…',
+      sub: (fileName ? fileName + ' — ' : '') + 'about ' + estimate.toLocaleString('en-US') + ' placement instances. Parsing off the main thread; the board stays responsive.',
+    });
+    dlg.overlay.classList.add('dxf-import-progress');
+    const body = document.createElement('div');
+    body.className = 'dialog-body';
+    body.style.cssText = 'display:flex;flex-direction:column;gap:10px;min-width:420px;';
+    const bar = document.createElement('progress');
+    bar.className = 'dxf-import-progress-bar';
+    bar.max = 100; bar.value = 0;
+    bar.style.cssText = 'width:100%;height:10px;';
+    const text = document.createElement('div');
+    text.className = 'dxf-import-progress-text';
+    text.style.cssText = 'font-size:12px;color:#444;';
+    text.textContent = 'Starting…';
+    body.appendChild(bar);
+    body.appendChild(text);
+    const footer = document.createElement('div');
+    footer.className = 'picker-footer';
+    footer.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'picker-btn dxf-import-progress-cancel';
+    cancelBtn.textContent = 'Cancel import';
+    footer.appendChild(cancelBtn);
+    dlg.panel.appendChild(body);
+    dlg.panel.appendChild(footer);
+    let cancelled = false;
+    const cancel = () => { if (cancelled) return; cancelled = true; dlg.close(); if (onCancel) onCancel(); };
+    cancelBtn.addEventListener('click', cancel);
+    // Esc / click-outside / the × go through buildDialog's own close() —
+    // detect the overlay leaving the DOM and treat it as Cancel too.
+    const observer = new MutationObserver(() => {
+      if (!dlg.overlay.isConnected) { observer.disconnect(); cancel(); }
+    });
+    dlg.open();
+    observer.observe(document.body, { childList: true });
+    return {
+      update(stage, done, total) {
+        const stageLabel = stage === 'native' ? 'Building measurement model' : 'Classifying patterns';
+        const pct = total ? Math.round((done / total) * 100) : 0;
+        bar.value = pct;
+        text.textContent = stageLabel + ' — ' + done.toLocaleString('en-US') + ' / ' + total.toLocaleString('en-US') + ' instances';
+      },
+      close() { observer.disconnect(); cancelled = true; dlg.close(); },
+      isCancelled: () => cancelled,
+    };
+  }
+
+  function dxfNow() {
+    return typeof performance !== 'undefined' && performance && typeof performance.now === 'function' ? performance.now() : Date.now();
+  }
+
+  function dxfRecordImportExecution(record) {
+    state.dxfLastImportExecution = record;
+    return record;
   }
 
   // ---- src/manual/dxf-measure-session.js ----
@@ -29452,9 +31154,17 @@ function onWheel(e) {
   // adapter — a corrupt/rejected file here would already have been rejected
   // by parseDxfDocument first, so this is not expected to fail in practice,
   // but a failure here leaves the session null rather than half-built.
-  function startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds) {
+  // `importOptions` (Phase 3, ADR 0091): the board import's
+  // `{ keepQualityCurves }`, forwarded to the native parser so both drop the
+  // same twins. Omitted -> defaults (drop), which is also what a source saved
+  // before this option existed means.
+  // `precomputedNativeModel` (Phase 5): the worker already ran
+  // parseDxfNativeModel on the same text with the same options; reuse it
+  // instead of parsing a second time on the main thread. Omitted -> parse
+  // here (the synchronous path and every project reopen).
+  function startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNativeModel) {
     const parseStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-    const nativeModel = parseDxfNativeModel(text);
+    const nativeModel = precomputedNativeModel || parseDxfNativeModel(text, importOptions || {});
     const parseFinishedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
     if (!nativeModel.ok) {
       // RB-5: the board-annotation import (importDxfText, US-104) already
@@ -29469,7 +31179,7 @@ function onWheel(e) {
     }
     state.dxfMeasureSession = makeDxfMeasureSession(nativeModel, bounds, transform, pieceFirstAnnotationIds);
     state.dxfMeasureSession.source.nativeParseDurationMs = Math.max(0, parseFinishedAt - parseStartedAt);
-    state.dxfMeasureSession.source.nativeParserExecution = 'main-thread-measured';
+    state.dxfMeasureSession.source.nativeParserExecution = precomputedNativeModel ? 'worker-precomputed' : 'main-thread-measured';
     dxfMeasureSeedHistory();
     return state.dxfMeasureSession;
   }
@@ -50205,10 +51915,45 @@ const AUTO_SEAM_THRESHOLDS = {
       // the Tools-menu button itself calls.
       dxf: {
         parse: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text)) : null),
+        // ADR 0091: same parse, plus `stats.instances` — the per-instance
+        // boundary diagnosis (segments/chains/closed per boundary layer, and
+        // why an open chain stayed open) so a corpus audit can say WHY an
+        // instance fell back to the legacy grouping.
+        parseDiagnostics: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text, { diagnostics: true })) : null),
         computePlacement: (bounds, rect, centerWorld, zoom) => (typeof computeDxfPlacementTransform === 'function'
           ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld, zoom)) : null),
-        importText: (text, rect, fileName) => (typeof importDxfText === 'function'
-          ? clone(importDxfText(text, rect, fileName)) : null),
+        importText: (text, rect, fileName, extra) => (typeof importDxfText === 'function'
+          ? clone(importDxfText(text, rect, fileName, extra || undefined)) : null),
+        // ADR 0091 follow-up: the byte decoder the real file input runs
+        // (strict UTF-8 → $DWGCODEPAGE → GBK → windows-1252), so a suite or a
+        // corpus scan can feed the parser EXACTLY the text the TD's pick
+        // would, instead of fetch().text()'s lossy UTF-8.
+        decodeBytes: (buffer) => (typeof decodeDxfBytes === 'function' ? decodeDxfBytes(buffer) : null),
+        // Phase 3: the import-time options the real toggle in the Pattern
+        // Pieces panel writes, and a parse with explicit options (so a suite
+        // can prove keepQualityCurves without touching state).
+        getImportOptions: () => clone(state.dxfImportOptions || { keepQualityCurves: false }),
+        setImportOptions: (opts) => {
+          state.dxfImportOptions = { keepQualityCurves: !!(opts && opts.keepQualityCurves) };
+          if (typeof syncPatternPiecesImportOptions === 'function') syncPatternPiecesImportOptions();
+          return clone(state.dxfImportOptions);
+        },
+        parseWith: (text, opts) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text, opts || {})) : null),
+        parseNative: (text, opts) => (typeof parseDxfNativeModel === 'function' ? clone(parseDxfNativeModel(text, opts || {})) : null),
+        // Phase 5: the DXF Worker debug surface.
+        worker: {
+          supported: () => (typeof dxfWorkerSupported === 'function' ? dxfWorkerSupported() : false),
+          route: (text) => (typeof dxfWorkerRoute === 'function' ? dxfWorkerRoute(text) : null),
+          estimate: (text) => (typeof dxfEstimateInstanceCount === 'function' ? dxfEstimateInstanceCount(text) : null),
+          setEnabled: (v) => { if (typeof dxfSetWorkerEnabled === 'function') dxfSetWorkerEnabled(v); },
+          setForce: (v) => { if (typeof dxfSetWorkerForce === 'function') dxfSetWorkerForce(v); },
+          setUrl: (u) => { if (typeof dxfSetWorkerUrl === 'function') dxfSetWorkerUrl(u); },
+          parse: (text, opts) => (typeof dxfWorkerParse === 'function'
+            ? dxfWorkerParse(text, opts || {}).then(r => ({ board: clone(r.board), native: clone(r.native), elapsedMs: r.elapsedMs, progressEvents: r.progressEvents }))
+            : Promise.reject(new Error('no worker client'))),
+          cancel: () => { if (typeof dxfCancelActiveWorkerImport === 'function') dxfCancelActiveWorkerImport(); },
+          lastExecution: () => clone(state.dxfLastImportExecution || null),
+        },
         source: () => (state.dxfPatternSource ? clone(state.dxfPatternSource) : null),
         // ADR 0070: the Pattern Pieces panel's pure state operations, exposed
         // independently of the real DOM panel (src/ui/pattern-pieces-panel.js)
@@ -50216,6 +51961,8 @@ const AUTO_SEAM_THRESHOLDS = {
         // driving live checkbox clicks for every case.
         patternPieces: {
           groups: () => (typeof patternPieceGroups === 'function' ? clone(patternPieceGroups()) : null),
+          // Phase 3: groupId -> { pieceName, size, quantity, kind, classCounts, dropped, … }.
+          meta: () => clone(state.templateGroupMeta || {}),
           remove: (groupIds) => { if (typeof removePatternPieceGroups === 'function') removePatternPieceGroups(groupIds); },
           // ADR 0072.
           simplify: (groupId) => (typeof simplifyPieceGroup === 'function' ? clone(simplifyPieceGroup(groupId)) : null),
@@ -50303,6 +52050,10 @@ const AUTO_SEAM_THRESHOLDS = {
             return {
               pieceCount: session.pieces.length,
               pieceSegmentCounts: session.pieces.map(p => p.segments.length),
+              // Phase 6: how many native pieces found their board anchor —
+              // `pieceCount` when the two parses agree on the piece list, 0
+              // when they diverged (the reopen-compatibility failure mode).
+              pieceAnchorsNonNull: (session.pieceAnchors || []).filter(Boolean).length,
               source: clone(session.source),
               // ADR 0073: the TD's unit override + the resolved status the
               // UI note/status chip renders from.

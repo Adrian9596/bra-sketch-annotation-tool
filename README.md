@@ -113,10 +113,12 @@ fixtures, which aren't published here. They run in the private repo.
 **generated**, not written: `npm run build` concatenates ~150 single-concern
 files from `src/` in the order declared in `scripts/source-parts.mjs`, inlining
 the rule JSON. **Edit `src/*` and rebuild; never edit `app.js` directly**, or
-your change is overwritten on the next build. The build also emits
-`auto-seam-worker.js` — the `src/auto/seam/*` parts bundled a second time and
-run as a Web Worker so Auto Detect Seam analyses off the main thread. It is
-generated too; keep it next to `app.js`.
+your change is overwritten on the next build. The build also emits two Web
+Worker bundles, generated too — keep them next to `app.js`:
+`auto-seam-worker.js` (the `src/auto/seam/*` parts bundled a second time, so
+Auto Detect Seam analyses off the main thread) and `dxf-worker.js` (the pure
+DXF parse layer, so a large pattern DXF parses off the main thread with a
+progress dialog and Cancel).
 
 | Directory | What lives there |
 |---|---|

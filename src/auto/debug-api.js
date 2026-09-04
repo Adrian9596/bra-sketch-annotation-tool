@@ -380,10 +380,45 @@
       // the Tools-menu button itself calls.
       dxf: {
         parse: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text)) : null),
+        // ADR 0091: same parse, plus `stats.instances` — the per-instance
+        // boundary diagnosis (segments/chains/closed per boundary layer, and
+        // why an open chain stayed open) so a corpus audit can say WHY an
+        // instance fell back to the legacy grouping.
+        parseDiagnostics: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text, { diagnostics: true })) : null),
         computePlacement: (bounds, rect, centerWorld, zoom) => (typeof computeDxfPlacementTransform === 'function'
           ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld, zoom)) : null),
-        importText: (text, rect, fileName) => (typeof importDxfText === 'function'
-          ? clone(importDxfText(text, rect, fileName)) : null),
+        importText: (text, rect, fileName, extra) => (typeof importDxfText === 'function'
+          ? clone(importDxfText(text, rect, fileName, extra || undefined)) : null),
+        // ADR 0091 follow-up: the byte decoder the real file input runs
+        // (strict UTF-8 → $DWGCODEPAGE → GBK → windows-1252), so a suite or a
+        // corpus scan can feed the parser EXACTLY the text the TD's pick
+        // would, instead of fetch().text()'s lossy UTF-8.
+        decodeBytes: (buffer) => (typeof decodeDxfBytes === 'function' ? decodeDxfBytes(buffer) : null),
+        // Phase 3: the import-time options the real toggle in the Pattern
+        // Pieces panel writes, and a parse with explicit options (so a suite
+        // can prove keepQualityCurves without touching state).
+        getImportOptions: () => clone(state.dxfImportOptions || { keepQualityCurves: false }),
+        setImportOptions: (opts) => {
+          state.dxfImportOptions = { keepQualityCurves: !!(opts && opts.keepQualityCurves) };
+          if (typeof syncPatternPiecesImportOptions === 'function') syncPatternPiecesImportOptions();
+          return clone(state.dxfImportOptions);
+        },
+        parseWith: (text, opts) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text, opts || {})) : null),
+        parseNative: (text, opts) => (typeof parseDxfNativeModel === 'function' ? clone(parseDxfNativeModel(text, opts || {})) : null),
+        // Phase 5: the DXF Worker debug surface.
+        worker: {
+          supported: () => (typeof dxfWorkerSupported === 'function' ? dxfWorkerSupported() : false),
+          route: (text) => (typeof dxfWorkerRoute === 'function' ? dxfWorkerRoute(text) : null),
+          estimate: (text) => (typeof dxfEstimateInstanceCount === 'function' ? dxfEstimateInstanceCount(text) : null),
+          setEnabled: (v) => { if (typeof dxfSetWorkerEnabled === 'function') dxfSetWorkerEnabled(v); },
+          setForce: (v) => { if (typeof dxfSetWorkerForce === 'function') dxfSetWorkerForce(v); },
+          setUrl: (u) => { if (typeof dxfSetWorkerUrl === 'function') dxfSetWorkerUrl(u); },
+          parse: (text, opts) => (typeof dxfWorkerParse === 'function'
+            ? dxfWorkerParse(text, opts || {}).then(r => ({ board: clone(r.board), native: clone(r.native), elapsedMs: r.elapsedMs, progressEvents: r.progressEvents }))
+            : Promise.reject(new Error('no worker client'))),
+          cancel: () => { if (typeof dxfCancelActiveWorkerImport === 'function') dxfCancelActiveWorkerImport(); },
+          lastExecution: () => clone(state.dxfLastImportExecution || null),
+        },
         source: () => (state.dxfPatternSource ? clone(state.dxfPatternSource) : null),
         // ADR 0070: the Pattern Pieces panel's pure state operations, exposed
         // independently of the real DOM panel (src/ui/pattern-pieces-panel.js)
@@ -391,6 +426,8 @@
         // driving live checkbox clicks for every case.
         patternPieces: {
           groups: () => (typeof patternPieceGroups === 'function' ? clone(patternPieceGroups()) : null),
+          // Phase 3: groupId -> { pieceName, size, quantity, kind, classCounts, dropped, … }.
+          meta: () => clone(state.templateGroupMeta || {}),
           remove: (groupIds) => { if (typeof removePatternPieceGroups === 'function') removePatternPieceGroups(groupIds); },
           // ADR 0072.
           simplify: (groupId) => (typeof simplifyPieceGroup === 'function' ? clone(simplifyPieceGroup(groupId)) : null),
@@ -478,6 +515,10 @@
             return {
               pieceCount: session.pieces.length,
               pieceSegmentCounts: session.pieces.map(p => p.segments.length),
+              // Phase 6: how many native pieces found their board anchor —
+              // `pieceCount` when the two parses agree on the piece list, 0
+              // when they diverged (the reopen-compatibility failure mode).
+              pieceAnchorsNonNull: (session.pieceAnchors || []).filter(Boolean).length,
               source: clone(session.source),
               // ADR 0073: the TD's unit override + the resolved status the
               // UI note/status chip renders from.

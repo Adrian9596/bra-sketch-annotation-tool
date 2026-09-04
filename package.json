@@ -65,6 +65,7 @@
     "dxf-import-check": "node scripts/dxf-import-check.mjs",
     "dxf-measurement-check": "node scripts/dxf-measurement-check.mjs --allow-blocked",
     "dxf-measurement-release-check": "node scripts/dxf-measurement-check.mjs",
+    "dxf-worker-check": "node scripts/dxf-worker-check.mjs",
     "photo-stitch-contract": "node scripts/photo-stitch-contract.mjs",
     "photo-stitch-roi-seed": "node scripts/photo-stitch-roi-seed.mjs",
     "photo-stitch-roi-contract": "node scripts/photo-stitch-roi-contract.mjs",

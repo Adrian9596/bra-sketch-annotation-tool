@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SOURCE_PARTS, AUTO_SEAM_WORKER_PARTS } from './source-parts.mjs';
+import { SOURCE_PARTS, AUTO_SEAM_WORKER_PARTS, DXF_WORKER_PARTS } from './source-parts.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(scriptDir, '..');
@@ -61,12 +61,12 @@ for (const file of jsFiles) {
 // source-parts.mjs — in SOURCE_PARTS (app.js) or AUTO_SEAM_WORKER_PARTS
 // (auto-seam-worker.js, US-120) — or it silently never ships (an unregistered
 // part has no compiler to complain — this is the only place that catches it).
-const allParts = [...new Set([...SOURCE_PARTS, ...AUTO_SEAM_WORKER_PARTS])];
+const allParts = [...new Set([...SOURCE_PARTS, ...AUTO_SEAM_WORKER_PARTS, ...DXF_WORKER_PARTS])];
 const registered = new Set(allParts);
 for (const file of listJsFiles(path.join(appDir, 'src'))) {
   const relative = path.relative(appDir, file).split(path.sep).join('/');
   if (!registered.has(relative)) {
-    failures.push(`Unregistered source part: ${relative} exists under src/ but is not listed in scripts/source-parts.mjs (it will never be bundled into app.js or auto-seam-worker.js).`);
+    failures.push(`Unregistered source part: ${relative} exists under src/ but is not listed in scripts/source-parts.mjs (it will never be bundled into app.js, auto-seam-worker.js or dxf-worker.js).`);
   }
 }
 
@@ -95,26 +95,35 @@ for (const file of allParts) {
 // both bundles (the seam parts do, by design) but only once within each.
 failures.push(...validateSharedScope(appDir, SOURCE_PARTS, 'app.js'));
 failures.push(...validateSharedScope(appDir, AUTO_SEAM_WORKER_PARTS, 'auto-seam-worker.js'));
+failures.push(...validateSharedScope(appDir, DXF_WORKER_PARTS, 'dxf-worker.js'));
 
-// US-120: the worker bundle must not carry Board code. The seam parts are
-// pure by contract (ARCHITECTURE.md "Auto Seam" row); this gate keeps the
-// worker-only entry honest too. `typeof document` feature checks are allowed
-// (pixel-model.js uses one to pick DOM canvas vs OffscreenCanvas).
-for (const rel of AUTO_SEAM_WORKER_PARTS) {
-  const absolute = path.join(appDir, rel);
-  if (!existsSync(absolute)) continue;
-  const code = blankNonCode(readFileSync(absolute, 'utf8'));
-  const lines = code.split('\n');
-  for (let n = 0; n < lines.length; n += 1) {
-    const line = lines[n];
-    if (/\bstate\.[A-Za-z_$]/.test(line) || /\bshowToast\s*\(/.test(line) || /\bpushHistoryIfChanged\s*\(/.test(line)
-      || /\bwindow\.(?!location\b)/.test(line)) {
-      failures.push(`Worker bundle: ${rel}:${n + 1} touches Board/DOM state (\`${line.trim()}\`) but is part of auto-seam-worker.js, which has no Board, no DOM and no window. Keep src/auto/seam/* pure; Board code belongs in src/manual/auto-seam.js.`);
+// US-120 / US-124: a worker bundle must not carry Board code. The seam parts
+// are pure by contract (ARCHITECTURE.md "Auto Seam" row) and the DXF parse
+// layer was split out of dxf-import.js for exactly this reason (Phase 5);
+// this gate keeps both worker-only entries honest too. `typeof document`
+// feature checks are allowed (pixel-model.js uses one to pick DOM canvas vs
+// OffscreenCanvas).
+const WORKER_BUNDLES = [
+  { name: 'auto-seam-worker.js', parts: AUTO_SEAM_WORKER_PARTS, hint: 'Keep src/auto/seam/* pure; Board code belongs in src/manual/auto-seam.js.' },
+  { name: 'dxf-worker.js', parts: DXF_WORKER_PARTS, hint: 'Keep the DXF parse layer (src/geometry/dxf-parse.js, dxf-pattern-classify.js, dxf-native-parser.js) pure; Board code belongs in src/manual/dxf-import.js / dxf-worker-client.js.' },
+];
+for (const bundle of WORKER_BUNDLES) {
+  for (const rel of bundle.parts) {
+    const absolute = path.join(appDir, rel);
+    if (!existsSync(absolute)) continue;
+    const code = blankNonCode(readFileSync(absolute, 'utf8'));
+    const lines = code.split('\n');
+    for (let n = 0; n < lines.length; n += 1) {
+      const line = lines[n];
+      if (/\bstate\.[A-Za-z_$]/.test(line) || /\bshowToast\s*\(/.test(line) || /\bpushHistoryIfChanged\s*\(/.test(line)
+        || /\bwindow\.(?!location\b)/.test(line)) {
+        failures.push(`Worker bundle: ${rel}:${n + 1} touches Board/DOM state (\`${line.trim()}\`) but is part of ${bundle.name}, which has no Board, no DOM and no window. ${bundle.hint}`);
+      }
     }
   }
 }
 
-for (const generated of ['app.js', 'auto-seam-worker.js']) {
+for (const generated of ['app.js', 'auto-seam-worker.js', 'dxf-worker.js']) {
   const generatedCheck = spawnSync(process.execPath, ['--check', path.join(appDir, generated)], {
     cwd: appDir,
     encoding: 'utf8',

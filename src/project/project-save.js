@@ -20,6 +20,9 @@
         // ADR 0070: sparse groupId -> label map (DXF block names). Additive —
         // files saved before this existed have no key and default to {}.
         templateGroupLabels: clone(state.templateGroupLabels || {}),
+        // US-124 Phase 3: additive, sparse, same lifecycle as the labels.
+        templateGroupMeta: clone(state.templateGroupMeta || {}),
+        dxfImportOptions: { keepQualityCurves: !!(state.dxfImportOptions && state.dxfImportOptions.keepQualityCurves) },
         graphics: clone(state.graphics || []),
         images: state.images.map(img => ({
           id: img.id, dataURL: img.dataURL,

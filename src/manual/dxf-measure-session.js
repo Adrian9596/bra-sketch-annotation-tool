@@ -363,9 +363,17 @@
   // adapter — a corrupt/rejected file here would already have been rejected
   // by parseDxfDocument first, so this is not expected to fail in practice,
   // but a failure here leaves the session null rather than half-built.
-  function startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds) {
+  // `importOptions` (Phase 3, ADR 0091): the board import's
+  // `{ keepQualityCurves }`, forwarded to the native parser so both drop the
+  // same twins. Omitted -> defaults (drop), which is also what a source saved
+  // before this option existed means.
+  // `precomputedNativeModel` (Phase 5): the worker already ran
+  // parseDxfNativeModel on the same text with the same options; reuse it
+  // instead of parsing a second time on the main thread. Omitted -> parse
+  // here (the synchronous path and every project reopen).
+  function startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNativeModel) {
     const parseStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-    const nativeModel = parseDxfNativeModel(text);
+    const nativeModel = precomputedNativeModel || parseDxfNativeModel(text, importOptions || {});
     const parseFinishedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
     if (!nativeModel.ok) {
       // RB-5: the board-annotation import (importDxfText, US-104) already
@@ -380,7 +388,7 @@
     }
     state.dxfMeasureSession = makeDxfMeasureSession(nativeModel, bounds, transform, pieceFirstAnnotationIds);
     state.dxfMeasureSession.source.nativeParseDurationMs = Math.max(0, parseFinishedAt - parseStartedAt);
-    state.dxfMeasureSession.source.nativeParserExecution = 'main-thread-measured';
+    state.dxfMeasureSession.source.nativeParserExecution = precomputedNativeModel ? 'worker-precomputed' : 'main-thread-measured';
     dxfMeasureSeedHistory();
     return state.dxfMeasureSession;
   }

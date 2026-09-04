@@ -68,7 +68,7 @@
     return dxfPatternGeometryFingerprint(source) === source.geometryFingerprint;
   }
 
-  function makeDxfPatternSource(text, fileName, bounds, transform, pieceFirstAnnotationIds, pieceAnnotationIds, groupIds) {
+  function makeDxfPatternSource(text, fileName, bounds, transform, pieceFirstAnnotationIds, pieceAnnotationIds, groupIds, importOptions) {
     const source = {
       version: DXF_PATTERN_SOURCE_VERSION,
       fileName: String(fileName || 'Imported DXF'),
@@ -79,6 +79,18 @@
       pieceFirstAnnotationIds: (pieceFirstAnnotationIds || []).slice(),
       pieceAnnotationIds: (pieceAnnotationIds || []).map(ids => ids.slice()),
       groupIds: (groupIds || []).slice(),
+      // Phase 3 (ADR 0091): additive. The native rebuild must drop the same
+      // quality-curve twins the board import did; absent (older source) means
+      // the default, drop.
+      importOptions: {
+        keepQualityCurves: !!(importOptions && importOptions.keepQualityCurves),
+        // Phase 4: the placement instances the TD deselected in the
+        // pre-placement picker; the native rebuild must skip the same ones.
+        excludeInstances: (importOptions && Array.isArray(importOptions.excludeInstances)) ? importOptions.excludeInstances.slice() : [],
+      },
+      // Phase 6 (ADR 0091): which grouping built this board. Additive —
+      // sources saved before the field existed have none and mean 1.
+      pipelineVersion: (importOptions && importOptions.pipelineVersion === 1) ? 1 : DXF_PIPELINE_VERSION,
       geometryFingerprint: null,
     };
     source.geometryFingerprint = dxfPatternGeometryFingerprint(source);
@@ -195,11 +207,16 @@
     if (!source || !source.text || dxfPatternFingerprint(source.text) !== source.fingerprint
         || !dxfPatternSourceIsCompatible(source)) return false;
     resetDxfMeasureSession();
+    // Phase 6: the rebuild parses with the SOURCE's own pipeline version (a
+    // pre-ADR-0091 project carries none → 1), so the native pieces pair with
+    // the saved board pieces by index instead of silently nulling every
+    // pieceAnchor.
     return !!startDxfMeasureSession(
       source.text,
       source.bounds,
       source.transform,
-      source.pieceFirstAnnotationIds
+      source.pieceFirstAnnotationIds,
+      Object.assign({}, source.importOptions || {}, { pipelineVersion: source.pipelineVersion === 2 ? 2 : 1 })
     );
   }
 

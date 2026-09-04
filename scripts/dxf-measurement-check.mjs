@@ -997,7 +997,11 @@ async function section10Snap(s) {
     document.getElementById('toolSelect').click();
     return { warmupMs, elapsedMs, perCallMs: elapsedMs / (N - 1), pieceCount: dbg.dxf.measure.getSession().pieceCount };
   })()`);
-  check(largePerf.pieceCount > 50, 'perf guard ran against the large real fixture (100+ pieces), got ' + largePerf.pieceCount + ' pieces');
+  // ADR 0091: BiancaBra is 41 patterns (= its 41 INSERTs). The "100+ pieces"
+  // this guard used to expect was the pre-ADR-0091 over-count (108) — grain
+  // and internal lines poking out of their outline's bbox read as separate
+  // pieces. Pinned exactly so the fixture cannot silently shrink or regrow.
+  check(largePerf.pieceCount === 41, 'perf guard ran against the large real fixture (BiancaBra: 41 patterns under ADR 0091, was 108 over-counted pieces), got ' + largePerf.pieceCount + ' pieces');
   // The regression this guards: measured ~525-611ms/call interactively, and
   // ~40ms/call in this same headless harness with just ONE of ADR 0077's
   // three hoisted call sites reverted (mutation-tested) — the fixed
@@ -1005,7 +1009,7 @@ async function section10Snap(s) {
   // above real variance while still catching that mutation cleanly (a 50ms
   // threshold measured too close to the 40ms reverted case in this
   // environment to be a reliable guard).
-  check(largePerf.perCallMs < 15, 'steady-state snapCandidates() on the ' + largePerf.pieceCount + '-piece/21000+-annotation fixture stays under 15ms/call after the one-time index warm-up, got '
+  check(largePerf.perCallMs < 15, 'steady-state snapCandidates() on the ' + largePerf.pieceCount + '-piece/7000+-annotation fixture stays under 15ms/call after the one-time index warm-up, got '
     + largePerf.perCallMs.toFixed(3) + 'ms/call (warm-up call alone: ' + largePerf.warmupMs.toFixed(1) + 'ms)');
   console.log('PASS  section 10.4 (large-file snap perf guard, ADR 0077): ' + largePerf.perCallMs.toFixed(3) + 'ms/call steady-state');
 }

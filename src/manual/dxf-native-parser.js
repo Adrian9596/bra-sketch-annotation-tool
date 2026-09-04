@@ -254,7 +254,7 @@
   // block (however deeply nested) inherits the placing INSERT's own order,
   // while keeping the child entity's layer/handle (nothing downstream
   // consumes entityOrder today; it stays pure provenance).
-  function dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order) {
+  function dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order, ordinal) {
     const p = dxfInsertParams(rec);
     if (p.blockName == null) return dxfMalformed('INSERT missing block name (group 2)');
     if (![p.ix, p.iy, p.sx, p.sy, p.angleRad].every(Number.isFinite)) return dxfMalformed('INSERT has a non-finite placement field');
@@ -265,7 +265,8 @@
     if ((p.colCount && p.colCount !== 1) || (p.rowCount && p.rowCount !== 1)) {
       return dxfUnsupportedType('INSERT is a rectangular array (MINSERT), not supported');
     }
-    const blockRecords = blocks.get(p.blockName);
+    // Same k-th-definition rule as the board parser (dxfBlockRecordsFor).
+    const blockRecords = dxfBlockRecordsFor(blocks, p.blockName, ordinal);
     if (!blockRecords) return dxfMalformed('INSERT references an undefined block "' + p.blockName + '"');
     if (depth >= DXF_INSERT_MAX_DEPTH) return dxfMalformed('INSERT nesting is too deep (possible circular BLOCK reference)');
     const segments = [];
@@ -292,9 +293,9 @@
   // board wrapper's `{ok, segments}`-only return shape: this parser's
   // converters also report `rejectedDegenerateSegments` (RB-4), and dropping
   // that field here would silently zero the bucket for every entity.
-  function dxfNativeConvertEntityResolvingBlocks(rec, blocks, depth, buckets, instance, order) {
+  function dxfNativeConvertEntityResolvingBlocks(rec, blocks, depth, buckets, instance, order, ordinal) {
     const result = rec.type === 'INSERT'
-      ? dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order)
+      ? dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order, ordinal)
       : dxfNativeConvertEntity(rec, order);
     if (!result.ok) return result;
     return {
@@ -317,6 +318,9 @@
         case 'CIRCLE': return dxfNativeConvertCircleEntity(rec);
         case 'LWPOLYLINE': return dxfNativeConvertLwpolylineEntity(rec);
         case 'POLYLINE': return dxfNativeConvertPolylineEntity(rec);
+        // Phase 3 (ADR 0091): same non-geometry bucket as the board parser.
+        case 'POINT': case 'TEXT': case 'MTEXT':
+          return dxfSkip('nonGeometry', rec.type + ' is a mark/annotation, not drawn geometry');
         default: return dxfUnsupportedType('entity type "' + rec.type + '" is not supported');
       }
     })();
@@ -341,7 +345,10 @@
   // atomic-vs-partial behavior) so the two parses never disagree about
   // whether a given file is acceptable — only about what SHAPE the accepted
   // geometry takes.
-  function parseDxfNativeModel(text) {
+  // `options.keepQualityCurves` (Phase 3) must be the SAME value the board
+  // import used — importDxfText passes it, and dxfPatternSource carries it
+  // for every later rebuild — or the two parsers' pieces stop matching.
+  function parseDxfNativeModel(text, options) {
     const normalized = dxfNormalizeText(text);
     if (normalized.slice(0, DXF_BINARY_SENTINEL.length) === DXF_BINARY_SENTINEL) {
       return {
@@ -359,7 +366,7 @@
     }
     const insunits = dxfReadInsunits(pairs);
     const unitInfo = dxfResolveNativeToInch(insunits);
-    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, rejectedDegenerateSegments: 0 };
+    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, nonGeometry: 0, rejectedDegenerateSegments: 0 };
     const acceptedSegments = [];
     // ADR 0073: same instance-id scheme as parseDxfDocument (ADR 0069) —
     // instance 0 for every directly-placed entity, a fresh id per top-level
@@ -367,9 +374,18 @@
     // groups the native pieces exactly the way it groups the board's,
     // keeping makeDxfMeasureSession's count-based pieceAnchors pairing alive.
     let nativeNextInstanceId = 1;
+    const nativeInsertOrdinals = new Map();
+    const pipelineVersion = dxfPipelineVersionOf(options);
     scan.entityRecords.forEach((rec, order) => {
       const instance = rec.type === 'INSERT' ? nativeNextInstanceId++ : 0;
-      const result = dxfNativeConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, order);
+      let ordinal = 0;
+      if (rec.type === 'INSERT') {
+        const blockName = dxfInsertParams(rec).blockName;
+        ordinal = nativeInsertOrdinals.get(blockName) || 0;
+        nativeInsertOrdinals.set(blockName, ordinal + 1);
+        if (pipelineVersion === 1) ordinal = 'all';
+      }
+      const result = dxfNativeConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, order, ordinal);
       if (!result.ok) { buckets[result.bucket] += 1; return; }
       buckets.rejectedDegenerateSegments += result.rejectedDegenerateSegments || 0;
       acceptedSegments.push(...result.segments);
@@ -382,18 +398,34 @@
     // dxfSegmentEndpoints/dxfSegmentPoints — both extended for the 'arc' kind
     // this file emits. No Y-flip here: native space stays exactly as
     // authored (see this file's header comment).
-    const allPieces = dxfBuildPieces(acceptedSegments);
-    if (allPieces.length > DXF_PIECE_COUNT_CAP) {
-      return {
-        ok: false, atomic: true, reason: 'piece-cap', buckets,
-        message: 'This DXF has ' + allPieces.length + ' pieces, over the ' + DXF_PIECE_COUNT_CAP + '-piece limit. Import rejected.',
-      };
-    }
+    //
+    // ADR 0091: the same dxfClassifyPatterns the board parser runs, on the
+    // same `instance`/`layer`-stamped segments — the ONLY thing keeping the
+    // count-and-order pairing in makeDxfMeasureSession alive is that both
+    // parsers group through this one function. Point-in-polygon containment
+    // is invariant under the board's Y-flip, so the two agree without it.
+    const classified = dxfClassifyPatterns(acceptedSegments, {
+      keepQualityCurves: !!(options && options.keepQualityCurves),
+      excludeInstances: (options && Array.isArray(options.excludeInstances)) ? options.excludeInstances : [],
+      onProgress: (options && typeof options.onProgress === 'function') ? options.onProgress : null,
+      pipelineVersion,
+    });
+    const allPieces = classified.pieces;
+    // Phase 4: no piece-count rejection here either (see
+    // DXF_PATTERN_BATCH_THRESHOLD in dxf-import.js) — the board import that
+    // preceded this call already decided the file is placeable.
     const keptPieces = [];
+    const keptPatterns = [];
     let skippedOversizedPieces = 0;
-    for (const piece of allPieces) {
-      if (piece.length > DXF_PER_PIECE_CAP) { skippedOversizedPieces += 1; continue; }
+    for (let i = 0; i < allPieces.length; i += 1) {
+      const piece = allPieces[i];
+      // Same exemption as parseDxfDocument (ADR 0091): a classified pattern
+      // is never dropped by the per-piece cap — the two parsers must keep
+      // the identical piece list or makeDxfMeasureSession's index pairing
+      // breaks.
+      if (piece.length > DXF_PER_PIECE_CAP && classified.patterns[i].kind !== 'classified') { skippedOversizedPieces += 1; continue; }
       keptPieces.push(piece);
+      keptPatterns.push(classified.patterns[i]);
     }
     if (!keptPieces.length) {
       return {
@@ -411,6 +443,8 @@
     return {
       ok: true,
       pieces: keptPieces.map(segments => ({ segments })),
+      patterns: keptPatterns,
+      stats: classified.stats,
       unit: unitInfo.factor,
       unitSource: unitInfo.unitSource,
       unitDiagnostic: unitInfo.diagnostic,

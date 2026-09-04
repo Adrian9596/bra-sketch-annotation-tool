@@ -104,6 +104,17 @@
     // like templateGroupEditId above: it describes the sketch itself, so it
     // is persisted with the project (see buildProjectSnapshot/loadProject).
     templateGroupLabels: {},
+    // Phase 3 of US-124 (ADR 0091): templateGroupId -> what the DXF said
+    // about the piece — the ASTM annotation (PIECE NAME / SIZE / QUANTITY),
+    // the classification (kind, boundary layer, class counts, notch chains)
+    // and what dedupe dropped. Display/provenance for the Pattern Pieces
+    // panel; never read by grouping or measurement. Sparse like
+    // templateGroupLabels and persisted the same way.
+    templateGroupMeta: {},
+    // Phase 3: import-time options for the next DXF import. keepQualityCurves
+    // places ASTM 84/85/86/87 quality-validation twins instead of dropping
+    // them; the value used for an import travels with its dxfPatternSource.
+    dxfImportOptions: { keepQualityCurves: false },
     // US-095: visual vector construction shapes. Deliberately separate from
     // annotations, which are the measurement/POM collection.
     graphics: [],

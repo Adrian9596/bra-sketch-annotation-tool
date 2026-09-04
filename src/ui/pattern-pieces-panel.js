@@ -27,8 +27,36 @@
     return order.map((gid, i) => {
       const g = byId.get(gid);
       const label = (state.templateGroupLabels && state.templateGroupLabels[gid]) || ('Piece ' + (i + 1));
-      return { groupId: gid, label, count: g.ids.length, ids: g.ids.slice() };
+      // US-124 Phase 3/4: what the DXF said about the piece and how it was
+      // classified — display only; null for Template placements.
+      const meta = (state.templateGroupMeta && state.templateGroupMeta[gid]) || null;
+      return { groupId: gid, label, count: g.ids.length, ids: g.ids.slice(), meta };
     });
+  }
+
+  // One-line summary under a row's label: the ASTM annotation, then the
+  // classification (outline / marks / dropped). Empty string when nothing is
+  // known (a Template group).
+  function patternPieceSubtitle(meta) {
+    if (!meta) return '';
+    const parts = [];
+    const ann = [meta.pieceName, meta.size, meta.quantity != null ? 'qty ' + meta.quantity : null].filter(Boolean).join(' · ');
+    if (ann) parts.push(ann);
+    if (meta.kind === 'legacy') {
+      parts.push('legacy grouping');
+    } else if (meta.classCounts) {
+      const c = meta.classCounts;
+      const bits = [];
+      if (c.boundary) bits.push('outline ' + c.boundary);
+      const internal = (c.internal || 0) + (c.sew || 0) + (c.cutout || 0);
+      if (internal) bits.push('internal ' + internal);
+      if (c.grain) bits.push('grain ' + c.grain);
+      if (meta.notchChains) bits.push('notch ' + meta.notchChains);
+      const dropped = (meta.dropped ? (meta.dropped.exact || 0) + (meta.dropped.qvTwin || 0) : 0);
+      if (dropped) bits.push('−' + dropped + ' dup');
+      if (bits.length) parts.push(bits.join(' · '));
+    }
+    return parts.join('  —  ');
   }
 
   function isPatternPiecesPanelOpen() {
@@ -82,6 +110,9 @@
     if (state.templateGroupLabels) {
       for (const gid of kill) delete state.templateGroupLabels[gid];
     }
+    if (state.templateGroupMeta) {
+      for (const gid of kill) delete state.templateGroupMeta[gid];
+    }
     if (state.selection && state.selection.kind === 'annotation'
         && !state.annotations.some(a => a.id === state.selection.id)) {
       state.selection = { kind: null, id: null };
@@ -111,10 +142,20 @@
   // Anchor Manager's live-refresh) — a checkbox's unchecked state lives only
   // in this render's own closure until Apply reads it, matching the shape of
   // a one-shot "review this list, then act" tool rather than a live view.
+  // Phase 3 (ADR 0091, owner decision 2): the "keep quality curves" import
+  // toggle lives in this panel because this is where a TD looks at what an
+  // import produced. It applies to the NEXT import (nothing can be added back
+  // to an already-placed pattern), and its label says so.
+  function syncPatternPiecesImportOptions() {
+    const box = document.getElementById('patternPiecesKeepQvChk');
+    if (box) box.checked = !!(state.dxfImportOptions && state.dxfImportOptions.keepQualityCurves);
+  }
+
   function renderPatternPiecesPanel() {
     const panel = el.patternPiecesPanel;
     const body = el.patternPiecesBody;
     if (!panel || !body) return;
+    syncPatternPiecesImportOptions();
     const groups = patternPieceGroups();
     if (!groups.length) { closePatternPiecesPanel(); return; }
     if (el.patternPiecesCount) {
@@ -136,12 +177,30 @@
       });
       row.appendChild(box);
 
+      const labelWrap = document.createElement('div');
+      labelWrap.className = 'pattern-piece-label-wrap';
       const label = document.createElement('span');
       label.className = 'pattern-piece-label';
       label.textContent = g.label;
       label.title = g.label + ' — click to select on the board';
       label.addEventListener('click', (e) => { e.stopPropagation(); selectPatternPieceGroup(g.ids); });
-      row.appendChild(label);
+      labelWrap.appendChild(label);
+      if (g.meta && g.meta.orphan) {
+        const badge = document.createElement('span');
+        badge.className = 'pattern-piece-badge pattern-piece-badge-orphan';
+        badge.textContent = 'orphan';
+        badge.title = 'No outline in this block could claim these lines — check them before keeping';
+        label.appendChild(badge);
+      }
+      const subtitle = patternPieceSubtitle(g.meta);
+      if (subtitle) {
+        const sub = document.createElement('span');
+        sub.className = 'pattern-piece-sub';
+        sub.textContent = subtitle;
+        sub.title = subtitle;
+        labelWrap.appendChild(sub);
+      }
+      row.appendChild(labelWrap);
 
       const count = document.createElement('span');
       count.className = 'pattern-piece-count';
@@ -188,5 +247,16 @@
       });
     }
     if (el.patternPiecesCloseBtn) el.patternPiecesCloseBtn.addEventListener('click', closePatternPiecesPanel);
+    const keepQv = document.getElementById('patternPiecesKeepQvChk');
+    if (keepQv) {
+      keepQv.addEventListener('change', () => {
+        if (!state.dxfImportOptions) state.dxfImportOptions = { keepQualityCurves: false };
+        state.dxfImportOptions.keepQualityCurves = !!keepQv.checked;
+        showToast(keepQv.checked
+          ? 'Next DXF import keeps ASTM quality-curve twins (layers 84/85/87).'
+          : 'Next DXF import drops ASTM quality-curve twins (default).');
+      });
+      syncPatternPiecesImportOptions();
+    }
     makeDraggablePanel(el.patternPiecesPanel, el.patternPiecesHead, '.anchor-panel-close');
   }

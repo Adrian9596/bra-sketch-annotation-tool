@@ -33,14 +33,18 @@
     }
     const reader = new FileReader();
     reader.onload = () => {
-      const text = String(reader.result || '');
+      // Sniff on a lossy UTF-8 pass (JSON is always UTF-8); if it is a DXF,
+      // decode the SAME bytes properly — see decodeDxfBytes for why
+      // readAsText's silent U+FFFD replacement is not acceptable for a DXF.
+      const buffer = reader.result;
+      const lossy = new TextDecoder('utf-8').decode(new Uint8Array(buffer));
       let looksLikeJson = true;
-      try { JSON.parse(text); } catch (error) { looksLikeJson = false; }
+      try { JSON.parse(lossy); } catch (error) { looksLikeJson = false; }
       if (looksLikeJson) openProjectFileWithGuard(file);
-      else importDxfTextIntoBoard(text, file.name);
+      else importDxfTextIntoBoard(decodeDxfBytes(buffer).text, file.name);
     };
     reader.onerror = () => showToast('Could not read that file.', 4200);
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }
 
   function openProjectFileWithGuard(file) {
@@ -120,11 +124,15 @@
     proceed();
   }
 
+  // Bytes, not readAsText (ADR 0091 follow-up): GBK block names from Chinese
+  // vendor exports collided after lossy UTF-8 decoding and made INSERTs draw
+  // the wrong block — decodeDxfBytes (src/manual/dxf-import.js) picks the
+  // charset from strict UTF-8 → $DWGCODEPAGE → GBK → windows-1252.
   function importDxfFileIntoBoard(file) {
     const reader = new FileReader();
-    reader.onload = () => importDxfTextIntoBoard(String(reader.result || ''), file.name);
+    reader.onload = () => importDxfTextIntoBoard(decodeDxfBytes(reader.result).text, file.name);
     reader.onerror = () => showToast('Could not read that file.', 4200);
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }
 
   function readAndLoadProjectFile(file) {
@@ -161,6 +169,10 @@
       // ADR 0070: additive — a file saved before this existed has no key.
       state.templateGroupLabels = (s.templateGroupLabels && typeof s.templateGroupLabels === 'object')
         ? clone(s.templateGroupLabels) : {};
+      // US-124 Phase 3: additive — a file saved before this existed has no key.
+      state.templateGroupMeta = (s.templateGroupMeta && typeof s.templateGroupMeta === 'object')
+        ? clone(s.templateGroupMeta) : {};
+      state.dxfImportOptions = { keepQualityCurves: !!(s.dxfImportOptions && s.dxfImportOptions.keepQualityCurves) };
       // US-095 additive migration: pre-shape projects omit this key.
       state.graphics = normalizeBoardGraphics(s.graphics || []);
       state.graphicEdit = null;

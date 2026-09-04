@@ -19,6 +19,7 @@
 // exclusion, multi-piece move-together with no group id merge, and the
 // absence of any group-resize gesture for annotations.
 import { spawn } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -39,8 +40,13 @@ const sectionBlock = (name, bodyPairs) => [P(0, 'SECTION'), P(2, name), ...bodyP
 const rawDoc = (sectionArrays) => pairsToText([...sectionArrays.flat(), P(0, 'EOF')]);
 const doc = (entityArrays) => rawDoc([sectionBlock('ENTITIES', entityArrays.flat())]);
 
+// `extra.layer` (ADR 0091): group 8, the ASTM D6673 layer the classifier
+// reads (1 = piece boundary, 7 = grain, 8 = internal, 14 = sew, 84/85/87 =
+// their quality-validation twins). Omitted -> no group 8 -> class `unknown`,
+// which keeps every pre-ADR-0091 fixture on the legacy grouping path.
+const layerPair = (extra) => ('layer' in extra ? [P(8, extra.layer)] : []);
 function dxfLine(x1, y1, x2, y2, extra = {}) {
-  const out = [P(0, 'LINE'), P(10, x1), P(20, y1)];
+  const out = [P(0, 'LINE'), ...layerPair(extra), P(10, x1), P(20, y1)];
   if ('z1' in extra) out.push(P(30, extra.z1));
   out.push(P(11, x2), P(21, y2));
   if ('z2' in extra) out.push(P(31, extra.z2));
@@ -57,7 +63,7 @@ function dxfArc(cx, cy, r, a0, a1, extra = {}) {
   return out;
 }
 function dxfCircle(cx, cy, r, extra = {}) {
-  const out = [P(0, 'CIRCLE'), P(10, cx), P(20, cy)];
+  const out = [P(0, 'CIRCLE'), ...layerPair(extra), P(10, cx), P(20, cy)];
   if ('z' in extra) out.push(P(30, extra.z));
   out.push(P(40, r));
   if ('thickness' in extra) out.push(P(39, extra.thickness));
@@ -65,7 +71,7 @@ function dxfCircle(cx, cy, r, extra = {}) {
   return out;
 }
 function dxfLwpolyline(count, flags, verts, extra = {}) {
-  const out = [P(0, 'LWPOLYLINE'), P(90, count), P(70, flags)];
+  const out = [P(0, 'LWPOLYLINE'), ...layerPair(extra), P(90, count), P(70, flags)];
   if ('elevation' in extra) out.push(P(38, extra.elevation));
   if ('thickness' in extra) out.push(P(39, extra.thickness));
   if (extra.ext) out.push(P(210, extra.ext[0]), P(220, extra.ext[1]), P(230, extra.ext[2]));
@@ -76,7 +82,7 @@ function dxfLwpolyline(count, flags, verts, extra = {}) {
   return out;
 }
 function dxfPolyline(flags, verts, extra = {}, omitSeqend = false) {
-  const out = [P(0, 'POLYLINE'), P(70, flags), P(10, 0), P(20, 0)];
+  const out = [P(0, 'POLYLINE'), ...layerPair(extra), P(70, flags), P(10, 0), P(20, 0)];
   if ('elevation' in extra) out.push(P(30, extra.elevation));
   if ('thickness' in extra) out.push(P(39, extra.thickness));
   if (extra.ext) out.push(P(210, extra.ext[0]), P(220, extra.ext[1]), P(230, extra.ext[2]));
@@ -106,6 +112,15 @@ function dxfInsert(name, x, y, extra = {}) {
 const docWithBlocks = (blockArrays, entityArrays) => rawDoc([
   sectionBlock('BLOCKS', blockArrays.flat()), sectionBlock('ENTITIES', entityArrays.flat()),
 ]);
+
+// Two real Chinese piece names ("后片" back piece, "侧片" side piece) whose
+// GBK bytes are both invalid UTF-8 in the same positions, so a lossy UTF-8
+// decode maps BOTH to the identical string "��Ƭ" — the
+// exact collision that made INSERTs resolve to the wrong block on the
+// BUYI-TECH corpus files (ADR 0091 follow-up). Verified with Python:
+// '后片'.encode('gbk') = ba f3 c6 ac, '侧片'.encode('gbk') = b2 e0 c6 ac.
+const GBK_NAME_A = { text: '后片', bytes: [0xba, 0xf3, 0xc6, 0xac] };
+const GBK_NAME_B = { text: '侧片', bytes: [0xb2, 0xe0, 0xc6, 0xac] };
 
 // A connected chain of N collinear LINE entities — one piece, N segments —
 // for the per-piece output-cap boundary tests.
@@ -371,9 +386,12 @@ window.__DXF = (() => {
 
   // Mixed file: four distinct, correctly-attributed skip buckets, never one
   // undifferentiated count.
+  // (ADR 0091 Phase 3: TEXT/POINT are standard non-geometry with their own
+  // `nonGeometry` bucket now, so the genuinely-unsupported sample here is a
+  // SPLINE — the one entity type the corpus really does carry unsupported.)
   const mixed = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([
     dxfLine(0, 0, 10, 0),
-    [P(0, 'TEXT'), P(1, 'hi')],
+    [P(0, 'SPLINE'), P(8, '0')],
     dxfLine(0, 0, 'x', 0),
     dxfPolyline(2, [[0, 0], [10, 0]]),
     dxfLine(0, 0, 20, 0, { thickness: 2 }),
@@ -466,15 +484,16 @@ window.__DXF = (() => {
   check(insertNested.ok === true && insertNested.pieces.length === 1 && insertNested.pieces[0].length === 1,
     `an INSERT-of-an-INSERT (nested block reference) must resolve recursively, got ${JSON.stringify(insertNested)}`);
 
-  // A block containing both a supported LINE and an unsupported TEXT: the
-  // LINE is placed, and the TEXT is bucketed exactly like a top-level one.
+  // A block containing both a supported LINE and a non-geometry TEXT: the
+  // LINE is placed, and the TEXT is bucketed exactly like a top-level one
+  // (Phase 3: in `nonGeometry`, never in `unsupportedType`).
   const insertMixedBlock = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(docWithBlocks(
     [dxfBlock('P', [...dxfLine(0, 0, 10, 0), P(0, 'TEXT'), P(1, 'hi')])],
     [dxfInsert('P', 0, 0)],
   ))})`);
   check(insertMixedBlock.ok === true && insertMixedBlock.pieces.flat().length === 1
-    && insertMixedBlock.buckets.unsupportedType === 1,
-    `an unsupported entity inside a resolved block must still be bucketed, not silently dropped or fail the whole INSERT, got ${JSON.stringify(insertMixedBlock)}`);
+    && insertMixedBlock.buckets.nonGeometry === 1 && insertMixedBlock.buckets.unsupportedType === 0,
+    `a TEXT inside a resolved block must be counted as non-geometry, not silently dropped, not "unsupported", and not fail the whole INSERT, got ${JSON.stringify(insertMixedBlock)}`);
 
   // INSERT referencing a block name that doesn't exist -> malformed, not a
   // silent no-op or a whole-file crash.
@@ -659,8 +678,12 @@ window.__DXF = (() => {
 
   const pieces120 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfScatteredPieces(120)]))})`);
   const pieces121 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfScatteredPieces(121)]))})`);
-  check(pieces120.ok === true && pieces120.pieces.length === 120, `exactly 120 pieces must import, got ${JSON.stringify(pieces120.ok)} ${pieces120.pieces?.length}`);
-  check(pieces121.ok === false && pieces121.reason === 'piece-cap', `121 pieces must be a whole-file piece-cap rejection, got ${JSON.stringify(pieces121)}`);
+  check(pieces120.ok === true && pieces120.pieces.length === 120 && pieces120.stats.overBatchThreshold === false,
+    `exactly 120 pieces must import on the synchronous path, got ${JSON.stringify(pieces120.ok)} ${pieces120.pieces?.length} ${JSON.stringify(pieces120.stats)}`);
+  // ADR 0091 / US-124 Phase 4 (owner decision 3): pattern count alone never
+  // rejects a file any more — 121 imports, flagged for the batched path.
+  check(pieces121.ok === true && pieces121.pieces.length === 121 && pieces121.stats.overBatchThreshold === true && pieces121.stats.batchThreshold === 120,
+    `121 pieces must import (flagged overBatchThreshold), never be a piece-cap rejection, got ${JSON.stringify({ ok: pieces121.ok, n: pieces121.pieces?.length, stats: pieces121.stats })}`);
 
   // Nine 2400-segment chains, spaced far apart (9*2400=21600 > 20000
   // total, each piece under the 2500 per-piece cap, 9 pieces well under the
@@ -672,7 +695,12 @@ window.__DXF = (() => {
   });
   const totalCap = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([nineChains]))})`);
   check(totalCap.ok === false && totalCap.reason === 'total-cap',
-    `9 pieces of 2400 segments (21600 total, each under the 2500 per-piece cap, 9 under the 120-piece cap) must be rejected by the 20000 combined-output cap, got ${JSON.stringify(totalCap)}`);
+    `9 pieces of 2400 segments (21600 total, each under the 2500 per-piece cap) must be stopped by the 20000 combined-output cap, got ${JSON.stringify(totalCap)}`);
+  // Phase 4: the stop comes with a per-instance report. Direct entities are
+  // ONE instance (0), so this file cannot be split — the report says so.
+  check(totalCap.overCap && totalCap.overCap.total === 21600 && totalCap.overCap.cap === 20000
+    && totalCap.overCap.instances.length === 1 && totalCap.overCap.instances[0].instance === 0 && totalCap.overCap.instances[0].patterns === 9,
+    `the total-cap stop must carry a per-instance report (one instance-0 row holding all 9 pieces), got ${JSON.stringify(totalCap.overCap)}`);
 
   // ===========================================================================
   // 5. Integration: the REAL Tools-menu button + hidden file input + real
@@ -1753,6 +1781,496 @@ window.__DXF = (() => {
     'a no-op simplify must leave the annotation count unchanged');
   check(simplify.annsAfterDomClick.length === 1,
     `clicking the REAL "Simplify" button in the Pattern Pieces panel must merge the 3-segment collinear piece down to 1 annotation, got ${simplify.annsAfterDomClick.length}`);
+
+  // ===========================================================================
+  // 11. ADR 0091 / US-124 Phase 2 — a DXF pattern is a CLASSIFIED closed
+  //     outline (ASTM layer 1, 84 as fallback) plus the marks assigned to it,
+  //     not a bounding-box-merged connected component. Every fixture here
+  //     carries real ASTM layer codes; every earlier fixture in this file has
+  //     none and therefore stays on the legacy grouping by construction.
+  // ===========================================================================
+
+  const astmSquare = (x0, y0, size, layer) => dxfLwpolyline(4, 1,
+    [[x0, y0], [x0 + size, y0], [x0 + size, y0 + size], [x0, y0 + size]], { layer });
+  const parseStats = async (text) => s.eval(`(() => {
+    const r = window.__braAutoModeDebug.dxf.parse(${JSON.stringify(text)});
+    return { ok: r.ok, reason: r.reason || null, n: r.ok ? r.pieces.length : null,
+      sizes: r.ok ? r.pieces.map(p => p.length) : null,
+      minX: r.ok ? r.pieces.map(p => Math.min(...p.flatMap(seg => seg.kind === 'straight' ? [seg.a.x, seg.b.x] : [seg.p0.x, seg.p3.x]))) : null,
+      patterns: r.patterns || null, stats: r.stats || null };
+  })()`);
+
+  // (A) The VeraLifting bug in miniature: a closed layer-1 boundary, a grain
+  // LINE (layer 7) far longer than the piece, an internal line (layer 8)
+  // touching nothing. Legacy containment split this into 2-3 pieces; it is
+  // ONE pattern.
+  const veraLike = await parseStats(docWithBlocks(
+    [dxfBlock('11_17_M', [...astmSquare(0, 0, 100, '1'), ...dxfLine(-400, 50, 500, 50, { layer: '7' }), ...dxfLine(10, 90, 60, 90, { layer: '8' })])],
+    [dxfInsert('11_17_M', 0, 0)],
+  ));
+  check(veraLike.ok && veraLike.n === 1 && veraLike.sizes[0] === 6,
+    `a boundary + an over-long grain line + an internal line in ONE block must be ONE 6-segment pattern, got ${JSON.stringify(veraLike)}`);
+  check(veraLike.stats.classifiedPatterns === 1 && veraLike.stats.orphans === 0 && veraLike.stats.legacyInstances === 0
+    && veraLike.patterns[0].kind === 'classified' && veraLike.patterns[0].boundaryLayer === '1'
+    && veraLike.patterns[0].classCounts.boundary === 4 && veraLike.patterns[0].classCounts.grain === 1 && veraLike.patterns[0].classCounts.internal === 1,
+    `the pattern must be classified from layer 1 with boundary/grain/internal class counts 4/1/1, got ${JSON.stringify(veraLike.patterns)} ${JSON.stringify(veraLike.stats)}`);
+
+  // (B) Two outlines in ONE instance (the BUYI-TECH shape): marks go to the
+  // outline that contains them; a known-class mark that pokes out still
+  // joins the outline it touches.
+  const twoOutlines = await parseStats(docWithBlocks(
+    [dxfBlock('TWO', [...astmSquare(0, 0, 100, '1'), ...astmSquare(1000, 0, 100, '1'),
+      ...dxfLine(1010, 50, 1090, 50, { layer: '8' }), ...dxfLine(-50, 50, 150, 50, { layer: '7' })])],
+    [dxfInsert('TWO', 0, 0)],
+  ));
+  check(twoOutlines.ok && twoOutlines.n === 2 && twoOutlines.stats.orphans === 0,
+    `two layer-1 outlines in one block must be two patterns with no orphan, got ${JSON.stringify(twoOutlines)}`);
+  {
+    const withGrain = twoOutlines.patterns.find(p => p.classCounts.grain === 1);
+    const withInternal = twoOutlines.patterns.find(p => p.classCounts.internal === 1);
+    check(withGrain && withInternal && withGrain !== withInternal && withGrain.segCount === 5 && withInternal.segCount === 5,
+      `the grain line must join the outline it crosses and the internal line the outline that contains it, got ${JSON.stringify(twoOutlines.patterns)}`);
+  }
+
+  // (C) Notch rule: a SHORT unknown-layer tick starting on an outline and
+  // running outward scores under 50% but is a notch of that outline.
+  const notchTick = await parseStats(docWithBlocks(
+    [dxfBlock('NT', [...astmSquare(0, 0, 100, '1'), ...astmSquare(1000, 0, 100, '1'), ...dxfLine(100, 50, 112, 50, { layer: '99' })])],
+    [dxfInsert('NT', 0, 0)],
+  ));
+  check(notchTick.ok && notchTick.n === 2 && notchTick.stats.orphans === 0
+    && notchTick.patterns.some(p => p.notchChains === 1 && p.classCounts.notch === 1 && p.segCount === 5),
+    `a short outward tick on an unknown layer must be assigned as a notch of the outline it touches, got ${JSON.stringify(notchTick.patterns)}`);
+
+  // (D) Orphan: an unknown-layer chain that touches nothing is its own
+  // pattern, flagged — never silently dropped, never guessed onto a piece.
+  const orphanCase = await parseStats(docWithBlocks(
+    [dxfBlock('OR', [...astmSquare(0, 0, 100, '1'), ...astmSquare(1000, 0, 100, '1'), ...dxfLine(500, 500, 600, 500, { layer: '99' })])],
+    [dxfInsert('OR', 0, 0)],
+  ));
+  check(orphanCase.ok && orphanCase.n === 3 && orphanCase.stats.orphans === 1
+    && orphanCase.patterns.filter(p => p.orphan).length === 1 && orphanCase.patterns.find(p => p.orphan).kind === 'orphan',
+    `an unassignable unknown-layer chain must become one flagged orphan pattern, got ${JSON.stringify(orphanCase)}`);
+
+  // (E) No boundary layer at all -> the legacy grouping, unchanged: a
+  // square of unlayered LINEs plus a contained CIRCLE still merge into ONE
+  // 8-segment piece by bounding-box containment.
+  const legacyCase = await parseStats(docWithBlocks(
+    [dxfBlock('LG', [...square(0, 0, 50), ...dxfCircle(25, 25, 5)])], [dxfInsert('LG', 0, 0)],
+  ));
+  check(legacyCase.ok && legacyCase.n === 1 && legacyCase.sizes[0] === 8
+    && legacyCase.stats.legacyInstances === 1 && legacyCase.stats.classifiedPatterns === 0 && legacyCase.patterns[0].kind === 'legacy',
+    `an instance with no layer-1 outline must take the legacy grouping (square + drill hole = 1 piece of 8), got ${JSON.stringify(legacyCase)}`);
+
+  // (F) An OPEN layer-1 chain is not an outline -> legacy for that instance.
+  const openBoundary = await parseStats(docWithBlocks(
+    [dxfBlock('OP', dxfLwpolyline(4, 0, [[0, 0], [100, 0], [100, 100], [0, 100]], { layer: '1' }))], [dxfInsert('OP', 0, 0)],
+  ));
+  check(openBoundary.ok && openBoundary.n === 1 && openBoundary.stats.legacyInstances === 1,
+    `an open layer-1 polyline is no outline; the instance must fall back to legacy, got ${JSON.stringify(openBoundary)}`);
+
+  // (G) Layer 84 (the boundary's quality-validation twin) is the boundary
+  // only when layer 1 is absent.
+  const qvBoundary = await parseStats(docWithBlocks(
+    [dxfBlock('QV', [...astmSquare(0, 0, 100, '84'), ...dxfLine(10, 50, 90, 50, { layer: '8' })])], [dxfInsert('QV', 0, 0)],
+  ));
+  check(qvBoundary.ok && qvBoundary.n === 1 && qvBoundary.sizes[0] === 5 && qvBoundary.patterns[0].boundaryLayer === '84'
+    && qvBoundary.stats.boundaryLayers['84'] === 1,
+    `with no layer 1, a closed layer-84 chain must serve as the boundary, got ${JSON.stringify(qvBoundary)}`);
+
+  // (H) Duplicate BLOCK names (2827/3039/3087/3114/3179/3286/Flexcamo): the
+  // k-th INSERT of a name takes the k-th definition. Before the fix every
+  // INSERT drew BOTH definitions (4 pieces here); now 2, at their own x.
+  const dupNames = await parseStats(docWithBlocks(
+    [dxfBlock('P', square(0, 0, 100)), dxfBlock('P', square(1000, 0, 100))],
+    [dxfInsert('P', 0, 0), dxfInsert('P', 0, 0)],
+  ));
+  check(dupNames.ok && dupNames.n === 2 && dupNames.minX.some(x => Math.abs(x) < 1e-6) && dupNames.minX.some(x => Math.abs(x - 1000) < 1e-6),
+    `two same-named BLOCK definitions referenced by two INSERTs must import as the two DIFFERENT squares (x=0 and x=1000), got ${JSON.stringify(dupNames)}`);
+
+  // (I) GBK block names through the REAL picker: bytes that lossy UTF-8
+  // decoding turns into identical "����" strings (two
+  // different Chinese piece names) must resolve to two DIFFERENT blocks and
+  // label the Pattern Pieces rows with the real names. Built byte-by-byte:
+  // the geometry is ASCII, only the two names are GBK.
+  const gbkNames = [GBK_NAME_A, GBK_NAME_B];
+  const gbkTemplate = docWithBlocks(
+    [dxfBlock('@A@', square(0, 0, 100)), dxfBlock('@B@', square(1000, 0, 100))],
+    [dxfInsert('@A@', 0, 0), dxfInsert('@B@', 0, 0)],
+  );
+  const gbkBytes = [];
+  for (const part of gbkTemplate.split(/(@A@|@B@)/)) {
+    if (part === '@A@') gbkBytes.push(...gbkNames[0].bytes);
+    else if (part === '@B@') gbkBytes.push(...gbkNames[1].bytes);
+    else gbkBytes.push(...Buffer.from(part, 'utf8'));
+  }
+  const gbkImport = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug;
+    const p = d.exportProject(); p.state.annotations = []; p.state.images = []; p.state.graphics = []; p.state.notes = [];
+    await d.loadProject(p);
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    const decoded = d.dxf.decodeBytes(new Uint8Array(${JSON.stringify(gbkBytes)}).buffer);
+    document.getElementById('fileMenuBtn').click();
+    const input = document.getElementById('projectFileInput');
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array(${JSON.stringify(gbkBytes)})], 'gbk-names.dxf', { type: 'application/octet-stream' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 40; i += 1) await new Promise(r => setTimeout(r, 40));
+    const anns = d.getAnnotations();
+    return {
+      encoding: decoded.encoding,
+      groups: new Set(anns.map(a => a.templateGroupId)).size,
+      lines: anns.length,
+      labels: d.dxf.patternPieces.groups().map(g => g.label),
+    };
+  })()`);
+  check(gbkImport.encoding === 'gbk', `bytes that are not valid UTF-8 must be decoded as GBK, got ${JSON.stringify(gbkImport)}`);
+  check(gbkImport.groups === 2 && gbkImport.lines === 8,
+    `two GBK-named blocks that collide under lossy UTF-8 must still import as two distinct 4-line pieces, got ${JSON.stringify(gbkImport)}`);
+  check(gbkImport.labels.includes(gbkNames[0].text) && gbkImport.labels.includes(gbkNames[1].text),
+    `the Pattern Pieces labels must carry the REAL Chinese block names, got ${JSON.stringify(gbkImport.labels)}`);
+
+  // ---- Phase 3: duplicates, quality-curve twins, POINT/TEXT, piece annotation
+
+  // (J) EXACT duplicate: CLO exports layer 14 (sew line) as a vertex-for-
+  // vertex copy of layer 1. One copy survives — the boundary (lower rank).
+  const exactDup = await parseStats(docWithBlocks(
+    [dxfBlock('ED', [...astmSquare(0, 0, 100, '1'), ...astmSquare(0, 0, 100, '14')])], [dxfInsert('ED', 0, 0)],
+  ));
+  check(exactDup.ok && exactDup.n === 1 && exactDup.sizes[0] === 4
+    && exactDup.patterns[0].dropped.exact === 4 && exactDup.patterns[0].droppedByClass.sew === 4
+    && exactDup.patterns[0].totalSegCount === 8 && exactDup.stats.dropped.exact === 4,
+    `an exact same-geometry copy on layer 14 must be dropped and the layer-1 boundary kept, got ${JSON.stringify(exactDup)}`);
+
+  // (K) Quality-validation twin: a denser re-tessellation of the boundary on
+  // layer 84, offset by 1% of the diagonal (real CLO twins deviate up to 4%,
+  // so no distance threshold can be the classifier — the LAYER is). Dropped
+  // by default; kept with keepQualityCurves.
+  const qvOutline = dxfLwpolyline(8, 1, [[0, 1.4], [50, 1.4], [100, 1.4], [100, 50], [100, 100], [50, 100], [0, 100], [0, 50]], { layer: '84' });
+  const qvDoc = docWithBlocks(
+    [dxfBlock('QT', [...astmSquare(0, 0, 100, '1'), ...qvOutline, ...dxfLine(10, 50, 90, 50, { layer: '8' })])], [dxfInsert('QT', 0, 0)],
+  );
+  const qvDropped = await parseStats(qvDoc);
+  check(qvDropped.ok && qvDropped.n === 1 && qvDropped.sizes[0] === 5
+    && qvDropped.patterns[0].dropped.qvTwin === 8 && qvDropped.patterns[0].droppedByClass['boundary-qv'] === 8
+    && qvDropped.stats.dropped.qvTwin === 8 && qvDropped.stats.keepQualityCurves === false,
+    `a layer-84 twin of the boundary must be dropped by default (4 boundary + 1 internal kept), got ${JSON.stringify(qvDropped)}`);
+  const qvKept = await s.eval(`(() => {
+    const r = window.__braAutoModeDebug.dxf.parseWith(${JSON.stringify(qvDoc)}, { keepQualityCurves: true });
+    return { ok: r.ok, sizes: r.ok ? r.pieces.map(p => p.length) : null, dropped: r.patterns && r.patterns[0].dropped, keep: r.stats && r.stats.keepQualityCurves };
+  })()`);
+  check(qvKept.ok && qvKept.sizes[0] === 13 && qvKept.dropped.qvTwin === 0 && qvKept.keep === true,
+    `with keepQualityCurves the same file must place the twin too (4 + 8 + 1 = 13), got ${JSON.stringify(qvKept)}`);
+
+  // (L) Lens counter-case (ADR 0079): two DIFFERENT arcs between the same two
+  // points on the same layer share endpoints but not midpoints — both stay.
+  const lens = await parseStats(docWithBlocks(
+    [dxfBlock('LN', [...astmSquare(0, 0, 100, '1'), ...dxfArc(50, 50, 10, 0, 180, { layer: '8' }), ...dxfArc(50, 50, 10, 180, 360, { layer: '8' })])],
+    [dxfInsert('LN', 0, 0)],
+  ));
+  check(lens.ok && lens.n === 1 && lens.patterns[0].dropped.exact === 0 && lens.patterns[0].dropped.qvTwin === 0
+    && lens.sizes[0] === lens.patterns[0].totalSegCount && lens.sizes[0] > 4,
+    `two different arcs between the same endpoints must both survive dedupe, got ${JSON.stringify(lens)}`);
+
+  // (M) POINT/TEXT are non-geometry, counted by ASTM class, and the CLO piece
+  // annotation is parsed into templateGroupMeta through the REAL picker.
+  const marksDoc = docWithBlocks(
+    [dxfBlock('CUP_M', [...astmSquare(0, 0, 100, '1'),
+      P(0, 'POINT'), P(8, '4'), P(10, 50), P(20, 0),
+      P(0, 'POINT'), P(8, '2'), P(10, 0), P(20, 0),
+      P(0, 'POINT'), P(8, '3'), P(10, 50), P(20, 100),
+      P(0, 'TEXT'), P(8, '1'), P(10, 10), P(20, 10), P(40, 2), P(1, 'PIECE NAME: CUP'),
+      P(0, 'TEXT'), P(8, '1'), P(10, 10), P(20, 20), P(40, 2), P(1, 'SIZE: M'),
+      P(0, 'TEXT'), P(8, '1'), P(10, 10), P(20, 30), P(40, 2), P(1, 'QUANTITY: 2'),
+    ])],
+    [dxfInsert('CUP_M', 0, 0)],
+  );
+  const marksParsed = await s.eval(`(() => {
+    const r = window.__braAutoModeDebug.dxf.parse(${JSON.stringify(marksDoc)});
+    return { ok: r.ok, n: r.ok ? r.pieces.length : null, buckets: r.buckets, marks: r.marks };
+  })()`);
+  check(marksParsed.ok && marksParsed.n === 1 && marksParsed.buckets.nonGeometry === 6 && marksParsed.buckets.unsupportedType === 0
+    && marksParsed.marks.points.total === 3 && marksParsed.marks.points.byClass.notch === 1
+    && marksParsed.marks.points.byClass.turn === 1 && marksParsed.marks.points.byClass.curve === 1
+    && marksParsed.marks.texts.total === 3
+    && marksParsed.marks.labelsByInstance['1'] && marksParsed.marks.labelsByInstance['1'].pieceName === 'CUP'
+    && marksParsed.marks.labelsByInstance['1'].size === 'M' && marksParsed.marks.labelsByInstance['1'].quantity === 2,
+    `POINT/TEXT must land in nonGeometry with ASTM class counts and a parsed PIECE NAME/SIZE/QUANTITY, got ${JSON.stringify(marksParsed)}`);
+  const marksImport = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug, h = window.__DXF;
+    const p = d.exportProject(); p.state.annotations = []; p.state.images = []; p.state.graphics = []; p.state.notes = [];
+    await d.loadProject(p);
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    await h.importViaRealInput(${JSON.stringify(marksDoc)});
+    const groups = d.dxf.patternPieces.groups();
+    const meta = d.dxf.patternPieces.meta();
+    const exported = d.exportProject();
+    return { labels: groups.map(g => g.label), meta: meta[groups[0].groupId], exportedMeta: exported.state.templateGroupMeta && exported.state.templateGroupMeta[groups[0].groupId], exportedOptions: exported.state.dxfImportOptions };
+  })()`);
+  check(marksImport.labels[0] === 'CUP_M' && marksImport.meta && marksImport.meta.pieceName === 'CUP' && marksImport.meta.size === 'M'
+    && marksImport.meta.quantity === 2 && marksImport.meta.kind === 'classified' && marksImport.meta.classCounts.boundary === 4,
+    `the imported group must keep the block name as its label (size-token contract, ADR 0084) and carry the parsed annotation + classification in templateGroupMeta, got ${JSON.stringify(marksImport)}`);
+  check(marksImport.exportedMeta && marksImport.exportedMeta.pieceName === 'CUP'
+    && marksImport.exportedOptions && marksImport.exportedOptions.keepQualityCurves === false,
+    `templateGroupMeta and dxfImportOptions must round-trip through exportProject(), got ${JSON.stringify({ m: marksImport.exportedMeta, o: marksImport.exportedOptions })}`);
+
+  // (N) The real toggle: the Pattern Pieces panel checkbox writes
+  // state.dxfImportOptions, and the NEXT import honours it — board pieces AND
+  // the native measure session agree on the kept count.
+  const toggleRun = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug, h = window.__DXF;
+    const reset = async () => { const p = d.exportProject(); p.state.annotations = []; p.state.images = []; p.state.graphics = []; p.state.notes = []; await d.loadProject(p);
+      document.getElementById('modeManualBtn').click(); if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click(); };
+    // Default first: the twin is dropped (5 lines), the panel opens on a
+    // board that has a piece, and the checkbox is genuinely rendered there.
+    await reset();
+    await h.importViaRealInput(${JSON.stringify(qvDoc)});
+    const droppedLines = d.getAnnotations().length;
+    const session2 = d.dxf.measure.getSession();
+    const sessionSegs2 = session2 ? session2.pieceSegmentCounts.reduce((s, n) => s + n, 0) : null;
+    d.dxf.patternPieces.open();
+    const box = document.getElementById('patternPiecesKeepQvChk');
+    const visibleBefore = !!box && box.offsetParent !== null && !box.checked;
+    box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true }));
+    const optAfterClick = d.dxf.getImportOptions();
+    // Then the NEXT import honours it.
+    await reset();
+    await h.importViaRealInput(${JSON.stringify(qvDoc)});
+    const keptLines = d.getAnnotations().length;
+    const session = d.dxf.measure.getSession();
+    const sessionSegs = session ? session.pieceSegmentCounts.reduce((s, n) => s + n, 0) : null;
+    const src = d.dxf.source();
+    d.dxf.patternPieces.open();
+    const box2 = document.getElementById('patternPiecesKeepQvChk');
+    const syncedOnReopen = !!box2 && box2.checked === true;
+    box2.checked = false; box2.dispatchEvent(new Event('change', { bubbles: true }));
+    return { visibleBefore, syncedOnReopen, optAfterClick, keptLines, sessionSegs, sourceOptions: src && src.importOptions, droppedLines, sessionSegs2, optFinal: d.dxf.getImportOptions() };
+  })()`);
+  check(toggleRun.visibleBefore && toggleRun.syncedOnReopen && toggleRun.optAfterClick.keepQualityCurves === true && toggleRun.optFinal.keepQualityCurves === false,
+    `the real panel checkbox must write state.dxfImportOptions both ways, got ${JSON.stringify(toggleRun)}`);
+  check(toggleRun.keptLines === 13 && toggleRun.droppedLines === 5,
+    `the next import must honour the toggle (13 lines kept vs 5 dropped), got ${JSON.stringify(toggleRun)}`);
+  check(toggleRun.sessionSegs === 13 && toggleRun.sessionSegs2 === 5 && toggleRun.sourceOptions && toggleRun.sourceOptions.keepQualityCurves === true,
+    `the native measure session must drop/keep the same twins as the board and the source must remember the option, got ${JSON.stringify(toggleRun)}`);
+
+  // ---- Phase 4: the pre-placement picker + panel row metadata
+
+  // (O) Nine INSERT-placed blocks of 2,400 lines each = 21,600 > 20,000: the
+  // REAL import opens the picker instead of refusing; unticking one block
+  // brings it to 19,200 and "Import selected" places the other eight — on
+  // the board AND in the native measure session — remembering the exclusion
+  // on the source. Cancel leaves the board byte-for-byte empty.
+  const nineBlocksDoc = docWithBlocks(
+    Array.from({ length: 9 }, (_, i) => dxfBlock('CH' + i, dxfChain(2400))),
+    Array.from({ length: 9 }, (_, i) => dxfInsert('CH' + i, 0, i * 50)),
+  );
+  const nineBlocksParse = await s.eval(`(() => {
+    const r = window.__braAutoModeDebug.dxf.parse(${JSON.stringify(nineBlocksDoc)});
+    return { ok: r.ok, reason: r.reason, overCap: r.overCap };
+  })()`);
+  check(nineBlocksParse.ok === false && nineBlocksParse.reason === 'total-cap' && nineBlocksParse.overCap.instances.length === 9
+    && nineBlocksParse.overCap.instances.every(r => r.patterns === 1 && r.lines === 2400 && /^CH\d$/.test(r.blockName)),
+    `nine INSERT-placed 2,400-line blocks must report nine 2,400-line instance rows, got ${JSON.stringify(nineBlocksParse.overCap)}`);
+  const picker = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug, h = window.__DXF;
+    const reset = async () => { const p = d.exportProject(); p.state.annotations = []; p.state.images = []; p.state.graphics = []; p.state.notes = []; await d.loadProject(p);
+      document.getElementById('modeManualBtn').click(); if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click(); };
+    const settle = async (n) => { for (let i = 0; i < n; i += 1) await new Promise(r => setTimeout(r, 40)); };
+    await reset();
+    const before = JSON.stringify(d.getAnnotations());
+    await h.importViaRealInput(${JSON.stringify(nineBlocksDoc)});
+    await settle(10);
+    const overlay = document.querySelector('.picker-overlay.dxf-pattern-picker');
+    if (!overlay) return { noDialog: true, anns: d.getAnnotations().length };
+    const ok = overlay.querySelector('.dxf-pattern-picker-ok');
+    const summaryBefore = overlay.querySelector('.dxf-pattern-picker-summary').textContent;
+    const okDisabledBefore = ok.disabled;
+    const boxes = Array.from(overlay.querySelectorAll('input[type=checkbox]'));
+    boxes[0].checked = false; boxes[0].dispatchEvent(new Event('change', { bubbles: true }));
+    const summaryAfter = overlay.querySelector('.dxf-pattern-picker-summary').textContent;
+    const okDisabledAfter = ok.disabled;
+    ok.click();
+    await settle(40);
+    const dialogGone = !document.querySelector('.picker-overlay.dxf-pattern-picker');
+    const anns = d.getAnnotations().length;
+    const groups = d.dxf.patternPieces.groups().length;
+    const session = d.dxf.measure.getSession();
+    const src = d.dxf.source();
+    // Cancel path.
+    await reset();
+    await h.importViaRealInput(${JSON.stringify(nineBlocksDoc)});
+    await settle(10);
+    const overlay2 = document.querySelector('.picker-overlay.dxf-pattern-picker');
+    const cancel = overlay2 && Array.from(overlay2.querySelectorAll('button')).find(b => b.textContent === 'Cancel');
+    if (cancel) cancel.click();
+    await settle(10);
+    return { rows: boxes.length, summaryBefore, okDisabledBefore, summaryAfter, okDisabledAfter, dialogGone, anns, groups,
+      sessionPieces: session && session.pieceCount, excluded: src && src.importOptions && src.importOptions.excludeInstances,
+      cancelledAnns: d.getAnnotations().length, cancelledDialogGone: !document.querySelector('.picker-overlay.dxf-pattern-picker'), boardUnchangedAfterCancel: JSON.stringify(d.getAnnotations()) === before };
+  })()`);
+  check(!picker.noDialog && picker.rows === 9 && picker.okDisabledBefore === true && /21,600 of 20,000/.test(picker.summaryBefore),
+    `a total-cap import must open the picker with 9 rows, Import disabled and the over-limit summary, got ${JSON.stringify(picker)}`);
+  check(picker.okDisabledAfter === false && /19,200 of 20,000/.test(picker.summaryAfter) && picker.dialogGone
+    && picker.anns === 19200 && picker.groups === 8 && picker.sessionPieces === 8
+    && Array.isArray(picker.excluded) && picker.excluded.length === 1 && picker.excluded[0] === 1,
+    `unticking one block must enable Import and place the other 8 (19,200 lines) on the board and in the native session, remembering the exclusion, got ${JSON.stringify(picker)}`);
+  check(picker.cancelledAnns === 0 && picker.cancelledDialogGone && picker.boardUnchangedAfterCancel,
+    `Cancel must leave the board untouched, got ${JSON.stringify(picker)}`);
+
+  // (P) Pattern Pieces rows show the annotation + classification subtitle
+  // through the REAL panel DOM.
+  const rowMeta = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug, h = window.__DXF;
+    const p = d.exportProject(); p.state.annotations = []; p.state.images = []; p.state.graphics = []; p.state.notes = [];
+    await d.loadProject(p);
+    document.getElementById('modeManualBtn').click();
+    if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    await h.importViaRealInput(${JSON.stringify(marksDoc)});
+    d.dxf.patternPieces.open();
+    const row = document.querySelector('#patternPiecesBody .pattern-piece-row');
+    return { label: row && row.querySelector('.pattern-piece-label').textContent, sub: row && row.querySelector('.pattern-piece-sub') && row.querySelector('.pattern-piece-sub').textContent };
+  })()`);
+  check(rowMeta.label === 'CUP_M' && rowMeta.sub && rowMeta.sub.includes('CUP · M · qty 2') && rowMeta.sub.includes('outline 4'),
+    `the panel row must show the block name as label and the annotation + classification as subtitle, got ${JSON.stringify(rowMeta)}`);
+
+  // ===========================================================================
+  // 12. Corpus oracle (private repo only): every parseable real file under
+  //     demo/DXF file/** must yield the pattern count pinned in
+  //     scripts/dxf-corpus-oracle.json — the layer-1 closed-outline count
+  //     (== INSERT count once duplicate block names resolve) for layered
+  //     files, today's legacy count for the three files with no layer 1 —
+  //     with ZERO orphans on every layered file. Fed the SAME bytes the real
+  //     picker would see (decodeBytes), not fetch().text()'s lossy UTF-8.
+  // ===========================================================================
+
+  const oraclePath = path.join(appDir, 'scripts', 'dxf-corpus-oracle.json');
+  const corpusDir = path.join(appDir, 'demo', 'DXF file');
+  if (!existsSync(oraclePath) || !existsSync(corpusDir)) {
+    console.log('SKIP  dxf-import-check   corpus oracle or demo/DXF file absent (public mirror) — section 12 skipped');
+  } else {
+    const oracle = JSON.parse(readFileSync(oraclePath, 'utf8'));
+    const corpus = await s.eval(`(async () => {
+      const d = window.__braAutoModeDebug.dxf;
+      const out = [];
+      for (const row of ${JSON.stringify(oracle.files)}) {
+        const res = await fetch('/' + encodeURI(row.path));
+        if (!res.ok) { out.push({ path: row.path, missing: true }); continue; }
+        const decoded = d.decodeBytes(await res.arrayBuffer());
+        const r = d.parse(decoded.text);
+        out.push({ path: row.path, ok: r.ok, reason: r.reason || null, n: r.ok ? r.pieces.length : null,
+          orphans: r.stats ? r.stats.orphans : null, legacy: r.stats ? r.stats.legacyPieces : null, encoding: decoded.encoding,
+          lines: r.ok ? r.pieces.reduce((s, p) => s + p.length, 0) : null,
+          droppedExact: r.stats && r.stats.dropped ? r.stats.dropped.exact : null,
+          droppedQv: r.stats && r.stats.dropped ? r.stats.dropped.qvTwin : null });
+      }
+      return out;
+    })()`);
+    for (const row of oracle.files) {
+      const got = corpus.find(c => c.path === row.path);
+      if (!got || got.missing) { console.log(`SKIP  dxf-import-check   ${row.path} not present — oracle row skipped`); continue; }
+      check(got.ok === true && got.n === row.patterns,
+        `${row.path}: expected ${row.patterns} patterns, got ${JSON.stringify(got)}`);
+      check(got.orphans === row.orphans,
+        `${row.path}: expected ${row.orphans} orphan chains, got ${JSON.stringify(got)}`);
+      if (row.encoding) check(got.encoding === row.encoding, `${row.path}: expected ${row.encoding} decoding, got ${got.encoding}`);
+      // Phase 3: kept line count pins the dedupe effect where the oracle
+      // records it (legacy-only files must keep every line).
+      if (Number.isInteger(row.lines)) check(got.lines === row.lines, `${row.path}: expected ${row.lines} kept lines, got ${JSON.stringify(got)}`);
+      if (Number.isInteger(row.droppedExact)) check(got.droppedExact === row.droppedExact, `${row.path}: expected ${row.droppedExact} exact duplicates dropped, got ${JSON.stringify(got)}`);
+      if (Number.isInteger(row.droppedQv)) check(got.droppedQv === row.droppedQv, `${row.path}: expected ${row.droppedQv} quality-curve twins dropped, got ${JSON.stringify(got)}`);
+    }
+  }
+
+  // ===========================================================================
+  // 13. US-124 Phase 6 — pipelineVersion: a project saved by the pre-ADR-0091
+  //     build reopens with its native measurement model grouped the OLD way
+  //     (global legacy grouping, same-named BLOCK definitions concatenated),
+  //     so the saved board pieces and the rebuilt native pieces still pair
+  //     by index and pieceAnchors stay live. Nothing is migrated.
+  // ===========================================================================
+
+  // (a) The v1 mode reproduces the pre-change numbers this story's own
+  // Phase-0 audit recorded with the pre-change parser, on the LOSSY text a
+  // pre-change import would have stored (fetch().text() == readAsText).
+  const v1Corpus = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug.dxf;
+    const out = {};
+    for (const [key, p] of [['b2844', 'demo/DXF file/dxf/2844.dxf'], ['bianca', 'demo/DXF file/BiancaBra v.A 1.0_Pattern.dxf'], ['f3380', 'demo/DXF file/3380.dxf']]) {
+      const res = await fetch('/' + encodeURI(p));
+      if (!res.ok) { out[key] = { missing: true }; continue; }
+      const lossy = await res.text();
+      const v1 = d.parseNative(lossy, { pipelineVersion: 1 });
+      const v2 = d.parseNative(lossy, {});
+      out[key] = { v1: v1.ok ? v1.pieces.length : v1.reason, v2: v2.ok ? v2.pieces.length : v2.reason, v1Stats: v1.stats && v1.stats.pipelineVersion, v2Stats: v2.stats && v2.stats.pipelineVersion,
+        sameSegments: v1.ok && v2.ok && JSON.stringify(v1.pieces) === JSON.stringify(v2.pieces) };
+    }
+    return out;
+  })()`);
+  if (v1Corpus.b2844.missing) {
+    console.log('SKIP  dxf-import-check   corpus absent — section 13(a) skipped');
+  } else {
+    check(v1Corpus.b2844.v1 === 10 && v1Corpus.b2844.v2 === 6 && v1Corpus.b2844.v1Stats === 1 && v1Corpus.b2844.v2Stats === 2,
+      `2844 (lossy text): pipelineVersion 1 must reproduce the pre-change 10 pieces (concatenated same-named blocks), v2 the real 6, got ${JSON.stringify(v1Corpus.b2844)}`);
+    check(v1Corpus.bianca.v1 === 108 && v1Corpus.bianca.v2 === 41,
+      `BiancaBra: pipelineVersion 1 must reproduce the pre-change 108 pieces, v2 the real 41, got ${JSON.stringify(v1Corpus.bianca)}`);
+    check(v1Corpus.f3380.v1 === 6 && v1Corpus.f3380.v2 === 6 && v1Corpus.f3380.sameSegments,
+      `3380 (no layer 1): both pipelines must give the same 6 pieces, segment for segment, got ${JSON.stringify(v1Corpus.f3380)}`);
+  }
+
+  // (b) A genuine v1 project (built through the test-only pipelineVersion:1
+  // door, saved, reopened) keeps 10 board pieces paired with 10 native pieces
+  // and live pieceAnchors; the same file imported with v2 round-trips as 6.
+  // (c) Deleting the field from the saved source (a project written before
+  // the field existed) must read as v1.
+  const roundTrip = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug, h = window.__DXF;
+    const res = await fetch('/' + encodeURI('demo/DXF file/dxf/2844.dxf'));
+    if (!res.ok) return { missing: true };
+    const lossy = await res.text();
+    const reset = async () => { const p = d.exportProject(); p.state.annotations = []; p.state.images = []; p.state.graphics = []; p.state.notes = []; await d.loadProject(p);
+      document.getElementById('modeManualBtn').click(); if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click(); };
+    const snapshot = () => { const s = d.dxf.measure.getSession(); const src = d.dxf.source(); return { groups: d.dxf.patternPieces.groups().length, anns: d.getAnnotations().length,
+      sessionPieces: s && s.pieceCount, anchors: s && s.pieceAnchorsNonNull, sourceVersion: src && src.pipelineVersion }; };
+    const rect = { left: 0, top: 0, width: 1000, height: 800 };
+    // v1 board
+    await reset();
+    d.dxf.importText(lossy, rect, '2844-v1.dxf', { pipelineVersion: 1 });
+    const v1Before = snapshot();
+    const v1Project = d.exportProject();
+    await reset();
+    await d.loadProject(JSON.parse(JSON.stringify(v1Project)));
+    const v1After = snapshot();
+    // old project: no pipelineVersion field at all
+    const legacyProject = JSON.parse(JSON.stringify(v1Project));
+    delete legacyProject.state.dxfPatternSource.pipelineVersion;
+    await reset();
+    await d.loadProject(legacyProject);
+    const legacyAfter = snapshot();
+    // v2 board
+    await reset();
+    d.dxf.importText(lossy, rect, '2844-v2.dxf');
+    const v2Before = snapshot();
+    const v2Project = d.exportProject();
+    await reset();
+    await d.loadProject(JSON.parse(JSON.stringify(v2Project)));
+    const v2After = snapshot();
+    return { v1Before, v1After, legacyAfter, v2Before, v2After };
+  })()`);
+  if (roundTrip.missing) {
+    console.log('SKIP  dxf-import-check   corpus absent — section 13(b/c) skipped');
+  } else {
+    check(roundTrip.v1Before.groups === 10 && roundTrip.v1Before.sessionPieces === 10 && roundTrip.v1Before.anchors === 10 && roundTrip.v1Before.sourceVersion === 1,
+      `a v1-built board must have 10 groups, 10 native pieces, 10 live anchors and record pipelineVersion 1, got ${JSON.stringify(roundTrip.v1Before)}`);
+    check(roundTrip.v1After.groups === 10 && roundTrip.v1After.sessionPieces === 10 && roundTrip.v1After.anchors === 10 && roundTrip.v1After.sourceVersion === 1,
+      `reopening the v1 project must rebuild 10 native pieces with 10 live anchors (not the v2 grouping's 6), got ${JSON.stringify(roundTrip.v1After)}`);
+    check(roundTrip.legacyAfter.groups === 10 && roundTrip.legacyAfter.sessionPieces === 10 && roundTrip.legacyAfter.anchors === 10,
+      `a saved source with NO pipelineVersion field must be read as v1 and keep its 10 anchors, got ${JSON.stringify(roundTrip.legacyAfter)}`);
+    check(roundTrip.v2Before.groups === 6 && roundTrip.v2Before.sourceVersion === 2 && roundTrip.v2After.groups === 6 && roundTrip.v2After.sessionPieces === 6 && roundTrip.v2After.anchors === 6 && roundTrip.v2After.sourceVersion === 2,
+      `a v2 project must round-trip as 6 patterns with 6 live anchors and pipelineVersion 2, got ${JSON.stringify({ before: roundTrip.v2Before, after: roundTrip.v2After })}`);
+  }
 
   const errors = await s.eval('window.__dxfErrors || []');
   check(errors.length === 0, 'browser console errors: ' + errors.join(' | '));

@@ -29,6 +29,9 @@
       // gone — the panel would show a positional "Piece N" fallback for a
       // piece that still has a real name.
       templateGroupLabels: clone(state.templateGroupLabels || {}),
+      // US-124 Phase 3: same reasoning as the labels — undo of a removal
+      // must bring the piece's classification/annotation back with it.
+      templateGroupMeta: clone(state.templateGroupMeta || {}),
       // ADR 0071.
       notches: clone(state.notches || []),
       graphics: clone(state.graphics || []),
@@ -117,6 +120,8 @@
     state.annotations.forEach(ensureCurveControls);
     state.templateGroupLabels = (snapshot.templateGroupLabels && typeof snapshot.templateGroupLabels === 'object')
       ? clone(snapshot.templateGroupLabels) : {};
+    state.templateGroupMeta = (snapshot.templateGroupMeta && typeof snapshot.templateGroupMeta === 'object')
+      ? clone(snapshot.templateGroupMeta) : {};
     state.notches = (snapshot.notches || []).map(normalizeNotch).filter(Boolean);
     state.graphics = normalizeBoardGraphics(snapshot.graphics || []);
     state.graphicEdit = null;

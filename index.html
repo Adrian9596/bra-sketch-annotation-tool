@@ -391,6 +391,8 @@
   /* ADR 0070: Pattern Pieces panel reuses the .anchor-panel shell, docked on
      the opposite corner so the two floating panels never overlap. */
   .pattern-pieces-panel{ left:auto; right:12px; }
+  .anchor-panel-option{ display:flex; align-items:center; gap:6px; padding:4px 10px 6px; font-size:11px; color:#475569; border-bottom:1px solid #e2e8f0; cursor:pointer; }
+  .anchor-panel-option input{ margin:0; }
   .pattern-piece-row{
     display:flex; align-items:center; gap:8px; padding:5px 10px;
     font-size:12px; border-top:1px solid #f4f6fa;
@@ -401,6 +403,12 @@
     text-overflow:ellipsis; white-space:nowrap;
   }
   .pattern-piece-label:hover{ text-decoration:underline; }
+  /* US-124 Phase 4: label + one-line ASTM annotation / classification. */
+  .pattern-piece-label-wrap{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .pattern-piece-label-wrap .pattern-piece-label{ flex:0 0 auto; }
+  .pattern-piece-sub{ font-size:10px; color:#64748b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pattern-piece-badge{ display:inline-block; margin-left:6px; padding:0 5px; border-radius:8px; font-size:9.5px; line-height:14px; vertical-align:middle; }
+  .pattern-piece-badge-orphan{ background:#fee2e2; color:#b91c1c; }
   .pattern-piece-count{ font-size:10.5px; color:#64748b; flex:0 0 auto; }
   .pattern-piece-mini-btn{
     border:1px solid #cbd5e1; background:#fff; border-radius:5px;
@@ -3722,6 +3730,12 @@
             <span class="anchor-panel-spacer"></span>
             <button id="patternPiecesApplyBtn" type="button" class="anchor-panel-btn">Remove unchecked</button>
           </div>
+          <!-- US-124 Phase 3 (ADR 0091): import-time option. Applies to the
+               NEXT import — twins dropped by a past import cannot be added
+               back; re-import the file with this on. -->
+          <label class="anchor-panel-option" title="ASTM D6673 layers 84/85/86/87 repeat the boundary, internal and sew lines as smoother 'quality validation' curves. Off (default): they are dropped so each edge is drawn once. On: the next DXF import places them too.">
+            <input id="patternPiecesKeepQvChk" type="checkbox" /> Keep quality-curve twins (ASTM 84/85/87) on next import
+          </label>
           <div id="patternPiecesBody" class="anchor-panel-body"></div>
         </div>
         <!-- US-113: lists every Pattern Measure session measurement — ADR
@@ -4000,6 +4014,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=074b98b062c8"></script>
+<script src="app.js?v=9b38bb0891a2"></script>
 </body>
 </html>
