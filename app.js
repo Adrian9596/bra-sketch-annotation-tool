@@ -5,7 +5,7 @@
   const BUILTIN_AUTO_MODE_RULE_JSON = {"version":{"pom_unit":"in","template_version":"core18-2026-07-18b","rule_version":"offline-vision-rules-v3","anchor_version":"anchors-2026-08-24-hem-offset-preserved","suggestions_version":"sizeL-suggestions-v1"},"pomTemplate":{"rows":[{"id":"1","name":"1/2 Bottom band - Relax","zh":"下围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"primary","partner":"2","groupName":"1/2 Bottom band","primaryLabel":"Relax","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"2","name":"1/2 Bottom band - Extend","zh":"下围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"secondary","primary":"1"},"expected_confidence_tier":"high"},{"id":"3","name":"1/2 chest - Measure straight","zh":"胸围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"primary","partner":"4","groupName":"1/2 Chest","primaryLabel":"Measure straight","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"4","name":"1/2 chest - Extend","zh":"胸围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"secondary","primary":"3"},"expected_confidence_tier":"high"},{"id":"5","name":"Center front height","zh":"前中高度","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"6","name":"Cradle height at center front","zh":"托架前中高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"7","name":"Cradle height at bottom cup","zh":"托架底杯高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cup-top","cradle-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"8","name":"Cup height at center front","zh":"前中杯高","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cradle-cf-top"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"9","name":"Cup height","zh":"杯高","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-top","inner-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"10","name":"Cup width","zh":"杯宽","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-left","inner-cup-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"11","name":"Side seam length","zh":"侧缝长度","view":"back","refL":null,"requiredAnchors":["side-top","side-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"12","name":"Back center length","zh":"后中高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"13","name":"Back panel height","zh":"后背片高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"optionalAnchors":["back-panel-top","back-panel-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"14","name":"Shoulder strap length","zh":"肩带长度","view":"front_to_back","placementViewRole":"back","refL":null,"requiredAnchors":["strap-top","strap-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"},{"id":"15","name":"Back strap distances","zh":"后肩带间距","view":"back","refL":null,"requiredAnchors":["back-strap-left","back-strap-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"16","name":"Front apex distance","zh":"乳点间距","view":"front_outer","refL":null,"requiredAnchors":["apex-left","apex-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"17","name":"Neckline length","zh":"领口长","view":"front_outer","refL":null,"requiredAnchors":["171","172"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"18","name":"Armhole curve length","zh":"袖窿弧长","view":"front_outer","refL":null,"requiredAnchors":["181","182"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"}]},"anchorSchema":{"anchors":[{"kind":"cf-top","name":"CF top","group":"axis","hint":"Top of the center-front, where the cradle meets the chest line."},{"kind":"cf-bottom","name":"CF bottom","group":"axis","hint":"Bottom of the center front, on the underbust band.","derivation":{"method":"drop_to_line","args":["cf-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"cradle-cf-top","name":"Cradle CF","group":"axis","hint":"Where the cradle / cup-bottom seam approaches the center front. POM 6 top."},{"kind":"cradle-cup-top","name":"Cradle cup top","group":"axis","hint":"Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."},{"kind":"cradle-cup-bottom","name":"Cradle cup btm","group":"axis","hint":"Band baseline directly below the bottom-cup cradle point (POM 7 bottom).","derivation":{"method":"drop_to_line","args":["cradle-cup-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"band-left","name":"Band L","group":"band","hint":"Leftmost end of the underbust band line."},{"kind":"band-right","name":"Band R","group":"band","hint":"Rightmost end of the underbust band line."},{"kind":"chest-left","name":"Chest L","group":"chest","hint":"Left end of the chest / overbust horizontal line."},{"kind":"chest-right","name":"Chest R","group":"chest","hint":"Right end of the chest / overbust horizontal line."},{"kind":"inner-cup-top","name":"IC top","group":"inner-cup","hint":"Top of the cup (apex) on the front (outer) view — POM 9 start."},{"kind":"inner-cup-bottom","name":"IC btm","group":"inner-cup","hint":"Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."},{"kind":"inner-cup-left","name":"IC L","group":"inner-cup","hint":"Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."},{"kind":"inner-cup-right","name":"IC R","group":"inner-cup","hint":"Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."},{"kind":"side-top","name":"Side top","group":"side","hint":"Top of the side seam at the underarm."},{"kind":"side-bottom","name":"Side btm","group":"side","hint":"Bottom of the side seam at the band."},{"kind":"apex-left","name":"Apex L","group":"apex","hint":"Left shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"apex-right","name":"Apex R","group":"apex","hint":"Right shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"strap-top","name":"Front strap join","group":"strap","hint":"Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."},{"kind":"strap-bottom","name":"Back strap join","group":"strap","hint":"End of the shoulder strap at the back / back-panel join — POM 14 end."},{"kind":"back-top","name":"Back top","group":"back","hint":"Top edge of the back panel."},{"kind":"back-bottom","name":"Back btm","group":"back","hint":"Bottom edge of the back panel."},{"kind":"back-panel-top","name":"Panel top","group":"back","hint":"Upper point for back panel height."},{"kind":"back-panel-bottom","name":"Panel btm","group":"back","hint":"Lower point for back panel height."},{"kind":"back-strap-left","name":"Back strap L","group":"back","hint":"Left point of the back strap distance."},{"kind":"back-strap-right","name":"Back strap R","group":"back","hint":"Right point of the back strap distance."},{"kind":"171","name":"171","group":"neckline","hint":"Left upper neckline corner, where the cup/gore top edge meets the strap base."},{"kind":"172","name":"172","group":"neckline","hint":"Right upper neckline corner (mirror of Neckline L)."},{"kind":"181","name":"181","group":"armhole","hint":"Underarm side point at the bottom of the arm opening."},{"kind":"182","name":"182","group":"armhole","hint":"Strap/shoulder junction at the top of the arm opening."}]},"sizeLSuggestions":{"suggestions_version":"sizeL-suggestions-v1","unit":"in","provenance":{"corpus":"Measurements 2/library/_raw_intake/measurements_size_l.csv","conceptMap":"Measurements 2/library/pom_concepts.csv","tolDefaults":"Measurements 2/library/pom_tol_defaults.csv","sketchRatios":"Measurements 2/library/sketch_ratios.csv","generatedBy":"scripts/generate-sizeL-suggestions.mjs","corpusRows":2950,"styleVersions":225,"droppedRows":26,"note":"Derived from the approved Size-L corpus. Regenerate with the generator; never hand-edit. droppedRows = corpus rows whose concept is not yet canonicalized (raw_* intake phrases)."},"poms":{"1":{"concept":"band_relax","median":14,"min":12.74,"max":14.38,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"2":{"concept":"band_extended","median":19,"min":18,"max":19.25,"tol":"1/2","tolType":"min","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"3":{"concept":"chest_relax","median":17,"min":15.5,"max":17.5,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":198,"confidence":"medium","source":"library"},"4":{"concept":"chest_extended","median":22,"min":20,"max":22.77,"tol":"1/2","tolType":"min","sketchReliable":false,"n":197,"confidence":"medium","source":"library"},"5":{"concept":"cf_height","median":5.5,"min":1.32,"max":6.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":217,"confidence":"medium","source":"library"},"6":{"concept":"cradle_cf","median":2.25,"min":1.31,"max":3,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":163,"confidence":"medium","source":"library"},"7":{"concept":"cradle_under_cup","median":1.75,"min":1.11,"max":2.64,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":173,"confidence":"medium","source":"library"},"8":{"concept":"cup_height_cf","median":3,"min":1.75,"max":4,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":113,"confidence":"low","source":"library"},"9":{"concept":"cup_height","median":8,"min":5.805,"max":9.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":237,"confidence":"medium","source":"library"},"10":{"concept":"cup_width","median":8,"min":6.6,"max":9,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":221,"confidence":"medium","source":"library"},"11":{"concept":"sideseam_length","median":5.5,"min":4.5,"max":6,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":211,"confidence":"medium","source":"library"},"12":{"concept":"cb_height","median":3.75,"min":2,"max":7.24,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":239,"confidence":"medium","source":"library"},"13":{"concept":"back_panel_height","median":7.25,"min":3,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":181,"confidence":"medium","source":"library"},"14":{"concept":"strap_length","median":8,"min":4,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":155,"confidence":"low","source":"library"},"15":{"concept":"back_straps_distance","median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"16":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"17":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"18":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"}}}};
 
   // US-124: URL of the DXF Worker bundle, content-hashed like app.js?v=.
-  const DXF_WORKER_URL = "dxf-worker.js?v=33100587f98d";
+  const DXF_WORKER_URL = "dxf-worker.js?v=54fe945d148e";
 
   // ---- src/auto/rules/load-rules.js ----
 // Loads TD-editable Auto Mode rules from auto_mode_rules/*.json.
@@ -750,9 +750,6 @@
     autoLearnToggleBtn: document.getElementById('autoLearnToggleBtn'),
     autoLearnChip: document.getElementById('autoLearnChip'),
     autoAcceptanceChip: document.getElementById('autoAcceptanceChip'),
-    autoLearnMenuWrap: document.getElementById('autoLearnMenuWrap'),
-    autoLearnMenuBtn: document.getElementById('autoLearnMenuBtn'),
-    autoLearnMenuList: document.getElementById('autoLearnMenuList'),
     viewLearningDataItem: document.getElementById('viewLearningDataItem'),
     resetResidualsItem: document.getElementById('resetResidualsItem'),
     resetMeaningsCurrentItem: document.getElementById('resetMeaningsCurrentItem'),
@@ -4441,13 +4438,6 @@
     const components = dxfConnectedComponents(segments, tolOverride);
     const pieceSegIdxLists = dxfMergeContainedComponents(components);
     return pieceSegIdxLists.map(idxs => idxs.map(i => segments[i]));
-  }
-
-  // The one grouping entry point both parsers call. Same return shape as
-  // before (array of arrays of the caller's segment objects); the richer
-  // per-piece classification is available via dxfClassifyPatterns directly.
-  function dxfBuildPieces(segments) {
-    return dxfClassifyPatterns(segments).pieces;
   }
 
   // ---- Placement transform ----------------------------------------------------
@@ -21867,11 +21857,6 @@ const BOM_MATERIAL_LIBRARY = [
     if (el.patternPiecesBtn) el.patternPiecesBtn.classList.remove('active');
   }
 
-  function togglePatternPiecesPanel() {
-    if (isPatternPiecesPanelOpen()) closePatternPiecesPanel();
-    else openPatternPiecesPanel();
-  }
-
   // Selects the group's annotations on the board so the existing multi-select
   // halo (render-loop.js) highlights exactly this outline among the stack —
   // reuses the click-a-group-member selection behavior already wired for
@@ -22087,11 +22072,6 @@ const BOM_MATERIAL_LIBRARY = [
     if (!el.dxfMeasurementsPanel) return;
     el.dxfMeasurementsPanel.hidden = true;
     pendingSeamMatchSourceId = null;
-  }
-
-  function toggleDxfMeasurementsPanel() {
-    if (isDxfMeasurementsPanelOpen()) closeDxfMeasurementsPanel();
-    else openDxfMeasurementsPanel();
   }
 
   function dxfMeasurementDisplayName(measurement) {
@@ -22582,33 +22562,23 @@ const BOM_MATERIAL_LIBRARY = [
         openLearningDataDialog();
       });
     }
-    if (el.autoLearnMenuBtn) {
-      el.autoLearnMenuBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleAutoLearnMenu();
-      });
-    }
     if (el.viewLearningDataItem) {
       el.viewLearningDataItem.addEventListener('click', () => {
-        closeAutoLearnMenu();
         openLearningDataDialog();
       });
     }
     if (el.resetResidualsItem) {
       el.resetResidualsItem.addEventListener('click', () => {
-        closeAutoLearnMenu();
         resetLearning();
       });
     }
     if (el.resetMeaningsCurrentItem) {
       el.resetMeaningsCurrentItem.addEventListener('click', () => {
-        closeAutoLearnMenu();
         resetPomMeanings('current');
       });
     }
     if (el.resetMeaningsAllItem) {
       el.resetMeaningsAllItem.addEventListener('click', () => {
-        closeAutoLearnMenu();
         resetPomMeanings('all');
       });
     }
@@ -22662,7 +22632,6 @@ const BOM_MATERIAL_LIBRARY = [
 
     document.addEventListener('click', (e) => {
       if (!el.lineStyleControl.contains(e.target)) closeLineStyleMenu();
-      if (el.autoLearnMenuWrap && !el.autoLearnMenuWrap.contains(e.target)) closeAutoLearnMenu();
       // US-038: click outside the floating anchor panel closes it — but not
       // when clicking the toolbar toggle (that has its own handler) or the
       // canvas (dragging pins while it's open should stay open).
@@ -22764,24 +22733,6 @@ const BOM_MATERIAL_LIBRARY = [
   function closeLineStyleMenu() {
     el.stitchesMenu.hidden = true;
     el.stitchesBtn.setAttribute('aria-expanded', 'false');
-  }
-
-  function toggleAutoLearnMenu() {
-    if (!el.autoLearnMenuList) return;
-    if (!el.autoLearnMenuList.hidden) closeAutoLearnMenu();
-    else openAutoLearnMenu();
-  }
-
-  function openAutoLearnMenu() {
-    if (!el.autoLearnMenuList) return;
-    el.autoLearnMenuList.hidden = false;
-    el.autoLearnMenuBtn.setAttribute('aria-expanded', 'true');
-  }
-
-  function closeAutoLearnMenu() {
-    if (!el.autoLearnMenuList) return;
-    el.autoLearnMenuList.hidden = true;
-    if (el.autoLearnMenuBtn) el.autoLearnMenuBtn.setAttribute('aria-expanded', 'false');
   }
 
   function setArrowType(arrowType) {
@@ -28944,63 +28895,12 @@ function onWheel(e) {
     return (incoming || []).filter(entry => !known.has(entry.id));
   }
 
-  // Move one entry up (-1) or down (+1), clamped rather than wrapping: a TD
-  // holding the button expects the row to stop at the end, not jump to the
-  // other one. Returns a new list, or null when nothing moved.
-  function libraryMoveEntry(list, id, delta) {
-    const next = (list || []).slice();
-    const from = next.findIndex(entry => entry.id === id);
-    if (from < 0) return null;
-    const to = Math.max(0, Math.min(next.length - 1, from + delta));
-    if (to === from) return null;
-    next.splice(to, 0, next.splice(from, 1)[0]);
-    return next;
-  }
-
   // A stable-enough id for a user-created library entry. Not the shared
   // idCounter: these outlive any one project and travel between machines, so
   // they must not collide with board object ids or with each other after an
   // import.
   function libraryEntryId(prefix) {
     return prefix + '-' + Math.random().toString(36).slice(2, 10);
-  }
-
-  // US-097 code review, 2026-08-23: both library panels rebuild their whole row
-  // list with innerHTML after every reorder / rename / delete, which destroys
-  // the focused control. Focus then falls to <body>, and because
-  // moveBoardMenuFocus is bound on the menu element, keydown no longer passes
-  // through it — arrow-key navigation of the menu goes completely dead after
-  // one row mutation, and a TD reordering with the keyboard is stranded.
-  //
-  // Re-focusing the SAME action on the SAME entry also makes the obvious
-  // gesture work: press Down-arrow-button repeatedly to walk an entry to the
-  // bottom of the list without re-grabbing it each time.
-  function refocusLibraryRowControl(listId, entryId, action) {
-    const list = document.getElementById(listId);
-    if (!list || !entryId || !action) return false;
-    const row = list.querySelector('[data-' + action.kind + '-id="' + entryId + '"]');
-    if (!row) return false;
-    const pick = (name) => row.querySelector(
-      '[data-' + action.kind + '-action="' + name + '"]:not([disabled])');
-    const control = pick(action.name);
-    if (control) { control.focus(); return true; }
-    // The control that was pressed can legitimately become disabled — walking
-    // an entry to the first row disables its own Up. Fall back to the OPPOSITE
-    // arrow, named explicitly.
-    //
-    // Code review, 2026-08-23: the first version took "the first control in the
-    // row that is not disabled", which is the wide Apply/Use button — the one
-    // control in the row that CHANGES something. Parking keyboard focus on it
-    // at the exact moment a TD is repeat-pressing means the next Space applies
-    // the preset (under ADR 0055 a stitch preset silently turns the selected
-    // measurement line into a construction mark) or arms the stamp tool and
-    // closes the menu. A fallback must never land on a state-changing command.
-    const opposite = action.name === 'up' ? 'down' : (action.name === 'down' ? 'up' : null);
-    const alternate = opposite ? pick(opposite) : null;
-    if (alternate) { alternate.focus(); return true; }
-    // Nothing safe in this row (a one-entry list has both arrows disabled).
-    // Leave focus where it is rather than move it somewhere destructive.
-    return false;
   }
 
   // ---- src/manual/line-presets.js ----
@@ -29568,7 +29468,6 @@ function onWheel(e) {
 
   function seamPathSchemaVersion() { return 'seam-path/1'; }
   function seamPathTraceVersion() { return 'normalized-detection-trace/1'; }
-  function seamPathFidelityVersion() { return 'seam-fidelity-receipt/1'; }
 
   function seamPathStableValue(value) {
     if (Array.isArray(value)) return value.map(seamPathStableValue);
@@ -30347,10 +30246,6 @@ function onWheel(e) {
       .map(slice => ({ ...slice, lineTreatment: clone(run.treatment) }));
   }
 
-  function seamPathSliceAnnotation(ann, run) {
-    return seamPathSliceAnnotations(ann, run)[0] || null;
-  }
-
   function seamPathTreatmentSegments(ann) {
     if (!ann || !ann.seamPath) return [];
     return ann.seamPath.treatmentRuns.flatMap(run =>
@@ -30593,19 +30488,6 @@ function onWheel(e) {
     return out;
   }
 
-  function shapeStampBounds(ann) {
-    const points = shapeStampGeometryPoints(ann);
-    if (!points.length) return null;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of points) {
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
-    }
-    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-  }
-
   function shapeTemplateBounds(annotations) {
     const points = [];
     for (const ann of (Array.isArray(annotations) ? annotations : [])) {
@@ -30836,10 +30718,6 @@ function onWheel(e) {
     if (selected.length) return selected;
     const primary = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
     return primary ? [primary] : [];
-  }
-
-  function shapeStampSaveTarget() {
-    return shapeStampSaveTargets()[0] || null;
   }
 
   function canSaveShapeStampReason() {
@@ -32273,10 +32151,6 @@ function onWheel(e) {
       close() { observer.disconnect(); cancelled = true; dlg.close(); },
       isCancelled: () => cancelled,
     };
-  }
-
-  function dxfNow() {
-    return typeof performance !== 'undefined' && performance && typeof performance.now === 'function' ? performance.now() : Date.now();
   }
 
   function dxfRecordImportExecution(record) {

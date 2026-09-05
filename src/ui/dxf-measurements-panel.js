@@ -38,11 +38,6 @@
     pendingSeamMatchSourceId = null;
   }
 
-  function toggleDxfMeasurementsPanel() {
-    if (isDxfMeasurementsPanelOpen()) closeDxfMeasurementsPanel();
-    else openDxfMeasurementsPanel();
-  }
-
   function dxfMeasurementDisplayName(measurement) {
     return measurement.name || ('M' + measurement.id);
   }

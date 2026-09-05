@@ -204,10 +204,6 @@
     };
   }
 
-  function dxfNow() {
-    return typeof performance !== 'undefined' && performance && typeof performance.now === 'function' ? performance.now() : Date.now();
-  }
-
   function dxfRecordImportExecution(record) {
     state.dxfLastImportExecution = record;
     return record;

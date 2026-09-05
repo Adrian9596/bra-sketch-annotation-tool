@@ -122,19 +122,6 @@
     return out;
   }
 
-  function shapeStampBounds(ann) {
-    const points = shapeStampGeometryPoints(ann);
-    if (!points.length) return null;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of points) {
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
-    }
-    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-  }
-
   function shapeTemplateBounds(annotations) {
     const points = [];
     for (const ann of (Array.isArray(annotations) ? annotations : [])) {
@@ -365,10 +352,6 @@
     if (selected.length) return selected;
     const primary = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
     return primary ? [primary] : [];
-  }
-
-  function shapeStampSaveTarget() {
-    return shapeStampSaveTargets()[0] || null;
   }
 
   function canSaveShapeStampReason() {

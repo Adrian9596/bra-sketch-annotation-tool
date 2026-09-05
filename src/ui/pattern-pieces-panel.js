@@ -80,11 +80,6 @@
     if (el.patternPiecesBtn) el.patternPiecesBtn.classList.remove('active');
   }
 
-  function togglePatternPiecesPanel() {
-    if (isPatternPiecesPanelOpen()) closePatternPiecesPanel();
-    else openPatternPiecesPanel();
-  }
-
   // Selects the group's annotations on the board so the existing multi-select
   // halo (render-loop.js) highlights exactly this outline among the stack —
   // reuses the click-a-group-member selection behavior already wired for

@@ -8,7 +8,6 @@
 
   function seamPathSchemaVersion() { return 'seam-path/1'; }
   function seamPathTraceVersion() { return 'normalized-detection-trace/1'; }
-  function seamPathFidelityVersion() { return 'seam-fidelity-receipt/1'; }
 
   function seamPathStableValue(value) {
     if (Array.isArray(value)) return value.map(seamPathStableValue);
@@ -785,10 +784,6 @@
     return ranges.map(range => seamPathSliceRange(ann, range[0], range[1]))
       .filter(Boolean)
       .map(slice => ({ ...slice, lineTreatment: clone(run.treatment) }));
-  }
-
-  function seamPathSliceAnnotation(ann, run) {
-    return seamPathSliceAnnotations(ann, run)[0] || null;
   }
 
   function seamPathTreatmentSegments(ann) {

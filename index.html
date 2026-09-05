@@ -520,20 +520,6 @@
     line-height:1.7;
     color:var(--muted);
   }
-  .board-empty-link{
-    appearance:none;
-    border:none;
-    background:none;
-    padding:0;
-    font:inherit;
-    font-weight:600;
-    color:var(--accent);
-    cursor:pointer;
-    pointer-events:auto;
-    text-decoration:underline;
-    text-underline-offset:2px;
-  }
-  .board-empty-link:hover{ color:#b71f1f; }
   /* Drag-and-drop feedback */
   .board-card.drag-over{
     border:2px dashed var(--accent);
@@ -1024,23 +1010,6 @@
     color:var(--muted); font-size:11px; font-weight:600;
     letter-spacing:.04em; text-transform:uppercase;
   }
-  .preset-subgroup{ padding:5px 6px 2px; color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
-  .preset-list{ display:flex; flex-direction:column; gap:3px; max-height:320px; overflow-y:auto; }
-  .preset-list:empty::after{
-    content:'No presets yet.';
-    display:block; padding:8px 6px; color:var(--muted); font-size:12px;
-  }
-  .preset-row{ display:flex; align-items:center; gap:6px; }
-  /* The apply button takes the free space so the whole name is a click target,
-     not just the text. The row controls stay a fixed size beside it. */
-  .preset-row .preset-apply{ flex:1 1 auto; display:flex; align-items:center; gap:10px; min-width:0; }
-  .preset-row .preset-apply span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .preset-row .preset-ctl{
-    flex:0 0 auto; width:26px; padding:2px 0; text-align:center;
-    color:var(--muted); font-size:12px; line-height:1.1;
-  }
-  .preset-row .preset-ctl:hover:not(:disabled){ color:var(--ink); background:#eef0f4; }
-  .preset-row .preset-ctl:disabled{ opacity:.3; cursor:default; }
   .preset-menu-actions{
     display:flex; flex-direction:column; gap:3px;
     margin-top:5px; padding-top:5px; border-top:1px solid var(--hairline);
@@ -1077,19 +1046,6 @@
   .style-preview{ width:36px; height:14px; flex:0 0 auto; color:var(--accent); }
 
   /* Icon-only button (Help) */
-  .icon-btn{
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    width:34px;
-    height:34px;
-    padding:0;
-    color:var(--muted);
-  }
-  .icon-btn:hover{ color:var(--text); }
-  .icon-btn .ico{ width:18px; height:18px; }
-  .group-help{ padding-right:0; margin-right:0; }
-  .group-help::after{ display:none; }
 
   /* Empty-state action buttons */
   .board-empty-actions{
@@ -1392,17 +1348,10 @@
     opacity:.3;
     cursor:not-allowed;
   }
-  .pom-vis-group{
-    display:inline-flex;
-    gap:4px;
-    margin-top:4px;
-  }
-  .pom-vis-group .pom-vis-btn{ margin-top:0; }
   /* Row-level dim when this POM's line is hidden on the canvas — makes the
      off-state obvious at a glance without touching the spec inputs. */
   .spec-table tr.pom-hidden .spec-desc-text,
   .spec-table tr.pom-hidden .spec-pom,
-  .spec-table tr.pom-hidden .spec-pom-pair,
   .spec-table tr.pom-hidden input.spec-pom,
   .spec-table tr.pom-hidden .spec-desc,
   .spec-table tr.pom-hidden .draft-status{
@@ -1472,17 +1421,6 @@
   /* Size-L suggestion badge: sits under the input, non-uppercase so the
      "library · medium" provenance reads as a hint, not a status flag. */
   .spec-suggest-badge{ text-transform:none; letter-spacing:0; font-weight:600; cursor:help; }
-  .spec-pom-pair{
-    display:inline-block;
-    padding:3px 8px;
-    border-radius:8px;
-    background:#eef3ff;
-    border:1px solid #c8d4ff;
-    color:#1d3a8a;
-    font:800 12px/1 system-ui, sans-serif;
-    text-align:center;
-    min-width:34px;
-  }
   .spec-table input,
   .spec-table textarea{
     width:100%;
@@ -1784,10 +1722,6 @@
     gap:14px;
   }
   .ld-section{ display:flex; flex-direction:column; gap:8px; }
-  .ld-section-title{
-    margin:0; font-size:12px; font-weight:700; text-transform:uppercase;
-    letter-spacing:.04em; color:var(--muted);
-  }
   .ld-section-note{ margin:0; font-size:12.5px; color:var(--muted); line-height:1.4; }
   .ld-summary-grid{
     display:grid;
@@ -2557,11 +2491,6 @@
     background:#fff;
     cursor:pointer;
   }
-  #ccAddNoteBtn.cc-armed{
-    background:var(--select);
-    color:#fff;
-    border-color:var(--select);
-  }
   /* Lace / Solid are two independent note sheets over the same board sketch
      (mirrors the reference tech-pack tool's #sheet-con-lace / #sheet-con) —
      switching tabs swaps which notes render/hit-test, it does not swap images. */
@@ -2602,24 +2531,6 @@
   }
   .cc-side-empty{ font-size:12.5px; color:var(--muted); }
   .cc-side-title{ font-weight:600; margin-bottom:6px; }
-  #ccNoteZone{
-    width:100%;
-    font:inherit;
-    padding:6px 8px;
-    border:1px solid var(--border);
-    border-radius:8px;
-    margin-bottom:8px;
-  }
-  #ccNoteText{
-    width:100%;
-    min-height:64px;
-    font:inherit;
-    padding:6px 8px;
-    border:1px solid var(--border);
-    border-radius:8px;
-    resize:vertical;
-    margin-bottom:8px;
-  }
   #ccPhraseSearch{
     width:100%;
     font:inherit;
@@ -2659,16 +2570,6 @@
   /* Second+ leader line on a note (US-071): armed like #ccAddNoteBtn, and
      removed one at a time by double-clicking its arrowhead on the canvas —
      ported convention from the reference tool's .anc double-click-to-delete. */
-  #ccAddArrowBtn.cc-armed{
-    background:var(--select);
-    color:#fff;
-    border-color:var(--select);
-  }
-  #ccDeleteNoteBtn{
-    color:#8a1f1f;
-    border-color:#e8c2c2;
-    background:#fff5f5;
-  }
   /* Construction table (US-076, ADR 0042): a live, editable mirror of the
      notes visible on the current Lace/Solid tab, below the canvas+side row.
      .cc-page is already a column flexbox, so this sits below .cc-body as a
@@ -2682,7 +2583,6 @@
     border-top:1px solid var(--hairline);
     background:#fff;
   }
-  .cc-table-wrap.cc-table-collapsed{ display:none; }
   .cc-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
   .cc-table thead th{
     position:sticky;
@@ -2697,20 +2597,8 @@
   .cc-table tbody tr.cc-row-selected{ background:#eef4ff; }
   .cc-table td{ padding:4px 8px; vertical-align:top; }
   .cc-tbl-seq{ width:32px; text-align:center; color:var(--muted); cursor:default; }
-  .cc-tbl-zone select{ font:inherit; padding:3px 4px; border:1px solid var(--border); border-radius:6px; }
-  .cc-tbl-note{ width:100%; }
-  .cc-tbl-note textarea{
-    width:100%;
-    min-height:30px;
-    font:inherit;
-    padding:4px 6px;
-    border:1px solid var(--border);
-    border-radius:6px;
-    resize:vertical;
-  }
   .cc-tbl-del{ width:28px; text-align:center; }
   .cc-tbl-del button{ border:none; background:none; color:#8a1f1f; cursor:pointer; font-size:14px; line-height:1; }
-  .cc-table-empty{ padding:14px; font-size:12.5px; color:var(--muted); }
 
   /* US-078 / ADR 0045: one continuous Construction sheet. The wide
      Outer/Inner Working Board stays above its row-owned Construction Table,
@@ -3029,26 +2917,6 @@
   }
   .bm-photo-actions button:hover{ background:#f5f5f7; }
   /* Add Note zone menu (reference .zone-menu) */
-  .cc-zone-menu{
-    position:fixed; z-index:300; display:flex; flex-wrap:wrap; gap:6px;
-    width:max-content; max-width:420px; padding:5px;
-    background:#fff; border:1px solid #b9b9c2; border-radius:6px;
-    box-shadow:0 6px 16px rgba(0,0,0,.16);
-  }
-  .cc-zone-menu[hidden]{ display:none; }
-  .cc-zone-menu button{
-    border:1px solid #d3d3da; background:#fbfbfc; border-radius:4px;
-    padding:3px 8px; font-size:11px; font-family:inherit; cursor:pointer; white-space:nowrap;
-  }
-  .cc-zone-menu button:hover{ background:#eef4ff; border-color:#8fb6ea; }
-  .cc-color-label{
-    display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#444;
-  }
-  .cc-color-label input[type=color]{
-    width:26px; height:22px; padding:1px; border:1px solid #c9c9d0; border-radius:5px;
-    background:#fff; cursor:pointer;
-  }
-  #ccNoteRedBtn.cc-red-on{ background:#cc0000; border-color:#cc0000; color:#fff; }
   .bm-table td.act, .bm-table th.act{ border:none; background:none; text-align:center; white-space:normal; width:118px; }
   .bm-table td.bm-num, .bm-table th.bm-num{ text-align:center; white-space:nowrap; }
   .bm-table select{ font:inherit; font-size:11px; max-width:58px; }
@@ -3086,25 +2954,6 @@
     border:1px solid var(--border);
     border-radius:8px;
     margin:6px 0;
-  }
-  .bm-mat-list{
-    max-height:calc(100% - 60px);
-    overflow:auto;
-    display:flex;
-    flex-direction:column;
-    gap:4px;
-  }
-  .bm-mat-list button{
-    text-align:left;
-    font-size:12.5px;
-    padding:6px 8px;
-    border-radius:6px;
-    border:1px solid var(--chip-border);
-    background:var(--chip);
-    cursor:pointer;
-    display:flex;
-    justify-content:space-between;
-    gap:8px;
   }
   .bm-mat-section{ color:var(--muted); font-size:11px; }
   .bm-mat-empty{ font-size:12px; color:var(--muted); }
@@ -3237,9 +3086,6 @@
     body.bom-open .bm-table tr.bm-addrow-tr,
     .bm-dd,
     .bm-dd-menu,
-    .cc-zone-menu{
-      display:none !important;
-    }
     /* An empty photo slot prints blank, not as a dashed editor affordance;
        a filled one prints its image. */
     body.bom-open .bm-photo-trigger{ border:none; background:none; color:transparent; }
@@ -3978,6 +3824,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=f8b3851ad93c"></script>
+<script src="app.js?v=b3d95e0485c7"></script>
 </body>
 </html>

@@ -169,33 +169,23 @@
         openLearningDataDialog();
       });
     }
-    if (el.autoLearnMenuBtn) {
-      el.autoLearnMenuBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleAutoLearnMenu();
-      });
-    }
     if (el.viewLearningDataItem) {
       el.viewLearningDataItem.addEventListener('click', () => {
-        closeAutoLearnMenu();
         openLearningDataDialog();
       });
     }
     if (el.resetResidualsItem) {
       el.resetResidualsItem.addEventListener('click', () => {
-        closeAutoLearnMenu();
         resetLearning();
       });
     }
     if (el.resetMeaningsCurrentItem) {
       el.resetMeaningsCurrentItem.addEventListener('click', () => {
-        closeAutoLearnMenu();
         resetPomMeanings('current');
       });
     }
     if (el.resetMeaningsAllItem) {
       el.resetMeaningsAllItem.addEventListener('click', () => {
-        closeAutoLearnMenu();
         resetPomMeanings('all');
       });
     }
@@ -249,7 +239,6 @@
 
     document.addEventListener('click', (e) => {
       if (!el.lineStyleControl.contains(e.target)) closeLineStyleMenu();
-      if (el.autoLearnMenuWrap && !el.autoLearnMenuWrap.contains(e.target)) closeAutoLearnMenu();
       // US-038: click outside the floating anchor panel closes it — but not
       // when clicking the toolbar toggle (that has its own handler) or the
       // canvas (dragging pins while it's open should stay open).
@@ -351,24 +340,6 @@
   function closeLineStyleMenu() {
     el.stitchesMenu.hidden = true;
     el.stitchesBtn.setAttribute('aria-expanded', 'false');
-  }
-
-  function toggleAutoLearnMenu() {
-    if (!el.autoLearnMenuList) return;
-    if (!el.autoLearnMenuList.hidden) closeAutoLearnMenu();
-    else openAutoLearnMenu();
-  }
-
-  function openAutoLearnMenu() {
-    if (!el.autoLearnMenuList) return;
-    el.autoLearnMenuList.hidden = false;
-    el.autoLearnMenuBtn.setAttribute('aria-expanded', 'true');
-  }
-
-  function closeAutoLearnMenu() {
-    if (!el.autoLearnMenuList) return;
-    el.autoLearnMenuList.hidden = true;
-    if (el.autoLearnMenuBtn) el.autoLearnMenuBtn.setAttribute('aria-expanded', 'false');
   }
 
   function setArrowType(arrowType) {

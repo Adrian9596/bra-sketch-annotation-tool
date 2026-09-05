@@ -1037,13 +1037,6 @@
     return pieceSegIdxLists.map(idxs => idxs.map(i => segments[i]));
   }
 
-  // The one grouping entry point both parsers call. Same return shape as
-  // before (array of arrays of the caller's segment objects); the richer
-  // per-piece classification is available via dxfClassifyPatterns directly.
-  function dxfBuildPieces(segments) {
-    return dxfClassifyPatterns(segments).pieces;
-  }
-
   // ---- Placement transform ----------------------------------------------------
 
   // Round 11 (user-reported, then a follow-up review caught a real bug in
