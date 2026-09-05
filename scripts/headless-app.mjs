@@ -1,13 +1,11 @@
 // Shared headless-Chrome harness for the browser-driven suites: static
 // server + Chrome + one CDP session, with a single `close()` that tears the
 // three down in reverse order. Every browser suite used to carry its own copy
-// of openCdpSession/waitForCdp/fetchJson and the launch sequence; the Auto
-// Seam suites (auto-seam-technical-flat-check, photo-stitch-technical-flat-
-// pilot, photo-stitch-browser, photo-stitch-roi-pilot, auto-seam-probe) read
-// it from here. Other suites can adopt it one at a time.
+// of openCdpSession/waitForCdp/fetchJson and the launch sequence. Suites can
+// adopt it one at a time.
 //
 //   const app = await launchHeadlessApp({ appDir, query: 'my-suite' });
-//   try { const result = await analyzeSeamFixture(app.session, { relativePath: 'demo/…' }); }
+//   try { const images = await app.session.eval('window.__braAutoModeDebug.getImages()'); }
 //   finally { await app.close(); }
 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -131,24 +129,4 @@ export function mimeForFixture(filePath) {
 export async function readFixtureDataUrl(filePath) {
   const bytes = await readFile(filePath);
   return `data:${mimeForFixture(filePath)};base64,${bytes.toString('base64')}`;
-}
-
-// Put one image on the board and run Auto Seam analysis on it. Either
-// `dataUrl` (sent inline) or `relativePath` (fetched by the page from the
-// static server, e.g. 'demo/photos for seam detection/7.png'). With
-// `resetBoard` the page first loads a blank project so fixtures can be run in
-// sequence on one page; the single-fixture check keeps the fresh page as is.
-export async function analyzeSeamFixture(session, { dataUrl, relativePath, resetBoard = true }) {
-  if (!dataUrl && !relativePath) throw new Error('analyzeSeamFixture needs dataUrl or relativePath');
-  return session.eval(`(async () => {
-    const d = window.__braAutoModeDebug;
-    ${resetBoard ? 'const blank = d.exportProject(); blank.state.annotations = []; blank.state.images = []; blank.state.idCounter = 1; blank.state.nextSequence = 1; await d.loadProject(blank);' : ''}
-    ${dataUrl
-      ? `const dataURL = ${JSON.stringify(dataUrl)};`
-      : `const response = await fetch(${JSON.stringify(relativePath)}); const blob = await response.blob();
-    const dataURL = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });`}
-    await d.addBoardImages([dataURL]);
-    const image = d.getImages()[0];
-    return d.autoSeam.analyzeImage(image.id);
-  })()`);
 }

@@ -1,5 +1,5 @@
 // US-124 Phase 5 (ADR 0091): DXF Worker client — the main-thread side of
-// dxf-worker.js. Modelled on src/manual/auto-seam-worker-client.js.
+// dxf-worker.js.
 //
 // importDxfText() parses synchronously on the main thread, which freezes the
 // tab for the duration — fine for the corpus's ≤1 s files, not for a

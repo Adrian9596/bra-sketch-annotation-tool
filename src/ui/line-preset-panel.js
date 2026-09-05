@@ -46,7 +46,12 @@
   // table (ADR 0055), and a TD should be able to read that before clicking.
   function linePresetRowTitle(preset) {
     if (preset.kind === 'treatment' && preset.treatment) {
-      return `${preset.name} — ${preset.treatment.layers.length} editable layer${preset.treatment.layers.length === 1 ? '' : 's'}. Applies along the selected path without changing its geometry.`;
+      const semantic = preset.treatment.semantic;
+      const needle = semantic?.needleCount === 2
+        ? ` 2NDL; Needle Gauge ${semantic.needleGauge?.status === 'confirmed'
+          ? `${semantic.needleGauge.value} ${semantic.needleGauge.unit}` : 'TBC'}.`
+        : semantic?.needleCount === 1 ? ' 1NDL.' : '';
+      return `${preset.name} — ${preset.treatment.layers.length} editable layer${preset.treatment.layers.length === 1 ? '' : 's'}.${needle} Applies along the selected path without changing its geometry.`;
     }
     const base = `${preset.name} — ${lineStyleLabel(preset.style)}, ${preset.color}, ${formatLineWidth(preset.lineWidth)} px`;
     return isStitchStyle(preset.style)
@@ -152,6 +157,7 @@
     const normalizedRecipe = normalizeLineTreatment(recipe) || { name: '', scale: 1, layers: [] };
     let treatmentScale = normalizedRecipe.scale;
     let layers = normalizeLineTreatmentLayers(normalizedRecipe.layers);
+    const initialSemantic = normalizedRecipe.semantic;
     if (!layers.length) layers = legacyStyleTreatmentLayers('solid', 'black', 2);
     const body = document.createElement('div');
     body.className = 'treatment-editor';
@@ -160,6 +166,13 @@
       + '<label>Overall scale<input data-treatment-scale-range type="range" min="25" max="400" step="5"></label>'
       + '<label class="treatment-scale-number"><input data-treatment-scale-number type="number" min="25" max="400" step="5" aria-label="Treatment scale percent"><span>%</span></label>'
       + '<button type="button" class="picker-btn" data-treatment-scale-reset>Reset 100%</button>'
+      + '</div>'
+      + '<div class="treatment-semantic-controls">'
+      + '<label>Needle meaning<select data-treatment-needle-count><option value="">Unspecified</option><option value="1">1NDL</option><option value="2">2NDL</option></select></label>'
+      + '<label data-treatment-gauge-status-wrap>Needle Gauge status<select data-treatment-gauge-status><option value="tbc">TBC</option><option value="confirmed">TD-confirmed</option></select></label>'
+      + '<label data-treatment-gauge-value-wrap>Gauge value<input data-treatment-gauge-value type="number" min="0.01" step="0.01" inputmode="decimal"></label>'
+      + '<label data-treatment-gauge-unit-wrap>Gauge unit<select data-treatment-gauge-unit><option value="mm">mm</option><option value="in">in</option></select></label>'
+      + '<label data-treatment-display-spacing-wrap>Display rail spacing<input data-treatment-display-spacing type="number" min="2" max="40" step="0.5"><span>screen px, not factory gauge</span></label>'
       + '</div>'
       + '<div class="treatment-preview" aria-label="Treatment preview"><svg data-treatment-preview viewBox="0 0 520 74" aria-hidden="true"></svg></div>'
       + '<div class="treatment-layers" data-treatment-layers></div>'
@@ -170,9 +183,46 @@
     const preview = body.querySelector('[data-treatment-preview]');
     const scaleRange = body.querySelector('[data-treatment-scale-range]');
     const scaleNumber = body.querySelector('[data-treatment-scale-number]');
+    const needleCountInput = body.querySelector('[data-treatment-needle-count]');
+    const gaugeStatusInput = body.querySelector('[data-treatment-gauge-status]');
+    const gaugeValueInput = body.querySelector('[data-treatment-gauge-value]');
+    const gaugeUnitInput = body.querySelector('[data-treatment-gauge-unit]');
+    const displaySpacingInput = body.querySelector('[data-treatment-display-spacing]');
     nameInput.value = name || (recipe && recipe.name) || '';
     scaleRange.value = String(Math.round(treatmentScale * 100));
     scaleNumber.value = scaleRange.value;
+    needleCountInput.value = initialSemantic?.needleCount ? String(initialSemantic.needleCount) : '';
+    gaugeStatusInput.value = initialSemantic?.needleCount === 2
+      ? initialSemantic.needleGauge?.status || 'tbc' : 'tbc';
+    gaugeValueInput.value = initialSemantic?.needleGauge?.status === 'confirmed'
+      ? String(initialSemantic.needleGauge.value) : '';
+    gaugeUnitInput.value = initialSemantic?.needleGauge?.unit || 'mm';
+    displaySpacingInput.value = normalizedRecipe.displaySpacing == null
+      ? '' : String(normalizedRecipe.displaySpacing);
+
+    function syncSemanticControls() {
+      const isTwoNeedle = needleCountInput.value === '2';
+      const confirmed = isTwoNeedle && gaugeStatusInput.value === 'confirmed';
+      for (const selector of ['[data-treatment-gauge-status-wrap]', '[data-treatment-display-spacing-wrap]']) {
+        body.querySelector(selector).hidden = !isTwoNeedle;
+      }
+      body.querySelector('[data-treatment-gauge-value-wrap]').hidden = !confirmed;
+      body.querySelector('[data-treatment-gauge-unit-wrap]').hidden = !confirmed;
+    }
+
+    function readSemantic() {
+      if (needleCountInput.value === '1') return { needleCount: 1 };
+      if (needleCountInput.value !== '2') return null;
+      if (gaugeStatusInput.value !== 'confirmed') {
+        return { needleCount: 2, needleGauge: { status: 'tbc' } };
+      }
+      const value = Number(gaugeValueInput.value);
+      if (!Number.isFinite(value) || value <= 0) return false;
+      return {
+        needleCount: 2,
+        needleGauge: { status: 'confirmed', value, unit: gaugeUnitInput.value === 'in' ? 'in' : 'mm' },
+      };
+    }
 
     function readScale() {
       return normalizeLineTreatmentScale(Number(scaleNumber.value) / 100);
@@ -251,6 +301,8 @@
       writeScale(Number(scaleNumber.value) / 100);
       paintPreview();
     });
+    needleCountInput.addEventListener('change', syncSemanticControls);
+    gaugeStatusInput.addEventListener('change', syncSemanticControls);
     body.querySelector('[data-treatment-scale-reset]').addEventListener('click', () => {
       writeScale(1);
       paintPreview();
@@ -269,12 +321,26 @@
     okBtn.addEventListener('click', () => {
       const nextName = nameInput.value.trim();
       const nextLayers = readLayers();
+      const semantic = readSemantic();
       if (!nextName) { nameInput.focus(); showToast('Give the Treatment a name first.'); return; }
       if (!nextLayers.length) { showToast('Add at least one Treatment layer.'); return; }
+      if (semantic === false) {
+        gaugeValueInput.focus();
+        showToast('Enter a positive TD-confirmed Needle Gauge, or keep it TBC.');
+        return;
+      }
       dialog.close();
-      onConfirm({ name: nextName, scale: readScale(), layers: nextLayers });
+      onConfirm({
+        name: nextName,
+        scale: readScale(),
+        layers: nextLayers,
+        semantic,
+        displaySpacing: needleCountInput.value === '2' && displaySpacingInput.value !== ''
+          ? Number(displaySpacingInput.value) : null,
+      });
     });
     renderRows();
+    syncSemanticControls();
     dialog.open();
     nameInput.focus();
     nameInput.select();

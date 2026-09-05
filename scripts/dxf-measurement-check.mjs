@@ -525,12 +525,31 @@ async function section8InsertBlocksAndUnits(s) {
   const unitlessDoc = await s.eval(`${m}.parseNative(${JSON.stringify(docWithHeader(
     [P(9, '$INSUNITS'), P(70, 0)], [dxfLine(0, 0, 10, 0)],
   ))})`);
-  check(unitlessDoc.ok && unitlessDoc.unit === 1 && unitlessDoc.unitSource === 'unsupported-explicit-unit'
-    && unitlessDoc.unitDiagnostic && unitlessDoc.insunits === 0,
-    '$INSUNITS=0 is the flagged unsupported-explicit case, never silently "from file", got ' + JSON.stringify({ unitSource: unitlessDoc.unitSource }));
+  // US-126: the geometry inference now also runs for an unsupported explicit
+  // code (a 10-unit piece fits inches, so it resolves to 'inferred-geometry'),
+  // but the point of this assertion is unchanged and still enforced: the file
+  // DECLARED something this tool cannot read, that is never reported as
+  // "from file", and the code itself survives on the diagnostic so the panel
+  // can name it.
+  check(unitlessDoc.ok && unitlessDoc.unit === 1 && unitlessDoc.unitSource === 'inferred-geometry'
+    && unitlessDoc.unitDiagnostic && unitlessDoc.unitDiagnostic.unsupportedDeclaredCode === 0
+    && unitlessDoc.insunits === 0,
+    '$INSUNITS=0 is never silently "from file" and keeps its declared-but-unsupported code, got '
+    + JSON.stringify({ unitSource: unitlessDoc.unitSource, diagnostic: unitlessDoc.unitDiagnostic }));
+  // US-126: a headerless file whose geometry fits exactly one supported unit
+  // is auto-scaled (see the inference assertions in section 2). 'default-inch'
+  // is now what remains for a headerless file the geometry CANNOT decide —
+  // here, a 10-unit line is a plausible inch piece and an implausible mm one,
+  // so it infers inches; the 1e-7-unit line below fits neither candidate and
+  // falls through to the locked default, still a distinct, honest state.
   const noHeaderDoc = await s.eval(`${m}.parseNative(${JSON.stringify(doc([dxfLine(0, 0, 10, 0)]))})`);
-  check(noHeaderDoc.unit === 1 && noHeaderDoc.unitSource === 'default-inch',
-    'missing $INSUNITS stays the distinct default-inch case, got ' + noHeaderDoc.unitSource);
+  check(noHeaderDoc.unit === 1 && noHeaderDoc.unitSource === 'inferred-geometry'
+    && noHeaderDoc.unitDiagnostic && noHeaderDoc.unitDiagnostic.unsupportedDeclaredCode == null,
+    'a headerless inch-scale file is auto-scaled to inches with no declared-code note, got ' + JSON.stringify(noHeaderDoc.unitSource));
+  const undecidableDoc = await s.eval(`${m}.parseNative(${JSON.stringify(doc([dxfLine(0, 0, 1e-7, 0), dxfLine(1e-7, 0, 1e-7, 1e-7)]))})`);
+  check(undecidableDoc.ok && undecidableDoc.unit === 1 && undecidableDoc.unitSource === 'default-inch'
+    && !undecidableDoc.unitDiagnostic,
+    'geometry that fits no supported unit keeps the distinct default-inch case, got ' + JSON.stringify(undecidableDoc.unitSource));
 
   // 9. Live end-to-end: import a BLOCK-based DXF through the real file input
   // (the Finding-1 repro shape), then exercise the unit override through the
@@ -621,10 +640,18 @@ async function section8InsertBlocksAndUnits(s) {
   })()`);
   check(live.sessionNull === false && live.pieceCount === 1,
     'Finding 1: a BLOCK/INSERT-only DXF now builds a live measure session, got ' + JSON.stringify({ sessionNull: live.sessionNull, pieceCount: live.pieceCount }));
-  check(String(live.toastAfterImport).includes('Units assumed'),
-    'import toast carries the assumed-units warning, got "' + live.toastAfterImport + '"');
-  check(live.unitStatusBefore && live.unitStatusBefore.key === 'in' && String(live.unitStatusBefore.provenance).includes('didn'),
-    'pre-override unit status is the flagged inch assumption, got ' + JSON.stringify(live.unitStatusBefore));
+  // US-126: this fixture's ~32-unit block is inch-scale, so the import now
+  // auto-scales rather than assuming. The requirement the assertion protects
+  // is unchanged — the toast must SAY the unit was not read from the file, so
+  // a TD knows there is something to disagree with — only the wording moved
+  // from "assumed" to the stronger, evidence-backed "auto-scaled".
+  check(String(live.toastAfterImport).includes('Units auto-scaled to in')
+    && String(live.toastAfterImport).includes('file declares none'),
+    'import toast says the unit was auto-scaled, not read from the file, got "' + live.toastAfterImport + '"');
+  check(live.unitStatusBefore && live.unitStatusBefore.key === 'in'
+    && String(live.unitStatusBefore.provenance).includes('auto-scaled from piece size')
+    && String(live.unitStatusBefore.provenance).includes('didn'),
+    'pre-override unit status is the flagged (non-file) inch reading, got ' + JSON.stringify(live.unitStatusBefore));
   check(live.measurementCount === 1 && near(live.valueBeforeOverride, 32, 1.5),
     'Along Path on the resolved block segment measures ~32 native units as inches, got ' + live.valueBeforeOverride
     + ' diag=' + JSON.stringify(live.measureDiag));
@@ -2241,16 +2268,164 @@ async function section2RouteEnumeration(s) {
   ],{segIndex:0,t:.25},{segIndex:1,t:.75},1e-6)`);
   check(!crossing.ok && crossing.reason === 'NO_CONNECTED_PATH', 'visual crossings without authored split points remain topologically disconnected');
 
+  // US-126: the 5-stage diamond ladder has 2^5 = 32 topologically distinct
+  // A->B routes, past the candidate cap. It used to be an outright refusal
+  // (ok:false, routes:[]) — on the real corpus that same behaviour made 13% of
+  // piece route requests unmeasurable. It is now an ANSWER: the k SHORTEST
+  // routes plus `truncated: true` so the chooser can say "more exist".
+  //
+  // Round 2. Two earlier versions of this fixture were false negatives, and
+  // both failure modes are worth naming so they are not re-introduced:
+  //   * a ladder whose rungs are all the SAME length cannot detect a wrong
+  //     RANKING at all — every ordering of equal numbers looks sorted;
+  //   * a ladder with only 32 routes cannot detect a wrong SAMPLE, because 32
+  //     is under the old implementation's 64-route enumeration cap, so it
+  //     enumerated all of them and sorted correctly by luck.
+  // The graded ladder below defeats both: SEVEN stages (2^7 = 128 routes, well
+  // over any enumeration cap), every stage's two rungs differing by a distinct
+  // power-of-two increment (so all 128 totals are distinct AND ordered exactly
+  // by the choice bitmask), and the EXPENSIVE rung authored first at every
+  // stage — so a depth-first search discovers the longest routes first and the
+  // 8 shortest last. A capped-DFS-then-sort implementation ranks its own
+  // arbitrary sample and fails here; Yen's k-shortest passes by construction.
+  // Verified to bite: reverting the kernel to the capped-DFS-then-sort search
+  // makes the "8 SHORTEST" assertion below fail.
   const capped = await s.eval(`(() => {
-    const segs=[{kind:'straight',a:{x:-1,y:0},b:{x:0,y:0}}];
-    for(let stage=0;stage<5;stage+=1){const x=stage*2;segs.push(
+    const flat=[{kind:'straight',a:{x:-1,y:0},b:{x:0,y:0}}];
+    for(let stage=0;stage<5;stage+=1){const x=stage*2;flat.push(
       {kind:'straight',a:{x,y:0},b:{x:x+1,y:1}}, {kind:'straight',a:{x:x+1,y:1},b:{x:x+2,y:0}},
       {kind:'straight',a:{x,y:0},b:{x:x+1,y:-1}}, {kind:'straight',a:{x:x+1,y:-1},b:{x:x+2,y:0}});}
-    segs.push({kind:'straight',a:{x:10,y:0},b:{x:11,y:0}});
-    return window.__braAutoModeDebug.dxf.measure.enumerateRoutesRaw(segs,{segIndex:0,t:.5},{segIndex:21,t:.5},1e-9);
+    flat.push({kind:'straight',a:{x:10,y:0},b:{x:11,y:0}});
+    const withChord = flat.concat([{kind:'straight',a:{x:0,y:0},b:{x:10,y:0}}]);
+
+    // Graded 7-stage ladder. A rung from (x,0) via (x+1,y) to (x+2,0) costs
+    // 2*hypot(1,y), so solving for y hits any cost exactly: the cheap rung
+    // costs 4, the expensive one 4 + 0.01*2^stage.
+    const STAGES=7;
+    const yForCost=(c)=>Math.sqrt(Math.pow(c/2,2)-1);
+    const cheapCost=4;
+    const expCost=(st)=>4+0.01*Math.pow(2,st);
+    const graded=[{kind:'straight',a:{x:-1,y:0},b:{x:0,y:0}}];
+    for(let st=0;st<STAGES;st+=1){
+      const x=st*2, ye=yForCost(expCost(st)), yc=yForCost(cheapCost);
+      // EXPENSIVE first, so a depth-first search walks into the long routes.
+      graded.push({kind:'straight',a:{x,y:0},b:{x:x+1,y:ye}}, {kind:'straight',a:{x:x+1,y:ye},b:{x:x+2,y:0}},
+                  {kind:'straight',a:{x,y:0},b:{x:x+1,y:-yc}}, {kind:'straight',a:{x:x+1,y:-yc},b:{x:x+2,y:0}});
+    }
+    graded.push({kind:'straight',a:{x:STAGES*2,y:0},b:{x:STAGES*2+1,y:0}});
+    const lastIndex=graded.length-1;
+
+    // Independent brute force over all 2^7 rung choices — half the lead-in
+    // segment, every stage's chosen rung, half the tail segment.
+    const totals=[];
+    for(let mask=0;mask<Math.pow(2,STAGES);mask+=1){
+      let t=0.5+0.5;
+      for(let st=0;st<STAGES;st+=1) t+=((mask>>st)&1)?expCost(st):cheapCost;
+      totals.push(t);
+    }
+    totals.sort((a,b)=>a-b);
+    const distinct=new Set(totals.map(v=>v.toFixed(9))).size;
+
+    const d=window.__braAutoModeDebug.dxf.measure;
+    return {
+      flat: d.enumerateRoutesRaw(flat,{segIndex:0,t:.5},{segIndex:21,t:.5},1e-9),
+      graded: d.enumerateRoutesRaw(graded,{segIndex:0,t:.5},{segIndex:lastIndex,t:.5},1e-9),
+      chord: d.enumerateRoutesRaw(withChord,{segIndex:0,t:.5},{segIndex:21,t:.5},1e-9),
+      bruteForceEightShortest: totals.slice(0,8),
+      bruteForceTotal: totals.length,
+      bruteForceDistinct: distinct,
+    };
   })()`);
-  check(!capped.ok && capped.truncated && capped.reason === 'ROUTE_SEARCH_TRUNCATED' && capped.routes.length === 0,
-    'route-cap overflow is an explicit non-committable result, got ' + JSON.stringify(capped));
+  check(capped.flat.ok && capped.flat.truncated && capped.flat.routes.length === 8,
+    'route-cap overflow answers with the candidate set instead of refusing, got '
+    + JSON.stringify({ ok: capped.flat.ok, truncated: capped.flat.truncated, n: capped.flat.routes.length }));
+  const ladderLengths = capped.flat.routes.map(r => r.length);
+  check(ladderLengths.every((v, i) => i === 0 || v >= ladderLengths[i - 1] - 1e-9),
+    'capped candidates are ranked shortest-first, got ' + JSON.stringify(ladderLengths));
+  // The fixture's own precondition: if these 128 totals were not all distinct,
+  // the ranking assertion below could pass on a wrong route set.
+  check(capped.bruteForceTotal === 128 && capped.bruteForceDistinct === 128,
+    'the graded ladder must have 128 routes of 128 DISTINCT lengths for the ranking check to mean anything, got '
+    + JSON.stringify({ total: capped.bruteForceTotal, distinct: capped.bruteForceDistinct }));
+  check(capped.graded.ok && capped.graded.routes.length === 8 && capped.graded.truncated,
+    'the graded ladder offers 8 of its 128 routes and reports the rest exist, got '
+    + JSON.stringify({ n: capped.graded.routes && capped.graded.routes.length, truncated: capped.graded.truncated }));
+  // THE regression guard for the round-2 defect: not merely "sorted", but the
+  // genuinely k shortest of all 128.
+  const gradedGot = capped.graded.routes.map(r => r.length);
+  check(gradedGot.every((v, i) => near(v, capped.bruteForceEightShortest[i], 1e-9)),
+    'the 8 offered candidates are the 8 SHORTEST routes, not an arbitrary sample of them\n   expected '
+    + JSON.stringify(capped.bruteForceEightShortest.map(v => +v.toFixed(6)))
+    + '\n   got      ' + JSON.stringify(gradedGot.map(v => +v.toFixed(6))));
+  check(capped.chord.ok && capped.chord.truncated && near(capped.chord.routes[0].length, 11, 1e-9),
+    'the true shortest route is candidate 0 even when the search was capped, got '
+    + JSON.stringify(capped.chord.routes.map(r => r.length)));
+
+  // US-126: chain contraction is EXACT, not an approximation. A 40-segment
+  // straight run and the single segment covering the same span must report
+  // the same length, the same route count, and a route whose steps still
+  // address every original segment — the contraction is a search-time device,
+  // never a change to what got measured.
+  const contraction = await s.eval(`(() => {
+    const many=[]; for(let i=0;i<40;i+=1) many.push({kind:'straight',a:{x:i,y:0},b:{x:i+1,y:0}});
+    const one=[{kind:'straight',a:{x:0,y:0},b:{x:40,y:0}}];
+    const d=window.__braAutoModeDebug.dxf.measure;
+    return {
+      many: d.enumerateRoutesRaw(many,{segIndex:0,t:.5},{segIndex:39,t:.5},1e-9),
+      one: d.enumerateRoutesRaw(one,{segIndex:0,t:0.5/40},{segIndex:0,t:39.5/40},1e-9),
+    };
+  })()`);
+  check(contraction.many.ok && contraction.many.routes.length === 1 && !contraction.many.truncated,
+    'a 40-segment collinear junk run still resolves to exactly one route, got ' + JSON.stringify(contraction.many.reason));
+  check(near(contraction.many.routes[0].length, 39, 1e-9) && near(contraction.one.routes[0].length, 39, 1e-9),
+    'chain contraction preserves length exactly: ' + contraction.many.routes[0].length + ' vs ' + contraction.one.routes[0].length);
+  check(contraction.many.routes[0].steps.length === 40
+    && new Set(contraction.many.routes[0].steps.map(st => st.segIndex)).size === 40,
+    'the contracted route still expands to every original segment step, got ' + contraction.many.routes[0].steps.length);
+
+  // US-126: geometry-based unit inference (auto-scale). Piece sizes are the
+  // evidence; a fit to exactly one supported unit is an inference, anything
+  // else is an abstention.
+  const inference = await s.eval(`(() => {
+    const d=window.__braAutoModeDebug.dxf.measure;
+    const box=(w,h)=>({segments:[
+      {kind:'straight',a:{x:0,y:0},b:{x:w,y:0}},{kind:'straight',a:{x:w,y:0},b:{x:w,y:h}},
+      {kind:'straight',a:{x:w,y:h},b:{x:0,y:h}},{kind:'straight',a:{x:0,y:h},b:{x:0,y:0}}]});
+    return {
+      mm: d.inferUnitFromGeometry([box(200,150),box(210,160),box(190,140)]),
+      inch: d.inferUnitFromGeometry([box(8,6),box(9,7),box(7,5)]),
+      ambiguous: d.inferUnitFromGeometry([box(40,30),box(42,32),box(38,28)]),
+      absurd: d.inferUnitFromGeometry([box(900000,900000)]),
+      empty: d.inferUnitFromGeometry([]),
+    };
+  })()`);
+  check(inference.mm && inference.mm.key === 'mm' && near(inference.mm.factor, 1 / 25.4, 1e-12),
+    'pieces ~250 units across infer millimetres, got ' + JSON.stringify(inference.mm));
+  check(inference.inch && inference.inch.key === 'in' && inference.inch.factor === 1,
+    'pieces ~10 units across infer inches, got ' + JSON.stringify(inference.inch));
+  check(inference.ambiguous === null,
+    'a size that fits BOTH candidates infers nothing rather than guessing, got ' + JSON.stringify(inference.ambiguous));
+  check(inference.absurd === null && inference.empty === null,
+    'geometry that fits neither candidate (and no geometry at all) infers nothing, got '
+    + JSON.stringify([inference.absurd, inference.empty]));
+
+  // The same decision reached through a whole parse: an mm-scale file with no
+  // $INSUNITS is auto-scaled and SAYS SO, and an explicit header still wins.
+  const inferParse = await s.eval(`(() => {
+    const d=window.__braAutoModeDebug.dxf.measure;
+    const mmDoc=${JSON.stringify(doc([dxfLine(0, 0, 250, 0), dxfLine(250, 0, 250, 180), dxfLine(250, 180, 0, 180), dxfLine(0, 180, 0, 0)]))};
+    const headerDoc=${JSON.stringify(docWithHeader([P(9, '$INSUNITS'), P(70, 1)], [dxfLine(0, 0, 250, 0), dxfLine(250, 0, 250, 180), dxfLine(250, 180, 0, 180), dxfLine(0, 180, 0, 0)]))};
+    const a=d.parseNative(mmDoc), b=d.parseNative(headerDoc);
+    return { a:{unit:a.unit, src:a.unitSource, diag:a.unitDiagnostic}, b:{unit:b.unit, src:b.unitSource, diag:b.unitDiagnostic} };
+  })()`);
+  check(inferParse.a.src === 'inferred-geometry' && near(inferParse.a.unit, 1 / 25.4, 1e-12)
+    && inferParse.a.diag && inferParse.a.diag.inferredKey === 'mm',
+    'an mm-scale file with no $INSUNITS is auto-scaled to mm with a diagnostic, got ' + JSON.stringify(inferParse.a));
+  check(inferParse.b.src === 'dxf-header' && inferParse.b.unit === 1,
+    'an explicit $INSUNITS declaration still wins over the geometry inference, got ' + JSON.stringify(inferParse.b));
+  check(inferParse.b.diag && inferParse.b.diag.inferredKey === 'mm',
+    'a header that disagrees with the geometry is recorded as a cross-check diagnostic, not overruled, got '
+    + JSON.stringify(inferParse.b.diag));
 
   const directionScores = await s.eval(`(() => {
     const d=window.__braAutoModeDebug.dxf.measure;
@@ -2326,6 +2501,58 @@ async function section3Integration(s) {
   check(!isolation.projectHasSessionKey, 'Project JSON (exportProject) must never contain the measure session');
   check(!isolation.autosaveHasSessionKey, 'the autosave payload must never contain the measure session');
   check(Array.isArray(isolation.measurementAnnIds), 'getMeasurementAnnIds() should still return the (unrelated) POM measurement set');
+
+  // US-126: an imported DXF piece must be recolourable as annotation. A piece
+  // is hundreds of line annotations that select as ONE group, and the colour
+  // control used to write only the group's PRIMARY — 1 line of 150 changed,
+  // which reads as "changing the line colour does nothing". Driven through the
+  // REAL toolbar button, not the setter, because the button is what a TD
+  // presses and the singular/plural split lived on the path between them. The
+  // second, untouched square is what proves the widening stops at the selected
+  // group instead of repainting the whole board.
+  const RECOLOUR_TWO_PIECE_DXF = doc([
+    dxfLine(0, 0, 10, 0), dxfLine(10, 0, 10, 10), dxfLine(10, 10, 0, 10), dxfLine(0, 10, 0, 0),
+    dxfLine(40, 0, 50, 0), dxfLine(50, 0, 50, 10), dxfLine(50, 10, 40, 10), dxfLine(40, 10, 40, 0),
+  ]);
+  const recolour = await s.eval(`(() => {
+    const dbg = window.__braAutoModeDebug;
+    document.getElementById('modeManualBtn').click();
+    const imported = dbg.dxf.importText(${JSON.stringify(RECOLOUR_TWO_PIECE_DXF)},
+      { left: 0, top: 0, width: 1200, height: 800 }, 'recolour.dxf');
+    // Scoped to THIS import's own groupIds: the section reuses one live board
+    // across its checks, so "every annotation" would sweep in earlier
+    // fixtures' pieces and prove nothing about the widening rule.
+    const groups = imported.groupIds;
+    const anns = dbg.getAnnotations();
+    const colorsIn = (id, list) => list.filter(a => a.templateGroupId === id).map(a => a.color);
+    const before = anns.filter(a => groups.includes(a.templateGroupId)).map(a => a.color);
+    // Select ONE segment of the first piece — the board widens that to the
+    // whole templateGroup, exactly as a TD's click does (selection.js).
+    dbg.selectAnnotation(anns.find(a => a.templateGroupId === groups[0]).id);
+    const selectedCount = dbg.getState().selectedAnnotationIds.length;
+    document.getElementById('colorMenuBtn').click();
+    document.getElementById('colorBlueBtn').click();
+    const after = dbg.getAnnotations();
+    return {
+      pieceCount: imported && imported.pieceCount,
+      groupCount: groups.length,
+      before,
+      selectedCount,
+      recoloured: colorsIn(groups[0], after),
+      untouched: colorsIn(groups[1], after),
+    };
+  })()`);
+  check(recolour.pieceCount === 2 && recolour.groupCount === 2 && recolour.before.length === 8
+    && recolour.before.every(c => c === 'black'),
+    'the recolour fixture imports two 4-segment black DXF pieces, got ' + JSON.stringify({
+      pieces: recolour.pieceCount, groups: recolour.groupCount, before: recolour.before }));
+  check(recolour.selectedCount === 4,
+    'clicking one DXF segment selects its whole 4-segment piece, got ' + recolour.selectedCount);
+  check(recolour.recoloured.length === 4 && recolour.recoloured.every(c => c === 'blue'),
+    'picking a colour with a whole DXF piece selected recolours EVERY segment of it, got ' + JSON.stringify(recolour.recoloured));
+  check(recolour.untouched.length === 4 && recolour.untouched.every(c => c === 'black'),
+    'the unselected second piece keeps its colour — the widening stops at the selected group, got ' + JSON.stringify(recolour.untouched));
+
   console.log('PASS  section 3 (integration / isolation)');
 }
 

@@ -364,6 +364,15 @@ async function main() {
       const visiblePanelCount = document.querySelectorAll('.lm-content-body:not([hidden])').length;
       const railLabels = Array.from(active().querySelectorAll('.lm-rail-btn')).map(b => b.textContent.trim());
       const allCount = active().querySelectorAll('[data-preset-id]').length;
+      // Derived, not hardcoded. These counts were pinned as literal 6 and 4,
+      // went stale the moment the Auto Seam work added the 1NDL and 2NDL
+      // built-in Treatments (ADR 0098), and failed the whole suite on a number
+      // rather than on a behaviour. The requirement is "the library renders
+      // every built-in, and the Treatments rail excludes the Looks" — read the
+      // expectation off the built-in list itself so it cannot drift again.
+      const builtins = d.getLinePresets().filter(pr => pr.builtin);
+      const builtinTotal = builtins.length;
+      const builtinTreatments = builtins.filter(pr => pr.kind === 'treatment').length;
       const search = active().querySelector('.lm-search');
       search.value = 'Zigzag';
       search.dispatchEvent(new Event('input', { bubbles: true }));
@@ -393,7 +402,7 @@ async function main() {
       const closedAfterApply = !document.querySelector('.picker-overlay');
       return {
         activeLabel, visiblePanelCount, railLabels, allCount, afterSearch, treatmentsOnlyCount,
-        beforeDup, afterDupCount: afterDup.length,
+        beforeDup, afterDupCount: afterDup.length, builtinTotal, builtinTreatments,
         duplicateName: afterDup.find(p => p.name === 'Zigzag (blue, no arrow) copy')?.name || null,
         closedAfterApply,
       };
@@ -402,10 +411,14 @@ async function main() {
     check(treatmentsTab.visiblePanelCount === 1, 'switching to Treatments must hide the Templates panel, not stack both visibly');
     check(treatmentsTab.railLabels.map(l => l.replace(/\s+\d+$/, '')).join('|') === 'All|Treatments|Looks',
       `the Treatments rail must be All/Treatments/Looks, not the Templates category taxonomy (got ${JSON.stringify(treatmentsTab.railLabels)})`);
-    check(treatmentsTab.allCount === 6, `the 6 built-in Treatments/Looks must all render as cards (got ${treatmentsTab.allCount})`);
+    check(treatmentsTab.builtinTotal >= 6 && treatmentsTab.allCount === treatmentsTab.builtinTotal,
+      `every built-in Treatment/Look must render as a card (${treatmentsTab.builtinTotal} built-ins, got ${treatmentsTab.allCount} cards)`);
     check(treatmentsTab.afterSearch === 1, `searching "Zigzag" must narrow to exactly one card (got ${treatmentsTab.afterSearch})`);
-    check(treatmentsTab.treatmentsOnlyCount === 4,
-      `the Treatments rail filter must show only kind:"treatment" entries, excluding the 2 Looks (got ${treatmentsTab.treatmentsOnlyCount})`);
+    check(treatmentsTab.builtinTreatments > 0
+      && treatmentsTab.treatmentsOnlyCount === treatmentsTab.builtinTreatments
+      && treatmentsTab.builtinTreatments < treatmentsTab.builtinTotal,
+      `the Treatments rail filter must show only kind:"treatment" entries, excluding the Looks `
+      + `(${treatmentsTab.builtinTreatments} of ${treatmentsTab.builtinTotal} built-ins are treatments, got ${treatmentsTab.treatmentsOnlyCount})`);
     check(treatmentsTab.afterDupCount === treatmentsTab.beforeDup + 1, 'Duplicate in the Treatments card menu must add exactly one entry');
     check(treatmentsTab.duplicateName === 'Zigzag (blue, no arrow) copy', 'the duplicate must suffix the name with " copy", matching Templates');
     check(treatmentsTab.closedAfterApply === true,

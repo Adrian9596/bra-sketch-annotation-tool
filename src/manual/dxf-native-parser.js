@@ -440,14 +440,61 @@
         message: 'This DXF would place ' + totalOutputCount + ' lines, over the ' + DXF_TOTAL_OUTPUT_CAP + '-line combined limit. Import rejected.',
       };
     }
+    const pieces = keptPieces.map(segments => ({ segments }));
+    // US-126: auto-scale. The $INSUNITS header stays authoritative wherever
+    // the file declares one this tool understands — a declaration is evidence
+    // and a size statistic is only an inference. When it does NOT (31 of the
+    // 41 corpus files), the piece geometry itself decides between inches and
+    // millimetres instead of falling back on the locked default-inch guess,
+    // which silently under-reported every mm file by 25.4x. See
+    // dxfInferUnitFromGeometry for the evidence and why it never guesses cm.
+    //
+    // For a file that DOES declare units, the same inference still runs, but
+    // only to record a cross-check: a header that disagrees with the geometry
+    // by a factor of 25 is worth naming in the panel, not worth overruling.
+    const inferred = dxfInferUnitFromGeometry(pieces);
+    let unit = unitInfo.factor;
+    let unitSource = unitInfo.unitSource;
+    let unitDiagnostic = unitInfo.diagnostic;
+    if (unitSource !== 'dxf-header' && inferred) {
+      unit = inferred.factor;
+      unitSource = 'inferred-geometry';
+      unitDiagnostic = {
+        code: insunits != null ? insunits : null,
+        // The fact that the file DID declare something this tool cannot read
+        // must survive the inference — 'unsupported-explicit-unit' and
+        // 'default-inch' are different situations (RB-4) and an auto-scale
+        // that erased the distinction would tell a TD the file was silent
+        // when it was not.
+        unsupportedDeclaredCode: unitInfo.unitSource === 'unsupported-explicit-unit' ? insunits : null,
+        inferredKey: inferred.key,
+        medianPieceDiag: inferred.medianPieceDiag,
+        extentDiag: inferred.extentDiag,
+        message: (unitInfo.unitSource === 'unsupported-explicit-unit'
+          ? 'This DXF declares $INSUNITS=' + insunits + ', which this tool does not recognize. '
+          : 'This DXF declares no units. ')
+          + 'Its pieces measure '
+          + (Math.round(inferred.medianPieceDiag * inferred.factor * 10) / 10)
+          + ' in across (median), which fits ' + inferred.key + ' and no other supported unit.',
+      };
+    } else if (unitSource === 'dxf-header' && inferred && Math.abs(inferred.factor - unitInfo.factor) > unitInfo.factor * 1e-6) {
+      unitDiagnostic = {
+        code: insunits,
+        inferredKey: inferred.key,
+        medianPieceDiag: inferred.medianPieceDiag,
+        extentDiag: inferred.extentDiag,
+        message: 'This DXF declares $INSUNITS=' + insunits + ', but its piece sizes fit '
+          + inferred.key + '. The declared unit was used; check the values against a known length.',
+      };
+    }
     return {
       ok: true,
-      pieces: keptPieces.map(segments => ({ segments })),
+      pieces,
       patterns: keptPatterns,
       stats: classified.stats,
-      unit: unitInfo.factor,
-      unitSource: unitInfo.unitSource,
-      unitDiagnostic: unitInfo.diagnostic,
+      unit,
+      unitSource,
+      unitDiagnostic,
       insunits,
       buckets,
       skippedOversizedPieces,

@@ -165,13 +165,6 @@ function requestRender() {
       }
     }
 
-    // US-121: TD Review overlay for Auto Detect Seam — above the applied seam
-    // drafts (ordinary red annotations by now, ADR 0081) so the ROI boxes and
-    // their drag handles are never hidden under a drawn line.
-    if (state.appMode !== 'auto') {
-      drawAutoSeamReviewOverlay();
-    }
-
     if (state.drawSession) {
       drawPreview();
     }

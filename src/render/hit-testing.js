@@ -459,6 +459,25 @@
   function annotationVisualHitDistance(point, ann) {
     const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : BEZIER_SAMPLES * 2);
     const z = Math.max(0.0001, state.zoom);
+    const treatmentSegments = typeof seamPathTreatmentSegments === 'function'
+      ? seamPathTreatmentSegments(ann) : [];
+    if (state.sketchMode && treatmentSegments.length) {
+      // A Seam Path may have a narrow first run and a wide later run. Hit the
+      // actual recipe on each subrange rather than relying on the legacy
+      // whole-annotation treatment, which mirrors only the first run.
+      let best = pointToPolylineDistance(point, points);
+      for (const item of treatmentSegments) {
+        const segmentPoints = getAnnotationPolyline(item.annotation,
+          item.annotation.type === 'straight' ? 1 : BEZIER_SAMPLES * 2);
+        for (const layer of scaledLineTreatmentLayers(item.treatment)) {
+          if (layer.hidden) continue;
+          const railDistance = pointToOffsetPolylineDistance(point, segmentPoints, layer.offset / z);
+          const motifRadius = layer.pattern === 'zigzag' ? layer.amplitude / z : 0;
+          best = Math.min(best, Math.max(0, railDistance - motifRadius - layer.width / (2 * z)));
+        }
+      }
+      if (Number.isFinite(best)) return best;
+    }
     if (state.sketchMode && hasLineTreatment(ann)) {
       // Keep the historical host-spine target as well as every visible rail.
       // A Binding has empty space between its outside rails; losing the spine

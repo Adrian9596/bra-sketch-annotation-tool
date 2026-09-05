@@ -21,7 +21,7 @@
   // `const` read during load would throw a TDZ ReferenceError from any part
   // that happens to run earlier. See CLAUDE.md "Living in one shared scope".
   function linePresetsStorageKey() { return 'bra-line-presets-v1'; }
-  function linePresetsFormatVersion() { return 2; }
+  function linePresetsFormatVersion() { return 3; }
 
   function lineTreatmentPatterns() { return ['solid', 'dashed', 'zigzag']; }
 
@@ -56,6 +56,28 @@
       .slice(0, 8);
   }
 
+  function normalizeNeedleGauge(raw) {
+    if (!raw || typeof raw !== 'object' || raw.status === 'tbc') {
+      return { status: 'tbc', value: null, unit: null };
+    }
+    const value = Number(raw.value);
+    const unit = raw.unit === 'mm' || raw.unit === 'in' ? raw.unit : null;
+    if (raw.status !== 'confirmed' || !Number.isFinite(value) || value <= 0 || !unit) {
+      return { status: 'tbc', value: null, unit: null };
+    }
+    return { status: 'confirmed', value, unit };
+  }
+
+  function normalizeLineTreatmentSemantic(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const needleCount = Number(raw.needleCount);
+    if (needleCount === 1) return { needleCount: 1, needleGauge: null };
+    if (needleCount === 2) {
+      return { needleCount: 2, needleGauge: normalizeNeedleGauge(raw.needleGauge) };
+    }
+    return null;
+  }
+
   function legacyStyleTreatmentLayers(style, color, lineWidth) {
     const normalizedStyle = normalizeLineStyle(style);
     const layerColor = normalizeColorKey(color);
@@ -86,6 +108,13 @@
       layers = legacyStyleTreatmentLayers(fallback.style, fallback.color, fallback.lineWidth);
     }
     if (!layers.length) return null;
+    const semantic = normalizeLineTreatmentSemantic(source.semantic);
+    // `null` is the semantic absence used by 1NDL. Number(null) is 0, so a
+    // naive coercion made a second normalization silently turn null into the
+    // 2px minimum. Keep normalization idempotent: only an explicitly supplied
+    // numeric value is eligible for clamping.
+    const displaySpacing = source.displaySpacing == null || source.displaySpacing === ''
+      ? NaN : Number(source.displaySpacing);
     return {
       name: String(source.name || (fallback && fallback.name) || 'Custom treatment').trim().slice(0, 60),
       // US-099: an instance-level visual multiplier. It deliberately lives on
@@ -94,6 +123,11 @@
       // measure. Missing values from every pre-US-099 project read as 100%.
       scale: normalizeLineTreatmentScale(source.scale),
       layers,
+      // ADR 0098: this is technical meaning, separate from how far apart the
+      // two rails are drawn on screen. A detector never turns pixel spacing
+      // into Needle Gauge without TD-confirmed calibration.
+      semantic,
+      displaySpacing: Number.isFinite(displaySpacing) ? clamp(displaySpacing, 2, 40) : null,
     };
   }
 
@@ -144,6 +178,17 @@
         normalizeLineTreatmentLayer({ pattern: 'solid', offset: 4, width: 1.8, color: 'black' }),
         normalizeLineTreatmentLayer({ pattern: 'dashed', offset: 0, width: 1.2, color: 'blue', spacing: 10 }),
       ] } },
+      { id: 'builtin-1ndl', name: '1NDL', style: 'solid', color: 'black', lineWidth: 1.6, arrowType: 'none', builtin: true, kind: 'treatment', treatment: {
+        name: '1NDL', semantic: { needleCount: 1 }, displaySpacing: null,
+        layers: [normalizeLineTreatmentLayer({ pattern: 'solid', offset: 0, width: 1.6, color: 'black' })],
+      } },
+      { id: 'builtin-2ndl', name: '2NDL · Gauge TBC', style: 'solid', color: 'black', lineWidth: 1.6, arrowType: 'none', builtin: true, kind: 'treatment', treatment: {
+        name: '2NDL', semantic: { needleCount: 2, needleGauge: { status: 'tbc' } }, displaySpacing: 8,
+        layers: [
+          normalizeLineTreatmentLayer({ pattern: 'solid', offset: -4, width: 1.6, color: 'black' }),
+          normalizeLineTreatmentLayer({ pattern: 'solid', offset: 4, width: 1.6, color: 'black' }),
+        ],
+      } },
     ]);
   }
 
@@ -197,7 +242,7 @@
     // is shared with the shape-stamp library, so the two cannot drift.
     const read = readLibraryStore(linePresetsStorageKey(), 'presets', normalizeLinePresetList);
     if (read.version > 0 && read.version < linePresetsFormatVersion()) {
-      // v2 introduces true layered Treatments and the bundled Binding recipe.
+      // Each format bump introduces governed built-ins or normalized fields.
       // Merge them once even when a v1 profile deliberately stored an empty
       // preset list; after this write the v2 seeded-empty contract is respected
       // again, so deleting every Treatment still sticks across reload.
@@ -268,6 +313,8 @@
 
   function currentLineTreatment() {
     const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    const selectedRun = typeof seamPathSelectedRun === 'function' ? seamPathSelectedRun(ann) : null;
+    if (selectedRun) return normalizeLineTreatment(selectedRun.treatment);
     if (ann && hasLineTreatment(ann)) return normalizeLineTreatment(ann.lineTreatment);
     const look = currentLineLook();
     return normalizeLineTreatment(null, { ...look, name: 'Custom treatment' });
@@ -313,7 +360,11 @@
     if (!treatment || !anns.length) return 0;
     const before = snapshotFingerprint(makeSnapshot());
     for (const ann of anns) {
-      ann.lineTreatment = clone(treatment);
+      if (ann.seamPath && typeof seamPathApplyTreatmentToAllRuns === 'function') {
+        seamPathApplyTreatmentToAllRuns(ann, treatment);
+      } else {
+        ann.lineTreatment = clone(treatment);
+      }
       if (legacyLook && typeof legacyLook === 'object') {
         ann.style = normalizeLineStyle(legacyLook.style);
         ann.color = normalizeColorKey(legacyLook.color);
@@ -331,6 +382,9 @@
 
   function customizeSelectedLineTreatment(recipe) {
     const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    if (ann && typeof seamPathSelectedRun === 'function' && seamPathSelectedRun(ann)) {
+      return applyTreatmentRecipeToSelectedRun(recipe) ? 1 : 0;
+    }
     return applyTreatmentRecipeToAnnotations(recipe, ann ? [ann] : []);
   }
 
@@ -387,11 +441,18 @@
       ? getSelectedAnnotationsForEdit() : [];
     if (selected.length) {
       if (preset.kind === 'treatment' && preset.treatment) {
-        applyTreatmentRecipeToAnnotations(preset.treatment, selected, preset);
+        const selectedRun = selected.length === 1 && typeof seamPathSelectedRun === 'function'
+          ? seamPathSelectedRun(selected[0]) : null;
+        if (selectedRun) applyTreatmentRecipeToSelectedRun(preset.treatment);
+        else applyTreatmentRecipeToAnnotations(preset.treatment, selected, preset);
       } else {
         applyToSelectedAnnotations({ ...settings, lineTreatment: null });
       }
-      showToast(selected.length > 1
+      const appliedToRun = selected.length === 1 && typeof seamPathSelectedRun === 'function'
+        && !!seamPathSelectedRun(selected[0]);
+      showToast(appliedToRun
+        ? `${preset.name} applied to the selected Treatment Run.`
+        : selected.length > 1
         ? `${preset.name} applied to ${selected.length} lines.`
         : `${preset.name} applied.`);
       return true;

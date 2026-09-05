@@ -112,6 +112,7 @@ export const SOURCE_PARTS = [
   'src/manual/mindmap-mode.js',
   'src/manual/library-store.js',
   'src/manual/line-presets.js',
+  'src/manual/seam-path.js',
   'src/manual/shape-stamps.js',
   'src/manual/dxf-import.js',
   'src/manual/dxf-native-parser.js',
@@ -160,32 +161,6 @@ export const SOURCE_PARTS = [
   'src/auto/drafts/validate-fixture.js',
   'src/auto/drafts/draft-actions.js',
   'src/auto/drafts/apply-drafts.js',
-  // Auto Seam (US-109): listed in dependency order — contract/pixel model,
-  // classifier, shared corridor + result records, the lanes, the router, then
-  // the one part that touches Board state. Order is documentation here (every
-  // symbol is a hoisted function); see docs/stories/epics/E07-measurement-detection/
-  // US-109-photo-zigzag-detection/CODE_STRUCTURE.md.
-  'src/auto/seam/contract.js',
-  'src/auto/seam/thresholds.js',
-  'src/auto/seam/pixel-model.js',
-  'src/auto/seam/input-classifier.js',
-  'src/auto/seam/corridor.js',
-  'src/auto/seam/pattern-evidence.js',
-  'src/auto/seam/edge-band.js',
-  'src/auto/seam/geometry.js',
-  'src/auto/seam/result.js',
-  'src/auto/seam/lanes/product-photo.js',
-  'src/auto/seam/lanes/technical-flat.js',
-  'src/auto/seam/router.js',
-  // US-120: main-thread client that runs the router above inside the Auto Seam
-  // Worker (auto-seam-worker.js) and falls back to the same code in-thread.
-  'src/manual/auto-seam-worker-client.js',
-  'src/manual/auto-seam.js',
-  // US-121: TD Review loop (Phase C first slice) — Board-touching, app.js
-  // only (never the worker bundle). Needs makeDraggablePanel (ui/draggable-
-  // panel.js, loaded earlier) and autoSeamSourceSha256 (auto-seam.js, just
-  // above); read by src/render/auto-seam-review-overlay.js below.
-  'src/manual/auto-seam-review.js',
   'src/auto/drafts/board-reset.js',
   'src/auto/drafts/generate-drafts-action.js',
   'src/auto/learning/acceptance-stats.js',
@@ -210,7 +185,6 @@ export const SOURCE_PARTS = [
   'src/render/render-notes.js',
   'src/render/render-dxf-measurements.js',
   'src/render/detection-overlay.js',
-  'src/render/auto-seam-review-overlay.js',
   'src/render/anchor-pins.js',
   'src/render/render-images.js',
   'src/render/viewport.js',
@@ -219,18 +193,7 @@ export const SOURCE_PARTS = [
   'src/dev/url-bootstrap.js',
 ];
 
-// US-120: the second bundle. scripts/build-app.mjs concatenates these into
-// auto-seam-worker.js, which app.js loads as a Web Worker. It is the pure
-// src/auto/seam/* pipeline (every part that app.js also ships — the SAME
-// files, so both bundles run identical detection code) plus one worker-only
-// entry part that is deliberately NOT in SOURCE_PARTS. The worker bundle has
-// its own shared scope, so scripts/check.mjs validates it separately.
-export const AUTO_SEAM_WORKER_PARTS = [
-  ...SOURCE_PARTS.filter(part => part.startsWith('src/auto/seam/')),
-  'src/auto/seam/worker-entry.js',
-];
-
-// US-124 Phase 5 (ADR 0091): the third bundle. dxf-worker.js runs the SAME
+// US-124 Phase 5 (ADR 0091): the second bundle. dxf-worker.js runs the SAME
 // pure DXF parse layer app.js ships (math, the pattern classifier, the parse
 // layer split out of dxf-import.js, the native measurement parser) plus one
 // worker-only entry part, so a >120-pattern file (or any file the TD asks

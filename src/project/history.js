@@ -13,6 +13,10 @@
   }
 
   function makeSnapshot() {
+    // US-125: geometry can change through many established drag/nudge/resize
+    // paths. Refresh the two Seam Path fingerprints at the shared snapshot
+    // boundary so none of those paths can persist stale approval evidence.
+    if (typeof seamPathRefreshAllFingerprints === 'function') seamPathRefreshAllFingerprints();
     return {
       tool: state.tool,
       drawStyle: state.drawStyle,
@@ -118,6 +122,9 @@
     state.noteLeaderColor = normalizeColorKey(snapshot.noteLeaderColor || 'red');
     state.annotations = clone(snapshot.annotations || []);
     state.annotations.forEach(ensureCurveControls);
+    state.annotations.forEach(ann => {
+      if (ann && ann.seamPath) normalizeSeamPathAnnotation(ann);
+    });
     state.templateGroupLabels = (snapshot.templateGroupLabels && typeof snapshot.templateGroupLabels === 'object')
       ? clone(snapshot.templateGroupLabels) : {};
     state.templateGroupMeta = (snapshot.templateGroupMeta && typeof snapshot.templateGroupMeta === 'object')

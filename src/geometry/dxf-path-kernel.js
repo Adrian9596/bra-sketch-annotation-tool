@@ -97,6 +97,92 @@
     };
   }
 
+  // ---- US-126: geometry-based unit inference ---------------------------------
+  //
+  // Most factory pattern DXFs do not declare $INSUNITS at all. Measured on the
+  // real corpus (demo/DXF file/dxf): 31 of 41 files carry no unit header, and
+  // the locked default-inch fallback silently reports every millimetre file
+  // 25.4x too small — "thông số không chính xác" (the numbers are wrong), with
+  // no way for the TD to know which files were affected.
+  //
+  // A pattern piece is a physical object, so its size is itself evidence. The
+  // two units pattern CAD actually exports are inches and millimetres, and
+  // they are 25.4x apart — far wider than the spread of real garment piece
+  // sizes — so a robust size statistic separates them cleanly. Corroborated on
+  // the corpus: the 9 files that DO declare $INSUNITS=4 (mm) have a median
+  // piece diagonal of 243-285 native units, and every un-declared file lands
+  // either in that same band (165-1110, all genuinely mm) or an order of
+  // magnitude lower (4-18, all genuinely inches — verified against raw
+  // coordinates in SE0015-COSTING.dxf, an ASTM/AAMA inch export). Nothing in
+  // the corpus falls in the gap between.
+  //
+  // Deliberately NOT offered as a candidate: centimetres. A cm reading is
+  // never separable from an inch reading by size alone (they are 2.54x apart,
+  // inside the spread of real piece sizes), and no pattern CAD in this
+  // workflow exports cm — guessing it would trade a detectable error for an
+  // undetectable one. A file whose evidence fits BOTH candidates, or neither,
+  // infers nothing and keeps the honest "assumed" provenance.
+  const DXF_UNIT_INFERENCE_CANDIDATES = [
+    { key: 'in', factor: 1 },
+    { key: 'mm', factor: 1 / 25.4 },
+  ];
+  // Plausible inches for ONE pattern piece's bounding-box diagonal, and for
+  // the whole drawing's. Both must hold for a candidate to be accepted, so a
+  // file of tiny trim pieces cannot be read as inches on the strength of the
+  // piece statistic alone.
+  const DXF_UNIT_PIECE_DIAG_IN = { min: 1, max: 80 };
+  const DXF_UNIT_EXTENT_DIAG_IN = { min: 2, max: 400 };
+
+  function dxfMedian(values) {
+    if (!values.length) return null;
+    const sorted = values.slice().sort((a, b) => a - b);
+    const mid = sorted.length >> 1;
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  // `pieces`: [{ segments }] exactly as parseDxfNativeModel builds them.
+  // Returns { key, factor, medianPieceDiag, extentDiag } for a single
+  // unambiguous fit, or null when the evidence fits both candidates or
+  // neither (in which case the caller keeps its own fallback and says so).
+  //
+  // The MEDIAN piece diagonal, not the mean or the extremes: a real file is
+  // full of one-line notches, drill marks and stray far-away entities (one
+  // corpus file has a single piece 592,094 units across next to a median of
+  // 8.5), and a statistic those can move is not evidence.
+  function dxfInferUnitFromGeometry(pieces) {
+    if (!Array.isArray(pieces) || !pieces.length) return null;
+    const diagonals = [];
+    // The whole drawing's extent is the UNION of the per-piece boxes — the
+    // pieces partition the segments, so this is exactly the box
+    // dxfBoundsOfSegments would return over every segment at once, without
+    // building that combined array (which was O(pieces * segments) of pure
+    // copying on a 108-piece file, for a bound already in hand).
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const piece of pieces) {
+      const segments = piece && Array.isArray(piece.segments) ? piece.segments : null;
+      if (!segments || !segments.length) continue;
+      const bounds = dxfBoundsOfSegments(segments);
+      const diagonal = Math.hypot(bounds.width, bounds.height);
+      if (Number.isFinite(diagonal) && diagonal > 0) diagonals.push(diagonal);
+      if (bounds.x < minX) minX = bounds.x;
+      if (bounds.y < minY) minY = bounds.y;
+      if (bounds.x + bounds.width > maxX) maxX = bounds.x + bounds.width;
+      if (bounds.y + bounds.height > maxY) maxY = bounds.y + bounds.height;
+    }
+    if (!diagonals.length || !Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+    const median = dxfMedian(diagonals);
+    const extent = Math.hypot(maxX - minX, maxY - minY);
+    if (!Number.isFinite(median) || !(median > 0) || !Number.isFinite(extent) || !(extent > 0)) return null;
+    const fits = DXF_UNIT_INFERENCE_CANDIDATES.filter((candidate) => {
+      const pieceIn = median * candidate.factor;
+      const extentIn = extent * candidate.factor;
+      return pieceIn >= DXF_UNIT_PIECE_DIAG_IN.min && pieceIn <= DXF_UNIT_PIECE_DIAG_IN.max
+        && extentIn >= DXF_UNIT_EXTENT_DIAG_IN.min && extentIn <= DXF_UNIT_EXTENT_DIAG_IN.max;
+    });
+    if (fits.length !== 1) return null;
+    return { key: fits[0].key, factor: fits[0].factor, medianPieceDiag: median, extentDiag: extent };
+  }
+
   // ---- Point-at-parameter / length, per segment kind -------------------------
 
   function dxfPointOnSegment(seg, t) {
@@ -564,8 +650,257 @@
     return { routes, truncated };
   }
 
+  // US-126: one chain edge walked the other way — same geometry, each step's
+  // own t0/t1 swapped and the order reversed, exactly the transform
+  // dxfReverseRoute applies to a whole route.
+  function dxfReverseChainSteps(steps) {
+    return steps.slice().reverse().map(s => ({ segIndex: s.segIndex, t0: s.t1, t1: s.t0 }));
+  }
+
+  // US-126: contract every run of degree-2 nodes into ONE edge before the
+  // route DFS runs.
+  //
+  // Why this is the fix for "measuring along a line with junk points does not
+  // work": a factory pattern edge is almost never one entity. A single
+  // straight edge is exported as dozens of short collinear LINE/VERTEX runs,
+  // and every one of those intermediate vertices used to be a graph node the
+  // DFS had to visit. Measured on the real corpus (demo/DXF file/dxf, 41
+  // files), 13% of piece route requests blew straight through the search caps
+  // and reported ROUTE_SEARCH_TRUNCATED — a hard "cannot measure" on shapes a
+  // TD measures by hand in seconds. The junk vertices are not what makes a
+  // route ambiguous, though: a node with exactly two edges has exactly one
+  // way through it, so any simple path that enters the chain must traverse
+  // all of it. Contracting the chain is therefore EXACT — same endpoints,
+  // same total length, same set of distinct routes — and it collapses a real
+  // 396-node piece to 38 nodes (2844.dxf), 300 to 35 (3286.dxf), 244 to 29
+  // (2827.dxf), which is what turns an impossible search into a complete one.
+  //
+  // `pinnedNodes` are never contracted through: the two clicked endpoints
+  // (which must survive as real nodes — they are what the route runs
+  // between). A self-loop edge (nodeA === nodeB, e.g. a whole circle, or a
+  // fully contracted closed contour) is never absorbed into a chain: its
+  // node-pair carries no traversal direction, and a loop request needs it
+  // intact as its own 1-edge cycle.
+  //
+  // `edges` in: [{ id, nodeA, nodeB, length, steps: [{segIndex,t0,t1}] }],
+  // steps ordered nodeA -> nodeB. Out: the same shape, fewer edges.
+  function dxfCompressDegreeTwoChains(edges, pinnedNodes, edgeIdRef) {
+    const live = new Map();
+    const incident = new Map();
+    const touch = (node, id) => {
+      if (!incident.has(node)) incident.set(node, new Set());
+      incident.get(node).add(id);
+    };
+    for (const e of edges) {
+      live.set(e.id, e);
+      touch(e.nodeA, e.id);
+      touch(e.nodeB, e.id);
+    }
+    const queue = Array.from(incident.keys());
+    let guard = edges.length * 4 + 16;
+    while (queue.length && guard > 0) {
+      guard -= 1;
+      const node = queue.pop();
+      if (pinnedNodes.has(node)) continue;
+      const ids = incident.get(node);
+      if (!ids || ids.size !== 2) continue;
+      const [id1, id2] = Array.from(ids);
+      const e1 = live.get(id1);
+      const e2 = live.get(id2);
+      if (!e1 || !e2 || e1 === e2) continue;
+      if (e1.nodeA === e1.nodeB || e2.nodeA === e2.nodeB) continue;
+      if (!Number.isFinite(e1.length) || !Number.isFinite(e2.length)) continue;
+      // Orient so e1's steps END at `node` and e2's steps START there.
+      const stepsIn = e1.nodeB === node ? e1.steps : dxfReverseChainSteps(e1.steps);
+      const from = e1.nodeB === node ? e1.nodeA : e1.nodeB;
+      const stepsOut = e2.nodeA === node ? e2.steps : dxfReverseChainSteps(e2.steps);
+      const to = e2.nodeA === node ? e2.nodeB : e2.nodeA;
+      const merged = {
+        id: edgeIdRef.next, nodeA: from, nodeB: to,
+        length: e1.length + e2.length, steps: stepsIn.concat(stepsOut),
+      };
+      edgeIdRef.next += 1;
+      live.delete(id1);
+      live.delete(id2);
+      live.set(merged.id, merged);
+      incident.delete(node);
+      for (const pair of [[e1.nodeA, id1], [e1.nodeB, id1], [e2.nodeA, id2], [e2.nodeB, id2]]) {
+        const set = incident.get(pair[0]);
+        if (set) set.delete(pair[1]);
+      }
+      touch(from, merged.id);
+      touch(to, merged.id);
+      queue.push(from, to);
+      guard = live.size * 4 + 16;
+    }
+    return Array.from(live.values());
+  }
+
+  // US-126: shortest route between two DISTINCT nodes (Dijkstra over the
+  // contracted graph), optionally with some edges and nodes forbidden —
+  // the two exclusions are what Yen's algorithm below needs to force a
+  // deviation. Returns null for a loop request (start === end, where
+  // "shortest" has no meaning), when no route exists, or when the
+  // exclusions disconnect the pair.
+  //
+  // The linear-scan minimum is deliberate: after chain contraction the graph
+  // is tens of nodes, not thousands, and a heap would only add a data
+  // structure to audit. Ties break on the lower node id so the result is a
+  // pure function of the graph, not of Map insertion order (determinism,
+  // CLAUDE.md).
+  function dxfShortestRouteEdges(adjacency, startNode, endNode, bannedEdgeIds, bannedNodes) {
+    if (startNode === endNode) return null;
+    if (bannedNodes && bannedNodes.has(startNode)) return null;
+    const dist = new Map([[startNode, 0]]);
+    const prev = new Map();
+    const settled = new Set();
+    for (;;) {
+      let current = null;
+      let best = Infinity;
+      for (const [node, d] of dist) {
+        if (settled.has(node)) continue;
+        if (d < best - 1e-12 || (Math.abs(d - best) <= 1e-12 && current !== null && node < current)) {
+          best = Math.min(best, d);
+          current = node;
+        }
+      }
+      if (current === null) return null;
+      best = dist.get(current);
+      if (current === endNode) break;
+      settled.add(current);
+      for (const edge of adjacency.get(current) || []) {
+        if (bannedEdgeIds && bannedEdgeIds.has(edge.id)) continue;
+        const next = edge.nodeA === current ? edge.nodeB : edge.nodeA;
+        if (next === current || settled.has(next) || !Number.isFinite(edge.length)) continue;
+        if (bannedNodes && bannedNodes.has(next)) continue;
+        const candidate = best + edge.length;
+        const known = dist.get(next);
+        if (known === undefined || candidate < known - 1e-12) {
+          dist.set(next, candidate);
+          prev.set(next, { edge, from: current });
+        }
+      }
+    }
+    const steps = [];
+    let cursor = endNode;
+    while (cursor !== startNode) {
+      const step = prev.get(cursor);
+      if (!step) return null;
+      steps.push({ edge: step.edge, forward: step.edge.nodeA === step.from });
+      cursor = step.from;
+    }
+    return steps.reverse();
+  }
+
+  // The node a route sits on after `count` steps (its start node when count
+  // is 0) — Yen's needs the node sequence, and a step only carries its edge
+  // plus a traversal direction.
+  function dxfRouteNodeAfter(startNode, steps, count) {
+    let node = startNode;
+    for (let i = 0; i < count; i += 1) {
+      const step = steps[i];
+      node = step.forward ? step.edge.nodeB : step.edge.nodeA;
+    }
+    return node;
+  }
+
+  function dxfRouteEdgeKey(steps) {
+    return steps.map(s => s.edge.id).join('>');
+  }
+
+  function dxfStepsLength(steps) {
+    return steps.reduce((sum, s) => sum + s.edge.length, 0);
+  }
+
+  // US-126 (round 2): Yen's k-shortest LOOPLESS paths.
+  //
+  // Why this replaces "enumerate N by DFS, then sort": a capped DFS reaches
+  // routes in arbitrary order, so sorting its sample ranks the SAMPLE, not
+  // the graph. Measured against an uncontracted exhaustive reference over the
+  // real corpus, that was fine wherever the piece had at most the enumeration
+  // cap's worth of routes (195 cases, 0 disagreements) and WRONG wherever it
+  // had more (21 of 30 cases): candidates 1..k-1 were arbitrary long detours
+  // while the chooser claimed to be showing the k shortest. Only candidate 0
+  // was ever truly shortest, because it was seeded by Dijkstra.
+  //
+  // Yen's makes the claim true by construction. Each new route is the
+  // shortest path that deviates from an already-accepted one at some node:
+  // the "root" prefix is fixed, every edge that leaves that prefix the same
+  // way an accepted route did is forbidden, the prefix's own interior nodes
+  // are forbidden (that is what keeps the result loopless), and the rest is a
+  // plain shortest path. Affordable only because chain contraction ran first:
+  // k * (path length) Dijkstras over a graph of tens of nodes.
+  //
+  // Returns { routes, more } — `more` is true when at least one further
+  // candidate existed but was not promoted, i.e. the offered set really is
+  // "the k shortest, and there are others".
+  function dxfKShortestRoutes(adjacency, startNode, endNode, k, maxSpurSearches) {
+    const first = dxfShortestRouteEdges(adjacency, startNode, endNode);
+    if (!first) return { routes: [], more: false };
+    const accepted = [first];
+    const acceptedKeys = new Set([dxfRouteEdgeKey(first)]);
+    const candidates = [];
+    const candidateKeys = new Set();
+    let spurSearches = 0;
+    let budgetHit = false;
+    while (accepted.length < k) {
+      const previous = accepted[accepted.length - 1];
+      for (let i = 0; i < previous.length; i += 1) {
+        if (spurSearches >= maxSpurSearches) { budgetHit = true; break; }
+        spurSearches += 1;
+        const rootSteps = previous.slice(0, i);
+        const rootKey = dxfRouteEdgeKey(rootSteps);
+        const spurNode = dxfRouteNodeAfter(startNode, previous, i);
+        // Forbid the continuation every accepted route with this same root
+        // already took — otherwise the "deviation" reproduces a route we hold.
+        const bannedEdgeIds = new Set();
+        for (const route of accepted) {
+          if (route.length > i && dxfRouteEdgeKey(route.slice(0, i)) === rootKey) {
+            bannedEdgeIds.add(route[i].edge.id);
+          }
+        }
+        // Forbid the root's own interior nodes (everything strictly before the
+        // spur node) so the spur cannot loop back through the prefix.
+        const bannedNodes = new Set();
+        for (let n = 0; n < i; n += 1) bannedNodes.add(dxfRouteNodeAfter(startNode, previous, n));
+        const spur = dxfShortestRouteEdges(adjacency, spurNode, endNode, bannedEdgeIds, bannedNodes);
+        if (!spur) continue;
+        const whole = rootSteps.concat(spur);
+        const key = dxfRouteEdgeKey(whole);
+        if (acceptedKeys.has(key) || candidateKeys.has(key)) continue;
+        candidateKeys.add(key);
+        candidates.push(whole);
+      }
+      if (!candidates.length) break;
+      // Deterministic order: shortest first, ties broken on the edge-id
+      // signature so the choice never depends on discovery order.
+      candidates.sort((a, b) => (dxfStepsLength(a) - dxfStepsLength(b))
+        || (dxfRouteEdgeKey(a) < dxfRouteEdgeKey(b) ? -1 : dxfRouteEdgeKey(a) > dxfRouteEdgeKey(b) ? 1 : 0));
+      const next = candidates.shift();
+      candidateKeys.delete(dxfRouteEdgeKey(next));
+      accepted.push(next);
+      acceptedKeys.add(dxfRouteEdgeKey(next));
+      if (budgetHit) break;
+    }
+    return { routes: accepted, more: candidates.length > 0 || budgetHit };
+  }
+
+  // How many routes the TD is ever offered. Unchanged: more than a handful of
+  // Tab presses is not a choice, it is a maze.
   const DXF_ROUTE_MAX_CANDIDATES = 8;
-  const DXF_ROUTE_MAX_VISITS = 20000;
+  // US-126 (round 2): Yen's spur-search budget for the open case. k * the
+  // longest accepted route's step count is the natural bound; this is the
+  // defensive ceiling above it, so a pathological graph that somehow survived
+  // chain contraction with hundreds of junctions cannot spin. Hitting it sets
+  // `more`, exactly like a leftover candidate would — the offered set is still
+  // the k shortest FOUND, and the TD is still told others exist.
+  const DXF_ROUTE_MAX_SPUR_SEARCHES = 4000;
+  // Loop requests (A and B on the same point of a closed contour) are cycles,
+  // not paths, so Yen's does not apply and the DFS still enumerates them.
+  // A real closed contour contracts to one or two edges, so these caps are
+  // generous rather than load-bearing.
+  const DXF_ROUTE_MAX_ENUMERATED = 64;
+  const DXF_ROUTE_MAX_VISITS = 60000;
 
   // The Along Path oracle: given the full native segment list for a piece (or
   // component) and two point-on-path references ({segIndex, t} into that same
@@ -609,50 +944,91 @@
     if (nodeA == null || nodeB == null) {
       return { ok: false, reason: DXF_MEASURE_REASON.NON_FINITE_GEOMETRY, routes: [], truncated: false };
     }
+    // US-126: contract every degree-2 run into one chain edge before the
+    // search. Exact (see dxfCompressDegreeTwoChains) — the clicked endpoints
+    // are pinned, so they stay real nodes and the routes between them are
+    // unchanged; only the count of nodes the DFS has to walk collapses.
+    const edgeIdRef = { next: work.nextEdgeId };
+    const chainEdges = dxfCompressDegreeTwoChains(
+      work.edges.map(e => ({
+        id: e.id, nodeA: e.nodeA, nodeB: e.nodeB, length: e.length,
+        steps: [{ segIndex: e.segIndex, t0: e.t0, t1: e.t1 }],
+      })),
+      new Set([nodeA, nodeB]),
+      edgeIdRef
+    );
     const adjacency = new Map();
-    for (const e of work.edges) {
+    for (const e of chainEdges) {
       if (!adjacency.has(e.nodeA)) adjacency.set(e.nodeA, []);
       if (!adjacency.has(e.nodeB)) adjacency.set(e.nodeB, []);
       adjacency.get(e.nodeA).push(e);
       adjacency.get(e.nodeB).push(e);
     }
-    const { routes: found, truncated } = dxfEnumerateSimplePaths(adjacency, nodeA, nodeB, DXF_ROUTE_MAX_CANDIDATES, DXF_ROUTE_MAX_VISITS);
-    let rawRoutes = found;
+    // US-126 (round 2): the open case takes the k SHORTEST routes from Yen's,
+    // which is the only way "these are the shortest N" can be a true statement
+    // — see dxfKShortestRoutes for the measured reason a capped DFS plus a
+    // sort was not. A loop request (A and B on the same point) asks for cycles
+    // rather than paths, which Yen's does not model, so it keeps the DFS.
+    let rawRoutes;
+    let truncated;
     if (nodeA === nodeB) {
+      const found = dxfEnumerateSimplePaths(adjacency, nodeA, nodeB, DXF_ROUTE_MAX_ENUMERATED, DXF_ROUTE_MAX_VISITS);
+      truncated = found.truncated;
       // ADR 0084: the DFS walks every cycle through the point in BOTH
       // directions (leave via edge e1 and return via e2, and vice versa) —
-      // the same edges, the same length, one loop. Keep one per distinct
-      // edge set; dxfMeasureBuildDirectionCandidates then presents that one
-      // loop as forward/reverse, exactly as it does for a single open route.
-      // The empty raw list here means A and B sit on the same point of an
-      // OPEN path (no cycle through it) — nothing to measure, and a distinct
-      // reason from "not connected", which would be a lie about two points
-      // that are trivially connected.
-      const seen = new Set();
-      rawRoutes = found.filter(steps => {
+      // the same edges, the same length, one loop. Keep one per distinct edge
+      // set; dxfMeasureBuildDirectionCandidates then presents that one loop as
+      // forward/reverse, exactly as it does for a single open route.
+      const seenEdgeSets = new Set();
+      rawRoutes = found.routes.filter(steps => {
         const key = steps.map(s => s.edge.id).sort((x, y) => x - y).join(',');
-        if (seen.has(key)) return false;
-        seen.add(key);
+        if (seenEdgeSets.has(key)) return false;
+        seenEdgeSets.add(key);
         return true;
       });
-      if (!rawRoutes.length && !truncated) return { ok: false, reason: DXF_MEASURE_REASON.SAME_POINT, routes: [], truncated: false };
+      // An empty list here means A and B sit on the same point of an OPEN path
+      // (no cycle through it) — nothing to measure, and a distinct reason from
+      // "not connected", which would be a lie about two points that are
+      // trivially connected.
+      if (!rawRoutes.length && !truncated) {
+        return { ok: false, reason: DXF_MEASURE_REASON.SAME_POINT, routes: [], truncated: false };
+      }
+    } else {
+      const yen = dxfKShortestRoutes(adjacency, nodeA, nodeB, DXF_ROUTE_MAX_CANDIDATES, DXF_ROUTE_MAX_SPUR_SEARCHES);
+      rawRoutes = yen.routes;
+      truncated = yen.more;
     }
     if (!rawRoutes.length) return { ok: false, reason: DXF_MEASURE_REASON.NO_CONNECTED_PATH, routes: [], truncated: false };
     const routes = rawRoutes.map(steps => ({
-      steps: steps.map(s => ({
-        segIndex: s.edge.segIndex,
-        t0: s.forward ? s.edge.t0 : s.edge.t1,
-        t1: s.forward ? s.edge.t1 : s.edge.t0,
-      })),
+      steps: steps.flatMap(s => (s.forward ? s.edge.steps : dxfReverseChainSteps(s.edge.steps))),
       length: steps.reduce((sum, s) => sum + s.edge.length, 0),
     })).filter(route => route.steps.length > 0 && Number.isFinite(route.length) && route.length > 0);
     if (!routes.length) {
       return { ok: false, reason: DXF_MEASURE_REASON.UNSUPPORTED_GEOMETRY, routes: [], truncated: false };
     }
-    if (truncated) {
-      return { ok: false, reason: DXF_MEASURE_REASON.ROUTE_SEARCH_TRUNCATED, routes: [], truncated: true };
-    }
-    return { ok: true, reason: null, routes, truncated: false };
+    // Yen's already returns the open case in ascending length. The loop case
+    // is sorted here for the same reason: the first candidate offered should
+    // be the shortest way round. Ties break on the route's own step signature
+    // so the order is a pure function of the geometry (determinism, CLAUDE.md)
+    // — a plain string comparison, never localeCompare, whose result depends
+    // on the runtime's collation data.
+    const routeKey = route => route.steps.map(s => s.segIndex + ':' + s.t0 + ':' + s.t1).join(',');
+    routes.sort((a, b) => (a.length - b.length)
+      || (routeKey(a) < routeKey(b) ? -1 : routeKey(a) > routeKey(b) ? 1 : 0));
+    const offered = routes.slice(0, DXF_ROUTE_MAX_CANDIDATES);
+    // US-126: a capped search is no longer a REFUSAL. It used to throw away
+    // every route it had already proven and report ROUTE_SEARCH_TRUNCATED as
+    // a hard failure, which on the real corpus meant 13% of piece route
+    // requests could not be measured at all. The honest result is the k
+    // shortest routes plus `truncated: true` — "here are the shortest N, there
+    // are others" — which the interaction layer says out loud in its chooser
+    // toast. The reason code stays in the vocabulary for that message.
+    return {
+      ok: true,
+      reason: null,
+      routes: offered,
+      truncated: truncated || routes.length > offered.length,
+    };
   }
 
   // Positive means the A->B traversal follows more authored entity length

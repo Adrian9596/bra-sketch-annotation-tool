@@ -164,6 +164,9 @@
 
       state.annotations = clone(s.annotations || []);
       state.annotations.forEach(ensureCurveControls);
+      state.annotations.forEach(ann => {
+        if (ann && ann.seamPath) normalizeSeamPathAnnotation(ann);
+      });
       // ADR 0071: additive — a file saved before this existed has no key.
       state.notches = Array.isArray(s.notches) ? s.notches.map(normalizeNotch).filter(Boolean) : [];
       // ADR 0070: additive — a file saved before this existed has no key.
@@ -202,6 +205,7 @@
       state.noteTextColor = normalizeColorKey(s.noteTextColor || 'black');
       state.noteLeaderColor = normalizeColorKey(s.noteLeaderColor || 'red');
       state.tool = 'select';
+      state.treatmentBreakPending = null;
       // An armed Template (activeStampId) from before Open/Restore must not
       // survive into the reopened project — there is nothing on the new
       // board for it to place, and no toolbar entry point would show it was
@@ -220,9 +224,6 @@
       // Auto-first so detection can run right away.
       state.appMode = (state.annotations.length > 0 || state.graphics.length > 0 || state.notes.length > 0) ? 'manual' : 'auto';
       state.autoMode = makeInitialAutoModeState();
-      // Same factory as state.js — a literal here silently dropped the
-      // `review`/`lastExecution` fields and made Review ROI throw after Open.
-      state.autoSeam = autoSeamInitialState();
       state.hiddenAnnIds = [];
       state.hiddenDraftIds = [];
       // The session itself is still ephemeral. ADR 0088 may rebuild a fresh,

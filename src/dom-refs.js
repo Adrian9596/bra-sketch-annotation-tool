@@ -33,6 +33,10 @@
     // looks up #linePresetFileInput on demand rather than caching it here.
     linePresetSaveBtn: document.getElementById('linePresetSaveBtn'),
     lineTreatmentCustomizeBtn: document.getElementById('lineTreatmentCustomizeBtn'),
+    lineTreatment1NdlBtn: document.getElementById('lineTreatment1NdlBtn'),
+    lineTreatment2NdlBtn: document.getElementById('lineTreatment2NdlBtn'),
+    lineTreatmentBreakBtn: document.getElementById('lineTreatmentBreakBtn'),
+    lineTreatmentRemoveBreakBtn: document.getElementById('lineTreatmentRemoveBreakBtn'),
     linePresetFileInput: document.getElementById('linePresetFileInput'),
     // US-097 / ADR 0056, US-107: Save selection as Template… stays in the
     // Tools menu for the same reason. Browsing/picking/managing saved
@@ -141,15 +145,6 @@
     modeAutoBtn: document.getElementById('modeAutoBtn'),
     sketchFocusBtn: document.getElementById('sketchFocusBtn'),
     mindMapBtn: document.getElementById('mindMapBtn'),
-    autoDetectSeamBtn: document.getElementById('autoDetectSeamBtn'),
-    // US-121: TD Review loop (Phase C first slice) — see src/manual/auto-seam-review.js.
-    autoSeamReviewBtn: document.getElementById('autoSeamReviewBtn'),
-    autoSeamReviewPanel: document.getElementById('autoSeamReviewPanel'),
-    autoSeamReviewHead: document.getElementById('autoSeamReviewHead'),
-    autoSeamReviewBody: document.getElementById('autoSeamReviewBody'),
-    autoSeamReviewCount: document.getElementById('autoSeamReviewCount'),
-    autoSeamReviewCloseBtn: document.getElementById('autoSeamReviewCloseBtn'),
-    autoSeamReviewExportBtn: document.getElementById('autoSeamReviewExportBtn'),
     autoModeBar: document.getElementById('autoModeBar'),
     autoDetectBtn: document.getElementById('autoDetectBtn'),
     autoResetAnchorsBtn: document.getElementById('autoResetAnchorsBtn'),

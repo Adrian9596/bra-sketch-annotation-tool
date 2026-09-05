@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // US-124 Phase 5 (ADR 0091): DXF Worker — behaviour-preservation, routing,
-// cancel and fallback proof. Modelled on auto-seam-worker-check.mjs.
+// cancel and fallback proof.
 //
 // What IS asserted (hard failures):
 //   - The worker is supported in the headless Chrome the suites run in.

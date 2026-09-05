@@ -779,6 +779,23 @@
       const names = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm', 21: 'us-ft' };
       return { key: names[source.insunits] || 'in', provenance: 'from file' };
     }
+    // US-126: a fourth non-override state. The file declared nothing usable,
+    // but its own piece geometry fits exactly one supported unit, so the value
+    // is scaled from evidence rather than from the locked default-inch guess.
+    // Named separately from 'from file' because it IS weaker than a
+    // declaration, and separately from 'assumed' because it is stronger than
+    // one — the TD override still overrules it.
+    if (source.unitSource === 'inferred-geometry') {
+      const diagnostic = source.unitDiagnostic || {};
+      const key = diagnostic.inferredKey || 'in';
+      const declared = diagnostic.unsupportedDeclaredCode;
+      return {
+        key,
+        provenance: declared != null
+          ? 'auto-scaled from piece size — file declares unsupported unit code ' + declared
+          : 'auto-scaled from piece size — file didn\'t declare units',
+      };
+    }
     if (source.unitSource === 'unsupported-explicit-unit') {
       const code = source.unitDiagnostic && source.unitDiagnostic.code;
       return { key: 'in', provenance: 'assumed — file declares unsupported unit code ' + (code != null ? code : '?') };

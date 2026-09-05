@@ -129,21 +129,6 @@
 
     setBoardToolbarHidden(el.autoResetAnchorsBtn, !isAuto || !auto.detection);
     setBoardToolbarHidden(el.autoResetBoardBtn, !isAuto || isWorkingBoardEmpty());
-    if (el.autoDetectSeamBtn) {
-      el.autoDetectSeamBtn.disabled = !hasSource || !!state.autoSeam?.running;
-      el.autoDetectSeamBtn.textContent = state.autoSeam?.running
-        ? 'Detecting Seam…'
-        : 'Auto Detect Seam';
-    }
-    // US-121: only actionable once a run exists. syncAutoSeamReviewChrome()
-    // keeps panel/button/state coherent on every UI update — closes the
-    // review when its image left the board, hides a stale panel after Open
-    // project reset the state, and re-syncs to a fresh run made while open.
-    if (el.autoSeamReviewBtn) {
-      el.autoSeamReviewBtn.disabled = !state.autoSeam?.lastRun;
-      syncAutoSeamReviewChrome();
-    }
-
     // Manual selection actions occupy the toolbar only when actionable.
     const selectionMode = !isAuto && state.tool === 'select';
     setBoardToolbarHidden(el.undoBtn, !selectionMode || el.undoBtn.disabled);

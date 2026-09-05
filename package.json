@@ -66,16 +66,8 @@
     "dxf-measurement-check": "node scripts/dxf-measurement-check.mjs --allow-blocked",
     "dxf-measurement-release-check": "node scripts/dxf-measurement-check.mjs",
     "dxf-worker-check": "node scripts/dxf-worker-check.mjs",
-    "photo-stitch-contract": "node scripts/photo-stitch-contract.mjs",
-    "photo-stitch-roi-seed": "node scripts/photo-stitch-roi-seed.mjs",
-    "photo-stitch-roi-contract": "node scripts/photo-stitch-roi-contract.mjs",
-    "photo-stitch-roi-overlay": "node scripts/photo-stitch-roi-overlay.mjs",
-    "photo-stitch-roi-pilot": "node scripts/photo-stitch-roi-pilot.mjs",
-    "photo-stitch-browser": "node scripts/photo-stitch-browser.mjs",
-    "auto-seam-technical-flat-check": "node scripts/auto-seam-technical-flat-check.mjs",
-    "auto-seam-worker-check": "node scripts/auto-seam-worker-check.mjs",
-    "photo-stitch-technical-flat-pilot": "node scripts/photo-stitch-technical-flat-pilot.mjs",
-    "auto-seam-probe": "node scripts/auto-seam-probe.mjs"
+    "semantic-seam-vectorization-check": "node scripts/semantic-seam-vectorization-check.mjs",
+    "treatment-runs-browser-check": "node scripts/treatment-runs-browser-check.mjs"
   },
   "devDependencies": {
     "@slidev/cli": "^52.16.0",

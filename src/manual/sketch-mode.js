@@ -100,7 +100,8 @@
       // SAME cleanup a TD gets from pressing Escape or picking another tool
       // runs here too: it already clears activeStampId (US-097 code review),
       // drawSession, eraseSession, and the eraser body class.
-      if (state.tool === 'stamp' && typeof setTool === 'function') setTool('select');
+      if ((state.tool === 'stamp' || state.tool === 'break-treatment')
+          && typeof setTool === 'function') setTool('select');
       // Defensive: cancel an in-progress placement drag outright, in the
       // (practically unreachable via mouse, but keyboard/Command-Palette
       // dispatch makes it not impossible) case one was mid-gesture.

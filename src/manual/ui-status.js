@@ -60,6 +60,12 @@
       setTool('select');
       return;
     }
+    const treatmentBreakAvailable = typeof seamPathBreakEligibility === 'function'
+      && seamPathBreakEligibility().ok;
+    if (state.tool === 'break-treatment' && !treatmentBreakAvailable) {
+      setTool('select');
+      return;
+    }
     el.toolSelect.classList.toggle('active', state.tool === 'select');
     el.toolStraight.classList.toggle('active', state.tool === 'straight');
     el.toolCurved.classList.toggle('active', state.tool === 'curved');
@@ -129,6 +135,18 @@
       el.toolAddPoint.hidden = !addPointAvailable;
       el.toolAddPoint.classList.toggle('active', state.tool === 'add-point');
     }
+    if (el.lineTreatmentBreakBtn) {
+      const eligibility = seamPathBreakEligibility(selectedAnnotation);
+      el.lineTreatmentBreakBtn.disabled = !eligibility.ok;
+      el.lineTreatmentBreakBtn.title = eligibility.ok
+        ? 'Keep one continuous Seam Path, insert an exact boundary, and select the following Treatment Run'
+        : eligibility.reason;
+    }
+    if (el.lineTreatmentRemoveBreakBtn) {
+      el.lineTreatmentRemoveBreakBtn.disabled = !seamPathCanRemoveSelectedBreak(selectedAnnotation);
+    }
+    if (el.lineTreatment1NdlBtn) el.lineTreatment1NdlBtn.disabled = !selectedAnnotation;
+    if (el.lineTreatment2NdlBtn) el.lineTreatment2NdlBtn.disabled = !selectedAnnotation;
     const activeStyle = selectedAnnotation ? getLineStyle(selectedAnnotation) : state.drawStyle;
     const activeColor = selectedAnnotation ? normalizeColorKey(selectedAnnotation.color)
       : selectedGraphic ? normalizeColorKey(selectedGraphic.color) : state.drawColor;
@@ -237,6 +255,8 @@
             : 'Curved Line – Click the end point to finish.');
     } else if (state.tool === 'add-point') {
       toolText = 'Add Point – Click the selected curve to add a bend point there. <span class="kbd">Alt</span> while dragging a handle moves it alone.';
+    } else if (state.tool === 'break-treatment') {
+      toolText = 'Break Treatment – Click the selected Seam Path once. The centerline stays continuous and the following Treatment Run becomes selected; <span class="kbd">Esc</span> returns to Select.';
     } else if (['rectangle','circle','hexagon'].includes(state.tool)) {
       toolText = TOOL_MENU_LABELS[state.tool] + ' – Drag a bounding box. Shift locks ratio; Alt/Option draws from centre.';
     } else if (dxfMeasureIsActiveTool()) {

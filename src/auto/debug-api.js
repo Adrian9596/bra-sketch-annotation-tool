@@ -105,45 +105,6 @@
         };
       },
       getAnnotations: () => clone(state.annotations),
-      // US-109 Auto Detect Seam test surface. Runtime and tests share the same
-      // analyzer/validator/action; no benchmark Oracle ROI enters this path.
-      autoSeam: {
-        analyzeImage: (imageId) => {
-          const image = getImageById(imageId) || pickAutoSourceImage();
-          return image ? clone(analyzeAutoSeamSource(image)) : null;
-        },
-        // US-120: the worker path. Resolves { result, execution }; `result` must
-        // equal analyzeImage() for the same image — auto-seam-worker-check
-        // asserts it. setWorkerEnabled(false) / setWorkerUrl('missing.js')
-        // drive the two fallback branches from a suite.
-        analyzeImageAsync: async (imageId) => {
-          const image = getImageById(imageId) || pickAutoSourceImage();
-          return image ? clone(await analyzeAutoSeamSourceAsync(image)) : null;
-        },
-        setWorkerEnabled: enabled => { autoSeamSetWorkerEnabled(enabled); return autoSeamWorkerEnabled(); },
-        setWorkerUrl: url => { autoSeamSetWorkerUrl(url); return autoSeamWorkerUrl(); },
-        workerSupported: () => autoSeamWorkerSupported(),
-        getLastExecution: () => clone(state.autoSeam?.lastExecution || null),
-        validateResult: result => validateAutoSeamResult(clone(result)),
-        run: () => runAutoDetectSeam(),
-        getLastRun: () => clone(state.autoSeam?.lastRun || null),
-        isDraft: annotationId => isAutoSeamDraft(state.annotations.find(ann => ann.id === annotationId)),
-        markTdEdit: annotationId => {
-          const ann = state.annotations.find(item => item.id === annotationId);
-          if (!ann) return null;
-          markDraftTouchedByTD(ann);
-          return clone(ann);
-        },
-        commitHistory: () => {
-          pushHistoryIfChanged();
-          return state.history.past.length;
-        },
-        historyDepth: () => state.history.past.length,
-        undo: async () => {
-          await undo();
-          return clone(state.annotations);
-        },
-      },
       // ADR 0071.
       getNotches: () => clone(state.notches || []),
       // US-095 focused browser proof. The mutation seams call the same model
@@ -270,6 +231,124 @@
         const ann = getAnnotationById(id);
         const treatment = ann && normalizeLineTreatment(ann.lineTreatment);
         return treatment ? { scale: treatment.scale, layers: clone(scaledLineTreatmentLayers(treatment)) } : null;
+      },
+      // US-125 focused structural/editing seam. Production UI uses the same
+      // functions through the Stitches menu and canvas; this surface lets the
+      // suite assert exact geometry, fingerprints and persistence without
+      // guessing screen coordinates for every model-only invariant.
+      seamPath: {
+        addTestAnnotation: raw => {
+          if (!raw || !raw.start || !raw.end) return null;
+          const ann = {
+            id: raw.id != null ? raw.id : state.idCounter++,
+            seq: null,
+            type: raw.type === 'straight' ? 'straight' : 'curved',
+            style: raw.style || 'solid',
+            color: raw.color || 'black',
+            arrowType: 'none',
+            lineWidth: raw.lineWidth || 2,
+            lineTreatment: raw.lineTreatment ? clone(raw.lineTreatment) : null,
+            purpose: raw.purpose || null,
+            start: clone(raw.start),
+            end: clone(raw.end),
+            control1: raw.control1 ? clone(raw.control1) : null,
+            control2: raw.control2 ? clone(raw.control2) : null,
+            points: clone(raw.points || []),
+            label: raw.label ? clone(raw.label) : null,
+            labelManual: false,
+            text: raw.text != null ? String(raw.text) : null,
+            value: null,
+            templateGroupId: raw.templateGroupId || null,
+            sourceMode: raw.sourceMode || null,
+            candidateTier: raw.candidateTier || null,
+            reviewDecision: raw.reviewDecision || null,
+            tdApproved: !!raw.tdApproved,
+            tdApprovalRequired: !raw.tdApproved,
+            approvedAt: raw.tdApproved ? (raw.approvedAt || 'test-approved') : null,
+          };
+          if (ann.type === 'curved') ensureCurveControls(ann);
+          if (!ann.label) ann.label = computeDefaultLabelPosition(ann);
+          state.annotations.push(ann);
+          setSelection('annotation', ann.id);
+          pushHistoryIfChanged();
+          return clone(ann);
+        },
+        promote: (id, options) => {
+          const ann = getAnnotationById(id);
+          if (!ann) return null;
+          ensureSeamPathAnnotation(ann, options || {});
+          pushHistoryIfChanged();
+          return clone(ann);
+        },
+        eligibility: id => {
+          const ann = getAnnotationById(id);
+          if (!ann) return { ok: false, reason: 'missing' };
+          setSelection('annotation', id);
+          const result = seamPathBreakEligibility(ann);
+          return { ok: result.ok, reason: result.reason };
+        },
+        setApproval: (id, approved = true) => {
+          const ann = getAnnotationById(id);
+          if (!ann) return null;
+          ann.tdApproved = !!approved;
+          ann.tdApprovalRequired = !approved;
+          ann.approvedAt = approved ? 'test-approved' : null;
+          pushHistoryIfChanged();
+          return clone(ann);
+        },
+        insertBreak: (id, segIndex, t) => {
+          const ann = getAnnotationById(id);
+          if (!ann) return null;
+          setSelection('annotation', id);
+          const result = seamPathInsertTreatmentBreakAt(ann, Number(segIndex), Number(t));
+          if (result.status === 'inserted') pushHistoryIfChanged();
+          return { result: clone(result), annotation: clone(ann), selectionPart: state.selection.part || null };
+        },
+        selectRun: (id, runId) => {
+          const ann = getAnnotationById(id);
+          if (!ann || !ann.seamPath?.treatmentRuns.some(run => run.id === runId)) return false;
+          setSelection('annotation', id);
+          state.selection.part = seamPathTreatmentPart(runId);
+          updateUI();
+          requestRender();
+          return true;
+        },
+        applyPreset: (id, runId, presetId) => {
+          const ann = getAnnotationById(id);
+          if (!ann) return false;
+          setSelection('annotation', id);
+          state.selection.part = seamPathTreatmentPart(runId);
+          return applyLinePreset(presetId);
+        },
+        removeBreak: (id, pointIndex, preferredSide) => {
+          const ann = getAnnotationById(id);
+          if (!ann) return false;
+          setSelection('annotation', id);
+          state.selection.part = 'point' + Number(pointIndex) + '.point';
+          return removeSelectedTreatmentBreak(preferredSide);
+        },
+        movePoint: (id, pointIndex, dx, dy) => {
+          const ann = getAnnotationById(id);
+          const point = ann && (ann.points || [])[Number(pointIndex)];
+          if (!point) return null;
+          for (const field of ['point', 'handleIn', 'handleOut']) {
+            point[field].x += Number(dx) || 0;
+            point[field].y += Number(dy) || 0;
+          }
+          pushHistoryIfChanged();
+          return clone(ann);
+        },
+        sample: id => {
+          const ann = getAnnotationById(id);
+          return ann ? clone(getAnnotationPolyline(ann, 256)) : null;
+        },
+        get: id => {
+          const ann = getAnnotationById(id);
+          return ann ? clone(ann.seamPath || null) : null;
+        },
+        historyDepth: () => state.history.past.length,
+        undo: async () => { await undo(); return clone(state.annotations); },
+        redo: async () => { await redo(); return clone(state.annotations); },
       },
       setSmartAlignEnabled: (enabled) => setSmartAlignEnabled(enabled, false),
       previewSmartAlignment: (ids, dx, dy, bypass) => {
@@ -405,7 +484,7 @@
         },
         parseWith: (text, opts) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text, opts || {})) : null),
         parseNative: (text, opts) => (typeof parseDxfNativeModel === 'function' ? clone(parseDxfNativeModel(text, opts || {})) : null),
-        // Phase 5: the DXF Worker debug surface.
+        // Phase 5: the DXF Worker surface.
         worker: {
           supported: () => (typeof dxfWorkerSupported === 'function' ? dxfWorkerSupported() : false),
           route: (text) => (typeof dxfWorkerRoute === 'function' ? dxfWorkerRoute(text) : null),
@@ -509,6 +588,14 @@
           routeAuthoredDirectionScore: (route, segments) => (typeof dxfRouteAuthoredDirectionScore === 'function'
             ? dxfRouteAuthoredDirectionScore(route, segments) : null),
           resolveNativeToInch: (insunits) => (typeof dxfResolveNativeToInch === 'function' ? clone(dxfResolveNativeToInch(insunits)) : null),
+          // US-126: the geometry-based unit inference, exposed pure so the
+          // suite can prove the mm/in decision and the deliberate
+          // "fits both / fits neither -> infer nothing" abstention without
+          // going through a whole import.
+          inferUnitFromGeometry: (pieces) => (typeof dxfInferUnitFromGeometry === 'function'
+            ? clone(dxfInferUnitFromGeometry(pieces)) : null),
+          unitStatus: () => (typeof dxfMeasureUnitStatus === 'function' && state.dxfMeasureSession
+            ? clone(dxfMeasureUnitStatus(state.dxfMeasureSession)) : null),
           getSession: () => {
             const session = state.dxfMeasureSession;
             if (!session) return null;
@@ -815,7 +902,11 @@
         // that selected the wrong KIND of thing is otherwise invisible.
         tool: state.tool,
         drawSession: clone(state.drawSession),
-        selection: { kind: state.selection.kind, id: state.selection.id != null ? state.selection.id : null },
+        selection: {
+          kind: state.selection.kind,
+          id: state.selection.id != null ? state.selection.id : null,
+          part: state.selection.part || null,
+        },
         selectedAnnotationIds: getSelectedAnnotationIds().slice(),
         templateGroupEditId: state.templateGroupEditId || null,
         smartAlignEnabled: !!state.smartAlignEnabled,
@@ -825,6 +916,7 @@
         calibration: clone(state.calibration),
         activeStampId: state.activeStampId != null ? state.activeStampId : null,
         interaction: state.interaction ? { type: state.interaction.type } : null,
+        treatmentBreakPending: clone(state.treatmentBreakPending),
         drawStyle: state.drawStyle,
         // US-103: the pending "next line" arrow default, and its POM-side
         // backup while Sketch Focus is on (applySketchModeVisual,

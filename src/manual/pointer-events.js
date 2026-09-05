@@ -48,14 +48,6 @@
       return;
     }
 
-    // US-121: while a TD is dragging an Auto Seam Review ROI, that gesture
-    // owns the whole press-move-release — same "one active tool wins the
-    // canvas" rule as Pattern Measure above. A press outside the ROI being
-    // edited (hit-test returns false) falls through to the normal chain.
-    if (isAutoSeamReviewEditing() && autoSeamReviewOnMouseDown(world)) {
-      return;
-    }
-
     // Auto Mode: only drafts + anchors are interactive. Project annotations
     // are locked, and tool creation / erasing is disabled (see updateUI).
     if (state.appMode === 'auto') {
@@ -153,6 +145,13 @@
     // own scoping in the ADR 0053 grilling session.
     if (state.tool === 'add-point') {
       handleAddPointClick(world);
+      return;
+    }
+
+    // US-125: scissors-like treatment partitioning. This inserts an exact
+    // shared node and two ownership runs; it never cuts the centerline.
+    if (state.tool === 'break-treatment') {
+      handleTreatmentBreakClick(world);
       return;
     }
 
@@ -333,6 +332,12 @@
       if (!(getSelectedAnnotationIds().length > 1 && isAnnInSelection(annotationHit.id))) {
         setSelection('annotation', annotationHit.id);
       }
+      const hitAnnotation = getAnnotationById(annotationHit.id);
+      if (annotationHit.part === 'body' && hitAnnotation?.seamPath) {
+        seamPathSelectRunAtWorld(hitAnnotation, world);
+        updateUI();
+        requestRender();
+      }
       if (annotationHit.part === 'label') {
         startLabelDrag(annotationHit.id, world);
       } else {
@@ -407,11 +412,6 @@
 
     if (dxfMeasureIsActiveTool()) {
       dxfMeasureOnMouseMove(world, e.altKey);
-      return;
-    }
-
-    // US-121: continue an Auto Seam Review ROI drag already started above.
-    if (autoSeamReviewOnMouseMove(world)) {
       return;
     }
 
@@ -693,12 +693,6 @@
       commitEraseStroke();
     }
 
-    // US-121: end an Auto Seam Review ROI drag before any other mouseup path
-    // — it never opened a normal interaction, so nothing below expects it.
-    if (autoSeamReviewOnMouseUp()) {
-      return;
-    }
-
     if (dxfMeasureIsActiveTool()) {
       dxfMeasureOnMouseUp();
       return;
@@ -920,6 +914,13 @@ function startHandleDrag(id, part, world) {
   // rough drag can be finished with arrow keys without pressing Tab.
   if (part !== 'label' && state.selection.kind === 'annotation' && state.selection.id === id) {
     state.selection.part = part;
+    // The selected sub-part gates contextual actions. In particular, choosing
+    // an interior point that owns a Treatment Break must enable Remove Break
+    // immediately, even when the press is released without moving far enough
+    // to arm a drag. onMouseUp deliberately skips updateUI for that no-motion
+    // case, so the selection edge itself owns this refresh.
+    updateUI();
+    requestRender();
   }
   // US-086: remember how far the press landed from the handle itself. dragHandle
   // SNAPS the handle to the point it is given (pen-tool behaviour, deliberate),

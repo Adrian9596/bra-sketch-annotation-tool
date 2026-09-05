@@ -374,6 +374,7 @@
         // "still deciding what to place" session.
         dxfMeasureCancelInteraction();
       } else if (state.tool === 'straight' || state.tool === 'curved' || state.tool === 'add-point'
+                 || state.tool === 'break-treatment'
                  || state.tool === 'eraser' || state.tool === 'text' || state.tool === 'notch'
                  || state.tool === 'stamp' || state.tool === 'pattern-measure'
                  || ['rectangle','circle','hexagon'].includes(state.tool)) {

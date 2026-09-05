@@ -51,7 +51,11 @@
     let style = getLineStyle(ann);
     if (style === 'solid' && annotationCrossesViews(ann)) style = 'dashed';
 
-    const treated = hasLineTreatment(ann) && drawLineTreatment(ann, ann.lineTreatment);
+    const treatmentSegments = typeof seamPathTreatmentSegments === 'function'
+      ? seamPathTreatmentSegments(ann) : [];
+    const treated = treatmentSegments.length
+      ? treatmentSegments.every(item => drawLineTreatment(item.annotation, item.treatment))
+      : hasLineTreatment(ann) && drawLineTreatment(ann, ann.lineTreatment);
     if (treated) {
       // The Treatment recipe owns every visible layer. The annotation path
       // remains the editable/hit-test spine and is deliberately not painted a
@@ -172,6 +176,13 @@
       ? state.selection.part || null : null;
     ctx.save();
 
+    if (typeof drawSelectedTreatmentRunHighlight === 'function') {
+      drawSelectedTreatmentRunHighlight(ann);
+    }
+    if (typeof drawTreatmentBreakMarkers === 'function') {
+      drawTreatmentBreakMarkers(ann);
+    }
+
     if (ann.type === 'curved') {
       // Single cubic: two control handles, each with a dashed guide line from
       // its endpoint (control1 off start, control2 off end) — the pen-tool
@@ -251,8 +262,9 @@
   function drawMultiSelectHalo(anns) {
     const visible = (anns || []).filter(a => a && a.start && a.end);
     if (!visible.length) return;
-    const extent = Math.max(...visible.map(a => hasLineTreatment(a)
-      ? lineTreatmentVisualExtent(a.lineTreatment) : getLineWidth(a) / 2));
+    const extent = Math.max(...visible.map(a => a.seamPath
+      ? seamPathVisualExtent(a)
+      : hasLineTreatment(a) ? lineTreatmentVisualExtent(a.lineTreatment) : getLineWidth(a) / 2));
     ctx.save();
     ctx.globalAlpha = 0.4;
     ctx.strokeStyle = SELECT_COLOR;
@@ -268,9 +280,9 @@
 
   function drawAnnotationHoverOutline(ann) {
     if (!ann || !ann.start || !ann.end) return;
-    const extent = hasLineTreatment(ann)
-      ? lineTreatmentVisualExtent(ann.lineTreatment)
-      : getLineWidth(ann) / 2;
+    const extent = ann.seamPath
+      ? seamPathVisualExtent(ann)
+      : hasLineTreatment(ann) ? lineTreatmentVisualExtent(ann.lineTreatment) : getLineWidth(ann) / 2;
     ctx.save();
     // Round 11: same globalAlpha + solid-colour form as drawMultiSelectHalo
     // (a single annotation per call never had the stacking issue, but

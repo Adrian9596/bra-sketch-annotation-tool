@@ -52,29 +52,6 @@
   const NOTE_WIDTH_MODE_CONTENT = 'content';
   const NOTE_WIDTH_MODE_FIXED = 'fixed';
 
-  // US-109/120/121 Auto Detect Seam runtime state — session-only: generated
-  // Board annotations persist through the ordinary project/history path,
-  // while a detector's transient running/result/review UI does not belong in
-  // project JSON. Function declarations (hoisted) so `state` below and
-  // project-load.js's reset build the identical shape from ONE definition.
-  function autoSeamReviewInitialState() {
-    // US-121 TD Review overlay. `corrections` is keyed by Automatic ROI id:
-    // { verdict: 'correct'|'wrong', reasonCode, correctedPolygon } — TD truth,
-    // exported to a downloadable file, never fed back into the detector.
-    return { active: false, runId: null, selectedRoiId: null, editingRoiId: null, corrections: {} };
-  }
-
-  function autoSeamInitialState() {
-    return {
-      running: false,
-      lastRun: null,
-      // US-120: { engine: 'worker' | 'main-thread', reason, elapsedMs } of the
-      // most recent analysis — which engine ran and, if not the worker, why.
-      lastExecution: null,
-      review: autoSeamReviewInitialState(),
-    };
-  }
-
   const state = {
     tool: 'select',
     drawStyle: 'solid',
@@ -177,14 +154,6 @@
     // Restore, all three through src/manual/sketch-mode.js's
     // applySketchModeVisual — the one function those three sites share.
     sketchMode: false,
-    // US-109 Auto Detect Seam runtime state. Session-only: generated Board
-    // annotations persist through the ordinary project/history path, while a
-    // detector's transient running/result UI does not belong in project JSON.
-    // Built by autoSeamInitialState() below — the ONE definition of this
-    // shape. project-load.js resets it through the same factory; a literal
-    // copy there once dropped `review` and broke Review ROI after Open
-    // (US-121 recheck, 2026-09-03).
-    autoSeam: autoSeamInitialState(),
     // US-103: the POM-side pending arrow preference (state.arrowType), saved
     // by applySketchModeVisual the moment Sketch Focus turns on and restored
     // the moment it turns off. Session-only, like sketchMode itself — never
@@ -199,6 +168,10 @@
     drawSession: null,
     eraseSession: null,
     interaction: null,
+    // ADR 0097: first boundary of a closed-loop Treatment Break gesture.
+    // Session-only and intentionally absent from snapshots/project JSON; the
+    // second boundary commits one history step, while Escape is a true no-op.
+    treatmentBreakPending: null,
 
     spacePan: false,
     rafPending: false,

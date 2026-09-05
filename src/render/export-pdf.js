@@ -113,7 +113,13 @@ function getAnnotationBounds(ann) {
     maxX = Math.max(maxX, point.x);
     maxY = Math.max(maxY, point.y);
   }
-  const pad = 32;
+  // Treatment Runs can differ in width. Include the widest visible recipe so
+  // a late 2NDL/zigzag run is not cropped merely because the legacy
+  // whole-annotation treatment mirrors the first run.
+  const treatmentExtent = ann.seamPath
+    ? seamPathVisualExtent(ann)
+    : hasLineTreatment(ann) ? lineTreatmentVisualExtent(ann.lineTreatment) : 0;
+  const pad = Math.max(32, treatmentExtent + 8);
   return { x: minX - pad, y: minY - pad, width: Math.max(1, maxX - minX + pad * 2), height: Math.max(1, maxY - minY + pad * 2) };
 }
 

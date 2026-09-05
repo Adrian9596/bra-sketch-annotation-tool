@@ -7,6 +7,7 @@
 // prompts the TD to apply, discard, or cancel before writing.
 
   function buildProjectSnapshot(options) {
+    if (typeof seamPathRefreshAllFingerprints === 'function') seamPathRefreshAllFingerprints();
     const dxfSourceMode = options && options.dxfSourceMode === 'reference'
       ? 'reference' : 'inline';
     return {

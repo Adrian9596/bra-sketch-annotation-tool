@@ -29,7 +29,6 @@
       }
       if (typeof ensureAutoModeStatus === 'function') ensureAutoModeStatus();
     }
-    if (state.autoSeam?.lastRun?.sourceImageId === deletedId) state.autoSeam.lastRun = null;
     return true;
   }
 
@@ -37,6 +36,14 @@
     if (state.selection.kind == null) return;
 
     if (state.selection.kind === 'annotation') {
+      // US-125 / ADR 0094: a run is technical ownership, not an independent
+      // line object. Generic Delete must not turn a run selection into an
+      // accidental whole-seam deletion.
+      if (typeof state.selection.part === 'string'
+          && state.selection.part.startsWith('treatmentRun:')) {
+        showToast('A Treatment Run cannot be deleted. Select its boundary point and use Remove Treatment Break.');
+        return;
+      }
       // US-093 / ADR 0053: Delete/Backspace with an interior anchor active
       // (the TD just clicked/Tab-cycled to it) removes just that anchor, not
       // the whole line — Delete with no interior anchor active falls through
@@ -47,6 +54,11 @@
       const anchorAnn = anchor ? getAnnotationById(state.selection.id) : null;
       if (anchor && anchorAnn && anchorAnn.type === 'curved'
           && Array.isArray(anchorAnn.points) && anchorAnn.points[anchor.index]) {
+        if (typeof seamPathNodeOwnsTreatmentBreak === 'function'
+            && seamPathNodeOwnsTreatmentBreak(anchorAnn, anchor.index)) {
+          showToast('This point owns a Treatment Break. Use Remove Treatment Break first; the path point will be kept.');
+          return;
+        }
         deleteCurveAnchorAt(anchorAnn, anchor.index);
         state.selection.part = null;
         if (!anchorAnn.labelManual) anchorAnn.label = computeDefaultLabelPosition(anchorAnn);

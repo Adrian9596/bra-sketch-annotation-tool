@@ -21,17 +21,14 @@
     if (el.smartAlignToggleBtn) el.smartAlignToggleBtn.addEventListener('click', toggleSmartAlign);
     if (el.sketchFocusBtn) el.sketchFocusBtn.addEventListener('click', () => toggleSketchMode());
     if (el.mindMapBtn) el.mindMapBtn.addEventListener('click', () => openMindMap());
-    if (el.autoDetectSeamBtn) el.autoDetectSeamBtn.addEventListener('click', () => {
-      void runAutoDetectSeam();
-    });
-    // US-121: TD Review loop (Phase C first slice).
-    if (el.autoSeamReviewBtn) el.autoSeamReviewBtn.addEventListener('click', toggleAutoSeamReview);
-    if (el.autoSeamReviewCloseBtn) el.autoSeamReviewCloseBtn.addEventListener('click', closeAutoSeamReview);
-    if (el.autoSeamReviewExportBtn) el.autoSeamReviewExportBtn.addEventListener('click', () => { void autoSeamReviewExport(); });
     // US-093 / ADR 0053: only visible while a curved annotation is selected
     // (gated in updateUI, ui-status.js) — hidden buttons can't be clicked, so
     // no extra guard needed here.
     if (el.toolAddPoint) el.toolAddPoint.addEventListener('click', () => setTool('add-point'));
+    if (el.lineTreatmentBreakBtn) el.lineTreatmentBreakBtn.addEventListener('click', activateTreatmentBreakTool);
+    if (el.lineTreatmentRemoveBreakBtn) el.lineTreatmentRemoveBreakBtn.addEventListener('click', () => removeSelectedTreatmentBreak());
+    if (el.lineTreatment1NdlBtn) el.lineTreatment1NdlBtn.addEventListener('click', () => applyLinePreset('builtin-1ndl'));
+    if (el.lineTreatment2NdlBtn) el.lineTreatment2NdlBtn.addEventListener('click', () => applyLinePreset('builtin-2ndl'));
 
     el.stitchesBtn.addEventListener('click', toggleLineStyleMenu);
     // US-096: the preset dropdown owns its own rows and handlers.
@@ -288,6 +285,7 @@
       showToast('Switch back to Manual Mode to use the drawing tools.');
       return;
     }
+    if (tool !== 'break-treatment') state.treatmentBreakPending = null;
     state.tool = tool;
     if (tool !== 'select') state.graphicEdit = null;
     // US-097: leaving the stamp tool disarms the chosen shape, so a later
@@ -410,10 +408,23 @@
     applyFontSizeToSelectedNote(normalized);
   }
 
+  // US-126: PLURAL, like setLineStyle — not the primary only.
+  //
+  // A DXF piece is hundreds of separate line annotations that select as one
+  // group (dxf-import.js sets state.selectedAnnotationIds to the whole batch;
+  // clicking any segment later widens to its templateGroupId, selection.js).
+  // Recoloring only the group's PRIMARY therefore repainted 1 line of ~150 and
+  // read as "changing the line colour does nothing" — the exact reason a TD
+  // could not colour-code an imported pattern as annotation. Colour is a pure
+  // look with no measurement meaning (isMeasurementAnnotation never reads it),
+  // so widening it carries none of the POM-renumbering risk that kept arrow
+  // type and line width singular. To recolour ONE segment of a group, isolate
+  // it first with the existing double-click gesture (viewport.js's
+  // onDoubleClick -> enterTemplateGroupForAnnotation).
   function setDrawColor(color) {
     state.drawColor = color;
     if (applyToSelectedBoardGraphic({ color: normalizeColorKey(color) })) return;
-    applyToSelectedAnnotation({ color });
+    applyToSelectedAnnotations({ color: normalizeColorKey(color) });
   }
 
   function setNoteAppearance(appearance) {

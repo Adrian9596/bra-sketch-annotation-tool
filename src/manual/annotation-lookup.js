@@ -194,6 +194,15 @@
     return !!(ann && ann.auto === true && ann.sourceMode === 'auto-mode' && ann.autoRunId);
   }
 
+  // A draft the TD is expected to review before it counts as their own
+  // geometry — editing one stamps `tdEdited` (markDraftTouchedByTD). Auto Mode
+  // POM drafts are the only producer since Auto Detect Seam was removed
+  // (ADR 0101); kept as its own predicate because every call site means "a
+  // draft under review", not "an Auto Mode draft".
+  function isTDReviewDraft(ann) {
+    return isAutoDraft(ann);
+  }
+
   function isReviewOnlyDraft(ann) {
     return !!(ann && ann.drawability === 'REVIEW_ONLY');
   }

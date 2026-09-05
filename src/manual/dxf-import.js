@@ -276,9 +276,19 @@
     // separate warning away after ~900ms in favor of this success message.
     // Guarded: startDxfMeasureSession can fail and leave the session null
     // (it shows its own explanation in that case).
-    const unitWarning = (measureSession && measureSession.source.unitSource !== 'dxf-header')
-      ? ' Units assumed (in) — set them under Tools ▸ Pattern Measure if the file is mm/cm.'
-      : '';
+    // US-126: three distinct things to say, not one. A declared unit says
+    // nothing; an INFERRED one names what the geometry decided (so the TD can
+    // disagree with a real claim rather than a silent default); only a file
+    // whose size fits neither candidate still falls back to the old warning.
+    const unitStatus = measureSession ? measureSession.source.unitSource : null;
+    const unitWarning = unitStatus === 'dxf-header' ? ''
+      : unitStatus === 'inferred-geometry'
+        ? ' Units auto-scaled to ' + ((measureSession.source.unitDiagnostic
+          && measureSession.source.unitDiagnostic.inferredKey) || 'in')
+          + ' from piece size (file declares none) — change under Tools ▸ Pattern Measure if wrong.'
+        : measureSession
+          ? ' Units assumed (in) — set them under Tools ▸ Pattern Measure if the file is mm/cm.'
+          : '';
     showToast('Imported ' + pieceCount + ' ' + pieceWord + ' (' + allNewIds.length + ' ' + lineWord + ').'
       + (skipMsg ? ' ' + skipMsg : '') + unitWarning);
     // ADR 0070: a grading-nest file places every chosen size's piece at the

@@ -80,6 +80,8 @@
         color: src.color,
         arrowType: src.arrowType,
         lineWidth: src.lineWidth,
+        lineTreatment: src.lineTreatment ? clone(src.lineTreatment) : null,
+        purpose: src.purpose || null,
         start,
         end,
         midPoint,
@@ -97,6 +99,7 @@
         value: null,
       };
       if (isCurved) ensureCurveControls(ann);
+      if (src.seamPath) seamPathCloneForNewAnnotation(src, ann);
       // US-093 / ADR 0053 code review, 2026-08-21: derive the label AFTER
       // normalization rather than inside the literal above. For a curve with
       // interior anchors computeDefaultLabelPosition (annotation-factory.js)
@@ -149,9 +152,17 @@
       const axisX = findReflectionAxisX(src);
       if (axisX == null) { skipped += 1; continue; }
       const mirror = (p) => (p ? { x: 2 * axisX - p.x, y: p.y } : null);
+      const reflectedSide = src.side === 'left' ? 'right'
+        : (src.side === 'right' ? 'left' : src.side);
+      const reflectedId = state.idCounter++;
+      // ADR 0101 removed Auto Detect Seam, but a project saved before that
+      // can still hold annotations it produced. Reflecting one must not carry
+      // its detector evidence across the mirror, so the legacy sourceMode is
+      // still recognised here — as saved data, not as a live feature.
+      const reflectedAutoSeam = src.sourceMode === 'auto-seam';
       const ann = {
         ...clone(src),
-        id: state.idCounter++,
+        id: reflectedId,
         seq: state.nextSequence,
         start: mirror(src.start),
         end: mirror(src.end),
@@ -168,10 +179,35 @@
         })),
         label: mirror(src.label),
         value: null,
+        // Reflection changes semantic ownership as well as pixels. Keeping
+        // the source side here made user-corrected projects claim that both
+        // mirrored paths belonged to the same side.
+        side: reflectedSide,
+        reflectedFromAnnotationId: src.id,
+        reflectedFromCandidateId: src.candidateId || null,
+        candidateId: reflectedAutoSeam
+          ? String(src.candidateId || 'auto-seam-candidate')
+            + '-td-reflected-' + String(reflectedSide || 'bilateral') + '-' + reflectedId
+          : src.candidateId,
+        evidenceStatus: reflectedAutoSeam ? 'inferred' : src.evidenceStatus,
+        symmetryResult: reflectedAutoSeam
+          ? { status: 'copied', counterpartCandidateId: src.candidateId || null }
+          : clone(src.symmetryResult),
+        supportingPasses: reflectedAutoSeam ? [] : clone(src.supportingPasses),
+        evidenceProvenance: reflectedAutoSeam
+          ? [{ passId: 'manual-reflect/v1', source: 'td_edit', status: 'inferred' }]
+          : clone(src.evidenceProvenance),
+        evidenceConfidence: reflectedAutoSeam ? null : clone(src.evidenceConfidence),
+        rawGeometry: reflectedAutoSeam ? null : clone(src.rawGeometry),
+        roiTransform: reflectedAutoSeam ? null : clone(src.roiTransform),
+        automaticSemanticRoi: reflectedAutoSeam ? null : clone(src.automaticSemanticRoi),
+        tdEdited: reflectedAutoSeam ? true : src.tdEdited,
+        tdApproved: reflectedAutoSeam ? false : src.tdApproved,
       };
       // Mirroring is exact, so every handle carries over and the curve keeps its
       // shape; backfill the anchor set for any older single-cubic source.
       ensureCurveControls(ann);
+      if (src.seamPath) seamPathCloneForNewAnnotation(src, ann);
       state.annotations.push(ann);
       consumePomSequenceFor(ann);
       reflectedIds.push(ann.id);

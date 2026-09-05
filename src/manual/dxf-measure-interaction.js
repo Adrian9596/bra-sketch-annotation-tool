@@ -273,8 +273,11 @@
   }
 
   function dxfMeasureRouteChoiceToast(routeCount, truncated) {
+    // US-126: a capped search now still OFFERS its routes, shortest first
+    // (dxfEnumerateRoutes seeds the true shortest explicitly), so this says
+    // what the TD is looking at rather than apologising for a refusal.
     if (truncated) {
-      return routeCount + '+ routes found (route search capped — not the complete set) — Tab to cycle, Enter to choose, Escape to cancel.';
+      return 'Showing the ' + routeCount + ' shortest routes (more exist) — Tab to cycle, Enter to choose, Escape to cancel.';
     }
     if (routeCount === 1) return 'Choose a direction — Tab to cycle Forward/Reverse, Enter to choose, Escape to cancel.';
     if (routeCount === 2) return '2 routes found (complementary directions) — Tab to cycle, Enter to choose, Escape to cancel.';
@@ -303,6 +306,10 @@
     if (!result.ok || !result.routes.length) {
       showToast(result.reason === DXF_MEASURE_REASON.NO_CONNECTED_PATH
         ? 'Point B is not on the same connected path as point A.'
+        // US-126: ROUTE_SEARCH_TRUNCATED no longer arrives here — a capped
+        // search returns its ranked routes and enters the chooser below. The
+        // branch stays because the reason code is still in the kernel's
+        // vocabulary and a future caller could surface it.
         : result.reason === DXF_MEASURE_REASON.ROUTE_SEARCH_TRUNCATED
           ? 'This A–B pair has too many routes to prove completely. Measurement canceled; choose different endpoints.'
           : result.reason === DXF_MEASURE_REASON.SAME_POINT
@@ -498,11 +505,16 @@
     const refA = interaction.which === 'a' ? ref : otherRef;
     const refB = interaction.which === 'a' ? otherRef : ref;
     const result = dxfMeasureEnumerateRoutes(session, refA, refB);
-    if (result.reason === DXF_MEASURE_REASON.ROUTE_SEARCH_TRUNCATED || result.truncated) {
+    if (result.reason === DXF_MEASURE_REASON.ROUTE_SEARCH_TRUNCATED) {
       interaction.preview = { status: 'truncated-route' };
       return;
     }
     if (!result.ok || !result.routes.length) { interaction.preview = { status: 'invalid' }; return; }
+    // US-126: a capped-but-answered search is an ambiguous ROUTE, not a dead
+    // end — the TD picks from the ranked candidates on release exactly as
+    // they would for a genuine branch. Previously `result.truncated` short-
+    // circuited to 'truncated-route' and the drag could not be committed at
+    // all on any branchy piece.
     if (result.routes.length > 1) {
       interaction.preview = { status: 'ambiguous-route', refA, refB, routes: result.routes, truncated: result.truncated };
       return;
@@ -559,7 +571,7 @@
     const refA = which === 'a' ? ref : otherRef;
     const refB = which === 'a' ? otherRef : ref;
     const result = dxfMeasureEnumerateRoutes(session, refA, refB);
-    if (result.reason === DXF_MEASURE_REASON.ROUTE_SEARCH_TRUNCATED || result.truncated) {
+    if (result.reason === DXF_MEASURE_REASON.ROUTE_SEARCH_TRUNCATED) {
       showToast('That endpoint creates too many routes to prove completely — drag canceled, the measurement is unchanged.');
       session.interaction = null;
       requestRender();

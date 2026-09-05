@@ -972,7 +972,7 @@ async function main() {
     const made = d.addLinePreset('Suite preset');
     return { id: made.id, count: d.getLinePresets().length, raw: localStorage.getItem('bra-line-presets-v1') };
   })()`);
-  check(saved.count === 7, `a saved preset joins the six built-ins, including Binding (got ${saved.count})`);
+  check(saved.count === 9, `a saved preset joins the eight built-ins, including Binding, 1NDL and 2NDL (got ${saved.count})`);
   check(saved.raw && saved.raw.includes('Suite preset'), 'a saved preset is written to localStorage');
 
   await reloadKeepingErrors(s, ERROR_TRAP);
@@ -987,7 +987,7 @@ async function main() {
   check(corrupt === true, 'precondition: a corrupt payload was stored');
   await reloadKeepingErrors(s, ERROR_TRAP);
   const afterCorrupt = await s.eval(`window.__braAutoModeDebug.getLinePresets().map(p => p.name)`);
-  check(afterCorrupt.length === 6,
+  check(afterCorrupt.length === 8,
     `a corrupt library falls back to the built-in set instead of throwing (got ${JSON.stringify(afterCorrupt)})`);
 
   const roundTrip = await s.eval(`(async () => {
@@ -1221,7 +1221,7 @@ async function main() {
     document.querySelector('.dialog-close').click();
     return { seeded, remaining: d.getLinePresets().length, guard };
   })()`);
-  check(emptied.seeded === 6, `precondition: the built-in set was there to delete (got ${emptied.seeded})`);
+  check(emptied.seeded === 8, `precondition: the built-in set was there to delete (got ${emptied.seeded})`);
   check(emptied.guard < 20, 'the delete loop terminated rather than hitting its guard');
   check(emptied.remaining === 0,
     `deleting every row empties the library in-session (got ${emptied.remaining})`);
