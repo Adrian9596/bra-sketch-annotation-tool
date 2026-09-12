@@ -20280,6 +20280,37 @@ const BOM_MATERIAL_LIBRARY = [
     }).join('');
   }
 
+  // Bug found 2026-09 by real-browser testing: the BOM and Construction
+  // sheets (.bm-combined-view / .cc-combined-view) are wider than common
+  // laptop viewports and scroll horizontally — that part was always true —
+  // but their ::-webkit-scrollbar styling (index.html) never actually PAINTS
+  // on the very first layout after the container goes from `.page-hidden`
+  // (display:none) to visible: reading layout (getBoundingClientRect,
+  // offsetHeight) does not trigger it, only an actual scroll-position change
+  // does, confirmed empirically. Left alone, a TD landing on either page for
+  // the first time saw a hard right edge with no scrollbar and no hint that
+  // the Bill of Materials table (or the Construction board) continues past
+  // it. One real frame at a 1px offset and back — invisible to the TD, since
+  // it happens between two rAF callbacks before they perceive the page —
+  // is what gets Chrome to paint the thumb; matches the rest of this app's
+  // own double-rAF settle pattern (see the various `settle()` helpers used
+  // by the test suites) rather than inventing a new timing idiom for it.
+  function wakeOverflowScrollbar(container) {
+    if (!container) return;
+    const overflows = container.scrollWidth > container.clientWidth
+      || container.scrollHeight > container.clientHeight;
+    if (!overflows) return;
+    const x = container.scrollLeft, y = container.scrollTop;
+    requestAnimationFrame(() => {
+      container.scrollLeft = x + 1;
+      container.scrollTop = y + 1;
+      requestAnimationFrame(() => {
+        container.scrollLeft = x;
+        container.scrollTop = y;
+      });
+    });
+  }
+
   function setActivePage(id) {
     if (!TECH_PACK_PAGES.some(function (p) { return p.id === id; })) return;
     state.activePage = id;
@@ -20298,10 +20329,12 @@ const BOM_MATERIAL_LIBRARY = [
     if (id === 'construction') {
       ensureConstruction();
       renderConstruction();
+      wakeOverflowScrollbar(document.querySelector('.cc-combined-view'));
     }
     if (id === 'bom') {
       ensureBom();
       renderBom();
+      wakeOverflowScrollbar(document.querySelector('.bm-combined-view'));
     }
     if (id === 'preview') {
       ensurePreviewPage();
@@ -35590,6 +35623,32 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       el.clearBtn.disabled = true;
     }
 
+    // S1: vision-engine readiness chip (OpenCV WASM warm-up watcher). This
+    // reflects state.visionEngine, which has nothing to do with appMode — the
+    // WASM engine keeps compiling in the background whichever mode the TD is
+    // in, and warmupVisionEngine() (bootstrap.js) calls updateUI() the instant
+    // it resolves. Read BEFORE the Manual-mode early return below: that return
+    // exists for the Auto-only status chip/step-indicator/recovery controls
+    // that follow it, and this chip is not one of them. Bug found 2026-09:
+    // switching to Manual before the engine finished compiling froze this
+    // chip at "vision warming…" forever, because every later updateUI() call
+    // (including the one the warm-up promise itself triggers) hit that return
+    // before ever reaching this block.
+    if (el.visionEngineChip) {
+      const engine = state.visionEngine || 'warming';
+      el.visionEngineChip.dataset.engine = engine;
+      el.visionEngineChip.textContent =
+        engine === 'ready' ? '✓ vision ready'
+          : engine === 'warming' ? 'vision warming…'
+            : 'basic vision';
+      el.visionEngineChip.title =
+        engine === 'ready'
+          ? 'OpenCV vision engine compiled — Detect uses the highest-quality backend.'
+          : engine === 'warming'
+            ? 'The OpenCV vision engine is still compiling in the background. Keep working — Detect will use the best engine available when clicked.'
+            : 'OpenCV engine unavailable — Detect uses the built-in fallback detector.';
+    }
+
     if (!isAuto) {
       el.autoStatusChip.dataset.status = 'idle';
       el.autoStatusChip.textContent = AUTO_STATUS_COPY.idle;
@@ -35613,22 +35672,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       for (const stepEl of el.autoStepIndicator.children) {
         stepEl.dataset.state = stepStates[stepEl.dataset.step] || 'todo';
       }
-    }
-
-    // S1: vision-engine readiness chip (OpenCV WASM warm-up watcher).
-    if (el.visionEngineChip) {
-      const engine = state.visionEngine || 'warming';
-      el.visionEngineChip.dataset.engine = engine;
-      el.visionEngineChip.textContent =
-        engine === 'ready' ? '✓ vision ready'
-          : engine === 'warming' ? 'vision warming…'
-            : 'basic vision';
-      el.visionEngineChip.title =
-        engine === 'ready'
-          ? 'OpenCV vision engine compiled — Detect uses the highest-quality backend.'
-          : engine === 'warming'
-            ? 'The OpenCV vision engine is still compiling in the background. Keep working — Detect will use the best engine available when clicked.'
-            : 'OpenCV engine unavailable — Detect uses the built-in fallback detector.';
     }
 
     // U5: reveal the Approve / Review-Only / Apply / Discard controls only

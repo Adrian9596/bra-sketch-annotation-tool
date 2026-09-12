@@ -2624,6 +2624,47 @@
   .cc-tbl-del{ width:28px; text-align:center; }
   .cc-tbl-del button{ border:none; background:none; color:#8a1f1f; cursor:pointer; font-size:14px; line-height:1; }
 
+  /* Bug found 2026-09 by real-browser testing: .bm-sheet/.bm-combined-sheet
+     below is min-width:1450px and .cc-sheet is min-width:1180px — both wider
+     than common laptop viewports (1440/1366/1280/1024px, the same widths
+     board-toolbar-check already exercises for the Board page). The content
+     was never actually lost — both containers were overflow:auto all along —
+     but on macOS Chrome/Safari the native scrollbar is an invisible overlay
+     that only appears mid-drag, so at any of those widths a TD saw the sheet
+     end abruptly at the right edge with zero cue that BOM-SOLID/BOM-LACE's
+     own header or the Bill of Materials table's later columns continue past
+     it. Rather than reflow the sheet (its width matches the reference
+     factory Excel's own column grid — see bm-table.js's "print parity"
+     comment two blocks below), make the scrollbar itself impossible to miss:
+     defining ::-webkit-scrollbar opts a WebKit/Blink browser OUT of the
+     native overlay behavior into a classic, always-visible one. Shared by
+     both pages, like the rest of the "BOM reuses Construction's view-agnostic
+     chrome" classes noted below. */
+  .cc-combined-view,
+  .bm-combined-view{
+    scrollbar-width:thin;
+    scrollbar-color:var(--border) transparent;
+  }
+  .cc-combined-view::-webkit-scrollbar,
+  .bm-combined-view::-webkit-scrollbar{
+    width:11px;
+    height:11px;
+  }
+  .cc-combined-view::-webkit-scrollbar-track,
+  .bm-combined-view::-webkit-scrollbar-track{
+    background:var(--chip);
+  }
+  .cc-combined-view::-webkit-scrollbar-thumb,
+  .bm-combined-view::-webkit-scrollbar-thumb{
+    background:var(--border);
+    border-radius:999px;
+    border:2px solid var(--chip);
+  }
+  .cc-combined-view::-webkit-scrollbar-thumb:hover,
+  .bm-combined-view::-webkit-scrollbar-thumb:hover{
+    background:var(--muted);
+  }
+
   /* US-078 / ADR 0045: one continuous Construction sheet. The wide
      Outer/Inner Working Board stays above its row-owned Construction Table,
      matching BOM's sheet-first reading order. */
@@ -3849,6 +3890,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=7819fb6000f3"></script>
+<script src="app.js?v=e3b8567efd34"></script>
 </body>
 </html>
