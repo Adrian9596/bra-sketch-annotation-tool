@@ -185,6 +185,26 @@
 
   // ---- Point-at-parameter / length, per segment kind -------------------------
 
+  // Two cubic segment shapes exist in this codebase and both reach the shared
+  // geometry helpers: the board parser's `{p0,c1,c2,p3}` and this kernel's
+  // `{p0,p1,p2,p3}`. They differ ONLY in the names of the two interior
+  // control points. Every walker of a curve segment that can come from either
+  // parser must read them through here — reading `seg.c1` off a native curve
+  // yields undefined, and that took down the whole pattern-classify pass the
+  // first time a SPLINE produced native curves.
+  // The two single-field readers are the hot form: dxfPatternCubicPoint runs
+  // them per sampled point per segment while classifying a pattern, and the
+  // array-building variant below cost a measured 50.5ms against a 50ms
+  // responsiveness budget on 3380.dxf when it was used there.
+  function dxfCubicC1(seg) { return seg.c1 || seg.p1; }
+  function dxfCubicC2(seg) { return seg.c2 || seg.p2; }
+
+  function dxfCubicControls(seg) {
+    const c1 = dxfCubicC1(seg);
+    const c2 = dxfCubicC2(seg);
+    return (seg.p0 && c1 && c2 && seg.p3) ? [seg.p0, c1, c2, seg.p3] : null;
+  }
+
   function dxfPointOnSegment(seg, t) {
     if (!seg) return null;
     if (seg.kind === 'straight') {

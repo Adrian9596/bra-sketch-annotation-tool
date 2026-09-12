@@ -100,7 +100,7 @@ function requestRender() {
     if (state.appMode !== 'auto') {
       const selAnnIdsForHalo = getSelectedAnnotationIds();
       if (selAnnIdsForHalo.length > 1) {
-        drawMultiSelectHalo(selAnnIdsForHalo.map(id => getAnnotationById(id)).filter(a => a && !isAnnHidden(a.id)));
+        drawMultiSelectHalo(getAnnotationsByIds(selAnnIdsForHalo).filter(a => !isAnnHidden(a.id)));
       }
     }
 

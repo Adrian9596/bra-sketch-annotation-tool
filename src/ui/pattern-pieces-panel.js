@@ -40,6 +40,8 @@
   function patternPieceSubtitle(meta) {
     if (!meta) return '';
     const parts = [];
+    // US-127 / ADR 0102: first, because it explains the whole board.
+    if (meta.outOfScale) parts.push('out of scale — excluded from the fit');
     const ann = [meta.pieceName, meta.size, meta.quantity != null ? 'qty ' + meta.quantity : null].filter(Boolean).join(' · ');
     if (ann) parts.push(ann);
     if (meta.kind === 'legacy') {

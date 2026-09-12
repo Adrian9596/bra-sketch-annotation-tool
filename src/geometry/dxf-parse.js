@@ -406,6 +406,13 @@
   function dxfNonPlanar(reason) { return dxfSkip('nonPlanar', reason); }
   function dxfUnsupportedType(reason) { return dxfSkip('unsupportedType', reason); }
   function dxfUnsupportedFit(reason) { return dxfSkip('unsupportedFit', reason); }
+  // US-127 / ADR 0102: geometry with no length. The NATIVE parser has
+  // rejected these since RB-4 (dxf-native-parser.js); this brings the board
+  // parser to parity, because the two parses are paired BY INDEX and a
+  // segment only one of them holds is a line the TD can see but never
+  // measure — 838 of them across the 40 parseable corpus files, each drawn
+  // as a round dot by the renderer's `lineCap:'round'`.
+  function dxfDegenerate(reason) { return dxfSkip('degenerate', reason); }
 
   // ---- Arc / bulge -> cubic Bézier geometry ----------------------------------
   //
@@ -480,6 +487,225 @@
     return dxfArcToBezierChunks(params.cx, params.cy, params.r, params.a0, params.sweep);
   }
 
+
+  // ---- SPLINE -> exact cubic Bezier parts -------------------------------------
+  //
+  // Measured on the 45-file corpus before writing a line of this: 24,652
+  // SPLINE records across 4 files, ALL of them degree 3, none rational
+  // (no weight differs from 1), every declared count matching its payload.
+  // Three of those four files carry SPLINE and NOTHING else — no LINE, no
+  // POLYLINE, no ARC — so before this they imported as "No supported
+  // entities were found", i.e. 4 of 45 real factory files were 0% usable.
+  //
+  // A clamped non-rational B-spline is EXACTLY a chain of Bezier segments,
+  // so nothing here samples or approximates: knot insertion (Boehm) raises
+  // every interior knot to multiplicity `degree`, after which the control
+  // points group span by span into Bezier control polygons. The corpus's own
+  // files already arrive in that form (interior multiplicity 4 for a cubic,
+  // control-point count an exact multiple of 4), so for them the insertion
+  // loop does nothing at all and the conversion is a regrouping, not a
+  // computation.
+  //
+  // The output is the SAME `{kind:'curve'}` cubic the ARC/bulge path already
+  // produces, which is why src/geometry/dxf-path-kernel.js needed no change:
+  // its header has always documented a cubic-Bezier segment shape that "no
+  // parser currently produces" — point-at-t, length, projection and endpoint
+  // handling for it were already written and already tested.
+  //
+  // This lives in the pure layer, above BOTH converters, on purpose. The
+  // board parser and the native measurement parser are paired BY INDEX, and
+  // findings-dxf.md Finding 15 is what happens when one of them applies a
+  // rule the other does not: a line the TD can see but can never measure.
+  // One rule, one place, two thin wrappers.
+  const DXF_SPLINE_MAX_DEGREE = 3;
+  const DXF_SPLINE_INSERT_GUARD = 4096;
+
+  function dxfSplinePoints(pairs, codeX, codeY, codeZ) {
+    const pts = [];
+    let cur = null;
+    for (const p of pairs) {
+      if (p.code === codeX) {
+        cur = { x: Number(String(p.value).trim()), y: undefined, z: 0 };
+        pts.push(cur);
+      } else if (p.code === codeY && cur) {
+        cur.y = Number(String(p.value).trim());
+      } else if (p.code === codeZ && cur) {
+        cur.z = Number(String(p.value).trim());
+      }
+    }
+    return pts;
+  }
+
+  // Knot vectors are non-decreasing, so equal values are contiguous: one
+  // pass gives every distinct value with its multiplicity. This replaces a
+  // per-index full-vector count, which was quadratic in the knot count — and
+  // the corpus's largest spline carries 3,524 control points, so that cost
+  // was real even though those splines need no insertion at all.
+  function dxfSplineKnotRuns(knots) {
+    const runs = [];
+    for (let i = 0; i < knots.length;) {
+      let j = i;
+      while (j < knots.length && knots[j] === knots[i]) j += 1;
+      runs.push({ value: knots[i], mult: j - i });
+      i = j;
+    }
+    return runs;
+  }
+
+  // Boehm single knot insertion, non-rational. Returns the widened control
+  // polygon and knot vector, or null when u is outside the usable span range.
+  function dxfSplineInsertKnot(degree, ctrl, knots, u) {
+    let k = -1;
+    for (let i = degree; i < knots.length - degree - 1; i += 1) {
+      if (u >= knots[i] && u < knots[i + 1]) { k = i; break; }
+    }
+    if (k < 0) return null;
+    const out = [];
+    for (let i = 0; i <= k - degree; i += 1) out.push(ctrl[i]);
+    for (let i = k - degree + 1; i <= k; i += 1) {
+      const den = knots[i + degree] - knots[i];
+      const a = den > 0 ? (u - knots[i]) / den : 0;
+      out.push({
+        x: (1 - a) * ctrl[i - 1].x + a * ctrl[i].x,
+        y: (1 - a) * ctrl[i - 1].y + a * ctrl[i].y,
+      });
+    }
+    for (let i = k; i < ctrl.length; i += 1) out.push(ctrl[i]);
+    return { ctrl: out, knots: knots.slice(0, k + 1).concat([u], knots.slice(k + 1)) };
+  }
+
+  // Clamped B-spline -> one control polygon per Bezier span, each of length
+  // degree+1. Returns null for a knot vector this does not handle (unclamped
+  // / periodic form), so the caller can report WHICH shape it refused rather
+  // than emitting something wrong.
+  //
+  // Interior knots are raised to multiplicity `degree`, not degree+1: at that
+  // point consecutive spans share their joint control point and the walk below
+  // advances by the joint's own multiplicity, which handles BOTH the shared
+  // form and the already-decomposed form (multiplicity degree+1, what every
+  // spline in the corpus arrives as) with one rule.
+  function dxfSplineBezierSpans(degree, ctrlIn, knotsIn) {
+    let ctrl = ctrlIn.map(c => ({ x: c.x, y: c.y }));
+    let knots = knotsIn.slice();
+    let runs = dxfSplineKnotRuns(knots);
+    if (runs.length < 2) return null;
+    if (runs[0].mult !== degree + 1 || runs[runs.length - 1].mult !== degree + 1) return null;
+    let guard = 0;
+    for (;;) {
+      let target = null;
+      for (let r = 1; r < runs.length - 1; r += 1) {
+        if (runs[r].mult < degree) { target = runs[r].value; break; }
+      }
+      if (target === null) break;
+      const step = dxfSplineInsertKnot(degree, ctrl, knots, target);
+      if (!step) return null;
+      ctrl = step.ctrl;
+      knots = step.knots;
+      runs = dxfSplineKnotRuns(knots);
+      guard += 1;
+      if (guard > DXF_SPLINE_INSERT_GUARD) return null;
+    }
+    const spans = [];
+    let offset = 0;
+    for (let r = 0; r < runs.length - 1; r += 1) {
+      if (offset + degree >= ctrl.length) return null;
+      spans.push(ctrl.slice(offset, offset + degree + 1));
+      offset += runs[r + 1].mult;
+    }
+    return spans.length ? spans : null;
+  }
+
+  // Neutral parts both converters map onto their own segment shape:
+  //   { type: 'line', a, b }              (degree 1 — exact, no elevation)
+  //   { type: 'cubic', p0, p1, p2, p3 }   (degree 2 elevated exactly, degree 3 as-is)
+  function dxfSplineSpanToPart(span, degree) {
+    if (degree === 1) {
+      return { type: 'line', a: span[0], b: span[1] };
+    }
+    if (degree === 2) {
+      const [q0, q1, q2] = span;
+      return {
+        type: 'cubic',
+        p0: q0,
+        p1: { x: q0.x + (2 / 3) * (q1.x - q0.x), y: q0.y + (2 / 3) * (q1.y - q0.y) },
+        p2: { x: q2.x + (2 / 3) * (q1.x - q2.x), y: q2.y + (2 / 3) * (q1.y - q2.y) },
+        p3: q2,
+      };
+    }
+    return { type: 'cubic', p0: span[0], p1: span[1], p2: span[2], p3: span[3] };
+  }
+
+  function dxfSplinePartIsDegenerate(part) {
+    if (part.type === 'line') return part.a.x === part.b.x && part.a.y === part.b.y;
+    const { p0, p1, p2, p3 } = part;
+    return p0.x === p1.x && p0.x === p2.x && p0.x === p3.x
+      && p0.y === p1.y && p0.y === p2.y && p0.y === p3.y;
+  }
+
+  // The one SPLINE reader. Every rejection names the exact shape refused, so
+  // an unsupported file says WHICH spline form it holds instead of vanishing
+  // into an aggregate count (findings-dxf.md Findings 4 and 6, same lesson).
+  function dxfSplineParts(rec) {
+    const degreeRaw = dxfOptNum(rec.pairs, 71, NaN);
+    const flagsRaw = dxfOptNum(rec.pairs, 70, 0);
+    if (!Number.isFinite(degreeRaw)) return dxfMalformed('SPLINE missing or non-finite degree (group 71)');
+    if (!Number.isFinite(flagsRaw)) return dxfMalformed('SPLINE has a non-finite flag value');
+    const degree = Math.trunc(degreeRaw);
+    const flags = Math.trunc(flagsRaw);
+    if (degree < 1) return dxfMalformed('SPLINE degree is below 1');
+    const knots = [];
+    const weights = [];
+    for (const p of rec.pairs) {
+      if (p.code === 40) knots.push(Number(String(p.value).trim()));
+      else if (p.code === 41) weights.push(Number(String(p.value).trim()));
+    }
+    const ctrl = dxfSplinePoints(rec.pairs, 10, 20, 30);
+    const fit = dxfSplinePoints(rec.pairs, 11, 21, 31);
+    if (!ctrl.length) {
+      return fit.length
+        ? dxfUnsupportedFit('SPLINE carries fit points only (no control points)')
+        : dxfMalformed('SPLINE has no control points');
+    }
+    for (const c of ctrl) {
+      if (![c.x, c.y, c.z].every(Number.isFinite)) return dxfMalformed('SPLINE has a non-finite control point');
+    }
+    if (!knots.every(Number.isFinite)) return dxfMalformed('SPLINE has a non-finite knot value');
+    const declaredKnots = dxfOptNum(rec.pairs, 72, knots.length);
+    const declaredCtrl = dxfOptNum(rec.pairs, 73, ctrl.length);
+    if (!Number.isFinite(declaredKnots) || Math.trunc(declaredKnots) !== knots.length) {
+      return dxfMalformed('SPLINE group-72 knot count does not match its knot values');
+    }
+    if (!Number.isFinite(declaredCtrl) || Math.trunc(declaredCtrl) !== ctrl.length) {
+      return dxfMalformed('SPLINE group-73 count does not match its control points');
+    }
+    if ((flags & 4) || weights.some(w => Number.isFinite(w) && w !== 1)) {
+      return dxfUnsupportedFit('SPLINE is rational (weighted control points)');
+    }
+    if (degree > DXF_SPLINE_MAX_DEGREE) {
+      return dxfUnsupportedFit('SPLINE of degree ' + degree + ' is above the supported cubic maximum');
+    }
+    if (knots.length !== ctrl.length + degree + 1) {
+      return dxfMalformed('SPLINE knot count is not control points + degree + 1');
+    }
+    for (let i = 1; i < knots.length; i += 1) {
+      if (knots[i] < knots[i - 1]) return dxfMalformed('SPLINE knot vector is not non-decreasing');
+    }
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(thickness) || !ext.finite) return dxfMalformed('SPLINE has a non-finite planarity field');
+    if (!dxfPlanarOk(ctrl.map(c => c.z), thickness, ext)) return dxfNonPlanar('SPLINE is not flat');
+    const spans = dxfSplineBezierSpans(degree, ctrl, knots);
+    if (!spans) return dxfUnsupportedFit('SPLINE knot vector is not in clamped form');
+    const parts = [];
+    let degenerate = 0;
+    for (const span of spans) {
+      const part = dxfSplineSpanToPart(span, degree);
+      if (dxfSplinePartIsDegenerate(part)) degenerate += 1;
+      else parts.push(part);
+    }
+    return { ok: true, parts, degenerate };
+  }
+
   // ---- Per-entity converters --------------------------------------------------
 
   function convertDxfLineEntity(rec) {
@@ -494,6 +720,8 @@
       return dxfMalformed('LINE has a non-finite planarity field');
     }
     if (!dxfPlanarOk([z1, z2], thickness, ext)) return dxfNonPlanar('LINE is not flat');
+    // US-127: same test, same wording as dxfNativeConvertLineEntity's RB-4 gate.
+    if (x1 === x2 && y1 === y2) return dxfDegenerate('LINE has zero length (coincident endpoints)');
     return dxfOk([{ kind: 'straight', a: { x: x1, y: y1 }, b: { x: x2, y: y2 } }]);
   }
 
@@ -557,17 +785,31 @@
     return vertices;
   }
 
+  // US-127 / ADR 0102: mirrors dxfNativeVerticesToSegments — a repeated
+  // vertex (the closing vertex of a polyline that already ends where it
+  // started, or a duplicated authoring click) produces a hop of length zero.
+  // It is not a line: it draws as a dot, it can never be measured, and it is
+  // a non-topological member that keeps a boundary chain from reading as
+  // closed. Returns the count so the import toast can say what it dropped.
   function dxfPolylineVerticesToSegments(vertices, closed) {
     const segs = [];
+    let degenerate = 0;
     const n = vertices.length;
     const last = closed ? n : n - 1;
     for (let i = 0; i < last; i += 1) {
       const a = vertices[i];
       const b = vertices[(i + 1) % n];
-      if (a.bulge) segs.push(...dxfBulgeToBezierChunks(a, b, a.bulge));
-      else segs.push({ kind: 'straight', a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } });
+      if (a.bulge) {
+        const chunks = dxfBulgeToBezierChunks(a, b, a.bulge);
+        if (chunks.length) segs.push(...chunks);
+        else degenerate += 1;
+      } else if (a.x !== b.x || a.y !== b.y) {
+        segs.push({ kind: 'straight', a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } });
+      } else {
+        degenerate += 1;
+      }
     }
-    return segs;
+    return { segments: segs, degenerate };
   }
 
   function convertDxfLwpolylineEntity(rec) {
@@ -593,7 +835,9 @@
     }
     if (!dxfPlanarOk([elevation], thickness, ext)) return dxfNonPlanar('LWPOLYLINE is not flat');
     const closed = (Math.trunc(flags) & 1) === 1;
-    return dxfOk(dxfPolylineVerticesToSegments(vertices, closed));
+    const converted = dxfPolylineVerticesToSegments(vertices, closed);
+    if (!converted.segments.length) return dxfDegenerate('LWPOLYLINE has no non-degenerate segment');
+    return { ok: true, segments: converted.segments, degenerate: converted.degenerate };
   }
 
   function convertDxfPolylineEntity(rec) {
@@ -621,7 +865,19 @@
       vertices.push({ x, y, z, bulge });
     }
     if (!dxfPlanarOk([headerZ, ...vertices.map(v => v.z)], thickness, ext)) return dxfNonPlanar('POLYLINE is not flat');
-    return dxfOk(dxfPolylineVerticesToSegments(vertices, closed));
+    const converted = dxfPolylineVerticesToSegments(vertices, closed);
+    if (!converted.segments.length) return dxfDegenerate('POLYLINE has no non-degenerate segment');
+    return { ok: true, segments: converted.segments, degenerate: converted.degenerate };
+  }
+
+  function convertDxfSplineEntity(rec) {
+    const read = dxfSplineParts(rec);
+    if (!read.ok) return read;
+    if (!read.parts.length) return dxfDegenerate('SPLINE has no non-degenerate span');
+    const segments = read.parts.map(part => (part.type === 'line'
+      ? { kind: 'straight', a: part.a, b: part.b }
+      : { kind: 'curve', p0: part.p0, c1: part.p1, c2: part.p2, p3: part.p3 }));
+    return { ok: true, segments, degenerate: read.degenerate };
   }
 
   function convertDxfEntity(rec) {
@@ -631,6 +887,7 @@
       case 'CIRCLE': return convertDxfCircleEntity(rec);
       case 'LWPOLYLINE': return convertDxfLwpolylineEntity(rec);
       case 'POLYLINE': return convertDxfPolylineEntity(rec);
+      case 'SPLINE': return convertDxfSplineEntity(rec);
       // Phase 3 (ADR 0091): ASTM turn/curve points, notches, drill holes and
       // annotation text are standard non-geometry, not "unsupported" — they
       // are counted by dxfCollectMarks and reported as what they are.
@@ -792,13 +1049,18 @@
     if (!blockRecords) return dxfMalformed('INSERT references an undefined block "' + p.blockName + '"');
     if (depth >= DXF_INSERT_MAX_DEPTH) return dxfMalformed('INSERT nesting is too deep (possible circular BLOCK reference)');
     const segments = [];
+    // US-127: a block child's own dropped zero-length hops ride up with the
+    // geometry so one instance's count reaches the import toast (the child's
+    // whole-entity rejections already increment `buckets` directly).
+    let degenerate = 0;
     for (const childRec of blockRecords) {
       const result = dxfConvertEntityResolvingBlocks(childRec, blocks, depth + 1, buckets, instance);
       if (!result.ok) { buckets[result.bucket] += 1; continue; }
+      degenerate += result.degenerate || 0;
       segments.push(...result.segments);
     }
     if (!segments.length) return dxfMalformed('INSERT\'s block "' + p.blockName + '" has no supported geometry');
-    return dxfOk(segments.map(seg => dxfApplyInsertTransformToSegment(seg, p)));
+    return { ok: true, segments: segments.map(seg => dxfApplyInsertTransformToSegment(seg, p)), degenerate };
   }
 
   // Stamps every accepted segment with its placement `instance` (ADR 0069)
@@ -814,7 +1076,7 @@
     if (rec.type === 'INSERT') {
       // Children were already stamped with their own layer/entityType on the
       // way up; only the instance is (re)applied here.
-      return { ok: true, segments: result.segments.map(seg => Object.assign({}, seg, { instance })) };
+      return { ok: true, segments: result.segments.map(seg => Object.assign({}, seg, { instance })), degenerate: result.degenerate || 0 };
     }
     // ADR 0091: layer provenance (group 8) and the source entity type ride on
     // every segment so dxfClassifyPatterns can tell a piece boundary (ASTM
@@ -826,6 +1088,7 @@
     return {
       ok: true,
       segments: result.segments.map(seg => Object.assign({}, seg, { instance, layer, entityType: rec.type })),
+      degenerate: result.degenerate || 0,
     };
   }
 
@@ -885,7 +1148,22 @@
         { x: seg.center.x + seg.radius, y: seg.center.y + seg.radius },
       ];
     }
-    return [seg.p0, seg.c1, seg.c2, seg.p3];
+    // A cubic Bezier lies inside the convex hull of its control polygon, so
+    // its four control points bound it. TWO shapes reach here: the board's
+    // `{p0,c1,c2,p3}` and — since SPLINE support — the native measurement
+    // model's `{p0,p1,p2,p3}` (see dxf-path-kernel.js's header for both).
+    // Read whichever naming is present instead of assuming the board's: a
+    // native curve read as a board one yields `undefined` control points and
+    // takes the whole classify pass down with it, which is exactly what the
+    // first SPLINE run did.
+    // Inlined for the same reason as dxfPatternCubicPoint: this runs per
+    // segment inside the per-instance bounds passes. `c1/c2` is the board
+    // curve shape, `p1/p2` the native measurement one (dxfCubicC1/C2 in
+    // dxf-path-kernel.js define the pair); a board curve costs one extra
+    // `undefined` test here versus before SPLINE support existed.
+    const c1 = seg.c1 !== undefined ? seg.c1 : seg.p1;
+    const c2 = seg.c2 !== undefined ? seg.c2 : seg.p2;
+    return (c1 !== undefined && c2 !== undefined) ? [seg.p0, c1, c2, seg.p3] : [seg.p0, seg.p3];
   }
 
   function dxfBoundsOfPoints(points) {
@@ -1037,6 +1315,60 @@
     return pieceSegIdxLists.map(idxs => idxs.map(i => segments[i]));
   }
 
+  // ---- Fit bounds (US-127 / ADR 0102) -----------------------------------------
+  //
+  // The auto-fit used to frame the RAW bounding box of every placed segment,
+  // which makes the whole import hostage to the file's worst coordinate. The
+  // real SN1252-MFB253 export carries one corrupt polyline reaching
+  // +/-214,588 while its 28 pattern pieces are ~10 units across: the fit
+  // framed a 592,095-unit box, every real piece rendered at ~0.0002 board
+  // pixels, and what the TD actually saw was a lattice of stray lines with
+  // the patterns invisible inside it. Nothing was missing and nothing was
+  // wrong with the pieces — they were just 3 million times too small to see,
+  // move or click.
+  //
+  // So: frame the pieces that are the same ORDER OF SIZE as each other, and
+  // let a wildly out-of-scale piece fall outside the viewport rather than
+  // shrink every good piece to nothing. It is still placed, still listed in
+  // the Pattern Pieces panel (flagged), still removable — never silently
+  // dropped, because a piece the app decided not to look at is exactly the
+  // kind of thing a TD must be told about.
+  //
+  // Choosing the ratio, measured on the real corpus (2026-09-08): across all
+  // 40 parseable files the largest piece is at most 4.46x the median piece
+  // (1290. Flexcamo; second place 3.95x), while the three pieces SN1252's one
+  // corrupt block produces are 14.1x, 14.0x and 70,030x. Any ratio between
+  // those two clusters works; 8 is roughly the geometric midpoint and errs
+  // toward excluding, because the two error costs are wildly asymmetric —
+  // a false exclusion leaves one real piece off-screen with a toast saying so
+  // and Fit-to-view one gesture away, while a false inclusion is the failure
+  // this whole function exists to stop: every piece in the file too small to
+  // see. Below DXF_FIT_MIN_PIECES there is no meaningful median to compare
+  // against, so the raw bounds stand.
+  const DXF_FIT_OUTLIER_RATIO = 8;
+  const DXF_FIT_MIN_PIECES = 4;
+
+  function dxfFitBoundsForPieces(pieces) {
+    const list = Array.isArray(pieces) ? pieces : [];
+    const raw = dxfBoundsOfSegments(list.flat());
+    if (list.length < DXF_FIT_MIN_PIECES) return { bounds: raw, outlierPieces: [] };
+    const diagonals = list.map((piece) => {
+      const b = dxfBoundsOfSegments(piece);
+      return Math.hypot(b.width, b.height);
+    });
+    const sorted = diagonals.slice().sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    if (!(median > 0)) return { bounds: raw, outlierPieces: [] };
+    const limit = DXF_FIT_OUTLIER_RATIO * median;
+    const keep = [];
+    const outlierPieces = [];
+    for (let i = 0; i < list.length; i += 1) {
+      if (diagonals[i] > limit) outlierPieces.push(i); else keep.push(i);
+    }
+    if (!outlierPieces.length || !keep.length) return { bounds: raw, outlierPieces: [] };
+    return { bounds: dxfBoundsOfSegments(keep.flatMap(i => list[i])), outlierPieces };
+  }
+
   // ---- Placement transform ----------------------------------------------------
 
   // Round 11 (user-reported, then a follow-up review caught a real bug in
@@ -1137,7 +1469,7 @@
     if (scan.error) {
       return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file (' + scan.error + ').' };
     }
-    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, nonGeometry: 0 };
+    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, nonGeometry: 0, degenerate: 0 };
     const acceptedSegments = [];
     // ADR 0069: instance 0 is the single shared "placed directly in
     // ENTITIES" group (matches this loop's pre-INSERT-support behavior —
@@ -1171,6 +1503,7 @@
       }
       const result = dxfConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, ordinal);
       if (!result.ok) { buckets[result.bucket] += 1; continue; }
+      buckets.degenerate += result.degenerate || 0;
       acceptedSegments.push(...result.segments);
     }
     if (!acceptedSegments.length) {

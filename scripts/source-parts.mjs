@@ -179,6 +179,7 @@ export const SOURCE_PARTS = [
   'src/render/xlsx-writer.js',
   'src/render/export-spec-xlsx.js',
   'src/render/export-techpack-xlsx.js',
+  'src/render/export-mindmap-notes.js',
   'src/render/hit-testing.js',
   'src/render/render-stitches.js',
   'src/render/render-annotations.js',

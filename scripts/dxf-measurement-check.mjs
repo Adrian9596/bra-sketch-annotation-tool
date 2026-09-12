@@ -316,8 +316,11 @@ async function section17DurablePatternSource(s) {
       };
     })()`);
     check(factory.imported && factory.imported.pieceCount === 6
-      && factory.imported.annotationCount === 1252,
-    '3380 imports as the real 6-piece/1252-line project fixture');
+      // US-127 / ADR 0102: 1252 -> 1240. The 12 that left are the file's
+      // zero-length polyline hops; the native measurement parser had always
+      // rejected them, so this is the board catching up, not a loss.
+      && factory.imported.annotationCount === 1240,
+    '3380 imports as the real 6-piece/1240-line project fixture');
     check(factory.sourceFile === '3380.dxf' && factory.session
       && factory.session.pieceCount === 6
       && factory.session.pieceSegmentCounts.reduce((sum, count) => sum + count, 0) === 1240

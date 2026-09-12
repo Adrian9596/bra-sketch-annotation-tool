@@ -748,6 +748,89 @@ async function main() {
     `one Undo did not put the note back: ${JSON.stringify(select.afterUndo)} vs ${JSON.stringify(select.afterClick)}`);
   console.log(`notes-check: the note selects without moving, drags by the pointer delta, and one Undo restores it`);
 
+  // ---- 7d-bis. A leader keeps pointing at what it points at --------------
+  //
+  // Three gestures, three different contracts, and the third is what keeps the
+  // first from being "fixed" in the wrong place:
+  //   - drag the CAPTION  -> the box moves, every tip stays put. The TD moves a
+  //     caption to get it off the artwork, not to re-aim the arrow.
+  //   - drag ONE TIP      -> that tip moves, nothing else does.
+  //   - drag the PHOTO    -> caption AND tips travel together, or the whole
+  //     callout slides off the garment it describes.
+  // The first two go through moveNoteCaption, the third through moveNote
+  // (manual/note-model.js). Collapsing them back into one function breaks
+  // exactly one of these three, which is why all three are asserted here.
+  const leaderMove = await s.eval(`(async () => {
+    const { d, settle, click, drag } = window.__NC;
+    // An earlier section leaves the Text tool armed, and a Text-tool press
+    // opens the editor instead of starting a drag — which would make every
+    // assertion below vacuous. Pick Select the way a TD would.
+    document.getElementById('toolSelect').click();
+    await settle();
+    const img = d.getImages()[0];
+    const pos = { x: img.x + img.width * 0.55, y: img.y + img.height * 0.12 };
+    const tips = [{ x: pos.x + 150, y: pos.y + 60 }, { x: pos.x + 90, y: pos.y + 130 }];
+    const note = d.addNote('Leader anchor test', pos,
+      { color: 'black', fontSize: 13, boxWidth: 120, leaders: tips.map(t => ({ ...t })) });
+    await settle();
+    const read = () => { const n = d.getNotes().find(x => x.id === note.id);
+      return JSON.parse(JSON.stringify({ pos: n.pos, leaders: n.leaders })); };
+    const start = read();
+
+    // Grab the box's real centre, read off the app rather than guessed from
+    // pos: by this point the board carries other notes, lines and a photo, and
+    // a press that misses the box would open some other gesture (or none) and
+    // make every assertion below vacuous.
+    const hb = d.getNoteHandles(note.id).box;
+    const grab = { x: hb.x + hb.width / 2, y: hb.y + hb.height / 2 };
+    await click(grab.x, grab.y);
+    const capSeen = await drag(grab.x, grab.y, grab.x + 70, grab.y + 45);
+    const afterCaption = read();
+
+    const t0 = afterCaption.leaders[0];
+    const tipSeen = await drag(t0.x, t0.y, t0.x + 35, t0.y - 25);
+    const afterTip = read();
+
+    const imgGrab = { x: img.x + 18, y: img.y + img.height - 18 };
+    await click(imgGrab.x, imgGrab.y);
+    const photoSeen = await drag(imgGrab.x, imgGrab.y, imgGrab.x + 50, imgGrab.y + 20);
+    const afterPhoto = read();
+
+    for (let k = 0; k < 4; k += 1) { document.getElementById('undoBtn').click(); await settle(); }
+    return { start, afterCaption, afterTip, afterPhoto, grab, box: hb, tool: d.getState().tool,
+      capSeen: capSeen && capSeen.type, tipSeen: tipSeen && tipSeen.type,
+      photoSeen: photoSeen && photoSeen.type };
+  })()`);
+  const moved = (a, b) => ({ x: b.x - a.x, y: b.y - a.y });
+  const still = (a, b) => Math.abs(b.x - a.x) < 0.01 && Math.abs(b.y - a.y) < 0.01;
+  check(leaderMove.capSeen === 'drag-note',
+    `the caption press did not open a note drag: ${leaderMove.capSeen}`
+    + ` (pressed at ${JSON.stringify(leaderMove.grab)} in box ${JSON.stringify(leaderMove.box)}, tool ${leaderMove.tool})`);
+  const capDelta = moved(leaderMove.start.pos, leaderMove.afterCaption.pos);
+  check(Math.abs(capDelta.x - 70) < 4 && Math.abs(capDelta.y - 45) < 4,
+    `the caption did not follow the pointer: expected (+70, +45), got (${capDelta.x.toFixed(1)}, ${capDelta.y.toFixed(1)})`);
+  check(leaderMove.afterCaption.leaders.every((tip, i) => still(leaderMove.start.leaders[i], tip)),
+    'dragging the CAPTION dragged its leader tips too — an arrow must keep pointing at what it points at: '
+    + JSON.stringify(leaderMove.afterCaption.leaders) + ' vs ' + JSON.stringify(leaderMove.start.leaders));
+  check(leaderMove.tipSeen === 'drag-note-leader',
+    `the tip press did not open a leader drag: ${leaderMove.tipSeen}`);
+  const tipDelta = moved(leaderMove.afterCaption.leaders[0], leaderMove.afterTip.leaders[0]);
+  check(Math.abs(tipDelta.x - 35) < 4 && Math.abs(tipDelta.y + 25) < 4,
+    `the dragged tip did not follow the pointer: got (${tipDelta.x.toFixed(1)}, ${tipDelta.y.toFixed(1)})`);
+  check(still(leaderMove.afterCaption.leaders[1], leaderMove.afterTip.leaders[1])
+    && still(leaderMove.afterCaption.pos, leaderMove.afterTip.pos),
+    'dragging one tip moved the other tip or the caption');
+  check(leaderMove.photoSeen === 'drag-image',
+    `the photo press did not open an image drag (so the carry-together claim below is untested): ${leaderMove.photoSeen}`);
+  const photoCap = moved(leaderMove.afterTip.pos, leaderMove.afterPhoto.pos);
+  check(Math.abs(photoCap.x) > 1 || Math.abs(photoCap.y) > 1,
+    'the photo drag did not carry the caption at all');
+  check(leaderMove.afterPhoto.leaders.every((tip, i) => {
+    const d0 = moved(leaderMove.afterTip.leaders[i], tip);
+    return Math.abs(d0.x - photoCap.x) < 0.01 && Math.abs(d0.y - photoCap.y) < 0.01;
+  }), 'the photo drag moved the caption but left its leader tips behind — the whole callout must travel with the garment');
+  console.log('notes-check: caption moves alone, one tip moves alone, and the photo carries the whole callout');
+
   // ---- 7e. Press priority: note beats the PHOTO, endpoint beats the note --
   // The two halves of the rule, measured as the gesture each press OPENED —
   // "nothing moved" cannot tell a note drag from a photo drag that carried the

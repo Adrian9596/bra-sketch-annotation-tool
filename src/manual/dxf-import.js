@@ -46,6 +46,10 @@
       case 'nonPlanar': return 'non-planar';
       case 'unsupportedFit': return 'unsupported polyline fit mode';
       case 'malformed': return 'malformed';
+      // US-127 / ADR 0102: named, not lumped into 'malformed' — a TD who sees
+      // "838 zero-length lines" knows the file carries duplicated vertices,
+      // which is a real quality signal about the CAD export.
+      case 'degenerate': return 'zero-length lines';
       default: return key;
     }
   }
@@ -71,7 +75,7 @@
     }
     if (marks && marks.texts && marks.texts.total) parts.push(dxfFormatCount(marks.texts.total) + ' texts');
     if (!marks && buckets && buckets.nonGeometry) parts.push(dxfFormatCount(buckets.nonGeometry) + ' points/texts');
-    for (const key of ['unsupportedType', 'nonPlanar', 'unsupportedFit', 'malformed']) {
+    for (const key of ['degenerate', 'unsupportedType', 'nonPlanar', 'unsupportedFit', 'malformed']) {
       const count = buckets && buckets[key];
       if (count) parts.push(dxfFormatCount(count) + ' ' + dxfBucketLabel(key));
     }
@@ -165,7 +169,14 @@
   // history push, the toast, the panel.
   function dxfPlaceParsedDocument(parsed, precomputedNative, text, rect, fileName, importOptions, execution) {
     const viewportRect = rect || getViewportRect();
-    const bounds = dxfBoundsOfSegments(parsed.pieces.flat());
+    // US-127 / ADR 0102: frame the pieces that are the same order of size as
+    // each other, not the raw extent of every coordinate in the file. See
+    // dxfFitBoundsForPieces. An out-of-scale piece is still placed with the
+    // same transform (it simply lands outside the viewport) and is flagged in
+    // the Pattern Pieces panel and the import toast.
+    const fit = dxfFitBoundsForPieces(parsed.pieces);
+    const bounds = fit.bounds;
+    const outOfScalePieces = new Set(fit.outlierPieces);
     const transform = computeDxfPlacementTransform(bounds, viewportRect, undefined, state.zoom);
     const allNewIds = [];
     let firstId = null;
@@ -201,14 +212,20 @@
         state.templateGroupLabels[groupId] = blockName;
       }
       const pattern = parsed.patterns && parsed.patterns[pieceIndex];
+      const outOfScale = outOfScalePieces.has(pieceIndex);
       // Block-scoped only: instance 0 is the file's direct ENTITIES, whose TEXT
       // is style-level (STYLE NAME, AUTHOR…) and would otherwise stamp every
       // legacy piece of a 3380-style file with the same "piece" annotation.
       const annotation = (instance != null && instance !== 0 && parsed.marks && parsed.marks.labelsByInstance)
         ? parsed.marks.labelsByInstance[instance] : null;
-      if (pattern || annotation) {
+      if (pattern || annotation || outOfScale) {
         if (!state.templateGroupMeta) state.templateGroupMeta = {};
         state.templateGroupMeta[groupId] = {
+          // US-127: this piece is orders of magnitude bigger than the rest of
+          // the file and was left out of the auto-fit, so the TD is told
+          // which row to look at (and can Remove it) instead of hunting for
+          // why the board looks wrong.
+          outOfScale,
           pieceName: annotation ? annotation.pieceName : null,
           size: annotation ? annotation.size : null,
           quantity: annotation ? annotation.quantity : null,
@@ -266,6 +283,12 @@
     const pieceWord = pieceCount === 1 ? 'piece' : 'pieces';
     const lineWord = allNewIds.length === 1 ? 'line' : 'lines';
     const skipParts = [dxfBucketsToast(parsed.buckets, parsed.stats, parsed.marks)];
+    if (fit.outlierPieces.length) {
+      const n = fit.outlierPieces.length;
+      skipParts.push(n === 1
+        ? '1 piece is far out of scale with the rest of the file and sits outside the view — see the Pattern Pieces panel.'
+        : n + ' pieces are far out of scale with the rest of the file and sit outside the view — see the Pattern Pieces panel.');
+    }
     if (parsed.skippedOversizedPieces) {
       skipParts.push(parsed.skippedOversizedPieces + ' oversized piece'
         + (parsed.skippedOversizedPieces === 1 ? '' : 's') + ' (over ' + DXF_PER_PIECE_CAP + ' lines each).');

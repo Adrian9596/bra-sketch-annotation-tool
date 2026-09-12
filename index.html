@@ -2066,34 +2066,58 @@
     z-index:500;
     display:flex;
     flex-direction:column;
-    background:#fff;
+    /* The tool's own canvas colour, copied live from it (see
+       syncMindMapSkin) so there is no white flash before the frame paints
+       and no mismatch when the tool is in its dark appearance. */
+    background:var(--mm-bg, #f2f2f5);
   }
-  .mindmap-overlay-bar{
-    display:flex;
-    align-items:center;
-    gap:10px;
-    padding:8px 14px;
-    background:#1d1d1f;
-    color:#f5f5f7;
-    font-size:13px;
-    flex:0 0 auto;
-  }
-  .mindmap-overlay-bar strong{ font-weight:600; }
-  .mindmap-exit-btn{
-    margin-left:auto;
-    padding:6px 12px;
-    border-radius:7px;
-    border:1px solid rgba(255,255,255,0.25);
-    background:rgba(255,255,255,0.08);
-    color:inherit;
-    font-size:12px;
-    cursor:pointer;
-  }
-  .mindmap-exit-btn:hover{ background:rgba(255,255,255,0.18); }
   .mindmap-overlay-frame{
     flex:1 1 auto;
     width:100%;
     border:0;
+  }
+  /* The embedded tool ships a complete, well-made chrome of its own: a
+     floating toolbar pill, a properties panel, a minimap and a status bar.
+     Until 2026-09-12 this layer stacked a full-width black bar on top of
+     that, which fought the tool's design language and spent 42px of canvas
+     to hold one button. All this layer actually owes the TD is one
+     unmistakable way out, so that is all it draws — a floating pill in the
+     corner the tool leaves free, wearing the tool's OWN palette tokens so
+     it reads as part of the same surface in either appearance. */
+  .mindmap-exit-btn{
+    position:absolute;
+    top:14px;
+    left:14px;
+    z-index:1;
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    padding:8px 15px 8px 11px;
+    border-radius:999px;
+    border:1px solid var(--mm-border, rgba(0,0,0,.09));
+    background:var(--mm-surface, rgba(255,255,255,.82));
+    -webkit-backdrop-filter:saturate(180%) blur(20px);
+    backdrop-filter:saturate(180%) blur(20px);
+    box-shadow:var(--mm-shadow, 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.09));
+    color:var(--mm-text, #1d1d1f);
+    font-family:inherit;
+    font-size:13px;
+    font-weight:500;
+    line-height:1;
+    cursor:pointer;
+    transition:background var(--dur-fast,120ms) cubic-bezier(.32,.72,0,1),
+               transform var(--dur-fast,120ms) cubic-bezier(.32,.72,0,1);
+  }
+  .mindmap-exit-btn:hover{ background:var(--mm-surface-solid, #fff); }
+  .mindmap-exit-btn:active{ transform:scale(.98); }
+  .mindmap-exit-btn:focus-visible{
+    outline:2px solid var(--mm-accent, #0071e3);
+    outline-offset:2px;
+  }
+  .mindmap-exit-btn .mm-chev{ flex:0 0 auto; opacity:.55; }
+  @media (prefers-reduced-motion: reduce){
+    .mindmap-exit-btn{ transition:none; }
+    .mindmap-exit-btn:active{ transform:none; }
   }
 
   /* ===== MAIN PAGE sheet (US-068, ADR 0037; page-ified US-069, ADR 0038) =====
@@ -3469,6 +3493,7 @@
           <button id="copyImageBtn" data-key="⌘⇧C" role="menuitem" type="button" title="Copy the whole board as a PNG image">Copy board image</button>
           <button id="exportPdfBtn" data-key="P" role="menuitem" type="button">Export PDF</button>
           <button id="exportExcelBtn" data-key="E" role="menuitem" type="button" title="Export the measurement spec — POMs, size run, sketch, as an .xlsx">Export measurement Excel</button>
+          <button id="exportMindMapNotesBtn" role="menuitem" type="button" title="Export every Mind Map node and its note as one .xlsx outline — a note is otherwise only visible one node at a time">Export Mind Map notes</button>
         </div>
       </div>
 
@@ -3824,6 +3849,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=b3d95e0485c7"></script>
+<script src="app.js?v=7819fb6000f3"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@
   const BUILTIN_AUTO_MODE_RULE_JSON = {"version":{"pom_unit":"in","template_version":"core18-2026-07-18b","rule_version":"offline-vision-rules-v3","anchor_version":"anchors-2026-08-24-hem-offset-preserved","suggestions_version":"sizeL-suggestions-v1"},"pomTemplate":{"rows":[{"id":"1","name":"1/2 Bottom band - Relax","zh":"下围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"primary","partner":"2","groupName":"1/2 Bottom band","primaryLabel":"Relax","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"2","name":"1/2 Bottom band - Extend","zh":"下围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"secondary","primary":"1"},"expected_confidence_tier":"high"},{"id":"3","name":"1/2 chest - Measure straight","zh":"胸围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"primary","partner":"4","groupName":"1/2 Chest","primaryLabel":"Measure straight","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"4","name":"1/2 chest - Extend","zh":"胸围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"secondary","primary":"3"},"expected_confidence_tier":"high"},{"id":"5","name":"Center front height","zh":"前中高度","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"6","name":"Cradle height at center front","zh":"托架前中高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"7","name":"Cradle height at bottom cup","zh":"托架底杯高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cup-top","cradle-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"8","name":"Cup height at center front","zh":"前中杯高","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cradle-cf-top"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"9","name":"Cup height","zh":"杯高","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-top","inner-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"10","name":"Cup width","zh":"杯宽","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-left","inner-cup-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"11","name":"Side seam length","zh":"侧缝长度","view":"back","refL":null,"requiredAnchors":["side-top","side-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"12","name":"Back center length","zh":"后中高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"13","name":"Back panel height","zh":"后背片高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"optionalAnchors":["back-panel-top","back-panel-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"14","name":"Shoulder strap length","zh":"肩带长度","view":"front_to_back","placementViewRole":"back","refL":null,"requiredAnchors":["strap-top","strap-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"},{"id":"15","name":"Back strap distances","zh":"后肩带间距","view":"back","refL":null,"requiredAnchors":["back-strap-left","back-strap-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"16","name":"Front apex distance","zh":"乳点间距","view":"front_outer","refL":null,"requiredAnchors":["apex-left","apex-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"17","name":"Neckline length","zh":"领口长","view":"front_outer","refL":null,"requiredAnchors":["171","172"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"18","name":"Armhole curve length","zh":"袖窿弧长","view":"front_outer","refL":null,"requiredAnchors":["181","182"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"}]},"anchorSchema":{"anchors":[{"kind":"cf-top","name":"CF top","group":"axis","hint":"Top of the center-front, where the cradle meets the chest line."},{"kind":"cf-bottom","name":"CF bottom","group":"axis","hint":"Bottom of the center front, on the underbust band.","derivation":{"method":"drop_to_line","args":["cf-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"cradle-cf-top","name":"Cradle CF","group":"axis","hint":"Where the cradle / cup-bottom seam approaches the center front. POM 6 top."},{"kind":"cradle-cup-top","name":"Cradle cup top","group":"axis","hint":"Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."},{"kind":"cradle-cup-bottom","name":"Cradle cup btm","group":"axis","hint":"Band baseline directly below the bottom-cup cradle point (POM 7 bottom).","derivation":{"method":"drop_to_line","args":["cradle-cup-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"band-left","name":"Band L","group":"band","hint":"Leftmost end of the underbust band line."},{"kind":"band-right","name":"Band R","group":"band","hint":"Rightmost end of the underbust band line."},{"kind":"chest-left","name":"Chest L","group":"chest","hint":"Left end of the chest / overbust horizontal line."},{"kind":"chest-right","name":"Chest R","group":"chest","hint":"Right end of the chest / overbust horizontal line."},{"kind":"inner-cup-top","name":"IC top","group":"inner-cup","hint":"Top of the cup (apex) on the front (outer) view — POM 9 start."},{"kind":"inner-cup-bottom","name":"IC btm","group":"inner-cup","hint":"Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."},{"kind":"inner-cup-left","name":"IC L","group":"inner-cup","hint":"Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."},{"kind":"inner-cup-right","name":"IC R","group":"inner-cup","hint":"Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."},{"kind":"side-top","name":"Side top","group":"side","hint":"Top of the side seam at the underarm."},{"kind":"side-bottom","name":"Side btm","group":"side","hint":"Bottom of the side seam at the band."},{"kind":"apex-left","name":"Apex L","group":"apex","hint":"Left shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"apex-right","name":"Apex R","group":"apex","hint":"Right shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"strap-top","name":"Front strap join","group":"strap","hint":"Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."},{"kind":"strap-bottom","name":"Back strap join","group":"strap","hint":"End of the shoulder strap at the back / back-panel join — POM 14 end."},{"kind":"back-top","name":"Back top","group":"back","hint":"Top edge of the back panel."},{"kind":"back-bottom","name":"Back btm","group":"back","hint":"Bottom edge of the back panel."},{"kind":"back-panel-top","name":"Panel top","group":"back","hint":"Upper point for back panel height."},{"kind":"back-panel-bottom","name":"Panel btm","group":"back","hint":"Lower point for back panel height."},{"kind":"back-strap-left","name":"Back strap L","group":"back","hint":"Left point of the back strap distance."},{"kind":"back-strap-right","name":"Back strap R","group":"back","hint":"Right point of the back strap distance."},{"kind":"171","name":"171","group":"neckline","hint":"Left upper neckline corner, where the cup/gore top edge meets the strap base."},{"kind":"172","name":"172","group":"neckline","hint":"Right upper neckline corner (mirror of Neckline L)."},{"kind":"181","name":"181","group":"armhole","hint":"Underarm side point at the bottom of the arm opening."},{"kind":"182","name":"182","group":"armhole","hint":"Strap/shoulder junction at the top of the arm opening."}]},"sizeLSuggestions":{"suggestions_version":"sizeL-suggestions-v1","unit":"in","provenance":{"corpus":"Measurements 2/library/_raw_intake/measurements_size_l.csv","conceptMap":"Measurements 2/library/pom_concepts.csv","tolDefaults":"Measurements 2/library/pom_tol_defaults.csv","sketchRatios":"Measurements 2/library/sketch_ratios.csv","generatedBy":"scripts/generate-sizeL-suggestions.mjs","corpusRows":2950,"styleVersions":225,"droppedRows":26,"note":"Derived from the approved Size-L corpus. Regenerate with the generator; never hand-edit. droppedRows = corpus rows whose concept is not yet canonicalized (raw_* intake phrases)."},"poms":{"1":{"concept":"band_relax","median":14,"min":12.74,"max":14.38,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"2":{"concept":"band_extended","median":19,"min":18,"max":19.25,"tol":"1/2","tolType":"min","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"3":{"concept":"chest_relax","median":17,"min":15.5,"max":17.5,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":198,"confidence":"medium","source":"library"},"4":{"concept":"chest_extended","median":22,"min":20,"max":22.77,"tol":"1/2","tolType":"min","sketchReliable":false,"n":197,"confidence":"medium","source":"library"},"5":{"concept":"cf_height","median":5.5,"min":1.32,"max":6.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":217,"confidence":"medium","source":"library"},"6":{"concept":"cradle_cf","median":2.25,"min":1.31,"max":3,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":163,"confidence":"medium","source":"library"},"7":{"concept":"cradle_under_cup","median":1.75,"min":1.11,"max":2.64,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":173,"confidence":"medium","source":"library"},"8":{"concept":"cup_height_cf","median":3,"min":1.75,"max":4,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":113,"confidence":"low","source":"library"},"9":{"concept":"cup_height","median":8,"min":5.805,"max":9.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":237,"confidence":"medium","source":"library"},"10":{"concept":"cup_width","median":8,"min":6.6,"max":9,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":221,"confidence":"medium","source":"library"},"11":{"concept":"sideseam_length","median":5.5,"min":4.5,"max":6,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":211,"confidence":"medium","source":"library"},"12":{"concept":"cb_height","median":3.75,"min":2,"max":7.24,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":239,"confidence":"medium","source":"library"},"13":{"concept":"back_panel_height","median":7.25,"min":3,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":181,"confidence":"medium","source":"library"},"14":{"concept":"strap_length","median":8,"min":4,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":155,"confidence":"low","source":"library"},"15":{"concept":"back_straps_distance","median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"16":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"17":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"18":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"}}}};
 
   // US-124: URL of the DXF Worker bundle, content-hashed like app.js?v=.
-  const DXF_WORKER_URL = "dxf-worker.js?v=54fe945d148e";
+  const DXF_WORKER_URL = "dxf-worker.js?v=c45527531212";
 
   // ---- src/auto/rules/load-rules.js ----
 // Loads TD-editable Auto Mode rules from auto_mode_rules/*.json.
@@ -709,6 +709,7 @@
     gradingBtn: document.getElementById('gradingBtn'),
     exportPdfBtn: document.getElementById('exportPdfBtn'),
     exportExcelBtn: document.getElementById('exportExcelBtn'),
+    exportMindMapNotesBtn: document.getElementById('exportMindMapNotesBtn'),
     copyImageBtn: document.getElementById('copyImageBtn'),
     importPptxBtn: document.getElementById('importPptxBtn'),
     pptxFileInput: document.getElementById('pptxFileInput'),
@@ -1773,6 +1774,26 @@
 
   // ---- Point-at-parameter / length, per segment kind -------------------------
 
+  // Two cubic segment shapes exist in this codebase and both reach the shared
+  // geometry helpers: the board parser's `{p0,c1,c2,p3}` and this kernel's
+  // `{p0,p1,p2,p3}`. They differ ONLY in the names of the two interior
+  // control points. Every walker of a curve segment that can come from either
+  // parser must read them through here — reading `seg.c1` off a native curve
+  // yields undefined, and that took down the whole pattern-classify pass the
+  // first time a SPLINE produced native curves.
+  // The two single-field readers are the hot form: dxfPatternCubicPoint runs
+  // them per sampled point per segment while classifying a pattern, and the
+  // array-building variant below cost a measured 50.5ms against a 50ms
+  // responsiveness budget on 3380.dxf when it was used there.
+  function dxfCubicC1(seg) { return seg.c1 || seg.p1; }
+  function dxfCubicC2(seg) { return seg.c2 || seg.p2; }
+
+  function dxfCubicControls(seg) {
+    const c1 = dxfCubicC1(seg);
+    const c2 = dxfCubicC2(seg);
+    return (seg.p0 && c1 && c2 && seg.p3) ? [seg.p0, c1, c2, seg.p3] : null;
+  }
+
   function dxfPointOnSegment(seg, t) {
     if (!seg) return null;
     if (seg.kind === 'straight') {
@@ -2785,9 +2806,19 @@
   function dxfPatternCubicPoint(seg, t) {
     const mt = 1 - t;
     const a = mt * mt * mt, b = 3 * mt * mt * t, c = 3 * mt * t * t, d = t * t * t;
+    // Hot path: sampled per point per segment while classifying, so this
+    // deliberately inlines what dxfCubicC1/dxfCubicC2 (dxf-path-kernel.js)
+    // define rather than calling them — dxf-measurement-check asserts a 50ms
+    // parse budget for 3380.dxf that a per-sample call was measured against.
+    // The two names are the board's `c1/c2` and the native model's `p1/p2`;
+    // a board curve therefore costs exactly one extra `undefined` test here
+    // versus before SPLINE support existed.
+    const c1 = seg.c1 !== undefined ? seg.c1 : seg.p1;
+    const c2 = seg.c2 !== undefined ? seg.c2 : seg.p2;
+    if (c1 === undefined || c2 === undefined) return { x: seg.p0.x, y: seg.p0.y };
     return {
-      x: a * seg.p0.x + b * seg.c1.x + c * seg.c2.x + d * seg.p3.x,
-      y: a * seg.p0.y + b * seg.c1.y + c * seg.c2.y + d * seg.p3.y,
+      x: a * seg.p0.x + b * c1.x + c * c2.x + d * seg.p3.x,
+      y: a * seg.p0.y + b * c1.y + c * c2.y + d * seg.p3.y,
     };
   }
 
@@ -3297,6 +3328,30 @@
   // small; the debug hook turns it on for suites and corpus audits.
   // `options.keepQualityCurves` (Phase 3) keeps ASTM 84/85/86/87 twins in the
   // pieces; default drops them. Exact duplicates are always dropped.
+  // US-127 / ADR 0102: the connectivity tolerance is a LENGTH, and the length
+  // it must scale with is one pattern piece — "these two endpoints are the
+  // same point" is a claim about a piece, never about how far apart the nest
+  // spread its pieces on the sheet. Deriving it from the whole drawing's
+  // bounding box made it hostage to the single worst coordinate in the file:
+  // one corrupt polyline in the real SN1252-MFB253 export reaches +/-214,588
+  // while every piece in it is ~10 units across, so the tolerance came out at
+  // 59 units — six times a whole piece. Every vertex of every instance then
+  // clustered into one point, no boundary chain could read as closed, all 28
+  // instances fell back to the legacy grouping (which never runs the
+  // duplicate / quality-twin dedupe), and the board got 15,620 lines where 28
+  // outlines belonged.
+  //
+  // Instance-local also contains the damage: a corrupt instance can now only
+  // ruin its own grouping, never its 27 healthy neighbours'. Verified against
+  // the whole demo/DXF file/** corpus — every previously-classified file
+  // keeps its exact pattern count, orphan count and kept-line count (the nest
+  // spread is at most 22x the median piece, so the tolerance only actually
+  // moves where it was already broken).
+  function dxfPatternInstanceTolerance(segments, idxs) {
+    const bounds = dxfBoundsOfSegments(idxs.map(i => segments[i]));
+    return DXF_PATTERN_CONNECT_TOL_RATIO * (Math.hypot(bounds.width, bounds.height) || 1);
+  }
+
   function dxfClassifyPatterns(segments, options) {
     const wantDiag = !!(options && options.diagnostics);
     const stats = {
@@ -3335,8 +3390,6 @@
     const excluded = new Set(Array.isArray(options && options.excludeInstances) ? options.excludeInstances : []);
     stats.excludedInstances = 0;
     if (!segments || !segments.length) return { pieces: [], patterns: [], stats };
-    const allBounds = dxfBoundsOfSegments(segments);
-    const tol = DXF_PATTERN_CONNECT_TOL_RATIO * (Math.hypot(allBounds.width, allBounds.height) || 1);
 
     const byInstance = new Map();
     for (let i = 0; i < segments.length; i += 1) {
@@ -3358,6 +3411,7 @@
       if (onProgress) onProgress(progressDone, instanceKeys.length);
       if (excluded.has(instance)) { stats.excludedInstances += 1; continue; }
       const idxs = byInstance.get(instance);
+      const tol = dxfPatternInstanceTolerance(segments, idxs);
       const result = dxfClassifyInstance(segments, idxs, tol, instance, options);
       if (wantDiag) stats.instances.push(Object.assign({ legacy: result.legacy }, result.diag));
       if (result.legacy) {
@@ -3809,6 +3863,13 @@
   function dxfNonPlanar(reason) { return dxfSkip('nonPlanar', reason); }
   function dxfUnsupportedType(reason) { return dxfSkip('unsupportedType', reason); }
   function dxfUnsupportedFit(reason) { return dxfSkip('unsupportedFit', reason); }
+  // US-127 / ADR 0102: geometry with no length. The NATIVE parser has
+  // rejected these since RB-4 (dxf-native-parser.js); this brings the board
+  // parser to parity, because the two parses are paired BY INDEX and a
+  // segment only one of them holds is a line the TD can see but never
+  // measure — 838 of them across the 40 parseable corpus files, each drawn
+  // as a round dot by the renderer's `lineCap:'round'`.
+  function dxfDegenerate(reason) { return dxfSkip('degenerate', reason); }
 
   // ---- Arc / bulge -> cubic Bézier geometry ----------------------------------
   //
@@ -3883,6 +3944,225 @@
     return dxfArcToBezierChunks(params.cx, params.cy, params.r, params.a0, params.sweep);
   }
 
+
+  // ---- SPLINE -> exact cubic Bezier parts -------------------------------------
+  //
+  // Measured on the 45-file corpus before writing a line of this: 24,652
+  // SPLINE records across 4 files, ALL of them degree 3, none rational
+  // (no weight differs from 1), every declared count matching its payload.
+  // Three of those four files carry SPLINE and NOTHING else — no LINE, no
+  // POLYLINE, no ARC — so before this they imported as "No supported
+  // entities were found", i.e. 4 of 45 real factory files were 0% usable.
+  //
+  // A clamped non-rational B-spline is EXACTLY a chain of Bezier segments,
+  // so nothing here samples or approximates: knot insertion (Boehm) raises
+  // every interior knot to multiplicity `degree`, after which the control
+  // points group span by span into Bezier control polygons. The corpus's own
+  // files already arrive in that form (interior multiplicity 4 for a cubic,
+  // control-point count an exact multiple of 4), so for them the insertion
+  // loop does nothing at all and the conversion is a regrouping, not a
+  // computation.
+  //
+  // The output is the SAME `{kind:'curve'}` cubic the ARC/bulge path already
+  // produces, which is why src/geometry/dxf-path-kernel.js needed no change:
+  // its header has always documented a cubic-Bezier segment shape that "no
+  // parser currently produces" — point-at-t, length, projection and endpoint
+  // handling for it were already written and already tested.
+  //
+  // This lives in the pure layer, above BOTH converters, on purpose. The
+  // board parser and the native measurement parser are paired BY INDEX, and
+  // findings-dxf.md Finding 15 is what happens when one of them applies a
+  // rule the other does not: a line the TD can see but can never measure.
+  // One rule, one place, two thin wrappers.
+  const DXF_SPLINE_MAX_DEGREE = 3;
+  const DXF_SPLINE_INSERT_GUARD = 4096;
+
+  function dxfSplinePoints(pairs, codeX, codeY, codeZ) {
+    const pts = [];
+    let cur = null;
+    for (const p of pairs) {
+      if (p.code === codeX) {
+        cur = { x: Number(String(p.value).trim()), y: undefined, z: 0 };
+        pts.push(cur);
+      } else if (p.code === codeY && cur) {
+        cur.y = Number(String(p.value).trim());
+      } else if (p.code === codeZ && cur) {
+        cur.z = Number(String(p.value).trim());
+      }
+    }
+    return pts;
+  }
+
+  // Knot vectors are non-decreasing, so equal values are contiguous: one
+  // pass gives every distinct value with its multiplicity. This replaces a
+  // per-index full-vector count, which was quadratic in the knot count — and
+  // the corpus's largest spline carries 3,524 control points, so that cost
+  // was real even though those splines need no insertion at all.
+  function dxfSplineKnotRuns(knots) {
+    const runs = [];
+    for (let i = 0; i < knots.length;) {
+      let j = i;
+      while (j < knots.length && knots[j] === knots[i]) j += 1;
+      runs.push({ value: knots[i], mult: j - i });
+      i = j;
+    }
+    return runs;
+  }
+
+  // Boehm single knot insertion, non-rational. Returns the widened control
+  // polygon and knot vector, or null when u is outside the usable span range.
+  function dxfSplineInsertKnot(degree, ctrl, knots, u) {
+    let k = -1;
+    for (let i = degree; i < knots.length - degree - 1; i += 1) {
+      if (u >= knots[i] && u < knots[i + 1]) { k = i; break; }
+    }
+    if (k < 0) return null;
+    const out = [];
+    for (let i = 0; i <= k - degree; i += 1) out.push(ctrl[i]);
+    for (let i = k - degree + 1; i <= k; i += 1) {
+      const den = knots[i + degree] - knots[i];
+      const a = den > 0 ? (u - knots[i]) / den : 0;
+      out.push({
+        x: (1 - a) * ctrl[i - 1].x + a * ctrl[i].x,
+        y: (1 - a) * ctrl[i - 1].y + a * ctrl[i].y,
+      });
+    }
+    for (let i = k; i < ctrl.length; i += 1) out.push(ctrl[i]);
+    return { ctrl: out, knots: knots.slice(0, k + 1).concat([u], knots.slice(k + 1)) };
+  }
+
+  // Clamped B-spline -> one control polygon per Bezier span, each of length
+  // degree+1. Returns null for a knot vector this does not handle (unclamped
+  // / periodic form), so the caller can report WHICH shape it refused rather
+  // than emitting something wrong.
+  //
+  // Interior knots are raised to multiplicity `degree`, not degree+1: at that
+  // point consecutive spans share their joint control point and the walk below
+  // advances by the joint's own multiplicity, which handles BOTH the shared
+  // form and the already-decomposed form (multiplicity degree+1, what every
+  // spline in the corpus arrives as) with one rule.
+  function dxfSplineBezierSpans(degree, ctrlIn, knotsIn) {
+    let ctrl = ctrlIn.map(c => ({ x: c.x, y: c.y }));
+    let knots = knotsIn.slice();
+    let runs = dxfSplineKnotRuns(knots);
+    if (runs.length < 2) return null;
+    if (runs[0].mult !== degree + 1 || runs[runs.length - 1].mult !== degree + 1) return null;
+    let guard = 0;
+    for (;;) {
+      let target = null;
+      for (let r = 1; r < runs.length - 1; r += 1) {
+        if (runs[r].mult < degree) { target = runs[r].value; break; }
+      }
+      if (target === null) break;
+      const step = dxfSplineInsertKnot(degree, ctrl, knots, target);
+      if (!step) return null;
+      ctrl = step.ctrl;
+      knots = step.knots;
+      runs = dxfSplineKnotRuns(knots);
+      guard += 1;
+      if (guard > DXF_SPLINE_INSERT_GUARD) return null;
+    }
+    const spans = [];
+    let offset = 0;
+    for (let r = 0; r < runs.length - 1; r += 1) {
+      if (offset + degree >= ctrl.length) return null;
+      spans.push(ctrl.slice(offset, offset + degree + 1));
+      offset += runs[r + 1].mult;
+    }
+    return spans.length ? spans : null;
+  }
+
+  // Neutral parts both converters map onto their own segment shape:
+  //   { type: 'line', a, b }              (degree 1 — exact, no elevation)
+  //   { type: 'cubic', p0, p1, p2, p3 }   (degree 2 elevated exactly, degree 3 as-is)
+  function dxfSplineSpanToPart(span, degree) {
+    if (degree === 1) {
+      return { type: 'line', a: span[0], b: span[1] };
+    }
+    if (degree === 2) {
+      const [q0, q1, q2] = span;
+      return {
+        type: 'cubic',
+        p0: q0,
+        p1: { x: q0.x + (2 / 3) * (q1.x - q0.x), y: q0.y + (2 / 3) * (q1.y - q0.y) },
+        p2: { x: q2.x + (2 / 3) * (q1.x - q2.x), y: q2.y + (2 / 3) * (q1.y - q2.y) },
+        p3: q2,
+      };
+    }
+    return { type: 'cubic', p0: span[0], p1: span[1], p2: span[2], p3: span[3] };
+  }
+
+  function dxfSplinePartIsDegenerate(part) {
+    if (part.type === 'line') return part.a.x === part.b.x && part.a.y === part.b.y;
+    const { p0, p1, p2, p3 } = part;
+    return p0.x === p1.x && p0.x === p2.x && p0.x === p3.x
+      && p0.y === p1.y && p0.y === p2.y && p0.y === p3.y;
+  }
+
+  // The one SPLINE reader. Every rejection names the exact shape refused, so
+  // an unsupported file says WHICH spline form it holds instead of vanishing
+  // into an aggregate count (findings-dxf.md Findings 4 and 6, same lesson).
+  function dxfSplineParts(rec) {
+    const degreeRaw = dxfOptNum(rec.pairs, 71, NaN);
+    const flagsRaw = dxfOptNum(rec.pairs, 70, 0);
+    if (!Number.isFinite(degreeRaw)) return dxfMalformed('SPLINE missing or non-finite degree (group 71)');
+    if (!Number.isFinite(flagsRaw)) return dxfMalformed('SPLINE has a non-finite flag value');
+    const degree = Math.trunc(degreeRaw);
+    const flags = Math.trunc(flagsRaw);
+    if (degree < 1) return dxfMalformed('SPLINE degree is below 1');
+    const knots = [];
+    const weights = [];
+    for (const p of rec.pairs) {
+      if (p.code === 40) knots.push(Number(String(p.value).trim()));
+      else if (p.code === 41) weights.push(Number(String(p.value).trim()));
+    }
+    const ctrl = dxfSplinePoints(rec.pairs, 10, 20, 30);
+    const fit = dxfSplinePoints(rec.pairs, 11, 21, 31);
+    if (!ctrl.length) {
+      return fit.length
+        ? dxfUnsupportedFit('SPLINE carries fit points only (no control points)')
+        : dxfMalformed('SPLINE has no control points');
+    }
+    for (const c of ctrl) {
+      if (![c.x, c.y, c.z].every(Number.isFinite)) return dxfMalformed('SPLINE has a non-finite control point');
+    }
+    if (!knots.every(Number.isFinite)) return dxfMalformed('SPLINE has a non-finite knot value');
+    const declaredKnots = dxfOptNum(rec.pairs, 72, knots.length);
+    const declaredCtrl = dxfOptNum(rec.pairs, 73, ctrl.length);
+    if (!Number.isFinite(declaredKnots) || Math.trunc(declaredKnots) !== knots.length) {
+      return dxfMalformed('SPLINE group-72 knot count does not match its knot values');
+    }
+    if (!Number.isFinite(declaredCtrl) || Math.trunc(declaredCtrl) !== ctrl.length) {
+      return dxfMalformed('SPLINE group-73 count does not match its control points');
+    }
+    if ((flags & 4) || weights.some(w => Number.isFinite(w) && w !== 1)) {
+      return dxfUnsupportedFit('SPLINE is rational (weighted control points)');
+    }
+    if (degree > DXF_SPLINE_MAX_DEGREE) {
+      return dxfUnsupportedFit('SPLINE of degree ' + degree + ' is above the supported cubic maximum');
+    }
+    if (knots.length !== ctrl.length + degree + 1) {
+      return dxfMalformed('SPLINE knot count is not control points + degree + 1');
+    }
+    for (let i = 1; i < knots.length; i += 1) {
+      if (knots[i] < knots[i - 1]) return dxfMalformed('SPLINE knot vector is not non-decreasing');
+    }
+    const thickness = dxfOptNum(rec.pairs, 39, 0);
+    const ext = dxfExtrusion(rec.pairs);
+    if (!Number.isFinite(thickness) || !ext.finite) return dxfMalformed('SPLINE has a non-finite planarity field');
+    if (!dxfPlanarOk(ctrl.map(c => c.z), thickness, ext)) return dxfNonPlanar('SPLINE is not flat');
+    const spans = dxfSplineBezierSpans(degree, ctrl, knots);
+    if (!spans) return dxfUnsupportedFit('SPLINE knot vector is not in clamped form');
+    const parts = [];
+    let degenerate = 0;
+    for (const span of spans) {
+      const part = dxfSplineSpanToPart(span, degree);
+      if (dxfSplinePartIsDegenerate(part)) degenerate += 1;
+      else parts.push(part);
+    }
+    return { ok: true, parts, degenerate };
+  }
+
   // ---- Per-entity converters --------------------------------------------------
 
   function convertDxfLineEntity(rec) {
@@ -3897,6 +4177,8 @@
       return dxfMalformed('LINE has a non-finite planarity field');
     }
     if (!dxfPlanarOk([z1, z2], thickness, ext)) return dxfNonPlanar('LINE is not flat');
+    // US-127: same test, same wording as dxfNativeConvertLineEntity's RB-4 gate.
+    if (x1 === x2 && y1 === y2) return dxfDegenerate('LINE has zero length (coincident endpoints)');
     return dxfOk([{ kind: 'straight', a: { x: x1, y: y1 }, b: { x: x2, y: y2 } }]);
   }
 
@@ -3960,17 +4242,31 @@
     return vertices;
   }
 
+  // US-127 / ADR 0102: mirrors dxfNativeVerticesToSegments — a repeated
+  // vertex (the closing vertex of a polyline that already ends where it
+  // started, or a duplicated authoring click) produces a hop of length zero.
+  // It is not a line: it draws as a dot, it can never be measured, and it is
+  // a non-topological member that keeps a boundary chain from reading as
+  // closed. Returns the count so the import toast can say what it dropped.
   function dxfPolylineVerticesToSegments(vertices, closed) {
     const segs = [];
+    let degenerate = 0;
     const n = vertices.length;
     const last = closed ? n : n - 1;
     for (let i = 0; i < last; i += 1) {
       const a = vertices[i];
       const b = vertices[(i + 1) % n];
-      if (a.bulge) segs.push(...dxfBulgeToBezierChunks(a, b, a.bulge));
-      else segs.push({ kind: 'straight', a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } });
+      if (a.bulge) {
+        const chunks = dxfBulgeToBezierChunks(a, b, a.bulge);
+        if (chunks.length) segs.push(...chunks);
+        else degenerate += 1;
+      } else if (a.x !== b.x || a.y !== b.y) {
+        segs.push({ kind: 'straight', a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } });
+      } else {
+        degenerate += 1;
+      }
     }
-    return segs;
+    return { segments: segs, degenerate };
   }
 
   function convertDxfLwpolylineEntity(rec) {
@@ -3996,7 +4292,9 @@
     }
     if (!dxfPlanarOk([elevation], thickness, ext)) return dxfNonPlanar('LWPOLYLINE is not flat');
     const closed = (Math.trunc(flags) & 1) === 1;
-    return dxfOk(dxfPolylineVerticesToSegments(vertices, closed));
+    const converted = dxfPolylineVerticesToSegments(vertices, closed);
+    if (!converted.segments.length) return dxfDegenerate('LWPOLYLINE has no non-degenerate segment');
+    return { ok: true, segments: converted.segments, degenerate: converted.degenerate };
   }
 
   function convertDxfPolylineEntity(rec) {
@@ -4024,7 +4322,19 @@
       vertices.push({ x, y, z, bulge });
     }
     if (!dxfPlanarOk([headerZ, ...vertices.map(v => v.z)], thickness, ext)) return dxfNonPlanar('POLYLINE is not flat');
-    return dxfOk(dxfPolylineVerticesToSegments(vertices, closed));
+    const converted = dxfPolylineVerticesToSegments(vertices, closed);
+    if (!converted.segments.length) return dxfDegenerate('POLYLINE has no non-degenerate segment');
+    return { ok: true, segments: converted.segments, degenerate: converted.degenerate };
+  }
+
+  function convertDxfSplineEntity(rec) {
+    const read = dxfSplineParts(rec);
+    if (!read.ok) return read;
+    if (!read.parts.length) return dxfDegenerate('SPLINE has no non-degenerate span');
+    const segments = read.parts.map(part => (part.type === 'line'
+      ? { kind: 'straight', a: part.a, b: part.b }
+      : { kind: 'curve', p0: part.p0, c1: part.p1, c2: part.p2, p3: part.p3 }));
+    return { ok: true, segments, degenerate: read.degenerate };
   }
 
   function convertDxfEntity(rec) {
@@ -4034,6 +4344,7 @@
       case 'CIRCLE': return convertDxfCircleEntity(rec);
       case 'LWPOLYLINE': return convertDxfLwpolylineEntity(rec);
       case 'POLYLINE': return convertDxfPolylineEntity(rec);
+      case 'SPLINE': return convertDxfSplineEntity(rec);
       // Phase 3 (ADR 0091): ASTM turn/curve points, notches, drill holes and
       // annotation text are standard non-geometry, not "unsupported" — they
       // are counted by dxfCollectMarks and reported as what they are.
@@ -4195,13 +4506,18 @@
     if (!blockRecords) return dxfMalformed('INSERT references an undefined block "' + p.blockName + '"');
     if (depth >= DXF_INSERT_MAX_DEPTH) return dxfMalformed('INSERT nesting is too deep (possible circular BLOCK reference)');
     const segments = [];
+    // US-127: a block child's own dropped zero-length hops ride up with the
+    // geometry so one instance's count reaches the import toast (the child's
+    // whole-entity rejections already increment `buckets` directly).
+    let degenerate = 0;
     for (const childRec of blockRecords) {
       const result = dxfConvertEntityResolvingBlocks(childRec, blocks, depth + 1, buckets, instance);
       if (!result.ok) { buckets[result.bucket] += 1; continue; }
+      degenerate += result.degenerate || 0;
       segments.push(...result.segments);
     }
     if (!segments.length) return dxfMalformed('INSERT\'s block "' + p.blockName + '" has no supported geometry');
-    return dxfOk(segments.map(seg => dxfApplyInsertTransformToSegment(seg, p)));
+    return { ok: true, segments: segments.map(seg => dxfApplyInsertTransformToSegment(seg, p)), degenerate };
   }
 
   // Stamps every accepted segment with its placement `instance` (ADR 0069)
@@ -4217,7 +4533,7 @@
     if (rec.type === 'INSERT') {
       // Children were already stamped with their own layer/entityType on the
       // way up; only the instance is (re)applied here.
-      return { ok: true, segments: result.segments.map(seg => Object.assign({}, seg, { instance })) };
+      return { ok: true, segments: result.segments.map(seg => Object.assign({}, seg, { instance })), degenerate: result.degenerate || 0 };
     }
     // ADR 0091: layer provenance (group 8) and the source entity type ride on
     // every segment so dxfClassifyPatterns can tell a piece boundary (ASTM
@@ -4229,6 +4545,7 @@
     return {
       ok: true,
       segments: result.segments.map(seg => Object.assign({}, seg, { instance, layer, entityType: rec.type })),
+      degenerate: result.degenerate || 0,
     };
   }
 
@@ -4288,7 +4605,22 @@
         { x: seg.center.x + seg.radius, y: seg.center.y + seg.radius },
       ];
     }
-    return [seg.p0, seg.c1, seg.c2, seg.p3];
+    // A cubic Bezier lies inside the convex hull of its control polygon, so
+    // its four control points bound it. TWO shapes reach here: the board's
+    // `{p0,c1,c2,p3}` and — since SPLINE support — the native measurement
+    // model's `{p0,p1,p2,p3}` (see dxf-path-kernel.js's header for both).
+    // Read whichever naming is present instead of assuming the board's: a
+    // native curve read as a board one yields `undefined` control points and
+    // takes the whole classify pass down with it, which is exactly what the
+    // first SPLINE run did.
+    // Inlined for the same reason as dxfPatternCubicPoint: this runs per
+    // segment inside the per-instance bounds passes. `c1/c2` is the board
+    // curve shape, `p1/p2` the native measurement one (dxfCubicC1/C2 in
+    // dxf-path-kernel.js define the pair); a board curve costs one extra
+    // `undefined` test here versus before SPLINE support existed.
+    const c1 = seg.c1 !== undefined ? seg.c1 : seg.p1;
+    const c2 = seg.c2 !== undefined ? seg.c2 : seg.p2;
+    return (c1 !== undefined && c2 !== undefined) ? [seg.p0, c1, c2, seg.p3] : [seg.p0, seg.p3];
   }
 
   function dxfBoundsOfPoints(points) {
@@ -4440,6 +4772,60 @@
     return pieceSegIdxLists.map(idxs => idxs.map(i => segments[i]));
   }
 
+  // ---- Fit bounds (US-127 / ADR 0102) -----------------------------------------
+  //
+  // The auto-fit used to frame the RAW bounding box of every placed segment,
+  // which makes the whole import hostage to the file's worst coordinate. The
+  // real SN1252-MFB253 export carries one corrupt polyline reaching
+  // +/-214,588 while its 28 pattern pieces are ~10 units across: the fit
+  // framed a 592,095-unit box, every real piece rendered at ~0.0002 board
+  // pixels, and what the TD actually saw was a lattice of stray lines with
+  // the patterns invisible inside it. Nothing was missing and nothing was
+  // wrong with the pieces — they were just 3 million times too small to see,
+  // move or click.
+  //
+  // So: frame the pieces that are the same ORDER OF SIZE as each other, and
+  // let a wildly out-of-scale piece fall outside the viewport rather than
+  // shrink every good piece to nothing. It is still placed, still listed in
+  // the Pattern Pieces panel (flagged), still removable — never silently
+  // dropped, because a piece the app decided not to look at is exactly the
+  // kind of thing a TD must be told about.
+  //
+  // Choosing the ratio, measured on the real corpus (2026-09-08): across all
+  // 40 parseable files the largest piece is at most 4.46x the median piece
+  // (1290. Flexcamo; second place 3.95x), while the three pieces SN1252's one
+  // corrupt block produces are 14.1x, 14.0x and 70,030x. Any ratio between
+  // those two clusters works; 8 is roughly the geometric midpoint and errs
+  // toward excluding, because the two error costs are wildly asymmetric —
+  // a false exclusion leaves one real piece off-screen with a toast saying so
+  // and Fit-to-view one gesture away, while a false inclusion is the failure
+  // this whole function exists to stop: every piece in the file too small to
+  // see. Below DXF_FIT_MIN_PIECES there is no meaningful median to compare
+  // against, so the raw bounds stand.
+  const DXF_FIT_OUTLIER_RATIO = 8;
+  const DXF_FIT_MIN_PIECES = 4;
+
+  function dxfFitBoundsForPieces(pieces) {
+    const list = Array.isArray(pieces) ? pieces : [];
+    const raw = dxfBoundsOfSegments(list.flat());
+    if (list.length < DXF_FIT_MIN_PIECES) return { bounds: raw, outlierPieces: [] };
+    const diagonals = list.map((piece) => {
+      const b = dxfBoundsOfSegments(piece);
+      return Math.hypot(b.width, b.height);
+    });
+    const sorted = diagonals.slice().sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    if (!(median > 0)) return { bounds: raw, outlierPieces: [] };
+    const limit = DXF_FIT_OUTLIER_RATIO * median;
+    const keep = [];
+    const outlierPieces = [];
+    for (let i = 0; i < list.length; i += 1) {
+      if (diagonals[i] > limit) outlierPieces.push(i); else keep.push(i);
+    }
+    if (!outlierPieces.length || !keep.length) return { bounds: raw, outlierPieces: [] };
+    return { bounds: dxfBoundsOfSegments(keep.flatMap(i => list[i])), outlierPieces };
+  }
+
   // ---- Placement transform ----------------------------------------------------
 
   // Round 11 (user-reported, then a follow-up review caught a real bug in
@@ -4540,7 +4926,7 @@
     if (scan.error) {
       return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file (' + scan.error + ').' };
     }
-    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, nonGeometry: 0 };
+    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, nonGeometry: 0, degenerate: 0 };
     const acceptedSegments = [];
     // ADR 0069: instance 0 is the single shared "placed directly in
     // ENTITIES" group (matches this loop's pre-INSERT-support behavior —
@@ -4574,6 +4960,7 @@
       }
       const result = dxfConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, ordinal);
       if (!result.ok) { buckets[result.bucket] += 1; continue; }
+      buckets.degenerate += result.degenerate || 0;
       acceptedSegments.push(...result.segments);
     }
     if (!acceptedSegments.length) {
@@ -20332,6 +20719,9 @@ const BOM_MATERIAL_LIBRARY = [
     appCommand({ id: 'board.export.excel', label: 'Export Measurement Excel', category: 'Board · Export',
       page: 'board', mode: 'manual', shortcut: { key: 'e' }, target: '#exportExcelBtn',
       action: () => { void exportSpecXlsx(); } }),
+    appCommand({ id: 'board.export.mindmap-notes', label: 'Export Mind Map Notes', category: 'Board · Export',
+      page: 'board', mode: 'manual', keywords: 'mind map outline notes tags xlsx',
+      target: '#exportMindMapNotesBtn', action: () => exportMindMapNotes() }),
     appCommand({ id: 'board.reset', label: 'Reset Board…', category: 'Board · Reset',
       page: 'board', shortcut: { key: 'r' }, action: () => resetWorkingBoard() }),
     appCommand({ id: 'board.lines.clear', label: 'Delete All Lines (Keep Images)', category: 'Board · Reset',
@@ -21817,6 +22207,8 @@ const BOM_MATERIAL_LIBRARY = [
   function patternPieceSubtitle(meta) {
     if (!meta) return '';
     const parts = [];
+    // US-127 / ADR 0102: first, because it explains the whole board.
+    if (meta.outOfScale) parts.push('out of scale — excluded from the fit');
     const ann = [meta.pieceName, meta.size, meta.quantity != null ? 'qty ' + meta.quantity : null].filter(Boolean).join(' · ');
     if (ann) parts.push(ann);
     if (meta.kind === 'legacy') {
@@ -22513,6 +22905,7 @@ const BOM_MATERIAL_LIBRARY = [
     el.exportPdfBtn.addEventListener('click', exportPdf);
     el.copyImageBtn.addEventListener('click', copyBoardImageToClipboard);
     el.exportExcelBtn.addEventListener('click', exportSpecXlsx);
+    el.exportMindMapNotesBtn.addEventListener('click', exportMindMapNotes);
     el.addImageBtn.addEventListener('click', () => el.imageFileInput.click());
     el.imageFileInput.addEventListener('change', onImageFileChosen);
     el.boardEmptyAdd.addEventListener('click', () => el.imageFileInput.click());
@@ -25700,11 +26093,14 @@ function setSelection(kind, id) {
       return (getAnnotationById(state.selection.id) && !isAnnHidden(state.selection.id))
         ? [state.selection.id] : [];
     }
-    return raw.filter((id) => !!getAnnotationById(id) && !isAnnHidden(id));
+    // US-127: one Set pass, not one linear .find() per selected id — this
+    // runs on every frame through the render loop's multi-select halo.
+    const live = existingAnnotationIdSet();
+    return raw.filter((id) => live.has(id) && !isAnnHidden(id));
   }
 
   function getSelectedAnnotations() {
-    return getSelectedAnnotationIds().map((id) => getAnnotationById(id)).filter(Boolean);
+    return getAnnotationsByIds(getSelectedAnnotationIds());
   }
 
   function isAnnInSelection(id) {
@@ -26664,8 +27060,12 @@ function setSelection(kind, id) {
       const aligned = computeSmartAlignment(
         interaction.startAnnotations, ids, rawDx, rawDy, !!e.altKey
       );
+      // US-127: one indexed pass per move, not one linear .find() per member
+      // — a DXF import selects every line it placed, so this ran
+      // 6,224 x 6,224 id comparisons on every mousemove of a 3708.dxf drag.
+      const liveById = annotationMapForIds((interaction.startAnnotations || []).map(src => src.id));
       for (const source of interaction.startAnnotations || []) {
-        const a = getAnnotationById(source.id);
+        const a = liveById.get(source.id);
         if (!a) continue;
         restoreAnnotationMoveGeometry(a, source);
         moveAnnotation(a, aligned.dx, aligned.dy);
@@ -26717,8 +27117,11 @@ function setSelection(kind, id) {
       const dx = world.x - interaction.prevWorld.x;
       const dy = world.y - interaction.prevWorld.y;
       if (dx || dy) {
-        // moveNote carries the leaders too, so the whole callout travels as one.
-        moveNote(note, dx, dy);
+        // Caption only: the leader tips stay on whatever they point at, and
+        // the lines re-aim from the box's new edge (moveNoteCaption,
+        // manual/note-model.js). The PHOTO drag further down still uses
+        // moveNote, where the whole callout has to travel with the garment.
+        moveNoteCaption(note, dx, dy);
         interaction.changed = true;
         interaction.prevWorld = world;
         requestRender();
@@ -26804,10 +27207,8 @@ function setSelection(kind, id) {
           if (image) { image.x += dx; image.y += dy; }
         }
         if (interaction.groupedAnnotationIds) {
-          for (const annId of interaction.groupedAnnotationIds) {
-            const ann = getAnnotationById(annId);
-            if (ann) moveAnnotation(ann, dx, dy);
-          }
+          // US-127: indexed, for the same reason as the annotation drag above.
+          for (const ann of getAnnotationsByIds(interaction.groupedAnnotationIds)) moveAnnotation(ann, dx, dy);
         }
         if (interaction.groupedNoteIds) {
           for (const noteId of interaction.groupedNoteIds) {
@@ -27045,7 +27446,7 @@ function startAnnotationDrag(id, world) {
   const groupIds = (selected.length > 1 && selected.includes(id)) ? selected.slice() : [id];
   beginTrackedInteraction('drag-annotation', {
     id, prevWorld: world, groupIds,
-    startAnnotations: groupIds.map(aid => getAnnotationById(aid)).filter(Boolean).map(clone),
+    startAnnotations: getAnnotationsByIds(groupIds).map(clone),
     startWorld: { x: world.x, y: world.y }, armed: false,
   });
 }
@@ -28733,32 +29134,77 @@ function onWheel(e) {
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', 'Mind Map');
 
-    const bar = document.createElement('div');
-    bar.className = 'mindmap-overlay-bar';
-    const title = document.createElement('strong');
-    title.textContent = 'Mind Map';
     const exitBtn = document.createElement('button');
     exitBtn.type = 'button';
     exitBtn.className = 'mindmap-exit-btn';
-    exitBtn.textContent = 'Exit Mind Map';
+    exitBtn.innerHTML = '<svg class="mm-chev" width="9" height="14" viewBox="0 0 9 14" fill="none" '
+      + 'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" '
+      + 'aria-hidden="true"><path d="M7.5 1.5 2 7l5.5 5.5"/></svg>';
+    exitBtn.appendChild(document.createTextNode('Exit Mind Map'));
     exitBtn.addEventListener('click', requestMindMapExit);
-    bar.appendChild(title);
-    bar.appendChild(exitBtn);
 
     const frame = document.createElement('iframe');
     frame.className = 'mindmap-overlay-frame';
     frame.title = 'Mind Map';
     frame.src = MINDMAP_SRC;
+    frame.addEventListener('load', () => {
+      syncMindMapSkin(overlay, frame);
+      // Same origin, so focus can move INTO the map: the TD lands ready to
+      // type instead of having to click the canvas first.
+      try { frame.contentWindow.focus(); } catch (error) { /* not fatal */ }
+    });
 
-    overlay.appendChild(bar);
     overlay.appendChild(frame);
+    overlay.appendChild(exitBtn);
     document.body.appendChild(overlay);
 
     const appRoot = document.querySelector('.app');
     if (appRoot) appRoot.inert = true;
   }
 
+  // The embedded tool owns its own palette and resolves system/light/dark
+  // itself, always writing the RESOLVED value to data-theme on its <html>.
+  // Rather than guessing which appearance it landed in, copy the handful of
+  // tokens this layer's chrome needs straight off it, and re-copy whenever it
+  // switches. The iframe is same-origin (relative src, no sandbox attribute),
+  // so this is a plain read; nothing is written back into the tool, and a
+  // failure just leaves the CSS fallbacks in place.
+  let mindMapSkinObserver = null;
+
+  const MINDMAP_SKIN = [
+    ['--bg', '--mm-bg'],
+    ['--surface-raised', '--mm-surface'],
+    ['--surface-solid', '--mm-surface-solid'],
+    ['--border', '--mm-border'],
+    ['--text', '--mm-text'],
+    ['--shadow-2', '--mm-shadow'],
+    ['--accent', '--mm-accent'],
+    ['--dur-fast', '--dur-fast'],
+  ];
+
+  function syncMindMapSkin(overlay, frame) {
+    let root;
+    try {
+      const doc = frame.contentDocument;
+      root = doc && doc.documentElement;
+    } catch (error) { return; }
+    if (!root) return;
+    const apply = () => {
+      const styles = frame.contentWindow.getComputedStyle(root);
+      for (const [from, to] of MINDMAP_SKIN) {
+        const value = styles.getPropertyValue(from).trim();
+        if (value) overlay.style.setProperty(to, value);
+      }
+    };
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+    mindMapSkinObserver = observer;
+  }
+
+
   function closeMindMap() {
+    if (mindMapSkinObserver) { mindMapSkinObserver.disconnect(); mindMapSkinObserver = null; }
     const overlay = document.getElementById('mindMapOverlay');
     if (overlay) overlay.remove();
     const appRoot = document.querySelector('.app');
@@ -31179,6 +31625,10 @@ function onWheel(e) {
       case 'nonPlanar': return 'non-planar';
       case 'unsupportedFit': return 'unsupported polyline fit mode';
       case 'malformed': return 'malformed';
+      // US-127 / ADR 0102: named, not lumped into 'malformed' — a TD who sees
+      // "838 zero-length lines" knows the file carries duplicated vertices,
+      // which is a real quality signal about the CAD export.
+      case 'degenerate': return 'zero-length lines';
       default: return key;
     }
   }
@@ -31204,7 +31654,7 @@ function onWheel(e) {
     }
     if (marks && marks.texts && marks.texts.total) parts.push(dxfFormatCount(marks.texts.total) + ' texts');
     if (!marks && buckets && buckets.nonGeometry) parts.push(dxfFormatCount(buckets.nonGeometry) + ' points/texts');
-    for (const key of ['unsupportedType', 'nonPlanar', 'unsupportedFit', 'malformed']) {
+    for (const key of ['degenerate', 'unsupportedType', 'nonPlanar', 'unsupportedFit', 'malformed']) {
       const count = buckets && buckets[key];
       if (count) parts.push(dxfFormatCount(count) + ' ' + dxfBucketLabel(key));
     }
@@ -31298,7 +31748,14 @@ function onWheel(e) {
   // history push, the toast, the panel.
   function dxfPlaceParsedDocument(parsed, precomputedNative, text, rect, fileName, importOptions, execution) {
     const viewportRect = rect || getViewportRect();
-    const bounds = dxfBoundsOfSegments(parsed.pieces.flat());
+    // US-127 / ADR 0102: frame the pieces that are the same order of size as
+    // each other, not the raw extent of every coordinate in the file. See
+    // dxfFitBoundsForPieces. An out-of-scale piece is still placed with the
+    // same transform (it simply lands outside the viewport) and is flagged in
+    // the Pattern Pieces panel and the import toast.
+    const fit = dxfFitBoundsForPieces(parsed.pieces);
+    const bounds = fit.bounds;
+    const outOfScalePieces = new Set(fit.outlierPieces);
     const transform = computeDxfPlacementTransform(bounds, viewportRect, undefined, state.zoom);
     const allNewIds = [];
     let firstId = null;
@@ -31334,14 +31791,20 @@ function onWheel(e) {
         state.templateGroupLabels[groupId] = blockName;
       }
       const pattern = parsed.patterns && parsed.patterns[pieceIndex];
+      const outOfScale = outOfScalePieces.has(pieceIndex);
       // Block-scoped only: instance 0 is the file's direct ENTITIES, whose TEXT
       // is style-level (STYLE NAME, AUTHOR…) and would otherwise stamp every
       // legacy piece of a 3380-style file with the same "piece" annotation.
       const annotation = (instance != null && instance !== 0 && parsed.marks && parsed.marks.labelsByInstance)
         ? parsed.marks.labelsByInstance[instance] : null;
-      if (pattern || annotation) {
+      if (pattern || annotation || outOfScale) {
         if (!state.templateGroupMeta) state.templateGroupMeta = {};
         state.templateGroupMeta[groupId] = {
+          // US-127: this piece is orders of magnitude bigger than the rest of
+          // the file and was left out of the auto-fit, so the TD is told
+          // which row to look at (and can Remove it) instead of hunting for
+          // why the board looks wrong.
+          outOfScale,
           pieceName: annotation ? annotation.pieceName : null,
           size: annotation ? annotation.size : null,
           quantity: annotation ? annotation.quantity : null,
@@ -31399,6 +31862,12 @@ function onWheel(e) {
     const pieceWord = pieceCount === 1 ? 'piece' : 'pieces';
     const lineWord = allNewIds.length === 1 ? 'line' : 'lines';
     const skipParts = [dxfBucketsToast(parsed.buckets, parsed.stats, parsed.marks)];
+    if (fit.outlierPieces.length) {
+      const n = fit.outlierPieces.length;
+      skipParts.push(n === 1
+        ? '1 piece is far out of scale with the rest of the file and sits outside the view — see the Pattern Pieces panel.'
+        : n + ' pieces are far out of scale with the rest of the file and sit outside the view — see the Pattern Pieces panel.');
+    }
     if (parsed.skippedOversizedPieces) {
       skipParts.push(parsed.skippedOversizedPieces + ' oversized piece'
         + (parsed.skippedOversizedPieces === 1 ? '' : 's') + ' (over ' + DXF_PER_PIECE_CAP + ' lines each).');
@@ -31687,6 +32156,18 @@ function onWheel(e) {
         b: dxfInsertTransformPoint(seg.b, ins),
       });
     }
+    // Beziers are affine-covariant: transforming the four control points
+    // reproduces the transformed curve exactly. Without this branch a SPLINE
+    // inside a BLOCK would fall through to the arc path below and read
+    // `seg.center` off a curve.
+    if (seg.kind === 'curve') {
+      return Object.assign({}, seg, {
+        p0: dxfInsertTransformPoint(seg.p0, ins),
+        p1: dxfInsertTransformPoint(seg.p1, ins),
+        p2: dxfInsertTransformPoint(seg.p2, ins),
+        p3: dxfInsertTransformPoint(seg.p3, ins),
+      });
+    }
     const center = dxfInsertTransformPoint(seg.center, ins);
     const radius = seg.radius * Math.abs(ins.sx);
     const start = dxfInsertTransformPoint(dxfPointOnArcSegment(seg, 0), ins);
@@ -31750,6 +32231,22 @@ function onWheel(e) {
     };
   }
 
+  // Same shared reader the board converter uses (src/geometry/dxf-parse.js),
+  // mapped onto the native `{kind:'curve', p0,p1,p2,p3}` shape the
+  // measurement kernel already understands. The two parsers are paired by
+  // index, so they must accept and reject the identical set of splines —
+  // which is why the decision lives in one shared function and only the
+  // output shape differs here.
+  function dxfNativeConvertSplineEntity(rec) {
+    const read = dxfSplineParts(rec);
+    if (!read.ok) return read;
+    if (!read.parts.length) return dxfMalformed('SPLINE has no non-degenerate span');
+    const segments = read.parts.map(part => (part.type === 'line'
+      ? { kind: 'straight', a: part.a, b: part.b }
+      : { kind: 'curve', p0: part.p0, p1: part.p1, p2: part.p2, p3: part.p3 }));
+    return { ok: true, segments, rejectedDegenerateSegments: read.degenerate };
+  }
+
   // Dispatch, then stamp provenance (layer, handle when present, and the
   // entity's own order in the file) onto every segment the entity produced —
   // "original entity order and direction" per the checklist, kept on the
@@ -31763,6 +32260,7 @@ function onWheel(e) {
         case 'CIRCLE': return dxfNativeConvertCircleEntity(rec);
         case 'LWPOLYLINE': return dxfNativeConvertLwpolylineEntity(rec);
         case 'POLYLINE': return dxfNativeConvertPolylineEntity(rec);
+        case 'SPLINE': return dxfNativeConvertSplineEntity(rec);
         // Phase 3 (ADR 0091): same non-geometry bucket as the board parser.
         case 'POINT': case 'TEXT': case 'MTEXT':
           return dxfSkip('nonGeometry', rec.type + ' is a mark/annotation, not drawn geometry');
@@ -35580,6 +36078,48 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     return draft || null;
   }
 
+  // US-127 / ADR 0102: resolving a LIST of ids one getAnnotationById at a
+  // time is O(ids x annotations). A DXF import selects every line it placed,
+  // so on `3708.dxf` (6,224 lines) the render loop's multi-select halo alone
+  // ran 38.7 MILLION id comparisons per frame — the CPU profile of a single
+  // mousedown put ~800 ms inside getAnnotationById, which is what actually
+  // made a freshly imported pattern feel unmovable. One pass over the
+  // annotations, Set membership, and the CALLER's id order is preserved
+  // (drawMultiSelectHalo and the edit helpers both depend on that order
+  // matching the selection list, not on document order).
+  function getAnnotationsByIds(ids) {
+    const list = Array.isArray(ids) ? ids : [];
+    if (!list.length) return [];
+    const wanted = new Set(list);
+    const found = new Map();
+    for (const ann of state.annotations) if (wanted.has(ann.id)) found.set(ann.id, ann);
+    if (found.size < wanted.size) {
+      for (const ann of state.autoMode.draftAnnotations) {
+        if (wanted.has(ann.id) && !found.has(ann.id)) found.set(ann.id, ann);
+      }
+    }
+    const out = [];
+    for (const id of list) { const ann = found.get(id); if (ann) out.push(ann); }
+    return out;
+  }
+
+  // Same single pass, keyed for repeated lookups inside one gesture frame —
+  // a group drag resolves EVERY member id on every mousemove.
+  function annotationMapForIds(ids) {
+    const map = new Map();
+    for (const ann of getAnnotationsByIds(ids)) map.set(ann.id, ann);
+    return map;
+  }
+
+  // The id set the two lookups above search, as one Set — for callers that
+  // only need "does this id still exist", once per id, over a long list.
+  function existingAnnotationIdSet() {
+    const ids = new Set();
+    for (const ann of state.annotations) ids.add(ann.id);
+    for (const ann of state.autoMode.draftAnnotations) ids.add(ann.id);
+    return ids;
+  }
+
   function isAutoDraft(ann) {
     return !!(ann && ann.auto === true && ann.sourceMode === 'auto-mode' && ann.autoRunId);
   }
@@ -35909,6 +36449,26 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       leader.x += dx;
       leader.y += dy;
     }
+  }
+
+  // Moving the CAPTION alone: the box travels, every leader tip stays put.
+  // A leader points at a thing on the garment — a seam, an elastic, a bartack —
+  // so dragging the caption clear of the artwork must not drag the arrow off
+  // the thing it names. Nothing else has to be recomputed: drawNoteLeader
+  // derives its start from the note's CURRENT box every frame
+  // (render/render-notes.js), so the line re-aims itself and only the tips are
+  // stored state.
+  //
+  // Deliberately not the same function as moveNote. That one is for when the
+  // whole annotation travels WITH the garment — the photo drag
+  // (manual/pointer-events.js) and the photo resize (scaleNote below) — where
+  // the tips must come along or the note slides off the feature it describes.
+  // Two callers, two intents; keeping them apart is what stops the photo path
+  // from inheriting a change meant only for the caption path.
+  function moveNoteCaption(note, dx, dy) {
+    if (!note || !dx && !dy) return;
+    note.pos.x += dx;
+    note.pos.y += dy;
   }
 
   // Scale a note about `origin` by `factor` — the photo-resize path (US-091).
@@ -52781,6 +53341,182 @@ function makeExportFileName() {
     };
   }
 
+  // ---- src/render/export-mindmap-notes.js ----
+// Mind Map notes → .xlsx outline.
+//
+// The Mind Map (vendor/mindmap.html, "Atlas") already exports itself as JSON,
+// PNG, SVG and an HTML snapshot. What it has no way to produce is the thing a
+// TD actually loses track of: the NOTES. A note lives on a node, is only
+// visible after selecting that node and opening the properties panel, and a
+// map with sixty notes is therefore sixty hidden documents. This turns the
+// whole map into one flat, readable outline — every node in tree order, each
+// with its own note, tags and link — in the format this product already
+// speaks.
+//
+// It reads the tool's saved document straight out of localStorage. The
+// overlay's iframe uses a relative src and sets no sandbox attribute, so it
+// is same-origin and the key is simply shared; nothing here reaches into the
+// frame, and the Mind Map does not have to be open. This layer only ever
+// READS that key — the tool owns it and autosaves over it every 700 ms, so
+// writing behind its back would be a race.
+//
+// Source part for app.js. Run `npm run build` after editing.
+
+  const MINDMAP_DOC_KEY = 'atlas.mindmap.document.v2';
+  const MINDMAP_NOTES_COLS = [7, 46, 20, 72, 30];
+
+  function readMindMapDocument() {
+    let raw = null;
+    try { raw = localStorage.getItem(MINDMAP_DOC_KEY); } catch (error) { return null; }
+    if (!raw) return null;
+    let doc = null;
+    try { doc = JSON.parse(raw); } catch (error) { return null; }
+    if (!doc || !Array.isArray(doc.nodes) || !doc.nodes.length) return null;
+    return doc;
+  }
+
+  // Depth-first over parentId, in the order the TD sees on the canvas: each
+  // sibling group top-to-bottom, then left-to-right, with the node id as the
+  // last tie-break so the same map always exports the same rows.
+  //
+  // Two defences, because this is user data that has been through a JSON
+  // round-trip: a node whose parentId names a node that is not in the file is
+  // treated as a root rather than silently dropped, and a parent cycle is
+  // stopped by the visited set instead of hanging the export.
+  function mindMapOutlineRows(doc) {
+    const byId = new Map();
+    for (const node of doc.nodes) {
+      if (node && typeof node.id === 'string') byId.set(node.id, node);
+    }
+    const children = new Map();
+    const roots = [];
+    for (const node of byId.values()) {
+      const parent = node.parentId && byId.has(node.parentId) ? node.parentId : null;
+      if (!parent) { roots.push(node); continue; }
+      if (!children.has(parent)) children.set(parent, []);
+      children.get(parent).push(node);
+    }
+    const order = (list) => list.sort((a, b) =>
+      (Number(a.y) || 0) - (Number(b.y) || 0)
+      || (Number(a.x) || 0) - (Number(b.x) || 0)
+      || String(a.id).localeCompare(String(b.id)));
+    order(roots);
+    for (const list of children.values()) order(list);
+    const rows = [];
+    const visited = new Set();
+    const walk = (node, depth) => {
+      if (visited.has(node.id)) return;
+      visited.add(node.id);
+      rows.push({ depth, node });
+      for (const child of (children.get(node.id) || [])) walk(child, depth + 1);
+    };
+    for (const root of roots) walk(root, 1);
+    // A pure cycle has no root to enter from; emit whatever is left so the
+    // outline can never be quietly shorter than the map.
+    for (const node of byId.values()) if (!visited.has(node.id)) walk(node, 1);
+    return rows;
+  }
+
+  // Atlas's own rule, copied exactly (store.isTreeEdge): an edge is part of
+  // the tree when the target's parent IS the source. Everything else is a
+  // connection the TD drew on purpose, and it would be lost if the outline
+  // only walked the tree.
+  function mindMapCrossLinks(doc) {
+    const byId = new Map();
+    for (const node of doc.nodes) {
+      if (node && typeof node.id === 'string') byId.set(node.id, node);
+    }
+    const out = [];
+    for (const edge of (Array.isArray(doc.edges) ? doc.edges : [])) {
+      if (!edge) continue;
+      const source = byId.get(edge.source);
+      const target = byId.get(edge.target);
+      if (!source || !target) continue;
+      if (target.parentId === edge.source) continue;
+      out.push({ source, target });
+    }
+    return out;
+  }
+
+  function mindMapNodeText(node) {
+    return String(node && node.text != null ? node.text : '').replace(/\s+/g, ' ').trim();
+  }
+
+  function buildMindMapNotesSheetXml(doc, rows, crossLinks, now) {
+    const title = String(doc.title || 'Mind Map').trim() || 'Mind Map';
+    const noted = rows.filter(row => String(row.node.note || '').trim()).length;
+    const data = [];
+    let r = 1;
+    const push = (cells, ht) => { data.push({ r, cells, ht }); r += 1; };
+    const cell = (col, style, text) => specInlineStrCell(specColLetter(col) + r, style, text);
+
+    push([cell(0, SPEC_XF.title, title + ' — mind map notes')]);
+    push([cell(0, SPEC_XF.text, 'Exported ' + formatSpecDate(now)
+      + '  ·  ' + rows.length + ' nodes  ·  ' + noted + ' with notes'
+      + (crossLinks.length ? '  ·  ' + crossLinks.length + ' extra connections' : ''))]);
+    push([]);
+    push(['Level', 'Node', 'Tags', 'Note', 'Link'].map((head, i) => cell(i, SPEC_XF.headLabel, head)));
+
+    for (const row of rows) {
+      const node = row.node;
+      const tags = Array.isArray(node.tags) ? node.tags.filter(Boolean).join(', ') : '';
+      const note = String(node.note == null ? '' : node.note).trim();
+      const link = String(node.link == null ? '' : node.link).trim();
+      // Indent carries the shape of the tree into a flat grid; the Level
+      // column keeps the depth sortable/filterable once it is in Excel.
+      const label = '    '.repeat(Math.max(0, row.depth - 1)) + (mindMapNodeText(node) || '(empty node)');
+      push([
+        cell(0, SPEC_XF.textCenter, String(row.depth)),
+        cell(1, SPEC_XF.text, label),
+        cell(2, SPEC_XF.text, tags),
+        cell(3, SPEC_XF.text, note),
+        cell(4, SPEC_XF.text, link),
+      ]);
+    }
+
+    if (crossLinks.length) {
+      push([]);
+      push([cell(0, SPEC_XF.headLabel, ''), cell(1, SPEC_XF.headLabel, 'Extra connections (not parent → child)')]);
+      for (const link of crossLinks) {
+        push([
+          cell(0, SPEC_XF.textCenter, ''),
+          cell(1, SPEC_XF.text, (mindMapNodeText(link.source) || '(empty node)')
+            + '  →  ' + (mindMapNodeText(link.target) || '(empty node)')),
+        ]);
+      }
+    }
+    return buildTechPackSheetXml(data, MINDMAP_NOTES_COLS, false);
+  }
+
+  function makeMindMapNotesFileName(doc, now) {
+    const pad = (v) => String(v).padStart(2, '0');
+    const slug = (String(doc.title || 'mind-map').trim() || 'mind-map')
+      .replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 40) || 'mind-map';
+    return 'mindmap-notes-' + slug + '-'
+      + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '.xlsx';
+  }
+
+  function buildMindMapNotesXlsxBytes(doc, now) {
+    const rows = mindMapOutlineRows(doc);
+    const crossLinks = mindMapCrossLinks(doc);
+    const sheetXml = buildMindMapNotesSheetXml(doc, rows, crossLinks, now);
+    return assembleTechPackZip([{ name: 'MIND MAP NOTES', sheetXml, images: [] }], now);
+  }
+
+  function exportMindMapNotes() {
+    const doc = readMindMapDocument();
+    if (!doc) {
+      showToast('No mind map saved on this browser yet — open Mind Map and add a node first.');
+      return false;
+    }
+    const now = new Date();
+    const bytes = buildMindMapNotesXlsxBytes(doc, now);
+    downloadBlob(new Blob([bytes], { type: SPEC_XLSX_MIME }), makeMindMapNotesFileName(doc, now));
+    const count = mindMapOutlineRows(doc).length;
+    showToast('Exported ' + count + ' mind map node' + (count === 1 ? '' : 's') + ' with their notes.');
+    return true;
+  }
+
   // ---- src/render/hit-testing.js ----
 // Hit-testing helpers: turn world-space coordinates into selected
 // annotations, images, draft annotations, label hits, and image-corner
@@ -52989,6 +53725,7 @@ function makeExportFileName() {
         && pointInLabelBounds(world, ann.label, getLabelText(ann), 8 / state.zoom)) {
         return { id: ann.id, part: 'label' };
       }
+      if (annotationOutsideHitBox(world, ann, tolerance)) continue;
       const score = annotationVisualHitDistance(world, ann);
       if (score <= 0.000001) return { id: ann.id, part: 'body' };
       // Strictly nearer replaces. Exact ties retain the first candidate from
@@ -53212,6 +53949,7 @@ function makeExportFileName() {
 
   function isPointNearAnnotation(point, ann, tolerance) {
     const hitTolerance = Math.max(tolerance, 6 / state.zoom);
+    if (annotationOutsideHitBox(point, ann, hitTolerance)) return false;
     return annotationVisualHitDistance(point, ann) <= hitTolerance;
   }
 
@@ -53240,6 +53978,41 @@ function makeExportFileName() {
   // general POM behavior — it is gated on state.sketchMode (false throughout
   // POM Focus and Auto Mode, US-102), so reviewing/correcting POM lines keeps
   // the plain host-centerline target it always had, treatment or not.
+  // US-127 / ADR 0102: a conservative reject test that costs four comparisons,
+  // so a press on a DXF-imported board does not run the full visual distance
+  // (which samples a polyline, allocates it, and consults the Seam Path /
+  // Line Treatment recipes) once per annotation. Measured on the real corpus
+  // before this existed: a mousedown on `3708.dxf` (6,224 imported lines)
+  // took 189 ms and on `2892XL-new.dxf` (13,894) took 648 ms — the press
+  // itself, before any drag. A TD reads that as "the piece will not move".
+  //
+  // Correctness rule: this may only ever return true (= "cannot be within
+  // tolerance"), never a false reject. So it bails out — and lets the full
+  // test run — for anything whose painted extent it cannot bound cheaply: an
+  // annotation carrying a Line Treatment or Seam Path treatment runs, whose
+  // rails and zigzag motifs sit OUTSIDE the geometry's own box. A cubic
+  // Bézier lies inside the convex hull of its four control points, so their
+  // box bounds it; a multi-anchor curve's interior points and handles are
+  // included for the same reason.
+  function annotationOutsideHitBox(point, ann, tolerance) {
+    if (!ann || !ann.start || !ann.end) return false;
+    if (typeof hasLineTreatment === 'function' && hasLineTreatment(ann)) return false;
+    if (ann.seamPath || ann.treatmentRuns) return false;
+    let minX = Math.min(ann.start.x, ann.end.x), maxX = Math.max(ann.start.x, ann.end.x);
+    let minY = Math.min(ann.start.y, ann.end.y), maxY = Math.max(ann.start.y, ann.end.y);
+    if (ann.type !== 'straight') {
+      const extra = [ann.control1, ann.control2];
+      for (const pt of (ann.points || [])) { extra.push(pt.point, pt.handleIn, pt.handleOut); }
+      for (const c of extra) {
+        if (!c) continue;
+        if (c.x < minX) minX = c.x; else if (c.x > maxX) maxX = c.x;
+        if (c.y < minY) minY = c.y; else if (c.y > maxY) maxY = c.y;
+      }
+    }
+    const pad = tolerance + getLineWidth(ann) / (2 * Math.max(0.0001, state.zoom));
+    return point.x < minX - pad || point.x > maxX + pad || point.y < minY - pad || point.y > maxY + pad;
+  }
+
   function annotationVisualHitDistance(point, ann) {
     const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : BEZIER_SAMPLES * 2);
     const z = Math.max(0.0001, state.zoom);
@@ -55626,7 +56399,7 @@ function requestRender() {
     if (state.appMode !== 'auto') {
       const selAnnIdsForHalo = getSelectedAnnotationIds();
       if (selAnnIdsForHalo.length > 1) {
-        drawMultiSelectHalo(selAnnIdsForHalo.map(id => getAnnotationById(id)).filter(a => a && !isAnnHidden(a.id)));
+        drawMultiSelectHalo(getAnnotationsByIds(selAnnIdsForHalo).filter(a => !isAnnHidden(a.id)));
       }
     }
 

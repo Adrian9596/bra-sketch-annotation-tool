@@ -115,9 +115,19 @@
   function dxfPatternCubicPoint(seg, t) {
     const mt = 1 - t;
     const a = mt * mt * mt, b = 3 * mt * mt * t, c = 3 * mt * t * t, d = t * t * t;
+    // Hot path: sampled per point per segment while classifying, so this
+    // deliberately inlines what dxfCubicC1/dxfCubicC2 (dxf-path-kernel.js)
+    // define rather than calling them — dxf-measurement-check asserts a 50ms
+    // parse budget for 3380.dxf that a per-sample call was measured against.
+    // The two names are the board's `c1/c2` and the native model's `p1/p2`;
+    // a board curve therefore costs exactly one extra `undefined` test here
+    // versus before SPLINE support existed.
+    const c1 = seg.c1 !== undefined ? seg.c1 : seg.p1;
+    const c2 = seg.c2 !== undefined ? seg.c2 : seg.p2;
+    if (c1 === undefined || c2 === undefined) return { x: seg.p0.x, y: seg.p0.y };
     return {
-      x: a * seg.p0.x + b * seg.c1.x + c * seg.c2.x + d * seg.p3.x,
-      y: a * seg.p0.y + b * seg.c1.y + c * seg.c2.y + d * seg.p3.y,
+      x: a * seg.p0.x + b * c1.x + c * c2.x + d * seg.p3.x,
+      y: a * seg.p0.y + b * c1.y + c * c2.y + d * seg.p3.y,
     };
   }
 
@@ -627,6 +637,30 @@
   // small; the debug hook turns it on for suites and corpus audits.
   // `options.keepQualityCurves` (Phase 3) keeps ASTM 84/85/86/87 twins in the
   // pieces; default drops them. Exact duplicates are always dropped.
+  // US-127 / ADR 0102: the connectivity tolerance is a LENGTH, and the length
+  // it must scale with is one pattern piece — "these two endpoints are the
+  // same point" is a claim about a piece, never about how far apart the nest
+  // spread its pieces on the sheet. Deriving it from the whole drawing's
+  // bounding box made it hostage to the single worst coordinate in the file:
+  // one corrupt polyline in the real SN1252-MFB253 export reaches +/-214,588
+  // while every piece in it is ~10 units across, so the tolerance came out at
+  // 59 units — six times a whole piece. Every vertex of every instance then
+  // clustered into one point, no boundary chain could read as closed, all 28
+  // instances fell back to the legacy grouping (which never runs the
+  // duplicate / quality-twin dedupe), and the board got 15,620 lines where 28
+  // outlines belonged.
+  //
+  // Instance-local also contains the damage: a corrupt instance can now only
+  // ruin its own grouping, never its 27 healthy neighbours'. Verified against
+  // the whole demo/DXF file/** corpus — every previously-classified file
+  // keeps its exact pattern count, orphan count and kept-line count (the nest
+  // spread is at most 22x the median piece, so the tolerance only actually
+  // moves where it was already broken).
+  function dxfPatternInstanceTolerance(segments, idxs) {
+    const bounds = dxfBoundsOfSegments(idxs.map(i => segments[i]));
+    return DXF_PATTERN_CONNECT_TOL_RATIO * (Math.hypot(bounds.width, bounds.height) || 1);
+  }
+
   function dxfClassifyPatterns(segments, options) {
     const wantDiag = !!(options && options.diagnostics);
     const stats = {
@@ -665,8 +699,6 @@
     const excluded = new Set(Array.isArray(options && options.excludeInstances) ? options.excludeInstances : []);
     stats.excludedInstances = 0;
     if (!segments || !segments.length) return { pieces: [], patterns: [], stats };
-    const allBounds = dxfBoundsOfSegments(segments);
-    const tol = DXF_PATTERN_CONNECT_TOL_RATIO * (Math.hypot(allBounds.width, allBounds.height) || 1);
 
     const byInstance = new Map();
     for (let i = 0; i < segments.length; i += 1) {
@@ -688,6 +720,7 @@
       if (onProgress) onProgress(progressDone, instanceKeys.length);
       if (excluded.has(instance)) { stats.excludedInstances += 1; continue; }
       const idxs = byInstance.get(instance);
+      const tol = dxfPatternInstanceTolerance(segments, idxs);
       const result = dxfClassifyInstance(segments, idxs, tol, instance, options);
       if (wantDiag) stats.instances.push(Object.assign({ legacy: result.legacy }, result.diag));
       if (result.legacy) {

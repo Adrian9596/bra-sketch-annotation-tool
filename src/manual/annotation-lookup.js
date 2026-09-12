@@ -190,6 +190,48 @@
     return draft || null;
   }
 
+  // US-127 / ADR 0102: resolving a LIST of ids one getAnnotationById at a
+  // time is O(ids x annotations). A DXF import selects every line it placed,
+  // so on `3708.dxf` (6,224 lines) the render loop's multi-select halo alone
+  // ran 38.7 MILLION id comparisons per frame — the CPU profile of a single
+  // mousedown put ~800 ms inside getAnnotationById, which is what actually
+  // made a freshly imported pattern feel unmovable. One pass over the
+  // annotations, Set membership, and the CALLER's id order is preserved
+  // (drawMultiSelectHalo and the edit helpers both depend on that order
+  // matching the selection list, not on document order).
+  function getAnnotationsByIds(ids) {
+    const list = Array.isArray(ids) ? ids : [];
+    if (!list.length) return [];
+    const wanted = new Set(list);
+    const found = new Map();
+    for (const ann of state.annotations) if (wanted.has(ann.id)) found.set(ann.id, ann);
+    if (found.size < wanted.size) {
+      for (const ann of state.autoMode.draftAnnotations) {
+        if (wanted.has(ann.id) && !found.has(ann.id)) found.set(ann.id, ann);
+      }
+    }
+    const out = [];
+    for (const id of list) { const ann = found.get(id); if (ann) out.push(ann); }
+    return out;
+  }
+
+  // Same single pass, keyed for repeated lookups inside one gesture frame —
+  // a group drag resolves EVERY member id on every mousemove.
+  function annotationMapForIds(ids) {
+    const map = new Map();
+    for (const ann of getAnnotationsByIds(ids)) map.set(ann.id, ann);
+    return map;
+  }
+
+  // The id set the two lookups above search, as one Set — for callers that
+  // only need "does this id still exist", once per id, over a long list.
+  function existingAnnotationIdSet() {
+    const ids = new Set();
+    for (const ann of state.annotations) ids.add(ann.id);
+    for (const ann of state.autoMode.draftAnnotations) ids.add(ann.id);
+    return ids;
+  }
+
   function isAutoDraft(ann) {
     return !!(ann && ann.auto === true && ann.sourceMode === 'auto-mode' && ann.autoRunId);
   }

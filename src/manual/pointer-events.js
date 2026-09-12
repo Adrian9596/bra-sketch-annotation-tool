@@ -485,8 +485,12 @@
       const aligned = computeSmartAlignment(
         interaction.startAnnotations, ids, rawDx, rawDy, !!e.altKey
       );
+      // US-127: one indexed pass per move, not one linear .find() per member
+      // — a DXF import selects every line it placed, so this ran
+      // 6,224 x 6,224 id comparisons on every mousemove of a 3708.dxf drag.
+      const liveById = annotationMapForIds((interaction.startAnnotations || []).map(src => src.id));
       for (const source of interaction.startAnnotations || []) {
-        const a = getAnnotationById(source.id);
+        const a = liveById.get(source.id);
         if (!a) continue;
         restoreAnnotationMoveGeometry(a, source);
         moveAnnotation(a, aligned.dx, aligned.dy);
@@ -538,8 +542,11 @@
       const dx = world.x - interaction.prevWorld.x;
       const dy = world.y - interaction.prevWorld.y;
       if (dx || dy) {
-        // moveNote carries the leaders too, so the whole callout travels as one.
-        moveNote(note, dx, dy);
+        // Caption only: the leader tips stay on whatever they point at, and
+        // the lines re-aim from the box's new edge (moveNoteCaption,
+        // manual/note-model.js). The PHOTO drag further down still uses
+        // moveNote, where the whole callout has to travel with the garment.
+        moveNoteCaption(note, dx, dy);
         interaction.changed = true;
         interaction.prevWorld = world;
         requestRender();
@@ -625,10 +632,8 @@
           if (image) { image.x += dx; image.y += dy; }
         }
         if (interaction.groupedAnnotationIds) {
-          for (const annId of interaction.groupedAnnotationIds) {
-            const ann = getAnnotationById(annId);
-            if (ann) moveAnnotation(ann, dx, dy);
-          }
+          // US-127: indexed, for the same reason as the annotation drag above.
+          for (const ann of getAnnotationsByIds(interaction.groupedAnnotationIds)) moveAnnotation(ann, dx, dy);
         }
         if (interaction.groupedNoteIds) {
           for (const noteId of interaction.groupedNoteIds) {
@@ -866,7 +871,7 @@ function startAnnotationDrag(id, world) {
   const groupIds = (selected.length > 1 && selected.includes(id)) ? selected.slice() : [id];
   beginTrackedInteraction('drag-annotation', {
     id, prevWorld: world, groupIds,
-    startAnnotations: groupIds.map(aid => getAnnotationById(aid)).filter(Boolean).map(clone),
+    startAnnotations: getAnnotationsByIds(groupIds).map(clone),
     startWorld: { x: world.x, y: world.y }, armed: false,
   });
 }

@@ -303,6 +303,26 @@
     }
   }
 
+  // Moving the CAPTION alone: the box travels, every leader tip stays put.
+  // A leader points at a thing on the garment — a seam, an elastic, a bartack —
+  // so dragging the caption clear of the artwork must not drag the arrow off
+  // the thing it names. Nothing else has to be recomputed: drawNoteLeader
+  // derives its start from the note's CURRENT box every frame
+  // (render/render-notes.js), so the line re-aims itself and only the tips are
+  // stored state.
+  //
+  // Deliberately not the same function as moveNote. That one is for when the
+  // whole annotation travels WITH the garment — the photo drag
+  // (manual/pointer-events.js) and the photo resize (scaleNote below) — where
+  // the tips must come along or the note slides off the feature it describes.
+  // Two callers, two intents; keeping them apart is what stops the photo path
+  // from inheriting a change meant only for the caption path.
+  function moveNoteCaption(note, dx, dy) {
+    if (!note || !dx && !dy) return;
+    note.pos.x += dx;
+    note.pos.y += dy;
+  }
+
   // Scale a note about `origin` by `factor` — the photo-resize path (US-091).
   // Position, leader targets, type size and wrap width all scale together, so
   // the note keeps its size and place relative to the garment it annotates.

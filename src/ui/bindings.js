@@ -120,6 +120,7 @@
     el.exportPdfBtn.addEventListener('click', exportPdf);
     el.copyImageBtn.addEventListener('click', copyBoardImageToClipboard);
     el.exportExcelBtn.addEventListener('click', exportSpecXlsx);
+    el.exportMindMapNotesBtn.addEventListener('click', exportMindMapNotes);
     el.addImageBtn.addEventListener('click', () => el.imageFileInput.click());
     el.imageFileInput.addEventListener('change', onImageFileChosen);
     el.boardEmptyAdd.addEventListener('click', () => el.imageFileInput.click());

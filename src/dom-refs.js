@@ -123,6 +123,7 @@
     gradingBtn: document.getElementById('gradingBtn'),
     exportPdfBtn: document.getElementById('exportPdfBtn'),
     exportExcelBtn: document.getElementById('exportExcelBtn'),
+    exportMindMapNotesBtn: document.getElementById('exportMindMapNotesBtn'),
     copyImageBtn: document.getElementById('copyImageBtn'),
     importPptxBtn: document.getElementById('importPptxBtn'),
     pptxFileInput: document.getElementById('pptxFileInput'),

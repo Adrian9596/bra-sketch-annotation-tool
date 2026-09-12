@@ -120,11 +120,14 @@ function setSelection(kind, id) {
       return (getAnnotationById(state.selection.id) && !isAnnHidden(state.selection.id))
         ? [state.selection.id] : [];
     }
-    return raw.filter((id) => !!getAnnotationById(id) && !isAnnHidden(id));
+    // US-127: one Set pass, not one linear .find() per selected id — this
+    // runs on every frame through the render loop's multi-select halo.
+    const live = existingAnnotationIdSet();
+    return raw.filter((id) => live.has(id) && !isAnnHidden(id));
   }
 
   function getSelectedAnnotations() {
-    return getSelectedAnnotationIds().map((id) => getAnnotationById(id)).filter(Boolean);
+    return getAnnotationsByIds(getSelectedAnnotationIds());
   }
 
   function isAnnInSelection(id) {

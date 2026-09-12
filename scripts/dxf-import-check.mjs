@@ -387,11 +387,16 @@ window.__DXF = (() => {
   // Mixed file: four distinct, correctly-attributed skip buckets, never one
   // undifferentiated count.
   // (ADR 0091 Phase 3: TEXT/POINT are standard non-geometry with their own
-  // `nonGeometry` bucket now, so the genuinely-unsupported sample here is a
-  // SPLINE — the one entity type the corpus really does carry unsupported.)
+  // `nonGeometry` bucket now. The unsupported-TYPE sample used to be a
+  // SPLINE — it no longer can be, because SPLINE is a supported type as of
+  // the clamped non-rational cubic support in src/geometry/dxf-parse.js.
+  // ELLIPSE takes its place: a real DXF entity type, carried by no corpus
+  // file, with no converter. A SPLINE that this parser cannot handle is a
+  // different bucket on purpose — `unsupportedFit`, with the refused form
+  // named — and that distinction is asserted separately below.)
   const mixed = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([
     dxfLine(0, 0, 10, 0),
-    [P(0, 'SPLINE'), P(8, '0')],
+    [P(0, 'ELLIPSE'), P(8, '0')],
     dxfLine(0, 0, 'x', 0),
     dxfPolyline(2, [[0, 0], [10, 0]]),
     dxfLine(0, 0, 20, 0, { thickness: 2 }),
@@ -400,6 +405,32 @@ window.__DXF = (() => {
     && mixed.buckets.unsupportedType === 1 && mixed.buckets.malformed === 1
     && mixed.buckets.unsupportedFit === 1 && mixed.buckets.nonPlanar === 1,
     `a mixed file must report all four skip buckets distinctly while still placing the one valid entity, got ${JSON.stringify(mixed)}`);
+
+  // SPLINE (clamped, non-rational, cubic) is real geometry now, and a
+  // SPLINE this parser will not take must say WHICH form it refused rather
+  // than disappearing into the unsupported-type count.
+  const splineOk = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([[
+    P(0, 'SPLINE'), P(8, '1'), P(210, 0), P(220, 0), P(230, 1),
+    P(70, 8), P(71, 3), P(72, 8), P(73, 4), P(74, 0),
+    P(40, 0), P(40, 0), P(40, 0), P(40, 0), P(40, 1), P(40, 1), P(40, 1), P(40, 1),
+    P(10, 0), P(20, 0), P(30, 0), P(10, 10), P(20, 30), P(30, 0),
+    P(10, 30), P(20, 30), P(30, 0), P(10, 40), P(20, 0), P(30, 0),
+  ]]))})`);
+  const splineSegs = splineOk.ok ? splineOk.pieces.flat() : [];
+  check(splineOk.ok === true && splineSegs.length === 1 && splineSegs[0].kind === 'curve'
+    && splineSegs[0].p0.x === 0 && splineSegs[0].p3.x === 40
+    && splineOk.buckets.unsupportedType === 0 && splineOk.buckets.unsupportedFit === 0,
+    `a clamped cubic SPLINE must convert to one exact cubic Bezier, got ${JSON.stringify(splineOk)}`);
+
+  const splineRational = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([[
+    P(0, 'SPLINE'), P(8, '1'), P(210, 0), P(220, 0), P(230, 1),
+    P(70, 12), P(71, 3), P(72, 8), P(73, 4), P(74, 0),
+    P(40, 0), P(40, 0), P(40, 0), P(40, 0), P(40, 1), P(40, 1), P(40, 1), P(40, 1),
+    P(10, 0), P(20, 0), P(30, 0), P(10, 10), P(20, 30), P(30, 0),
+    P(10, 30), P(20, 30), P(30, 0), P(10, 40), P(20, 0), P(30, 0),
+  ]]))})`);
+  check(splineRational.buckets.unsupportedFit === 1 && splineRational.buckets.unsupportedType === 0,
+    `a rational SPLINE must land in unsupportedFit, not unsupportedType, got ${JSON.stringify(splineRational.buckets)}`);
 
   // BOM / CRLF / trailing-newline normalization — the exact bug an
   // .md-only or naive parser reads as "corrupt" on an ordinary file.
@@ -981,8 +1012,12 @@ window.__DXF = (() => {
   if (realFile.skipped) {
     console.log('SKIP  dxf-import-check   demo/DXF file/3380.dxf not present (public mirror) — section 9 skipped');
   } else {
-    check(realFile.annotationCount === 1252 && realFile.groupCount === 6,
-      `the real production file must import as 6 pieces / 1252 lines end to end, got ${JSON.stringify(realFile)}`);
+    // US-127 / ADR 0102: 1252 -> 1240. The 12 lines that left are the file's
+    // zero-length polyline hops, which the board parser used to keep (and
+    // draw as round dots) while the native measurement parser had always
+    // rejected them — the two parses now hold the same geometry.
+    check(realFile.annotationCount === 1240 && realFile.groupCount === 6,
+      `the real production file must import as 6 pieces / 1240 lines end to end, got ${JSON.stringify(realFile)}`);
   }
 
   // ===========================================================================
@@ -2164,7 +2199,8 @@ window.__DXF = (() => {
           orphans: r.stats ? r.stats.orphans : null, legacy: r.stats ? r.stats.legacyPieces : null, encoding: decoded.encoding,
           lines: r.ok ? r.pieces.reduce((s, p) => s + p.length, 0) : null,
           droppedExact: r.stats && r.stats.dropped ? r.stats.dropped.exact : null,
-          droppedQv: r.stats && r.stats.dropped ? r.stats.dropped.qvTwin : null });
+          droppedQv: r.stats && r.stats.dropped ? r.stats.dropped.qvTwin : null,
+          degenerate: r.buckets ? r.buckets.degenerate : null });
       }
       return out;
     })()`);
@@ -2181,6 +2217,10 @@ window.__DXF = (() => {
       if (Number.isInteger(row.lines)) check(got.lines === row.lines, `${row.path}: expected ${row.lines} kept lines, got ${JSON.stringify(got)}`);
       if (Number.isInteger(row.droppedExact)) check(got.droppedExact === row.droppedExact, `${row.path}: expected ${row.droppedExact} exact duplicates dropped, got ${JSON.stringify(got)}`);
       if (Number.isInteger(row.droppedQv)) check(got.droppedQv === row.droppedQv, `${row.path}: expected ${row.droppedQv} quality-curve twins dropped, got ${JSON.stringify(got)}`);
+      // US-127 / ADR 0102: zero-length geometry the board parser used to keep
+      // and draw as a round dot. Pinned so a future change cannot quietly
+      // start (or stop) shipping unmeasurable dots to the board again.
+      if (Number.isInteger(row.degenerate)) check(got.degenerate === row.degenerate, `${row.path}: expected ${row.degenerate} zero-length segments dropped, got ${JSON.stringify(got)}`);
     }
   }
 

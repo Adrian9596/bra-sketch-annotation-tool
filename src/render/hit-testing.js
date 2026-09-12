@@ -205,6 +205,7 @@
         && pointInLabelBounds(world, ann.label, getLabelText(ann), 8 / state.zoom)) {
         return { id: ann.id, part: 'label' };
       }
+      if (annotationOutsideHitBox(world, ann, tolerance)) continue;
       const score = annotationVisualHitDistance(world, ann);
       if (score <= 0.000001) return { id: ann.id, part: 'body' };
       // Strictly nearer replaces. Exact ties retain the first candidate from
@@ -428,6 +429,7 @@
 
   function isPointNearAnnotation(point, ann, tolerance) {
     const hitTolerance = Math.max(tolerance, 6 / state.zoom);
+    if (annotationOutsideHitBox(point, ann, hitTolerance)) return false;
     return annotationVisualHitDistance(point, ann) <= hitTolerance;
   }
 
@@ -456,6 +458,41 @@
   // general POM behavior — it is gated on state.sketchMode (false throughout
   // POM Focus and Auto Mode, US-102), so reviewing/correcting POM lines keeps
   // the plain host-centerline target it always had, treatment or not.
+  // US-127 / ADR 0102: a conservative reject test that costs four comparisons,
+  // so a press on a DXF-imported board does not run the full visual distance
+  // (which samples a polyline, allocates it, and consults the Seam Path /
+  // Line Treatment recipes) once per annotation. Measured on the real corpus
+  // before this existed: a mousedown on `3708.dxf` (6,224 imported lines)
+  // took 189 ms and on `2892XL-new.dxf` (13,894) took 648 ms — the press
+  // itself, before any drag. A TD reads that as "the piece will not move".
+  //
+  // Correctness rule: this may only ever return true (= "cannot be within
+  // tolerance"), never a false reject. So it bails out — and lets the full
+  // test run — for anything whose painted extent it cannot bound cheaply: an
+  // annotation carrying a Line Treatment or Seam Path treatment runs, whose
+  // rails and zigzag motifs sit OUTSIDE the geometry's own box. A cubic
+  // Bézier lies inside the convex hull of its four control points, so their
+  // box bounds it; a multi-anchor curve's interior points and handles are
+  // included for the same reason.
+  function annotationOutsideHitBox(point, ann, tolerance) {
+    if (!ann || !ann.start || !ann.end) return false;
+    if (typeof hasLineTreatment === 'function' && hasLineTreatment(ann)) return false;
+    if (ann.seamPath || ann.treatmentRuns) return false;
+    let minX = Math.min(ann.start.x, ann.end.x), maxX = Math.max(ann.start.x, ann.end.x);
+    let minY = Math.min(ann.start.y, ann.end.y), maxY = Math.max(ann.start.y, ann.end.y);
+    if (ann.type !== 'straight') {
+      const extra = [ann.control1, ann.control2];
+      for (const pt of (ann.points || [])) { extra.push(pt.point, pt.handleIn, pt.handleOut); }
+      for (const c of extra) {
+        if (!c) continue;
+        if (c.x < minX) minX = c.x; else if (c.x > maxX) maxX = c.x;
+        if (c.y < minY) minY = c.y; else if (c.y > maxY) maxY = c.y;
+      }
+    }
+    const pad = tolerance + getLineWidth(ann) / (2 * Math.max(0.0001, state.zoom));
+    return point.x < minX - pad || point.x > maxX + pad || point.y < minY - pad || point.y > maxY + pad;
+  }
+
   function annotationVisualHitDistance(point, ann) {
     const points = getAnnotationPolyline(ann, ann.type === 'straight' ? 1 : BEZIER_SAMPLES * 2);
     const z = Math.max(0.0001, state.zoom);

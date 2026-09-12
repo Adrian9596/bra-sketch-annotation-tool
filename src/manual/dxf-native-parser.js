@@ -242,6 +242,18 @@
         b: dxfInsertTransformPoint(seg.b, ins),
       });
     }
+    // Beziers are affine-covariant: transforming the four control points
+    // reproduces the transformed curve exactly. Without this branch a SPLINE
+    // inside a BLOCK would fall through to the arc path below and read
+    // `seg.center` off a curve.
+    if (seg.kind === 'curve') {
+      return Object.assign({}, seg, {
+        p0: dxfInsertTransformPoint(seg.p0, ins),
+        p1: dxfInsertTransformPoint(seg.p1, ins),
+        p2: dxfInsertTransformPoint(seg.p2, ins),
+        p3: dxfInsertTransformPoint(seg.p3, ins),
+      });
+    }
     const center = dxfInsertTransformPoint(seg.center, ins);
     const radius = seg.radius * Math.abs(ins.sx);
     const start = dxfInsertTransformPoint(dxfPointOnArcSegment(seg, 0), ins);
@@ -305,6 +317,22 @@
     };
   }
 
+  // Same shared reader the board converter uses (src/geometry/dxf-parse.js),
+  // mapped onto the native `{kind:'curve', p0,p1,p2,p3}` shape the
+  // measurement kernel already understands. The two parsers are paired by
+  // index, so they must accept and reject the identical set of splines —
+  // which is why the decision lives in one shared function and only the
+  // output shape differs here.
+  function dxfNativeConvertSplineEntity(rec) {
+    const read = dxfSplineParts(rec);
+    if (!read.ok) return read;
+    if (!read.parts.length) return dxfMalformed('SPLINE has no non-degenerate span');
+    const segments = read.parts.map(part => (part.type === 'line'
+      ? { kind: 'straight', a: part.a, b: part.b }
+      : { kind: 'curve', p0: part.p0, p1: part.p1, p2: part.p2, p3: part.p3 }));
+    return { ok: true, segments, rejectedDegenerateSegments: read.degenerate };
+  }
+
   // Dispatch, then stamp provenance (layer, handle when present, and the
   // entity's own order in the file) onto every segment the entity produced —
   // "original entity order and direction" per the checklist, kept on the
@@ -318,6 +346,7 @@
         case 'CIRCLE': return dxfNativeConvertCircleEntity(rec);
         case 'LWPOLYLINE': return dxfNativeConvertLwpolylineEntity(rec);
         case 'POLYLINE': return dxfNativeConvertPolylineEntity(rec);
+        case 'SPLINE': return dxfNativeConvertSplineEntity(rec);
         // Phase 3 (ADR 0091): same non-geometry bucket as the board parser.
         case 'POINT': case 'TEXT': case 'MTEXT':
           return dxfSkip('nonGeometry', rec.type + ' is a mark/annotation, not drawn geometry');
