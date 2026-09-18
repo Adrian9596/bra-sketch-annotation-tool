@@ -23,19 +23,23 @@
     return !!state.noteEditor;
   }
 
-  // A brand-new note is sized so it appears at the default size on SCREEN,
-  // whatever the board zoom happens to be — then it is world geometry like ink
-  // and scales with the sketch from that moment on (scaleNoteAbout, US-091).
-  // Without the compensation a note placed on a zoomed-out board is written at
-  // a few screen pixels and reads as broken; the clamps in note-model.js keep
-  // the extremes sane.
+  // A brand-new note is born at exactly the TD's sticky size preference — no
+  // zoom conversion. (Change request 2026-09-18: dividing by the zoom AT
+  // CREATION used to make the same chip value carry a different note-to-note
+  // world fontSize whenever the TD zoomed between notes, and could silently
+  // clamp to NOTE_MIN_FONT_SIZE for a modest chip value at an ordinary
+  // zoomed-in level — read as "the size keeps jumping down". The chip is now
+  // one number in one unit throughout: what the TD types is what every new
+  // note gets, until they type something else.) It is still world geometry
+  // like ink from that moment on and scales with the sketch (scaleNoteAbout,
+  // US-091); the clamps in note-model.js keep the extremes sane.
   function newNoteWorldFontSize() {
     // state.noteFontSize is the TD's own sticky preference (the size chip,
     // Manual Mode change request 2026-08-20) — falls back to
     // NOTE_DEFAULT_FONT_SIZE only if it is somehow unset, exactly like
     // normalizeNoteFontSize's own NaN fallback.
     const target = Number(state.noteFontSize) || NOTE_DEFAULT_FONT_SIZE;
-    return normalizeNoteFontSize(target / Math.max(state.zoom, 0.0001));
+    return normalizeNoteFontSize(target);
   }
 
   function newNoteWorldBoxWidth() {

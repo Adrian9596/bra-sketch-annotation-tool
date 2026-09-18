@@ -641,12 +641,14 @@ async function main() {
   check(create.editorAfter === null, 'the editor stayed open after a commit');
   check(Math.abs(create.editorOffset.x) < 2 && Math.abs(create.editorOffset.y) < 2,
     `the committed note did not land where the editor was: offset (${create.editorOffset.x.toFixed(1)}, ${create.editorOffset.y.toFixed(1)}) px on screen`);
-  // A note is world geometry, so at zoom 2 a fixed 16 world-px default would be
-  // written at 32 screen px; at zoom 0.3, at 5. The creation path compensates so
-  // a new note is always born legible, and only THEN scales with the sketch.
-  check(Math.abs(create.screenFont - 16) < 0.6,
-    `a new note was not born at the default SCREEN size: ${create.screenFont.toFixed(1)}px on screen (fontSize ${create.note.fontSize.toFixed(2)} at zoom ${create.zoom.toFixed(2)})`);
-  console.log(`notes-check: a Text-tool click created a transparent black/red note at the click point, born at ${create.screenFont.toFixed(1)} screen px (zoom ${create.zoom.toFixed(2)})`);
+  // A note is world geometry, so its on-screen size is fontSize * zoom like any
+  // other board geometry. The creation path (change request 2026-09-18) no
+  // longer compensates for zoom: a fresh note is born at exactly the sticky
+  // WORLD default (NOTE_DEFAULT_FONT_SIZE, 16, until the TD's own chip value
+  // overrides it), the same number every time regardless of zoom.
+  check(Math.abs(create.note.fontSize - 16) < 0.05,
+    `a new note was not born at the default WORLD size: fontSize ${create.note.fontSize.toFixed(2)} (expected 16, zoom ${create.zoom.toFixed(2)})`);
+  console.log(`notes-check: a Text-tool click created a transparent black/red note at the click point, born at ${create.note.fontSize.toFixed(1)} world px (${create.screenFont.toFixed(1)} screen px at zoom ${create.zoom.toFixed(2)})`);
 
   // ---- 7c. An empty commit creates nothing -------------------------------
   const empty = await s.eval(`(async () => {
@@ -1776,7 +1778,8 @@ async function main() {
   //     for a dedicated chip, mirroring #lineWidthChip but never sharing it —
   //     "how thick" and "how big the text is" are different questions with
   //     different units (line width is a stroke weight; a note's stored
-  //     fontSize is world px derived from a SCREEN-constant size at creation,
+  //     fontSize is world px, exactly the chip's own sticky default with no
+  //     zoom conversion since the 2026-09-18 change request,
   //     src/ui/note-editor.js's newNoteWorldFontSize).
   // ========================================================================
 
@@ -1864,12 +1867,11 @@ async function main() {
   // ---- 10c. With nothing selected, the chip sets the STICKY default a NEW
   //           note is born at — mirrors #lineWidthInput's own "next line"
   //           default (setLineWidth always writes state.lineWidth). A new
-  //           note's STORED fontSize is world px compensated for the CURRENT
-  //           zoom (newNoteWorldFontSize, so it reads as a constant size on
-  //           SCREEN whatever the zoom) — the chip's "33" is that screen
-  //           target, so the field the note actually carries is 33 / zoom,
-  //           not 33 itself. Asserting a literal 33 here would be exactly the
-  //           "pos + boxWidth" mistake section 8 warns against, one unit over.
+  //           note's STORED fontSize is exactly the chip value, no zoom
+  //           conversion (change request 2026-09-18, newNoteWorldFontSize) —
+  //           every new note carries the same world fontSize regardless of
+  //           the zoom level it was placed at, so the TD's "8" always means
+  //           the same real size, note to note.
   const sticky10c = await s.eval(`(async () => {
     const { d, settle, down, up, typeInto, commitEditor } = window.__NC;
     document.getElementById('toolSelect').click(); await settle();
@@ -1888,12 +1890,11 @@ async function main() {
     return { newNote: notes[notes.length - 1], noteCount: notes.length, savedNoteFontSize, zoom };
   })()`);
   check(sticky10c.noteCount === 2, `the second note was not created: ${sticky10c.noteCount} notes on the board`);
-  const expectedWorldFontSize10c = 33 / sticky10c.zoom;
-  check(Math.abs(sticky10c.newNote.fontSize - expectedWorldFontSize10c) < 0.05,
-    `a new note was not born at the chip's sticky default converted for zoom: expected ~${expectedWorldFontSize10c.toFixed(3)} world px (33 screen px / ${sticky10c.zoom.toFixed(3)} zoom), got ${sticky10c.newNote.fontSize}`);
+  check(sticky10c.newNote.fontSize === 33,
+    `a new note was not born at the chip's sticky default: expected 33, got ${sticky10c.newNote.fontSize} (zoom ${sticky10c.zoom.toFixed(3)})`);
   check(sticky10c.savedNoteFontSize === 33,
-    `the sticky SCREEN-px default did not round-trip into the project snapshot: ${sticky10c.savedNoteFontSize}`);
-  console.log(`notes-check: with nothing selected, the chip sets the SCREEN-px default the NEXT note is born at (33 -> ${sticky10c.newNote.fontSize.toFixed(2)} world px at zoom ${sticky10c.zoom.toFixed(2)}), and the screen-px preference saves with the project`);
+    `the sticky default did not round-trip into the project snapshot: ${sticky10c.savedNoteFontSize}`);
+  console.log(`notes-check: with nothing selected, the chip sets the sticky default every NEXT note is born at (33 -> ${sticky10c.newNote.fontSize}, unaffected by zoom ${sticky10c.zoom.toFixed(2)})`);
 
   // ========================================================================
   // 11. US-100 — Text-only/Box appearance, independent colours and a real
