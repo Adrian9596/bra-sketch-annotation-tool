@@ -356,6 +356,13 @@ async function main() {
       documentWidth:document.documentElement.scrollWidth,
       pageOverflow:document.documentElement.scrollWidth > document.documentElement.clientWidth,
       groupsOverflow:groups.scrollWidth > groups.clientWidth,
+      groupsHiddenPx:Math.max(0, groups.scrollWidth - groups.clientWidth),
+      // A classic (always-painted) scrollbar reserves layout height; the
+      // native overlay one reserves nothing and stays invisible until
+      // something scrolls. This is the only introspectable difference —
+      // ::-webkit-scrollbar pseudo-element styles cannot be read back with
+      // getComputedStyle, so the gutter IS the test.
+      groupsScrollbarGutter:groups.offsetHeight - groups.clientHeight,
       menuTrayRight:Math.round(document.querySelector('.board-menu-tray').getBoundingClientRect().right),
       viewport:document.documentElement.clientWidth,
       addPoint:!document.getElementById('toolAddPoint').hidden,
@@ -397,6 +404,24 @@ async function main() {
       if (width < 1024) {
         check(layout.groupsOverflow,
           `${width}px ${label} should keep the full Board toolbar available through contained horizontal scrolling: ${JSON.stringify(layout)}`);
+        // Regression guard added 2026-09-13. The assertion above deliberately
+        // ACCEPTS the strip overflowing, because scrolling is how the narrow
+        // layout stays usable — but for years nothing checked that the TD can
+        // SEE there is more to scroll to. Measured at 768px in this exact
+        // authoring state: 649px of toolbar sat off-screen (Tools, Stitches,
+        // Line, Arrow, Colour) behind a scrollbar Chrome never painted until
+        // something scrolled, so those tools read as deleted rather than
+        // hidden. The fix is CSS (::-webkit-scrollbar on .board-toolbar-groups
+        // in index.html), and it is undone by any rule that also sets the
+        // standard scrollbar-width/scrollbar-color on the same element —
+        // Blink then honours the standard properties and drops the
+        // pseudo-element, silently restoring the invisible overlay. A
+        // reserved gutter is the observable proof that did not happen.
+        check(layout.groupsScrollbarGutter >= 8,
+          `${width}px ${label} scrolls ${layout.groupsHiddenPx}px of toolbar out of view behind a scrollbar that reserves `
+          + `only ${layout.groupsScrollbarGutter}px — i.e. the native invisible overlay is back and the hidden tools have no `
+          + `visible affordance. Check that .board-toolbar-groups still has its ::-webkit-scrollbar rule and that no rule `
+          + `sets scrollbar-width/scrollbar-color on it outside the @supports fence: ${JSON.stringify(layout)}`);
       }
     }
     // The two-row budget is a claim about the AUTHORING row — TESTING.md's own

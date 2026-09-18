@@ -20280,37 +20280,6 @@ const BOM_MATERIAL_LIBRARY = [
     }).join('');
   }
 
-  // Bug found 2026-09 by real-browser testing: the BOM and Construction
-  // sheets (.bm-combined-view / .cc-combined-view) are wider than common
-  // laptop viewports and scroll horizontally — that part was always true —
-  // but their ::-webkit-scrollbar styling (index.html) never actually PAINTS
-  // on the very first layout after the container goes from `.page-hidden`
-  // (display:none) to visible: reading layout (getBoundingClientRect,
-  // offsetHeight) does not trigger it, only an actual scroll-position change
-  // does, confirmed empirically. Left alone, a TD landing on either page for
-  // the first time saw a hard right edge with no scrollbar and no hint that
-  // the Bill of Materials table (or the Construction board) continues past
-  // it. One real frame at a 1px offset and back — invisible to the TD, since
-  // it happens between two rAF callbacks before they perceive the page —
-  // is what gets Chrome to paint the thumb; matches the rest of this app's
-  // own double-rAF settle pattern (see the various `settle()` helpers used
-  // by the test suites) rather than inventing a new timing idiom for it.
-  function wakeOverflowScrollbar(container) {
-    if (!container) return;
-    const overflows = container.scrollWidth > container.clientWidth
-      || container.scrollHeight > container.clientHeight;
-    if (!overflows) return;
-    const x = container.scrollLeft, y = container.scrollTop;
-    requestAnimationFrame(() => {
-      container.scrollLeft = x + 1;
-      container.scrollTop = y + 1;
-      requestAnimationFrame(() => {
-        container.scrollLeft = x;
-        container.scrollTop = y;
-      });
-    });
-  }
-
   function setActivePage(id) {
     if (!TECH_PACK_PAGES.some(function (p) { return p.id === id; })) return;
     state.activePage = id;
@@ -20329,12 +20298,10 @@ const BOM_MATERIAL_LIBRARY = [
     if (id === 'construction') {
       ensureConstruction();
       renderConstruction();
-      wakeOverflowScrollbar(document.querySelector('.cc-combined-view'));
     }
     if (id === 'bom') {
       ensureBom();
       renderBom();
-      wakeOverflowScrollbar(document.querySelector('.bm-combined-view'));
     }
     if (id === 'preview') {
       ensurePreviewPage();
@@ -20343,8 +20310,27 @@ const BOM_MATERIAL_LIBRARY = [
     updateUI();
   }
 
+  // View-only, session-local chrome preference. Canvas ResizeObserver handles
+  // the larger viewport without fitting or changing the project geometry.
+  function toggleTopPanel() {
+    const app = document.querySelector('.app');
+    const button = document.getElementById('toggleTopPanelBtn');
+    const hiding = !app.classList.contains('top-panel-hidden');
+    if (hiding) {
+      closeBoardToolbarMenus();
+      closeLineStyleMenu();
+      const focused = document.activeElement;
+      if (focused && (document.getElementById('topPanel').contains(focused)
+        || document.getElementById('topStatusPanel').contains(focused))) button.focus();
+    }
+    app.classList.toggle('top-panel-hidden', hiding);
+    button.textContent = hiding ? 'Show top panel' : 'Hide top panel';
+    button.setAttribute('aria-expanded', String(!hiding));
+  }
+
   function initPageNav() {
     state.activePage = 'board';
+    document.getElementById('toggleTopPanelBtn').addEventListener('click', toggleTopPanel);
     const bar = document.getElementById('pageTabBar');
     if (bar) {
       bar.addEventListener('click', function (e) {
@@ -20439,6 +20425,10 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   const APP_COMMANDS = [
+    appCommand({ id: 'view.top-panel', label: 'Show / Hide Top Panel', category: 'Global',
+      keywords: 'collapse expand toolbar workspace', target: '#toggleTopPanelBtn',
+      shortcut: { key: 'h', ctrl: true, display: 'Ctrl+H' },
+      action: e => { if (!e || !e.repeat) toggleTopPanel(); } }),
     appCommand({ id: 'palette.open', label: 'Open Command Palette', category: 'Global',
       keywords: 'search find commands actions', shortcut: { key: 'k', meta: true },
       allowInField: true, action: () => openCommandPalette() }),
@@ -20907,7 +20897,9 @@ const BOM_MATERIAL_LIBRARY = [
     const key = String(event.key || '').toLowerCase();
     const expected = String(shortcut.key || '').toLowerCase();
     if (key !== expected) return false;
-    if (!!shortcut.meta !== !!(event.metaKey || event.ctrlKey)) return false;
+    if (shortcut.ctrl) {
+      if (!event.ctrlKey || event.metaKey) return false;
+    } else if (!!shortcut.meta !== !!(event.metaKey || event.ctrlKey)) return false;
     if (!!shortcut.shift !== !!event.shiftKey) return false;
     if (!!shortcut.alt !== !!event.altKey) return false;
     return true;
@@ -20935,6 +20927,7 @@ const BOM_MATERIAL_LIBRARY = [
     if (!shortcut) return '';
     if (shortcut.display) return shortcut.display;
     const parts = [];
+    if (shortcut.ctrl) parts.push('Ctrl');
     if (shortcut.meta) parts.push(appCommandIsMac() ? '⌘' : 'Ctrl');
     if (shortcut.alt) parts.push(appCommandIsMac() ? '⌥' : 'Alt');
     if (shortcut.shift) parts.push('⇧');
@@ -20950,6 +20943,7 @@ const BOM_MATERIAL_LIBRARY = [
   function appCommandAriaShortcut(shortcut) {
     if (!shortcut) return '';
     const parts = [];
+    if (shortcut.ctrl) parts.push('Control');
     if (shortcut.meta) parts.push(appCommandIsMac() ? 'Meta' : 'Control');
     if (shortcut.alt) parts.push('Alt');
     if (shortcut.shift) parts.push('Shift');

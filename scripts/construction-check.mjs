@@ -260,6 +260,42 @@ async function main() {
   check(legacyEmpty.rows === 24 && legacyEmpty.blank === 24 && legacyEmpty.calls === 0, 'pre-Construction load should receive blank structural seed only');
   check(legacyEmpty.anchors === 0 && legacyEmpty.drafts === 0, 'Construction must not create POM anchors or drafts');
 
+
+  // The sheet's scrollbar must be a visible one. Added 2026-09-13 alongside
+  // the matching check in bom-check (see the longer note there): .cc-sheet is
+  // min-width:1180px, so the Construction board runs past the right edge on
+  // ordinary laptop viewports and the scrollbar is the only cue. index.html
+  // replaces the native invisible overlay with a classic always-painted
+  // scrollbar via ::-webkit-scrollbar, which Blink silently drops if the same
+  // element also carries the standard scrollbar-width/scrollbar-color — and
+  // pseudo-element styles cannot be read back through getComputedStyle. A
+  // classic scrollbar reserves layout space, an overlay reserves none, so the
+  // reserved gutter is the observable proof.
+  await s.eval(`document.querySelector('#pageTabBar [data-page="construction"]').click()`);
+  await s.waitFor(`document.body.classList.contains('construction-open')`, 4000);
+  const ccScroll = await s.eval(`(() => {
+    const el = document.querySelector('.cc-combined-view');
+    if (!el) return { missing: true };
+    return { overflowsX: el.scrollWidth > el.clientWidth, overflowsY: el.scrollHeight > el.clientHeight,
+      hiddenX: el.scrollWidth - el.clientWidth, hiddenY: el.scrollHeight - el.clientHeight,
+      vGutter: el.offsetWidth - el.clientWidth, hGutter: el.offsetHeight - el.clientHeight };
+  })()`);
+  check(!ccScroll.missing, 'the Construction combined view should exist once the Construction page is open');
+  if (ccScroll.overflowsX) {
+    check(ccScroll.hGutter >= 8,
+      `the Construction sheet hides ${ccScroll.hiddenX}px to the right behind a horizontal scrollbar reserving only `
+      + `${ccScroll.hGutter}px, i.e. the invisible native overlay is back. Check .cc-combined-view still has its `
+      + `::-webkit-scrollbar rule in index.html and that scrollbar-width/scrollbar-color stay inside the `
+      + `@supports fence: ${JSON.stringify(ccScroll)}`);
+  }
+  if (ccScroll.overflowsY) {
+    check(ccScroll.vGutter >= 8,
+      `the Construction sheet hides ${ccScroll.hiddenY}px below the fold behind a vertical scrollbar reserving only `
+      + `${ccScroll.vGutter}px, i.e. the invisible native overlay is back: ${JSON.stringify(ccScroll)}`);
+  }
+  check(ccScroll.overflowsX || ccScroll.overflowsY,
+    `this check proves nothing unless the sheet actually overflows at the suite's viewport: ${JSON.stringify(ccScroll)}`);
+
   await s.close();
   console.log(`PASS  construction-check   ${passed}/${passed} assertions ok`);
 }

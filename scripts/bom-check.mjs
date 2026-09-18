@@ -640,6 +640,44 @@ async function main() {
   const restoredIds = await s.eval(`window.__braAutoModeDebug.exportProject().state.bom.images.solid.map(x => x.id)`);
   check(JSON.stringify(restoredIds) === JSON.stringify(beforeDeleteIds), 'undo must restore the deleted BOM image metadata');
 
+
+  // --- 16. The sheet's scrollbar must be a visible one. Added 2026-09-13
+  //     after a measured miss: .bm-sheet is min-width:1450px, so on every
+  //     common laptop viewport the Bill of Materials table continues past the
+  //     right edge, and the ONLY thing saying so is the scrollbar. index.html
+  //     styles ::-webkit-scrollbar precisely to replace the native invisible
+  //     overlay with a classic always-painted one — but that block is dropped
+  //     by Blink the moment the same element also carries the standard
+  //     scrollbar-width/scrollbar-color (hence the @supports fence around
+  //     them there). Nothing about that is observable through
+  //     getComputedStyle: pseudo-element styles cannot be read back. A
+  //     classic scrollbar reserves layout space and an overlay reserves none,
+  //     so the reserved gutter is the proof, and it is what this checks.
+  await s.eval(`document.querySelector('#pageTabBar [data-page="bom"]').click()`);
+  await s.waitFor(`document.body.classList.contains('bom-open')`, 4000);
+  const bmScroll = await s.eval(`(() => {
+    const el = document.querySelector('.bm-combined-view');
+    if (!el) return { missing: true };
+    return { overflowsX: el.scrollWidth > el.clientWidth, overflowsY: el.scrollHeight > el.clientHeight,
+      hiddenX: el.scrollWidth - el.clientWidth, hiddenY: el.scrollHeight - el.clientHeight,
+      vGutter: el.offsetWidth - el.clientWidth, hGutter: el.offsetHeight - el.clientHeight };
+  })()`);
+  check(!bmScroll.missing, 'the BOM combined view should exist once the BOM page is open');
+  if (bmScroll.overflowsX) {
+    check(bmScroll.hGutter >= 8,
+      `the BOM sheet hides ${bmScroll.hiddenX}px to the right behind a horizontal scrollbar reserving only `
+      + `${bmScroll.hGutter}px, i.e. the invisible native overlay is back. Check .bm-combined-view still has its `
+      + `::-webkit-scrollbar rule in index.html and that scrollbar-width/scrollbar-color stay inside the `
+      + `@supports fence: ${JSON.stringify(bmScroll)}`);
+  }
+  if (bmScroll.overflowsY) {
+    check(bmScroll.vGutter >= 8,
+      `the BOM sheet hides ${bmScroll.hiddenY}px below the fold behind a vertical scrollbar reserving only `
+      + `${bmScroll.vGutter}px, i.e. the invisible native overlay is back: ${JSON.stringify(bmScroll)}`);
+  }
+  check(bmScroll.overflowsX || bmScroll.overflowsY,
+    `this check proves nothing unless the sheet actually overflows at the suite's viewport: ${JSON.stringify(bmScroll)}`);
+
   await s.close();
   console.log(`PASS  bom-check   ${passed}/${passed} assertions ok`);
 }

@@ -78,6 +78,10 @@
   }
 
   const APP_COMMANDS = [
+    appCommand({ id: 'view.top-panel', label: 'Show / Hide Top Panel', category: 'Global',
+      keywords: 'collapse expand toolbar workspace', target: '#toggleTopPanelBtn',
+      shortcut: { key: 'h', ctrl: true, display: 'Ctrl+H' },
+      action: e => { if (!e || !e.repeat) toggleTopPanel(); } }),
     appCommand({ id: 'palette.open', label: 'Open Command Palette', category: 'Global',
       keywords: 'search find commands actions', shortcut: { key: 'k', meta: true },
       allowInField: true, action: () => openCommandPalette() }),
@@ -546,7 +550,9 @@
     const key = String(event.key || '').toLowerCase();
     const expected = String(shortcut.key || '').toLowerCase();
     if (key !== expected) return false;
-    if (!!shortcut.meta !== !!(event.metaKey || event.ctrlKey)) return false;
+    if (shortcut.ctrl) {
+      if (!event.ctrlKey || event.metaKey) return false;
+    } else if (!!shortcut.meta !== !!(event.metaKey || event.ctrlKey)) return false;
     if (!!shortcut.shift !== !!event.shiftKey) return false;
     if (!!shortcut.alt !== !!event.altKey) return false;
     return true;
@@ -574,6 +580,7 @@
     if (!shortcut) return '';
     if (shortcut.display) return shortcut.display;
     const parts = [];
+    if (shortcut.ctrl) parts.push('Ctrl');
     if (shortcut.meta) parts.push(appCommandIsMac() ? '⌘' : 'Ctrl');
     if (shortcut.alt) parts.push(appCommandIsMac() ? '⌥' : 'Alt');
     if (shortcut.shift) parts.push('⇧');
@@ -589,6 +596,7 @@
   function appCommandAriaShortcut(shortcut) {
     if (!shortcut) return '';
     const parts = [];
+    if (shortcut.ctrl) parts.push('Control');
     if (shortcut.meta) parts.push(appCommandIsMac() ? 'Meta' : 'Control');
     if (shortcut.alt) parts.push('Alt');
     if (shortcut.shift) parts.push('Shift');
