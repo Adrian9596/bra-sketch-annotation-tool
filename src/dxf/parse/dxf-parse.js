@@ -1,5 +1,5 @@
 // US-124 Phase 5 (ADR 0091): the PURE DXF parse layer, split out of
-// src/manual/dxf-import.js so it can be bundled into dxf-worker.js as well as
+// src/dxf/dxf-import.js so it can be bundled into dxf-worker.js as well as
 // app.js. Nothing in this part touches Board state, the DOM or window — the
 // worker purity gate in scripts/check.mjs enforces that — and every function
 // here is a hoisted declaration, so the board layer (dxf-import.js, later in
@@ -32,8 +32,8 @@
 //      createImageRecord's numbers; see the function's own comment).
 //   3. importDxfText(text, rect)            — orchestrates 1 + 2, builds real
 //      annotation objects, and performs the one board mutation.
-// Sibling file: the Tools-menu button / FileReader glue is
-// src/ui/dxf-import-panel.js.
+// A .dxf reaches importDxfText through File > Open project… (the dedicated
+// DXF import panel was retired by ADR 0087).
 // Source part for app.js. Run `npm run build` after editing.
 
   // US-124 Phase 6 (ADR 0091, owner decision 5): the grouping pipeline a
@@ -460,7 +460,7 @@
   // sweep of theta from the recovered start angle).
   //
   // US-105: split out of dxfBulgeToBezierChunks so the native-coordinate
-  // measurement kernel (src/manual/dxf-native-parser.js) can get the exact
+  // measurement kernel (src/dxf/parse/dxf-native-parser.js) can get the exact
   // {center, radius, startAngle, sweep} an ARC entity would carry, without
   // going through a Bézier-chunked approximation it does not need — arcs and
   // bulges are already exactly circular, so the measurement kernel's arc
@@ -507,7 +507,7 @@
   // computation.
   //
   // The output is the SAME `{kind:'curve'}` cubic the ARC/bulge path already
-  // produces, which is why src/geometry/dxf-path-kernel.js needed no change:
+  // produces, which is why src/dxf/parse/dxf-path-kernel.js needed no change:
   // its header has always documented a cubic-Bezier segment shape that "no
   // parser currently produces" — point-at-t, length, projection and endpoint
   // handling for it were already written and already tested.
@@ -1304,7 +1304,7 @@
   //
   // ADR 0091: this is now the LEGACY grouping — connectivity + bounding-box
   // containment, the pre-2026-09-04 definition of a piece. dxfClassifyPatterns
-  // (src/geometry/dxf-pattern-classify.js) calls it, per instance, for any
+  // (src/dxf/parse/dxf-pattern-classify.js) calls it, per instance, for any
   // instance with no closed ASTM boundary-layer chain (3380.dxf, 2927.dxf,
   // 2892XL-new.dxf have no layer 1 at all), passing the whole-drawing
   // tolerance so the result stays byte-identical to what this function

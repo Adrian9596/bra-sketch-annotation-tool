@@ -1,8 +1,8 @@
 // US-105: DXF Pattern Measurement — Tools-menu entry wiring. Sibling to
-// src/ui/dxf-import-panel.js, same split: this file owns only the button
+// the (since retired, ADR 0087) DXF import panel, same split: this file owns only the button
 // click -> tool-mode wiring; the actual interaction lives in
-// src/manual/dxf-measure-interaction.js, the session model in
-// src/manual/dxf-measure-session.js.
+// src/dxf/measure/dxf-measure-interaction.js, the session model in
+// src/dxf/measure/dxf-measure-session.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   function setDxfMeasureMode(mode) {

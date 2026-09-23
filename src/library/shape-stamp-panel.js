@@ -2,12 +2,12 @@
 //
 // US-107: this used to also render #shapeStampList (a quick-pick browse list)
 // and own Export/Import Templates JSON here — all of that moved into the
-// unified Library dialog (src/ui/dialogs/library-manager-dialog.js), which is
+// unified Library dialog (src/library/dialog/library-manager-dialog.js), which is
 // now the ONLY place a TD browses, picks, or manages saved Templates. What
 // stays here is "Save selection as Template…" specifically BECAUSE it reads
 // the board's live selection — a board-context action, not a library-browsing
 // one — so it belongs in the toolbar the TD is already looking at, not buried
-// behind a modal. Every mutation still goes through src/manual/shape-stamps.js,
+// behind a modal. Every mutation still goes through src/library/shape-stamps.js,
 // which owns the model, the storage and the placement semantics.
 // Source part for app.js. Run `npm run build` after editing.
 

@@ -5,7 +5,7 @@
 //
 // The export builders this facade calls (exportGroundTruth/downloadGroundTruth,
 // buildCvDebugExport/downloadCvDebugExport, buildStageDebugSummary) live in
-// the sibling src/auto/debug-export.js, which loads before this file.
+// the sibling src/debug/debug-export.js, which loads before this file.
 //
 // window.__braAutoModeDebug is a by-NAME contract with the headless test
 // suites (smoke, golden, invariants, contract, learning-tests, evidence-tests,
@@ -182,7 +182,7 @@
       // Lets the export suite assert hidden lines are omitted from the spec
       // without faking clicks. Not persisted, mirroring the UI it stands in for.
       // US-093 / ADR 0053 code review, 2026-08-21: it exits through the panel's
-      // own syncAfterHiddenPomChange() (src/ui/spec-visibility.js). While it
+      // own syncAfterHiddenPomChange() (src/measurements/spec-visibility.js). While it
       // only re-rendered the panel it missed the toolbar sync a real × click
       // does — "Add point" stays armed on the line just hidden — so it quietly
       // stopped standing in for the button it exists to stand in for.
@@ -382,7 +382,7 @@
         ? importLinePresetsFromJson(text) : 0),
       // US-107: a project's own presets the local library does not have yet —
       // the model half of the Library dialog's "Import N from project" action
-      // (src/manual/line-presets.js), so a suite can assert the offer without
+      // (src/library/line-presets.js), so a suite can assert the offer without
       // the dialog's own visibility rule standing in for it.
       getPendingLinePresets: () => (typeof getPendingProjectLinePresets === 'function'
         ? clone(getPendingProjectLinePresets()) : null),
@@ -500,7 +500,7 @@
         },
         source: () => (state.dxfPatternSource ? clone(state.dxfPatternSource) : null),
         // ADR 0070: the Pattern Pieces panel's pure state operations, exposed
-        // independently of the real DOM panel (src/ui/pattern-pieces-panel.js)
+        // independently of the real DOM panel (src/dxf/pattern-pieces-panel.js)
         // so a headless suite can assert the group-list/remove logic without
         // driving live checkbox clicks for every case.
         patternPieces: {
@@ -519,12 +519,12 @@
         // tests), plus read-only session getters an E2E suite can compare
         // against real pointer-driven results. Every mutating action
         // (create/delete/undo/redo) also has a real UI path — see
-        // src/manual/dxf-measure-interaction.js / dxf-measure-panel.js — this
+        // src/dxf/measure/dxf-measure-interaction.js / dxf-measure-panel.js — this
         // namespace never substitutes for driving that path in an
         // integration-level test, only for isolating the pure math.
         measure: {
           parseNative: (text) => (typeof parseDxfNativeModel === 'function' ? clone(parseDxfNativeModel(text)) : null),
-          // Pure kernel primitives (src/geometry/dxf-path-kernel.js), exposed
+          // Pure kernel primitives (src/dxf/parse/dxf-path-kernel.js), exposed
           // independently of any session/board state so a unit test can
           // drive exact synthetic segments (bulge signs, wraparound sweeps,
           // adaptive Bézier tolerance, degenerate input) without importing a
@@ -541,7 +541,7 @@
           // read-only convention as pieceSegments below — this file's header
           // comment is explicit that a MUTATING action (toggling a snap kind
           // on/off) always goes through its real UI path
-          // (#dxfMeasureSnapEndpointBtn etc., src/ui/dxf-measure-panel.js),
+          // (#dxfMeasureSnapEndpointBtn etc., src/dxf/measure/dxf-measure-panel.js),
           // never a debug shortcut, so there is deliberately no setter here.
           lineArcIntersections: (lineSeg, arcSeg) => (typeof dxfMeasureLineArcIntersections === 'function'
             ? clone(dxfMeasureLineArcIntersections(lineSeg, arcSeg)) : null),
@@ -920,7 +920,7 @@
         drawStyle: state.drawStyle,
         // US-103: the pending "next line" arrow default, and its POM-side
         // backup while Sketch Focus is on (applySketchModeVisual,
-        // src/manual/sketch-mode.js) — both session-only, neither persisted.
+        // src/board/sketch-mode.js) — both session-only, neither persisted.
         arrowType: state.arrowType,
         pomArrowType: state.pomArrowType != null ? state.pomArrowType : null,
         smartAlignGuides: clone(state.smartAlignGuides || []),

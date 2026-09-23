@@ -9,8 +9,7 @@
 // detection diagnostic overlay (bbox/axis/band/cradle/etc.) lives in the
 // sibling detection-overlay.js.
 //
-// hitTestAutoDraftAnnotations is called from src/manual/interactions.js,
-// so this file must still load before that interaction file.
+// hitTestAutoDraftAnnotations is called from src/board/input/pointer-events.js.
 
   function drawAutoDraftAnnotation(ann, withLabel = true) {
     if (isReviewOnlyDraft(ann)) return;

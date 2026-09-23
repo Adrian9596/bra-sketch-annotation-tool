@@ -4,7 +4,7 @@
 //
 // The ZIP container reader lives in zip-reader.js (hand-rolled, dependency-
 // free), slide/picture extraction in pptx-xml.js, and the picker UI the TD
-// uses to choose which pages to import in ui/dialogs/pptx-picker-dialog.js.
+// uses to choose which pages to import in import/pptx-picker-dialog.js.
 
   async function onPptxFileChosen(e) {
     const input = e.target;

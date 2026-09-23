@@ -2,7 +2,7 @@
 // templateGroupId group on the board (DXF-imported grading-nest pieces, and
 // Template placements, since both share the same field), so the TD can tell
 // apart a stack of overlapping same-position sizes and keep only the ones
-// they want. Mirrors src/ui/anchor-manager-panel.js's shape (floating panel,
+// they want. Mirrors src/auto/ui/anchor-manager-panel.js's shape (floating panel,
 // row-per-item, a Select action, plain DOM row-building), but the per-row
 // action here is REMOVE, not hide: ADR 0067's research found no reliable way
 // to auto-detect which size is "standard," so this is a manual, decisive
@@ -85,7 +85,7 @@
   // Selects the group's annotations on the board so the existing multi-select
   // halo (render-loop.js) highlights exactly this outline among the stack —
   // reuses the click-a-group-member selection behavior already wired for
-  // templateGroupId (src/manual/selection.js), just triggered from the panel
+  // templateGroupId (src/board/input/selection.js), just triggered from the panel
   // instead of a canvas click.
   function selectPatternPieceGroup(ids) {
     if (!ids || !ids.length) return;

@@ -1,7 +1,7 @@
 // Stitch-pattern rendering: zigzag, cover, and bartack stitches
-// rendered along an annotation polyline, plus the polyline sampling
-// helpers they share. Source part for app.js. Run `npm run build`
-// after editing.
+// rendered along an annotation polyline. The polyline sampler itself,
+// getAnnotationPolyline, lives in src/core/curves.js (ADR 0103 Phase B).
+// Source part for app.js. Run `npm run build` after editing.
 
   // US-098 / ADR 0060: a configurable Treatment is a stack of layers sampled
   // from the SAME source path. Offsets and pattern sizes are screen-feature
@@ -175,37 +175,6 @@
       );
       ctx.stroke();
     }
-  }
-
-  function getAnnotationPolyline(ann, samples) {
-    if (ann.type === 'straight') return [ann.start, ann.end];
-    const segs = getCurveBeziers(ann);
-    const basePer = Math.max(2, Math.round(samples / segs.length));
-    // Before US-093 every annotation reaching this helper had one cubic (or
-    // the retired legacy midpoint pair), so `samples` was a whole-curve
-    // budget. Keep that path byte-identical: existing 2-handle curves must not
-    // change their measured value, hit shape, stitches, or label placement.
-    //
-    // `points[]` changes the contract: it can grow the curve to any number of
-    // cubics. Dividing the same fixed budget across that chain eventually left
-    // only two chords per segment (25/50 samples reaches that floor at about
-    // 10/20 segments). A strong S-bend then collapses to its endpoint chord,
-    // severely under-counting length and making the bulge unhittable. Give
-    // every added-anchor segment its own curvature-driven budget instead. The
-    // shared curveChordSampleCount bound is deterministic and zoom-independent,
-    // floors each segment at the old 24-chord precision, and caps corrupt or
-    // extreme geometry at 512 evaluations per segment.
-    const adaptivePerSegment = Array.isArray(ann.points) && ann.points.length > 0;
-    const points = [ann.start];
-    for (const s of segs) {
-      const per = adaptivePerSegment
-        ? Math.min(CURVE_CHORD_MAX_SAMPLES, Math.max(basePer, curveChordSampleCount(s)))
-        : basePer;
-      for (let i = 1; i <= per; i += 1) {
-        points.push(bezierPoint(s.p0, s.p1, s.p2, s.p3, i / per));
-      }
-    }
-    return points;
   }
 
   function polylineLength(points) {

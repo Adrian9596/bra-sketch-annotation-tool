@@ -168,7 +168,7 @@
   // "handles interpolate the strap span" invariant (validate-fixture.js) still
   // holds after a blend that validateAutoFixture ran before.
   //
-  // The field list mirrors scaleAnnotationAbout (src/manual/viewport.js) on
+  // The field list mirrors scaleAnnotationAbout (src/board/view/viewport.js) on
   // purpose: that is the other place a whole annotation's geometry moves as a
   // unit, and a field added to one and not the other is exactly how ann.points
   // got torn once already (ADR 0053).

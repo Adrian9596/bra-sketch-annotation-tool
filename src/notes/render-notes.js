@@ -1,5 +1,5 @@
 // Board text note drawing (US-092). The record and its geometry live in
-// src/manual/note-model.js; this file only paints.
+// src/notes/note-model.js; this file only paints.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Everything here is drawn in WORLD coordinates and sized off the note's own

@@ -1,7 +1,7 @@
 // Open a .json project file, or import a .dxf sketch: shared file-input
 // handling for the File menu's "Open project…" item, then dispatch to
 // whichever flow the chosen file actually is. Saving is project-save.js;
-// the DXF geometry importer itself is src/manual/dxf-import.js.
+// the DXF geometry importer itself is src/dxf/dxf-import.js.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // loadProject restores a saved snapshot, including image pixel data, and
@@ -126,7 +126,7 @@
 
   // Bytes, not readAsText (ADR 0091 follow-up): GBK block names from Chinese
   // vendor exports collided after lossy UTF-8 decoding and made INSERTs draw
-  // the wrong block — decodeDxfBytes (src/manual/dxf-import.js) picks the
+  // the wrong block — decodeDxfBytes (src/dxf/dxf-import.js) picks the
   // charset from strict UTF-8 → $DWGCODEPAGE → GBK → windows-1252.
   function importDxfFileIntoBoard(file) {
     const reader = new FileReader();
@@ -235,7 +235,7 @@
       // makes one deliberate exception below: a compatible durable DXF
       // source enters Sketch Focus so Pattern Measure is immediately usable.
       // applySketchModeVisual is the single state+body-class+button-sync
-      // path the toolbar button itself uses (src/manual/sketch-mode.js), so
+      // path the toolbar button itself uses (src/board/sketch-mode.js), so
       // the button cannot stay showing "Sketch" active after a reopen.
       //
       // US-103: called BEFORE state.arrowType is restored from the file, not

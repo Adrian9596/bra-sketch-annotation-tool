@@ -11,6 +11,8 @@ export const SOURCE_PARTS = [
   'src/auto/rules/load-rules.js',
   'src/core/state.js',
   'src/core/dom-refs.js',
+  'src/core/clone.js',
+  'src/core/browser-io.js',
   'src/measurements/grading/grade-rules.js',
   'src/auto/telemetry/session-stats.js',
   'src/auto/telemetry/session-timer.js',

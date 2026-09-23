@@ -54,14 +54,14 @@
 // US-105: DXF Pattern Measurement — the deterministic, DOM-independent
 // measurement kernel. Pure functions only: no state, no DOM, no canvas. Every
 // function here operates on the NATIVE (as-authored, pre-Y-flip, unscaled)
-// DXF coordinate space produced by src/manual/dxf-native-parser.js — never on
+// DXF coordinate space produced by src/dxf/parse/dxf-native-parser.js — never on
 // board/world/screen coordinates. Board placement, zoom and pan are display
 // transforms applied only when rendering a result; they must never change a
 // value this file computes.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Segment shapes this kernel understands (the same 'straight'/'arc' shapes
-// src/manual/dxf-import.js's dxfSegmentEndpoints/dxfSegmentPoints were
+// src/dxf/dxf-import.js's dxfSegmentEndpoints/dxfSegmentPoints were
 // extended to read for US-105 — see that file for dxfPointOnArcSegment,
 // which this file calls by name; function declarations hoist across the
 // whole bundle, so the load order between the two files does not matter):
@@ -1150,8 +1150,8 @@
   // ---- src/dxf/parse/dxf-pattern-classify.js ----
 // US-124 / ADR 0091: DXF pattern identity is a classified closed outline.
 //
-// Pure, DOM-free grouping shared by BOTH DXF parsers (src/manual/dxf-import.js
-// for the board, src/manual/dxf-native-parser.js for Pattern Measure) so the
+// Pure, DOM-free grouping shared by BOTH DXF parsers (src/dxf/dxf-import.js
+// for the board, src/dxf/parse/dxf-native-parser.js for Pattern Measure) so the
 // two can never disagree about what a pattern is — makeDxfMeasureSession pairs
 // board pieces with native pieces BY INDEX, so a grouping difference between
 // the two would silently null every pieceAnchor.
@@ -1193,10 +1193,10 @@
 // not live here yet.
 //
 // Cross-part symbols used (all `function` declarations, hoisted bundle-wide
-// per CLAUDE.md): distance, pointToSegmentDistance (src/geometry/math.js);
+// per CLAUDE.md): distance, pointToSegmentDistance (src/core/math.js);
 // dxfSegmentEndpoints, dxfPointOnArcSegment, dxfBoundsOfSegments,
 // dxfBoundsOfPoints, dxfUnionFind, dxfBuildPiecesLegacy
-// (src/manual/dxf-import.js).
+// (src/dxf/dxf-import.js).
 // Source part for app.js. Run `npm run build` after editing.
 
   // ASTM D6673-10 / AAMA-292 layer table, verified against the corpus
@@ -1915,7 +1915,7 @@
 
   // ---- src/dxf/parse/dxf-parse.js ----
 // US-124 Phase 5 (ADR 0091): the PURE DXF parse layer, split out of
-// src/manual/dxf-import.js so it can be bundled into dxf-worker.js as well as
+// src/dxf/dxf-import.js so it can be bundled into dxf-worker.js as well as
 // app.js. Nothing in this part touches Board state, the DOM or window — the
 // worker purity gate in scripts/check.mjs enforces that — and every function
 // here is a hoisted declaration, so the board layer (dxf-import.js, later in
@@ -1948,8 +1948,8 @@
 //      createImageRecord's numbers; see the function's own comment).
 //   3. importDxfText(text, rect)            — orchestrates 1 + 2, builds real
 //      annotation objects, and performs the one board mutation.
-// Sibling file: the Tools-menu button / FileReader glue is
-// src/ui/dxf-import-panel.js.
+// A .dxf reaches importDxfText through File > Open project… (the dedicated
+// DXF import panel was retired by ADR 0087).
 // Source part for app.js. Run `npm run build` after editing.
 
   // US-124 Phase 6 (ADR 0091, owner decision 5): the grouping pipeline a
@@ -2376,7 +2376,7 @@
   // sweep of theta from the recovered start angle).
   //
   // US-105: split out of dxfBulgeToBezierChunks so the native-coordinate
-  // measurement kernel (src/manual/dxf-native-parser.js) can get the exact
+  // measurement kernel (src/dxf/parse/dxf-native-parser.js) can get the exact
   // {center, radius, startAngle, sweep} an ARC entity would carry, without
   // going through a Bézier-chunked approximation it does not need — arcs and
   // bulges are already exactly circular, so the measurement kernel's arc
@@ -2423,7 +2423,7 @@
   // computation.
   //
   // The output is the SAME `{kind:'curve'}` cubic the ARC/bulge path already
-  // produces, which is why src/geometry/dxf-path-kernel.js needed no change:
+  // produces, which is why src/dxf/parse/dxf-path-kernel.js needed no change:
   // its header has always documented a cubic-Bezier segment shape that "no
   // parser currently produces" — point-at-t, length, projection and endpoint
   // handling for it were already written and already tested.
@@ -3220,7 +3220,7 @@
   //
   // ADR 0091: this is now the LEGACY grouping — connectivity + bounding-box
   // containment, the pre-2026-09-04 definition of a piece. dxfClassifyPatterns
-  // (src/geometry/dxf-pattern-classify.js) calls it, per instance, for any
+  // (src/dxf/parse/dxf-pattern-classify.js) calls it, per instance, for any
   // instance with no closed ASTM boundary-layer chain (3380.dxf, 2927.dxf,
   // 2892XL-new.dxf have no layer 1 at all), passing the whole-drawing
   // tolerance so the result stays byte-identical to what this function
@@ -3520,14 +3520,14 @@
 // US-105: DXF Pattern Measurement — the native-coordinate parser adapter.
 // Parses the SAME DXF text US-104's importDxfText already accepts, but into
 // exact native `{kind:'straight'|'arc', ...}` geometry (see
-// src/geometry/dxf-path-kernel.js's header comment for the shapes) instead of
+// src/dxf/parse/dxf-path-kernel.js's header comment for the shapes) instead of
 // the board-annotation-ready straight/Bézier segments parseDxfDocument
 // builds — arcs and bulges stay exactly circular here, never
 // Bézier-approximated, so the measurement kernel's arc length stays
 // analytic.
 //
 // Deliberately a SEPARATE parse over the same tokenized pairs, not a
-// modification of parseDxfDocument: that function (src/manual/dxf-import.js)
+// modification of parseDxfDocument: that function (src/dxf/dxf-import.js)
 // is a closed, 119-assertion-tested contract (dxf-import-check.mjs), and this
 // story's own "compatibility-preserving adapter" requirement is satisfied
 // most safely by never touching its observable output at all. This file
@@ -3836,7 +3836,7 @@
     };
   }
 
-  // Same shared reader the board converter uses (src/geometry/dxf-parse.js),
+  // Same shared reader the board converter uses (src/dxf/parse/dxf-parse.js),
   // mapped onto the native `{kind:'curve', p0,p1,p2,p3}` shape the
   // measurement kernel already understands. The two parsers are paired by
   // index, so they must accept and reject the identical set of splines —

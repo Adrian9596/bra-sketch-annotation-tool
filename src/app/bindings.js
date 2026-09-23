@@ -3,7 +3,7 @@
 // style setters live here next to the bindings that drive them, as do the
 // two calibration commands (setScaleFromSelection / clearScale) their
 // toolbar buttons invoke. The label editor the keydown/blur listeners point
-// at is implemented in src/ui/label-editor.js.
+// at is implemented in src/board/annotations/label-editor.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   function bindUI() {

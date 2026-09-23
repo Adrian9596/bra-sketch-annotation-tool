@@ -2,8 +2,8 @@
   "rows": [
     {
       "id": "1",
-      "name": "1/2 Bottom band - Relax",
-      "zh": "下围半宽（放松量）",
+      "name": "1/2 Bottom band (2nd hook from tightest) - Relax",
+      "zh": "下围半宽（扣最紧起第2排）- 放松量",
       "view": "front_outer",
       "refL": null,
       "requiredAnchors": [
@@ -14,7 +14,7 @@
       "pairing": {
         "role": "primary",
         "partner": "2",
-        "groupName": "1/2 Bottom band",
+        "groupName": "1/2 Bottom band (2nd hook from tightest)",
         "primaryLabel": "Relax",
         "secondaryLabel": "Extend"
       },
@@ -22,8 +22,8 @@
     },
     {
       "id": "2",
-      "name": "1/2 Bottom band - Extend",
-      "zh": "下围半宽（延伸量）",
+      "name": "1/2 Bottom band (2nd hook from tightest) - Extend",
+      "zh": "下围半宽（扣最紧起第2排）- 拉伸量",
       "view": "front_outer",
       "refL": null,
       "requiredAnchors": [
@@ -39,8 +39,8 @@
     },
     {
       "id": "3",
-      "name": "1/2 chest - Measure straight",
-      "zh": "胸围半宽（放松量）",
+      "name": "1/2 chest (2nd hook from tightest) - Measure straight",
+      "zh": "胸围半宽（扣最紧起第2排）- 直量",
       "view": "front_outer",
       "refL": null,
       "requiredAnchors": [
@@ -51,7 +51,7 @@
       "pairing": {
         "role": "primary",
         "partner": "4",
-        "groupName": "1/2 Chest",
+        "groupName": "1/2 Chest (2nd hook from tightest)",
         "primaryLabel": "Measure straight",
         "secondaryLabel": "Extend"
       },
@@ -59,8 +59,8 @@
     },
     {
       "id": "4",
-      "name": "1/2 chest - Extend",
-      "zh": "胸围半宽（延伸量）",
+      "name": "1/2 chest (2nd hook from tightest) - Extend",
+      "zh": "胸围半宽（扣最紧起第2排）- 拉伸量",
       "view": "front_outer",
       "refL": null,
       "requiredAnchors": [

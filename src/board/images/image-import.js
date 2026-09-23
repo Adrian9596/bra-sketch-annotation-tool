@@ -1,10 +1,10 @@
 // Manual mode image import pipeline: clipboard paste (onPasteEvent),
 // addImagesFromDataURLs, the file-input picker (onImageFileChosen), and
 // drag-and-drop (setupDragAndDrop, handleDroppedFiles). Must load after
-// src/manual/image-records.js (uses createImageRecord, blobToDataURL,
+// src/board/images/image-records.js (uses createImageRecord, blobToDataURL,
 // loadImageFromDataURL). Sibling files: the big UI status updater lives in
-// src/manual/ui-status.js; POM/annotation lookup helpers live in
-// src/manual/annotation-lookup.js.
+// src/board/ui-status.js; POM/annotation lookup helpers live in
+// src/board/annotations/annotation-lookup.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   async function onPasteEvent(e) {

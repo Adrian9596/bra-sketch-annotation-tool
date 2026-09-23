@@ -1,15 +1,15 @@
 // US-106 + US-107: the unified Library dialog — one searchable, categorized
 // place for everything a TD would call "the library": Templates (multi-path
 // saved sketch geometry), Line Treatments (named looks and layered stitch
-// recipes, src/manual/line-presets.js), and Projects (saved whole boards,
-// IndexedDB-backed, src/project/project-library.js). Three tabs, one dialog,
+// recipes, src/library/line-presets.js), and Projects (saved whole boards,
+// IndexedDB-backed, src/library/project-library.js). Three tabs, one dialog,
 // one toolbar entry point (#libraryBtn) — replacing the three separate,
 // scattered entry points US-106 review found (Tools ▾ ▸ Templates, the
 // Stitches ▸ Line Library section, and File ▾ ▸ "Project Library…").
 //
 // Every mutation still goes through the three owning model files — this file
-// is presentation only, same split as src/ui/shape-stamp-panel.js and
-// src/ui/line-preset-panel.js, which remain the board-selection-dependent
+// is presentation only, same split as src/library/shape-stamp-panel.js and
+// src/library/line-preset-panel.js, which remain the board-selection-dependent
 // quick actions (Save selection as Template…, Save as new treatment…,
 // Customize selected…) that need a live board selection and so stay in the
 // toolbar rather than move into this "browse what I've already saved" modal.
@@ -18,7 +18,7 @@
 // Source part for app.js. Run `npm run build` after editing.
 
   // A bigger, gallery-scaled rendering of the same idea as
-  // shapeStampPreviewSvg (src/ui/shape-stamp-panel.js) — a separate function
+  // shapeStampPreviewSvg (src/library/shape-stamp-panel.js) — a separate function
   // rather than a shared one with a size parameter, because the two contexts
   // want different aspect ratios (a slim menu row vs a near-square card) and
   // forcing one function to serve both would smuggle a magic number through

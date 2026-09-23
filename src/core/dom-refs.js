@@ -29,7 +29,7 @@
     // US-096 / ADR 0055, US-107: Save as new treatment… and Customize
     // selected… stay in the Stitches menu (board-selection-dependent quick
     // actions) — browsing/picking/managing saved Treatments is the unified
-    // Library dialog now (src/ui/dialogs/library-manager-dialog.js), which
+    // Library dialog now (src/library/dialog/library-manager-dialog.js), which
     // looks up #linePresetFileInput on demand rather than caching it here.
     linePresetSaveBtn: document.getElementById('linePresetSaveBtn'),
     lineTreatmentCustomizeBtn: document.getElementById('lineTreatmentCustomizeBtn'),

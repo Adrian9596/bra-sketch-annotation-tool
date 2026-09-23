@@ -3,13 +3,13 @@
 // and is not snapshotted in history. reflectSelectedAnnotation uses the
 // detected view box (when present) to mirror across the local front/back
 // column instead of the whole image, so a front-view line stays in the front
-// view. Must load after src/manual/annotation-factory.js (uses
+// view. Must load after src/board/annotations/annotation-factory.js (uses
 // computeDefaultLabelPosition). Sibling files: annotation builders live in
-// src/manual/annotation-factory.js; label-collision nudging lives in
-// src/manual/label-layout.js; delete/clear lifecycle lives in
-// src/manual/annotation-lifecycle.js; the analogous shape clipboard
+// src/board/annotations/annotation-factory.js; label-collision nudging lives in
+// src/board/annotations/label-layout.js; delete/clear lifecycle lives in
+// src/board/annotations/annotation-lifecycle.js; the analogous shape clipboard
 // (copySelectedGraphic / pasteGraphicFromClipboard) lives in
-// src/manual/board-graphics.js. copySelectedLineOrGraphic and
+// src/graphics/board-graphics.js. copySelectedLineOrGraphic and
 // pasteFromClipboard below are the single dispatchers every caller (the
 // keyboard router, the toolbar buttons, the Command Palette, and the native
 // paste event) goes through, so "last copy wins" is decided in one place —

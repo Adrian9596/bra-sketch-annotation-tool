@@ -1,9 +1,9 @@
 // US-096 + US-098 / ADR 0060: Line Treatment Library and layer editor.
 //
-// Presentation only. Every mutation goes through src/manual/line-presets.js,
+// Presentation only. Every mutation goes through src/library/line-presets.js,
 // which owns the model, the storage and the apply semantics — this file decides
 // what the rows look like and which control calls what, exactly the split
-// src/ui/board-toolbar.js already uses for the rest of the toolbar.
+// src/board/board-toolbar.js already uses for the rest of the toolbar.
 //
 // The rows are rendered from stored data rather than written into index.html,
 // because the list is the TD's own and changes at runtime.
@@ -378,7 +378,7 @@
   }
 
   // US-107: browsing/picking/managing a saved preset moved to the unified
-  // Library dialog (src/ui/dialogs/library-manager-dialog.js). What stays
+  // Library dialog (src/library/dialog/library-manager-dialog.js). What stays
   // here reads the board's LIVE selection (Save as new treatment…, Customize
   // selected…) — a board-context action, not a library-browsing one — so it
   // belongs in the Stitches menu the TD is already looking at.

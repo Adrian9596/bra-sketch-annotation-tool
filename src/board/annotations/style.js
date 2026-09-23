@@ -18,7 +18,7 @@
   // long it is". US-096 / ADR 0055 makes this the load-bearing predicate: a
   // line wearing one of them is a construction mark, not a measurement, unless
   // the TD explicitly labelled it with a POM number. See
-  // isMeasurementAnnotation in src/manual/annotation-lookup.js.
+  // isMeasurementAnnotation in src/board/annotations/annotation-lookup.js.
   // A function, not a module-scope const: the parts share one scope and a
   // `const` read during load would throw a TDZ ReferenceError from any part
   // that happens to run earlier. See CLAUDE.md "Living in one shared scope".
@@ -36,7 +36,7 @@
   //
   // US-096: this reads state.drawStyle — the style the NEXT line is born with —
   // and nothing else. Restyling a selection deliberately no longer touches it
-  // (see setLineStyle in src/ui/bindings.js), because it used to mean that
+  // (see setLineStyle in src/app/bindings.js), because it used to mean that
   // converting one line to zigzag blanked every callout number on the board.
   function isStitchMode() {
     return isStitchStyle(state.drawStyle);
@@ -49,7 +49,7 @@
   // Excel embedded sketch, and the Preview board sheet) — Sketch Focus is a
   // live-authoring aid and must never silently change what an export
   // contains. The live-canvas-only Sketch Focus suppression lives in
-  // annotationShowsCallout (src/manual/annotation-lookup.js) instead.
+  // annotationShowsCallout (src/board/annotations/annotation-lookup.js) instead.
   function labelsVisible() {
     return state.showLabels && !isStitchMode();
   }

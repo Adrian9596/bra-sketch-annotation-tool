@@ -4,8 +4,8 @@
 // autoStepStates, and updateAutoModeUI are Auto-Mode-specific toolbar/status
 // wiring, kept here only because updateUI() calls updateAutoModeUI().
 // Sibling files: paste / drag-drop image import lives in
-// src/manual/image-import.js; POM/annotation lookup helpers live in
-// src/manual/annotation-lookup.js.
+// src/board/images/image-import.js; POM/annotation lookup helpers live in
+// src/board/annotations/annotation-lookup.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // US-104 "Quick length readout": a read-only, non-persisted length for the

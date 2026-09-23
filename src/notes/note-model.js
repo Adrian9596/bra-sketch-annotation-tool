@@ -1,6 +1,6 @@
 // Board text notes (US-092): the note record and the pure geometry that acts
-// on it. Rendering lives in src/render/render-notes.js; pointer handling in
-// src/manual/pointer-events.js.
+// on it. Rendering lives in src/notes/render-notes.js; pointer handling in
+// src/board/input/pointer-events.js.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // A note is NOT an annotation, and that separation is the point of the whole
@@ -308,12 +308,12 @@
   // so dragging the caption clear of the artwork must not drag the arrow off
   // the thing it names. Nothing else has to be recomputed: drawNoteLeader
   // derives its start from the note's CURRENT box every frame
-  // (render/render-notes.js), so the line re-aims itself and only the tips are
+  // (notes/render-notes.js), so the line re-aims itself and only the tips are
   // stored state.
   //
   // Deliberately not the same function as moveNote. That one is for when the
   // whole annotation travels WITH the garment — the photo drag
-  // (manual/pointer-events.js) and the photo resize (scaleNote below) — where
+  // (board/input/pointer-events.js) and the photo resize (scaleNote below) — where
   // the tips must come along or the note slides off the feature it describes.
   // Two callers, two intents; keeping them apart is what stops the photo path
   // from inheriting a change meant only for the caption path.

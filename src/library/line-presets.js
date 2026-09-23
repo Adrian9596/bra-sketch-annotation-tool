@@ -13,8 +13,8 @@
 //     machine can still show — and offer to import — the presets it was drawn
 //     with. Opening a project never silently overwrites the local library.
 //
-// Sibling files: the dropdown UI is src/ui/line-preset-panel.js; the style
-// normalizers it builds on are src/manual/style.js.
+// Sibling files: the dropdown UI is src/library/line-preset-panel.js; the style
+// normalizers it builds on are src/board/annotations/style.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // Functions, not module-scope consts: every part shares one scope, and a

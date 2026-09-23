@@ -120,7 +120,7 @@
         // TOL is written VERBATIM as an inline string — never coerced to a
         // number/date. So any fraction family (halves, quarters, eighths,
         // incl. ¾ = "3/4") round-trips to Excel exactly as authored, with no
-        // conversion; fractionToNumber (src/ui/spec-panel.js) parses it back.
+        // conversion; fractionToNumber (src/measurements/spec-panel.js) parses it back.
         // US-048: TOL exports as an imperial fraction in inch mode (0.375 →
         // 3/8) to match the fraction-formatted size values; cm stays decimal.
         // Still written verbatim as text — no coercion to number/date.

@@ -9,7 +9,7 @@
 // used by the Engineering Workflow debug view.
 //
 // The window.__braAutoModeDebug facade that wires these onto the by-name
-// test-suite contract lives in the sibling src/auto/debug-api.js, which
+// test-suite contract lives in the sibling src/debug/debug-api.js, which
 // loads after this file.
 
   // -------- Ground-truth labeling export (accuracy harness) --------
@@ -44,7 +44,7 @@
   }
 
   // Trigger an in-browser download of the current ground truth. Used by the
-  // ?label=1 labeling button (see maybeShowGroundTruthLabeler in src/dev/url-bootstrap.js).
+  // ?label=1 labeling button (see maybeShowGroundTruthLabeler in src/app/url-bootstrap.js).
   function downloadGroundTruth(imageName) {
     if (!state.autoMode.anchors.length) {
       showToast('No anchors to save. Run Detect Sketch and correct the anchors first.', 4200);

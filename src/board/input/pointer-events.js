@@ -547,7 +547,7 @@
       if (dx || dy) {
         // Caption only: the leader tips stay on whatever they point at, and
         // the lines re-aim from the box's new edge (moveNoteCaption,
-        // manual/note-model.js). The PHOTO drag further down still uses
+        // notes/note-model.js). The PHOTO drag further down still uses
         // moveNote, where the whole callout has to travel with the garment.
         moveNoteCaption(note, dx, dy);
         interaction.changed = true;

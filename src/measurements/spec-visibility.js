@@ -1,9 +1,9 @@
 // Per-POM line visibility on the canvas: the state helpers plus the DOM
 // controls (the per-row × / + toggle and the sticky "Hide all / Show all"
 // row) that expose it in the Measurements panel.
-// Extracted from src/ui/spec-panel.js; the panel orchestrator that calls
+// Extracted from src/measurements/spec-panel.js; the panel orchestrator that calls
 // these lives there, and the row builders that embed the toggle live in
-// src/ui/spec-row-builders.js.
+// src/measurements/spec-row-builders.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // ---- Per-POM visibility (review overlay) ----
@@ -17,7 +17,7 @@
   // panel-only refresh leaves "Add point" visible and .active on a line every
   // click now silently refuses. Hence updateUI(), not renderSpecPanel(), and
   // one exit for it: the mutators here plus the setHiddenAnnIds debug hook
-  // (src/auto/debug-api.js), which drifted once by taking its own route. The
+  // (src/debug/debug-api.js), which drifted once by taking its own route. The
   // only other writers clear the set inside a bigger reset (board-reset.js,
   // project-load.js) and already end in updateUI(). Drafts are out of scope:
   // nothing updateUI() syncs reads isDraftHidden, so toggleDraftHidden

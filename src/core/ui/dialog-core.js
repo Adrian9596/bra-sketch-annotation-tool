@@ -1,4 +1,5 @@
-// Shared modal shell used by every dialog under src/ui/dialogs/.
+// Shared modal shell used by every dialog in the app (each feature keeps its
+// own dialogs in its own folder since ADR 0103).
 // Source part for app.js. Run `npm run build` after editing.
 //
 // buildDialog gives each dialog a backdrop, header with a close button, and

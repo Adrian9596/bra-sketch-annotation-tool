@@ -3,12 +3,12 @@
 // measurements. Every mutation (rename/select/delete/clear) goes through the
 // same session functions the canvas interaction already uses
 // (dxf-measure-session.js) — this file only builds rows and reacts to
-// clicks, mirroring src/ui/pattern-pieces-panel.js's shape. Unlike that
+// clicks, mirroring src/dxf/pattern-pieces-panel.js's shape. Unlike that
 // panel's one-shot "review then Apply" model, this one is a LIVE view:
 // measurements are created/deleted from the CANVAS as often as from here, so
 // renderDxfMeasurementsPanel() is called from updateUI() (ui-status.js) on
 // every app-state refresh and fingerprint-skips when nothing it displays
-// changed — same convention as src/ui/spec-panel.js's renderSpecPanel.
+// changed — same convention as src/measurements/spec-panel.js's renderSpecPanel.
 // Source part for app.js. Run `npm run build` after editing.
 
   let lastDxfMeasurementsFingerprint = null;
@@ -54,7 +54,7 @@
   }
 
   // Frames the measurement's route/endpoints in the viewport — the same
-  // fitBoundsToViewport used by "Fit board" (src/manual/viewport.js), so pan/
+  // fitBoundsToViewport used by "Fit board" (src/board/view/viewport.js), so pan/
   // zoom math has exactly one implementation. A fixed world-space pad keeps a
   // degenerate (near-zero extent, e.g. two very close points) bound from
   // zooming in absurdly tight.

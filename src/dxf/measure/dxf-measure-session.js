@@ -187,7 +187,7 @@
       history: { past: [], future: [] },
       diagnostics: { dragPreviewRecomputes: 0 },
       // US-112: per-piece snap point cache (endpoints/midpoints/lazy
-      // intersections) — see src/manual/dxf-measure-snap.js. Derived purely
+      // intersections) — see src/dxf/measure/dxf-measure-snap.js. Derived purely
       // from `pieces`, which never changes after import, so this is safe to
       // build lazily and keep for the life of the session; never included in
       // dxfMeasureSnapshot (nothing here is TD-editable state).

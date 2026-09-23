@@ -1,7 +1,7 @@
 // Core app state shape: shared constants, the RULES-derived POM/anchor
 // aliases, and the `state` object itself. DOM handles live in dom-refs.js,
 // boot sequencing in bootstrap.js, URL-driven test/demo bootstrap in
-// dev/url-bootstrap.js.
+// app/url-bootstrap.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   const LINE_COLORS = {
@@ -151,7 +151,7 @@
     // saved to the project. `false` here is simply the fresh-load default; it
     // is also explicitly reset to false by the `Sketch` toolbar toggle
     // itself, by switching to Auto Mode, and by Open Project / autosave
-    // Restore, all three through src/manual/sketch-mode.js's
+    // Restore, all three through src/board/sketch-mode.js's
     // applySketchModeVisual — the one function those three sites share.
     sketchMode: false,
     // US-103: the POM-side pending arrow preference (state.arrowType), saved
@@ -253,7 +253,7 @@
     // fields), off-list values the TD typed (fieldExtra), colorways, and the
     // Color Master List copy this project was saved against. Style metadata
     // only: no anchor, no POM, no view, so detection never reads it. Seeded
-    // lazily by ensureMainPage() in src/ui/main-page.js, which owns the field
+    // lazily by ensureMainPage() in src/techpack/main-page/main-page.js, which owns the field
     // roster and the colour data — null here so state.js does not carry 47
     // colour rows. Persisted with the project and captured in history so
     // undo/redo covers MAIN PAGE edits.
@@ -274,14 +274,14 @@
     // history state and are materialized only for project save/autosave.
     // mod-bom module on this tool's own primitives; no anchor, no POM, so
     // detection never reads it. Seeded lazily by ensureBom() in
-    // src/ui/bom.js — a first-time BOM materializes as the reference
+    // src/techpack/bom/bom.js — a first-time BOM materializes as the reference
     // sheet's exact 12-row BOM (BM_SEED_ROWS, US-074), guarded by
     // bom.seedId so an emptied table stays empty. Null here so state.js
     // does not carry row/callout data by default. Persisted with the
     // project and captured in history so undo/redo covers BOM edits.
     bom: null,
 
-    // src/ui/preview-page.js — Preview & Export page-inclusion checkboxes
+    // src/techpack/preview/preview-page.js — Preview & Export page-inclusion checkboxes
     // ({ enabledPages: { <sheetKey>: boolean } }, US-079/ADR 0046). Null here;
     // initPreviewPage materializes the all-enabled default before seedHistory.
     // Persisted with the project and captured in history.
@@ -306,7 +306,7 @@
     // restores a snapshot that never contains this field, it structurally
     // cannot undo a measurement edit; measurements use their OWN small
     // fingerprint-diff undo stack instead (see
-    // src/manual/dxf-measure-session.js). null until a DXF import creates
+    // src/dxf/measure/dxf-measure-session.js). null until a DXF import creates
     // one; cleared to null on another DXF import or a mode/board reset (see
     // the call sites listed in that file).
     dxfMeasureSession: null,

@@ -2,7 +2,7 @@
 // ink-mask.js into the cleaned foreground mask the rest of the pipeline reads.
 //
 // Holds the pluggable external-segmenter registry (the adapter seam consumed by
-// src/auto/debug-api.js's test hooks), the backend-id classifier, the
+// src/debug/debug-api.js's test hooks), the backend-id classifier, the
 // deterministic segmentation-quality score and its serializable view, the mask
 // statistics / bounds helpers, the in-house connected-component ink filter, and
 // the segmentSketch stage itself.

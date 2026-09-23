@@ -63,7 +63,7 @@
 
   // One shared observer for every draggable panel's common offsetParent
   // (the board card), armed once on the first panel registered — mirrors
-  // src/manual/viewport.js's initCanvasResizeObserver, the same "react to
+  // src/board/view/viewport.js's initCanvasResizeObserver, the same "react to
   // the actual box changing, not every event that might cause it" approach
   // this codebase already uses for the canvas's own backing-buffer invariant.
   let draggablePanelResizeObserverArmed = false;

@@ -1,9 +1,9 @@
 // Destructive board-mutation lifecycle: deleteImageById (purges Auto Mode
 // anchors/drafts/detection for a removed photo), deleteSelected, and
 // clearAllAnnotations. Sibling files: annotation builders live in
-// src/manual/annotation-factory.js; label-collision nudging lives in
-// src/manual/label-layout.js; copy/paste/reflect lives in
-// src/manual/annotation-clipboard.js.
+// src/board/annotations/annotation-factory.js; label-collision nudging lives in
+// src/board/annotations/label-layout.js; copy/paste/reflect lives in
+// src/board/annotations/annotation-clipboard.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // Remove one image and purge everything tied to it (erase strokes, and in

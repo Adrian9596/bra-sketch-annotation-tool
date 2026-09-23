@@ -1,7 +1,7 @@
 // Manual mode: pure image-record helpers. createImageRecord turns a
 // loaded Image into the state.images shape (size, world position, id) and
-// stashes the data URL by id; blobToDataURL / loadImageFromDataURL are
-// promise wrappers around the matching browser APIs.
+// stashes the data URL by id. The blobToDataURL / loadImageFromDataURL
+// promise wrappers it uses live in src/core/browser-io.js (ADR 0103 Phase B).
 // Source part for app.js. Run `npm run build` after editing.
 
   function createImageRecord(img, dataURL, stackIndex) {
@@ -44,22 +44,4 @@
     const id = state.idCounter++;
     imageDataById.set(id, dataURL);
     return { id, dataURL, img, width, height, x, y, locked: false };
-  }
-
-  function blobToDataURL(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  function loadImageFromDataURL(dataURL) {
-    return new Promise((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = reject;
-      image.src = dataURL;
-    });
   }

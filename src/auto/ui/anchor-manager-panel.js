@@ -1,6 +1,6 @@
 // The Anchor Manager: a floating, non-modal panel over the board for hiding,
 // showing and isolating detected anchors while checking Auto Mode's accuracy.
-// Extracted from src/ui/spec-panel.js — see the US-038 note below for why it
+// Extracted from src/measurements/spec-panel.js — see the US-038 note below for why it
 // is deliberately NOT part of the exported Measurements panel.
 // Source part for app.js. Run `npm run build` after editing.
 

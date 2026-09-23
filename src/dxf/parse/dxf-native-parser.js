@@ -1,14 +1,14 @@
 // US-105: DXF Pattern Measurement — the native-coordinate parser adapter.
 // Parses the SAME DXF text US-104's importDxfText already accepts, but into
 // exact native `{kind:'straight'|'arc', ...}` geometry (see
-// src/geometry/dxf-path-kernel.js's header comment for the shapes) instead of
+// src/dxf/parse/dxf-path-kernel.js's header comment for the shapes) instead of
 // the board-annotation-ready straight/Bézier segments parseDxfDocument
 // builds — arcs and bulges stay exactly circular here, never
 // Bézier-approximated, so the measurement kernel's arc length stays
 // analytic.
 //
 // Deliberately a SEPARATE parse over the same tokenized pairs, not a
-// modification of parseDxfDocument: that function (src/manual/dxf-import.js)
+// modification of parseDxfDocument: that function (src/dxf/dxf-import.js)
 // is a closed, 119-assertion-tested contract (dxf-import-check.mjs), and this
 // story's own "compatibility-preserving adapter" requirement is satisfied
 // most safely by never touching its observable output at all. This file
@@ -317,7 +317,7 @@
     };
   }
 
-  // Same shared reader the board converter uses (src/geometry/dxf-parse.js),
+  // Same shared reader the board converter uses (src/dxf/parse/dxf-parse.js),
   // mapped onto the native `{kind:'curve', p0,p1,p2,p3}` shape the
   // measurement kernel already understands. The two parsers are paired by
   // index, so they must accept and reject the identical set of splines —

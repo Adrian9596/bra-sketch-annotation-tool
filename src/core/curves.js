@@ -1,8 +1,10 @@
   // ===========================================================================
-  // Curve geometry. All cubic Bézier math and curved-line construction live
-  // here so future curve tweaks are in one place. The build concatenates every
-  // src/*.js part into one shared scope, so these are callable from
-  // manual-tools.js / rendering.js without any import wiring.
+  // Curve geometry. All cubic Bézier math and the annotation polyline sampler
+  // (getAnnotationPolyline) live here so future curve tweaks are in one place.
+  // Building a new curved annotation record (createCurvedAnnotation) is board
+  // work and lives in src/board/annotations/annotation-factory.js (ADR 0103
+  // Phase B). The build concatenates every src/*.js part into one shared
+  // scope, so these are callable from any part without import wiring.
   //
   //   Data model: a curved annotation is one or two cubic Bézier segments.
   //   With a middle anchor (midPoint) + its two handles (midHandleIn/Out) it's
@@ -136,6 +138,37 @@
     );
   }
 
+  function getAnnotationPolyline(ann, samples) {
+    if (ann.type === 'straight') return [ann.start, ann.end];
+    const segs = getCurveBeziers(ann);
+    const basePer = Math.max(2, Math.round(samples / segs.length));
+    // Before US-093 every annotation reaching this helper had one cubic (or
+    // the retired legacy midpoint pair), so `samples` was a whole-curve
+    // budget. Keep that path byte-identical: existing 2-handle curves must not
+    // change their measured value, hit shape, stitches, or label placement.
+    //
+    // `points[]` changes the contract: it can grow the curve to any number of
+    // cubics. Dividing the same fixed budget across that chain eventually left
+    // only two chords per segment (25/50 samples reaches that floor at about
+    // 10/20 segments). A strong S-bend then collapses to its endpoint chord,
+    // severely under-counting length and making the bulge unhittable. Give
+    // every added-anchor segment its own curvature-driven budget instead. The
+    // shared curveChordSampleCount bound is deterministic and zoom-independent,
+    // floors each segment at the old 24-chord precision, and caps corrupt or
+    // extreme geometry at 512 evaluations per segment.
+    const adaptivePerSegment = Array.isArray(ann.points) && ann.points.length > 0;
+    const points = [ann.start];
+    for (const s of segs) {
+      const per = adaptivePerSegment
+        ? Math.min(CURVE_CHORD_MAX_SAMPLES, Math.max(basePer, curveChordSampleCount(s)))
+        : basePer;
+      for (let i = 1; i <= per; i += 1) {
+        points.push(bezierPoint(s.p0, s.p1, s.p2, s.p3, i / per));
+      }
+    }
+    return points;
+  }
+
   // Find the closest point ON a selected curve to a click, for the "Add
   // point" tool — insertion always lands on the curve's actual path, at the
   // nearest position, never at the raw click pixel.
@@ -149,7 +182,7 @@
   // Zooming in to place a bend precisely made it worse, not better: the
   // tolerance shrinks as 8/state.zoom while vertex spacing does not.
   //
-  // The fix is the one isPointNearAnnotation (src/render/hit-testing.js)
+  // The fix is the one isPointNearAnnotation (src/board/input/hit-testing.js)
   // already relies on — measure against the polyline SEGMENTS, so accuracy is
   // bounded by chord flatness instead of by sample spacing. `t` is then
   // recovered inside the winning chord from the projection parameter, so the
@@ -320,45 +353,6 @@
     };
   }
 
-  function createCurvedAnnotation(start, end, style, color = 'red', arrowType = 'double', lineWidth = DEFAULT_LINE_WIDTH, mid = null) {
-    const id = state.idCounter++;
-    // A curve is ONE cubic Bézier: two endpoints + two control handles
-    // (control1 off start, control2 off end) — TD 2026-07-18, edited like a
-    // standard pen tool. No middle anchor. A 3-click draw fits the single cubic
-    // so it passes through the middle click at t=0.5; otherwise seed a default
-    // bow. `midPoint`/`midHandleIn`/`midHandleOut` stay null.
-    const midRaw = mid || defaultCurveMidPoint(start, end);
-    const c = controlsFromMidPoint(start, end, midRaw);
-    const label = computeDefaultLabelPosition({
-      type: 'curved',
-      start,
-      end,
-      control1: c.control1,
-      control2: c.control2,
-    });
-    return {
-      id,
-      seq: state.nextSequence,
-      type: 'curved',
-      style,
-      color,
-      arrowType,
-      lineWidth: normalizeLineWidth(lineWidth),
-      start: clonePoint(start),
-      end: clonePoint(end),
-      midPoint: null,
-      midHandleIn: null,
-      midHandleOut: null,
-      control1: c.control1,
-      control2: c.control2,
-      points: [], // US-093: interior anchors the TD adds later, on demand.
-      label,
-      labelManual: false,
-      text: null,
-      value: null,
-    };
-  }
-
   // Default bow when drawing a new curve — perpendicular offset matching the
   // pre-midPoint visual default, so new curves look identical.
   function defaultCurveMidPoint(start, end) {
@@ -447,4 +441,8 @@
         && isFinitePoint(pt.handleIn) && isFinitePoint(pt.handleOut));
       if (usable.length !== ann.points.length) ann.points = usable;
     }
+  }
+
+  function isFinitePoint(p) {
+    return !!(p && Number.isFinite(p.x) && Number.isFinite(p.y));
   }

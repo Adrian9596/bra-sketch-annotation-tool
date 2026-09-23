@@ -5,8 +5,8 @@
 // tolerance evaluation shared with the on-canvas readout. buildSpecInputCell
 // lives here too because its ArrowUp/Down stepping is bound to
 // scheduleSpecStepCommit's module-private timer.
-// Extracted from src/ui/spec-panel.js; the row/cell DOM that consumes these
-// values lives in src/ui/spec-row-builders.js.
+// Extracted from src/measurements/spec-panel.js; the row/cell DOM that consumes these
+// values lives in src/measurements/spec-row-builders.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // ---- Size L / TOL cell helpers ----

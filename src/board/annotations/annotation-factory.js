@@ -1,10 +1,11 @@
 // Annotation factory: pure builders for constructing a new annotation record
-// and its default label position. createStraightAnnotation and
-// computeDefaultLabelPosition are the canonical builders used by the drawing
-// flow and the clipboard (src/manual/annotation-clipboard.js).
-// Label-collision nudging lives in src/manual/label-layout.js; delete/clear
-// lifecycle lives in src/manual/annotation-lifecycle.js; copy/paste/reflect
-// lives in src/manual/annotation-clipboard.js.
+// and its default label position. createStraightAnnotation,
+// createCurvedAnnotation and computeDefaultLabelPosition are the canonical
+// builders used by the drawing
+// flow and the clipboard (src/board/annotations/annotation-clipboard.js).
+// Label-collision nudging lives in src/board/annotations/label-layout.js; delete/clear
+// lifecycle lives in src/board/annotations/annotation-lifecycle.js; copy/paste/reflect
+// lives in src/board/annotations/annotation-clipboard.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   function createStraightAnnotation(start, end, style, color = 'red', arrowType = 'double', lineWidth = DEFAULT_LINE_WIDTH) {
@@ -26,6 +27,45 @@
       end: clonePoint(end),
       control1: null,
       control2: null,
+      label,
+      labelManual: false,
+      text: null,
+      value: null,
+    };
+  }
+
+  function createCurvedAnnotation(start, end, style, color = 'red', arrowType = 'double', lineWidth = DEFAULT_LINE_WIDTH, mid = null) {
+    const id = state.idCounter++;
+    // A curve is ONE cubic Bézier: two endpoints + two control handles
+    // (control1 off start, control2 off end) — TD 2026-07-18, edited like a
+    // standard pen tool. No middle anchor. A 3-click draw fits the single cubic
+    // so it passes through the middle click at t=0.5; otherwise seed a default
+    // bow. `midPoint`/`midHandleIn`/`midHandleOut` stay null.
+    const midRaw = mid || defaultCurveMidPoint(start, end);
+    const c = controlsFromMidPoint(start, end, midRaw);
+    const label = computeDefaultLabelPosition({
+      type: 'curved',
+      start,
+      end,
+      control1: c.control1,
+      control2: c.control2,
+    });
+    return {
+      id,
+      seq: state.nextSequence,
+      type: 'curved',
+      style,
+      color,
+      arrowType,
+      lineWidth: normalizeLineWidth(lineWidth),
+      start: clonePoint(start),
+      end: clonePoint(end),
+      midPoint: null,
+      midHandleIn: null,
+      midHandleOut: null,
+      control1: c.control1,
+      control2: c.control2,
+      points: [], // US-093: interior anchors the TD adds later, on demand.
       label,
       labelManual: false,
       text: null,

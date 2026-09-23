@@ -2,10 +2,10 @@
 (() => {
   'use strict';
 
-  const BUILTIN_AUTO_MODE_RULE_JSON = {"version":{"pom_unit":"in","template_version":"core18-2026-07-18b","rule_version":"offline-vision-rules-v3","anchor_version":"anchors-2026-08-24-hem-offset-preserved","suggestions_version":"sizeL-suggestions-v1"},"pomTemplate":{"rows":[{"id":"1","name":"1/2 Bottom band - Relax","zh":"下围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"primary","partner":"2","groupName":"1/2 Bottom band","primaryLabel":"Relax","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"2","name":"1/2 Bottom band - Extend","zh":"下围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"secondary","primary":"1"},"expected_confidence_tier":"high"},{"id":"3","name":"1/2 chest - Measure straight","zh":"胸围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"primary","partner":"4","groupName":"1/2 Chest","primaryLabel":"Measure straight","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"4","name":"1/2 chest - Extend","zh":"胸围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"secondary","primary":"3"},"expected_confidence_tier":"high"},{"id":"5","name":"Center front height","zh":"前中高度","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"6","name":"Cradle height at center front","zh":"托架前中高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"7","name":"Cradle height at bottom cup","zh":"托架底杯高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cup-top","cradle-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"8","name":"Cup height at center front","zh":"前中杯高","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cradle-cf-top"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"9","name":"Cup height","zh":"杯高","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-top","inner-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"10","name":"Cup width","zh":"杯宽","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-left","inner-cup-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"11","name":"Side seam length","zh":"侧缝长度","view":"back","refL":null,"requiredAnchors":["side-top","side-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"12","name":"Back center length","zh":"后中高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"13","name":"Back panel height","zh":"后背片高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"optionalAnchors":["back-panel-top","back-panel-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"14","name":"Shoulder strap length","zh":"肩带长度","view":"front_to_back","placementViewRole":"back","refL":null,"requiredAnchors":["strap-top","strap-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"},{"id":"15","name":"Back strap distances","zh":"后肩带间距","view":"back","refL":null,"requiredAnchors":["back-strap-left","back-strap-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"16","name":"Front apex distance","zh":"乳点间距","view":"front_outer","refL":null,"requiredAnchors":["apex-left","apex-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"17","name":"Neckline length","zh":"领口长","view":"front_outer","refL":null,"requiredAnchors":["171","172"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"18","name":"Armhole curve length","zh":"袖窿弧长","view":"front_outer","refL":null,"requiredAnchors":["181","182"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"}]},"anchorSchema":{"anchors":[{"kind":"cf-top","name":"CF top","group":"axis","hint":"Top of the center-front, where the cradle meets the chest line."},{"kind":"cf-bottom","name":"CF bottom","group":"axis","hint":"Bottom of the center front, on the underbust band.","derivation":{"method":"drop_to_line","args":["cf-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"cradle-cf-top","name":"Cradle CF","group":"axis","hint":"Where the cradle / cup-bottom seam approaches the center front. POM 6 top."},{"kind":"cradle-cup-top","name":"Cradle cup top","group":"axis","hint":"Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."},{"kind":"cradle-cup-bottom","name":"Cradle cup btm","group":"axis","hint":"Band baseline directly below the bottom-cup cradle point (POM 7 bottom).","derivation":{"method":"drop_to_line","args":["cradle-cup-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"band-left","name":"Band L","group":"band","hint":"Leftmost end of the underbust band line."},{"kind":"band-right","name":"Band R","group":"band","hint":"Rightmost end of the underbust band line."},{"kind":"chest-left","name":"Chest L","group":"chest","hint":"Left end of the chest / overbust horizontal line."},{"kind":"chest-right","name":"Chest R","group":"chest","hint":"Right end of the chest / overbust horizontal line."},{"kind":"inner-cup-top","name":"IC top","group":"inner-cup","hint":"Top of the cup (apex) on the front (outer) view — POM 9 start."},{"kind":"inner-cup-bottom","name":"IC btm","group":"inner-cup","hint":"Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."},{"kind":"inner-cup-left","name":"IC L","group":"inner-cup","hint":"Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."},{"kind":"inner-cup-right","name":"IC R","group":"inner-cup","hint":"Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."},{"kind":"side-top","name":"Side top","group":"side","hint":"Top of the side seam at the underarm."},{"kind":"side-bottom","name":"Side btm","group":"side","hint":"Bottom of the side seam at the band."},{"kind":"apex-left","name":"Apex L","group":"apex","hint":"Left shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"apex-right","name":"Apex R","group":"apex","hint":"Right shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"strap-top","name":"Front strap join","group":"strap","hint":"Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."},{"kind":"strap-bottom","name":"Back strap join","group":"strap","hint":"End of the shoulder strap at the back / back-panel join — POM 14 end."},{"kind":"back-top","name":"Back top","group":"back","hint":"Top edge of the back panel."},{"kind":"back-bottom","name":"Back btm","group":"back","hint":"Bottom edge of the back panel."},{"kind":"back-panel-top","name":"Panel top","group":"back","hint":"Upper point for back panel height."},{"kind":"back-panel-bottom","name":"Panel btm","group":"back","hint":"Lower point for back panel height."},{"kind":"back-strap-left","name":"Back strap L","group":"back","hint":"Left point of the back strap distance."},{"kind":"back-strap-right","name":"Back strap R","group":"back","hint":"Right point of the back strap distance."},{"kind":"171","name":"171","group":"neckline","hint":"Left upper neckline corner, where the cup/gore top edge meets the strap base."},{"kind":"172","name":"172","group":"neckline","hint":"Right upper neckline corner (mirror of Neckline L)."},{"kind":"181","name":"181","group":"armhole","hint":"Underarm side point at the bottom of the arm opening."},{"kind":"182","name":"182","group":"armhole","hint":"Strap/shoulder junction at the top of the arm opening."}]},"sizeLSuggestions":{"suggestions_version":"sizeL-suggestions-v1","unit":"in","provenance":{"corpus":"Measurements 2/library/_raw_intake/measurements_size_l.csv","conceptMap":"Measurements 2/library/pom_concepts.csv","tolDefaults":"Measurements 2/library/pom_tol_defaults.csv","sketchRatios":"Measurements 2/library/sketch_ratios.csv","generatedBy":"scripts/generate-sizeL-suggestions.mjs","corpusRows":2950,"styleVersions":225,"droppedRows":26,"note":"Derived from the approved Size-L corpus. Regenerate with the generator; never hand-edit. droppedRows = corpus rows whose concept is not yet canonicalized (raw_* intake phrases)."},"poms":{"1":{"concept":"band_relax","median":14,"min":12.74,"max":14.38,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"2":{"concept":"band_extended","median":19,"min":18,"max":19.25,"tol":"1/2","tolType":"min","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"3":{"concept":"chest_relax","median":17,"min":15.5,"max":17.5,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":198,"confidence":"medium","source":"library"},"4":{"concept":"chest_extended","median":22,"min":20,"max":22.77,"tol":"1/2","tolType":"min","sketchReliable":false,"n":197,"confidence":"medium","source":"library"},"5":{"concept":"cf_height","median":5.5,"min":1.32,"max":6.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":217,"confidence":"medium","source":"library"},"6":{"concept":"cradle_cf","median":2.25,"min":1.31,"max":3,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":163,"confidence":"medium","source":"library"},"7":{"concept":"cradle_under_cup","median":1.75,"min":1.11,"max":2.64,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":173,"confidence":"medium","source":"library"},"8":{"concept":"cup_height_cf","median":3,"min":1.75,"max":4,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":113,"confidence":"low","source":"library"},"9":{"concept":"cup_height","median":8,"min":5.805,"max":9.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":237,"confidence":"medium","source":"library"},"10":{"concept":"cup_width","median":8,"min":6.6,"max":9,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":221,"confidence":"medium","source":"library"},"11":{"concept":"sideseam_length","median":5.5,"min":4.5,"max":6,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":211,"confidence":"medium","source":"library"},"12":{"concept":"cb_height","median":3.75,"min":2,"max":7.24,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":239,"confidence":"medium","source":"library"},"13":{"concept":"back_panel_height","median":7.25,"min":3,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":181,"confidence":"medium","source":"library"},"14":{"concept":"strap_length","median":8,"min":4,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":155,"confidence":"low","source":"library"},"15":{"concept":"back_straps_distance","median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"16":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"17":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"18":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"}}}};
+  const BUILTIN_AUTO_MODE_RULE_JSON = {"version":{"pom_unit":"in","template_version":"core18-2026-07-18b","rule_version":"offline-vision-rules-v3","anchor_version":"anchors-2026-08-24-hem-offset-preserved","suggestions_version":"sizeL-suggestions-v1"},"pomTemplate":{"rows":[{"id":"1","name":"1/2 Bottom band (2nd hook from tightest) - Relax","zh":"下围半宽（扣最紧起第2排）- 放松量","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"primary","partner":"2","groupName":"1/2 Bottom band (2nd hook from tightest)","primaryLabel":"Relax","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"2","name":"1/2 Bottom band (2nd hook from tightest) - Extend","zh":"下围半宽（扣最紧起第2排）- 拉伸量","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"secondary","primary":"1"},"expected_confidence_tier":"high"},{"id":"3","name":"1/2 chest (2nd hook from tightest) - Measure straight","zh":"胸围半宽（扣最紧起第2排）- 直量","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"primary","partner":"4","groupName":"1/2 Chest (2nd hook from tightest)","primaryLabel":"Measure straight","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"4","name":"1/2 chest (2nd hook from tightest) - Extend","zh":"胸围半宽（扣最紧起第2排）- 拉伸量","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"secondary","primary":"3"},"expected_confidence_tier":"high"},{"id":"5","name":"Center front height","zh":"前中高度","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"6","name":"Cradle height at center front","zh":"托架前中高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"7","name":"Cradle height at bottom cup","zh":"托架底杯高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cup-top","cradle-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"8","name":"Cup height at center front","zh":"前中杯高","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cradle-cf-top"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"9","name":"Cup height","zh":"杯高","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-top","inner-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"10","name":"Cup width","zh":"杯宽","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-left","inner-cup-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"11","name":"Side seam length","zh":"侧缝长度","view":"back","refL":null,"requiredAnchors":["side-top","side-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"12","name":"Back center length","zh":"后中高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"13","name":"Back panel height","zh":"后背片高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"optionalAnchors":["back-panel-top","back-panel-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"14","name":"Shoulder strap length","zh":"肩带长度","view":"front_to_back","placementViewRole":"back","refL":null,"requiredAnchors":["strap-top","strap-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"},{"id":"15","name":"Back strap distances","zh":"后肩带间距","view":"back","refL":null,"requiredAnchors":["back-strap-left","back-strap-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"16","name":"Front apex distance","zh":"乳点间距","view":"front_outer","refL":null,"requiredAnchors":["apex-left","apex-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"17","name":"Neckline length","zh":"领口长","view":"front_outer","refL":null,"requiredAnchors":["171","172"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"18","name":"Armhole curve length","zh":"袖窿弧长","view":"front_outer","refL":null,"requiredAnchors":["181","182"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"}]},"anchorSchema":{"anchors":[{"kind":"cf-top","name":"CF top","group":"axis","hint":"Top of the center-front, where the cradle meets the chest line."},{"kind":"cf-bottom","name":"CF bottom","group":"axis","hint":"Bottom of the center front, on the underbust band.","derivation":{"method":"drop_to_line","args":["cf-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"cradle-cf-top","name":"Cradle CF","group":"axis","hint":"Where the cradle / cup-bottom seam approaches the center front. POM 6 top."},{"kind":"cradle-cup-top","name":"Cradle cup top","group":"axis","hint":"Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."},{"kind":"cradle-cup-bottom","name":"Cradle cup btm","group":"axis","hint":"Band baseline directly below the bottom-cup cradle point (POM 7 bottom).","derivation":{"method":"drop_to_line","args":["cradle-cup-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"band-left","name":"Band L","group":"band","hint":"Leftmost end of the underbust band line."},{"kind":"band-right","name":"Band R","group":"band","hint":"Rightmost end of the underbust band line."},{"kind":"chest-left","name":"Chest L","group":"chest","hint":"Left end of the chest / overbust horizontal line."},{"kind":"chest-right","name":"Chest R","group":"chest","hint":"Right end of the chest / overbust horizontal line."},{"kind":"inner-cup-top","name":"IC top","group":"inner-cup","hint":"Top of the cup (apex) on the front (outer) view — POM 9 start."},{"kind":"inner-cup-bottom","name":"IC btm","group":"inner-cup","hint":"Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."},{"kind":"inner-cup-left","name":"IC L","group":"inner-cup","hint":"Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."},{"kind":"inner-cup-right","name":"IC R","group":"inner-cup","hint":"Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."},{"kind":"side-top","name":"Side top","group":"side","hint":"Top of the side seam at the underarm."},{"kind":"side-bottom","name":"Side btm","group":"side","hint":"Bottom of the side seam at the band."},{"kind":"apex-left","name":"Apex L","group":"apex","hint":"Left shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"apex-right","name":"Apex R","group":"apex","hint":"Right shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"strap-top","name":"Front strap join","group":"strap","hint":"Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."},{"kind":"strap-bottom","name":"Back strap join","group":"strap","hint":"End of the shoulder strap at the back / back-panel join — POM 14 end."},{"kind":"back-top","name":"Back top","group":"back","hint":"Top edge of the back panel."},{"kind":"back-bottom","name":"Back btm","group":"back","hint":"Bottom edge of the back panel."},{"kind":"back-panel-top","name":"Panel top","group":"back","hint":"Upper point for back panel height."},{"kind":"back-panel-bottom","name":"Panel btm","group":"back","hint":"Lower point for back panel height."},{"kind":"back-strap-left","name":"Back strap L","group":"back","hint":"Left point of the back strap distance."},{"kind":"back-strap-right","name":"Back strap R","group":"back","hint":"Right point of the back strap distance."},{"kind":"171","name":"171","group":"neckline","hint":"Left upper neckline corner, where the cup/gore top edge meets the strap base."},{"kind":"172","name":"172","group":"neckline","hint":"Right upper neckline corner (mirror of Neckline L)."},{"kind":"181","name":"181","group":"armhole","hint":"Underarm side point at the bottom of the arm opening."},{"kind":"182","name":"182","group":"armhole","hint":"Strap/shoulder junction at the top of the arm opening."}]},"sizeLSuggestions":{"suggestions_version":"sizeL-suggestions-v1","unit":"in","provenance":{"corpus":"Measurements 2/library/_raw_intake/measurements_size_l.csv","conceptMap":"Measurements 2/library/pom_concepts.csv","tolDefaults":"Measurements 2/library/pom_tol_defaults.csv","sketchRatios":"Measurements 2/library/sketch_ratios.csv","generatedBy":"scripts/generate-sizeL-suggestions.mjs","corpusRows":2950,"styleVersions":225,"droppedRows":26,"note":"Derived from the approved Size-L corpus. Regenerate with the generator; never hand-edit. droppedRows = corpus rows whose concept is not yet canonicalized (raw_* intake phrases)."},"poms":{"1":{"concept":"band_relax","median":14,"min":12.74,"max":14.38,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"2":{"concept":"band_extended","median":19,"min":18,"max":19.25,"tol":"1/2","tolType":"min","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"3":{"concept":"chest_relax","median":17,"min":15.5,"max":17.5,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":198,"confidence":"medium","source":"library"},"4":{"concept":"chest_extended","median":22,"min":20,"max":22.77,"tol":"1/2","tolType":"min","sketchReliable":false,"n":197,"confidence":"medium","source":"library"},"5":{"concept":"cf_height","median":5.5,"min":1.32,"max":6.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":217,"confidence":"medium","source":"library"},"6":{"concept":"cradle_cf","median":2.25,"min":1.31,"max":3,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":163,"confidence":"medium","source":"library"},"7":{"concept":"cradle_under_cup","median":1.75,"min":1.11,"max":2.64,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":173,"confidence":"medium","source":"library"},"8":{"concept":"cup_height_cf","median":3,"min":1.75,"max":4,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":113,"confidence":"low","source":"library"},"9":{"concept":"cup_height","median":8,"min":5.805,"max":9.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":237,"confidence":"medium","source":"library"},"10":{"concept":"cup_width","median":8,"min":6.6,"max":9,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":221,"confidence":"medium","source":"library"},"11":{"concept":"sideseam_length","median":5.5,"min":4.5,"max":6,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":211,"confidence":"medium","source":"library"},"12":{"concept":"cb_height","median":3.75,"min":2,"max":7.24,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":239,"confidence":"medium","source":"library"},"13":{"concept":"back_panel_height","median":7.25,"min":3,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":181,"confidence":"medium","source":"library"},"14":{"concept":"strap_length","median":8,"min":4,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":155,"confidence":"low","source":"library"},"15":{"concept":"back_straps_distance","median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"16":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"17":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"18":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"}}}};
 
   // US-124: URL of the DXF Worker bundle, content-hashed like app.js?v=.
-  const DXF_WORKER_URL = "dxf-worker.js?v=888dce5219c7";
+  const DXF_WORKER_URL = "dxf-worker.js?v=84e658893acf";
 
   // ---- src/auto/rules/load-rules.js ----
 // Loads TD-editable Auto Mode rules from auto_mode_rules/*.json.
@@ -211,7 +211,7 @@
 // Core app state shape: shared constants, the RULES-derived POM/anchor
 // aliases, and the `state` object itself. DOM handles live in dom-refs.js,
 // boot sequencing in bootstrap.js, URL-driven test/demo bootstrap in
-// dev/url-bootstrap.js.
+// app/url-bootstrap.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   const LINE_COLORS = {
@@ -361,7 +361,7 @@
     // saved to the project. `false` here is simply the fresh-load default; it
     // is also explicitly reset to false by the `Sketch` toolbar toggle
     // itself, by switching to Auto Mode, and by Open Project / autosave
-    // Restore, all three through src/manual/sketch-mode.js's
+    // Restore, all three through src/board/sketch-mode.js's
     // applySketchModeVisual — the one function those three sites share.
     sketchMode: false,
     // US-103: the POM-side pending arrow preference (state.arrowType), saved
@@ -463,7 +463,7 @@
     // fields), off-list values the TD typed (fieldExtra), colorways, and the
     // Color Master List copy this project was saved against. Style metadata
     // only: no anchor, no POM, no view, so detection never reads it. Seeded
-    // lazily by ensureMainPage() in src/ui/main-page.js, which owns the field
+    // lazily by ensureMainPage() in src/techpack/main-page/main-page.js, which owns the field
     // roster and the colour data — null here so state.js does not carry 47
     // colour rows. Persisted with the project and captured in history so
     // undo/redo covers MAIN PAGE edits.
@@ -484,14 +484,14 @@
     // history state and are materialized only for project save/autosave.
     // mod-bom module on this tool's own primitives; no anchor, no POM, so
     // detection never reads it. Seeded lazily by ensureBom() in
-    // src/ui/bom.js — a first-time BOM materializes as the reference
+    // src/techpack/bom/bom.js — a first-time BOM materializes as the reference
     // sheet's exact 12-row BOM (BM_SEED_ROWS, US-074), guarded by
     // bom.seedId so an emptied table stays empty. Null here so state.js
     // does not carry row/callout data by default. Persisted with the
     // project and captured in history so undo/redo covers BOM edits.
     bom: null,
 
-    // src/ui/preview-page.js — Preview & Export page-inclusion checkboxes
+    // src/techpack/preview/preview-page.js — Preview & Export page-inclusion checkboxes
     // ({ enabledPages: { <sheetKey>: boolean } }, US-079/ADR 0046). Null here;
     // initPreviewPage materializes the all-enabled default before seedHistory.
     // Persisted with the project and captured in history.
@@ -516,7 +516,7 @@
     // restores a snapshot that never contains this field, it structurally
     // cannot undo a measurement edit; measurements use their OWN small
     // fingerprint-diff undo stack instead (see
-    // src/manual/dxf-measure-session.js). null until a DXF import creates
+    // src/dxf/measure/dxf-measure-session.js). null until a DXF import creates
     // one; cleared to null on another DXF import or a mode/board reset (see
     // the call sites listed in that file).
     dxfMeasureSession: null,
@@ -615,7 +615,7 @@
     // US-096 / ADR 0055, US-107: Save as new treatment… and Customize
     // selected… stay in the Stitches menu (board-selection-dependent quick
     // actions) — browsing/picking/managing saved Treatments is the unified
-    // Library dialog now (src/ui/dialogs/library-manager-dialog.js), which
+    // Library dialog now (src/library/dialog/library-manager-dialog.js), which
     // looks up #linePresetFileInput on demand rather than caching it here.
     linePresetSaveBtn: document.getElementById('linePresetSaveBtn'),
     lineTreatmentCustomizeBtn: document.getElementById('lineTreatmentCustomizeBtn'),
@@ -768,6 +768,54 @@
   // Image pixel data is stored once per image id here, so history snapshots can
   // reference images by id instead of carrying (and re-serializing) base64 copies.
   const imageDataById = new Map();
+
+  // ---- src/core/clone.js ----
+// Deep copy of plain JSON-shaped data (state records, project snapshots,
+// debug-hook results). JSON round-trip on purpose: it drops functions, DOM
+// nodes and undefined fields, which is exactly what a saved project, an undo
+// snapshot or a debug payload must not carry. Used by 11 feature groups, so it
+// lives in core (ADR 0103 Phase B).
+// Source part for app.js. Run `npm run build` after editing.
+
+  function clone(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+  }
+
+  // ---- src/core/browser-io.js ----
+// Promise/one-call wrappers around the browser's file and image APIs: save a
+// Blob as a download, read a Blob as a data URL, decode a data URL into an
+// Image. No feature knowledge — every exporter, the project save, the library
+// and the tech-pack pages share them, so they live in core (ADR 0103 Phase B).
+// Source part for app.js. Run `npm run build` after editing.
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  function blobToDataURL(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function loadImageFromDataURL(dataURL) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = dataURL;
+    });
+  }
 
   // ---- src/measurements/grading/grade-rules.js ----
 // Grade-rules v2 data model + custom-POM registry lookup.
@@ -1089,10 +1137,12 @@
 
   // ---- src/core/curves.js ----
   // ===========================================================================
-  // Curve geometry. All cubic Bézier math and curved-line construction live
-  // here so future curve tweaks are in one place. The build concatenates every
-  // src/*.js part into one shared scope, so these are callable from
-  // manual-tools.js / rendering.js without any import wiring.
+  // Curve geometry. All cubic Bézier math and the annotation polyline sampler
+  // (getAnnotationPolyline) live here so future curve tweaks are in one place.
+  // Building a new curved annotation record (createCurvedAnnotation) is board
+  // work and lives in src/board/annotations/annotation-factory.js (ADR 0103
+  // Phase B). The build concatenates every src/*.js part into one shared
+  // scope, so these are callable from any part without import wiring.
   //
   //   Data model: a curved annotation is one or two cubic Bézier segments.
   //   With a middle anchor (midPoint) + its two handles (midHandleIn/Out) it's
@@ -1226,6 +1276,37 @@
     );
   }
 
+  function getAnnotationPolyline(ann, samples) {
+    if (ann.type === 'straight') return [ann.start, ann.end];
+    const segs = getCurveBeziers(ann);
+    const basePer = Math.max(2, Math.round(samples / segs.length));
+    // Before US-093 every annotation reaching this helper had one cubic (or
+    // the retired legacy midpoint pair), so `samples` was a whole-curve
+    // budget. Keep that path byte-identical: existing 2-handle curves must not
+    // change their measured value, hit shape, stitches, or label placement.
+    //
+    // `points[]` changes the contract: it can grow the curve to any number of
+    // cubics. Dividing the same fixed budget across that chain eventually left
+    // only two chords per segment (25/50 samples reaches that floor at about
+    // 10/20 segments). A strong S-bend then collapses to its endpoint chord,
+    // severely under-counting length and making the bulge unhittable. Give
+    // every added-anchor segment its own curvature-driven budget instead. The
+    // shared curveChordSampleCount bound is deterministic and zoom-independent,
+    // floors each segment at the old 24-chord precision, and caps corrupt or
+    // extreme geometry at 512 evaluations per segment.
+    const adaptivePerSegment = Array.isArray(ann.points) && ann.points.length > 0;
+    const points = [ann.start];
+    for (const s of segs) {
+      const per = adaptivePerSegment
+        ? Math.min(CURVE_CHORD_MAX_SAMPLES, Math.max(basePer, curveChordSampleCount(s)))
+        : basePer;
+      for (let i = 1; i <= per; i += 1) {
+        points.push(bezierPoint(s.p0, s.p1, s.p2, s.p3, i / per));
+      }
+    }
+    return points;
+  }
+
   // Find the closest point ON a selected curve to a click, for the "Add
   // point" tool — insertion always lands on the curve's actual path, at the
   // nearest position, never at the raw click pixel.
@@ -1239,7 +1320,7 @@
   // Zooming in to place a bend precisely made it worse, not better: the
   // tolerance shrinks as 8/state.zoom while vertex spacing does not.
   //
-  // The fix is the one isPointNearAnnotation (src/render/hit-testing.js)
+  // The fix is the one isPointNearAnnotation (src/board/input/hit-testing.js)
   // already relies on — measure against the polyline SEGMENTS, so accuracy is
   // bounded by chord flatness instead of by sample spacing. `t` is then
   // recovered inside the winning chord from the projection parameter, so the
@@ -1410,45 +1491,6 @@
     };
   }
 
-  function createCurvedAnnotation(start, end, style, color = 'red', arrowType = 'double', lineWidth = DEFAULT_LINE_WIDTH, mid = null) {
-    const id = state.idCounter++;
-    // A curve is ONE cubic Bézier: two endpoints + two control handles
-    // (control1 off start, control2 off end) — TD 2026-07-18, edited like a
-    // standard pen tool. No middle anchor. A 3-click draw fits the single cubic
-    // so it passes through the middle click at t=0.5; otherwise seed a default
-    // bow. `midPoint`/`midHandleIn`/`midHandleOut` stay null.
-    const midRaw = mid || defaultCurveMidPoint(start, end);
-    const c = controlsFromMidPoint(start, end, midRaw);
-    const label = computeDefaultLabelPosition({
-      type: 'curved',
-      start,
-      end,
-      control1: c.control1,
-      control2: c.control2,
-    });
-    return {
-      id,
-      seq: state.nextSequence,
-      type: 'curved',
-      style,
-      color,
-      arrowType,
-      lineWidth: normalizeLineWidth(lineWidth),
-      start: clonePoint(start),
-      end: clonePoint(end),
-      midPoint: null,
-      midHandleIn: null,
-      midHandleOut: null,
-      control1: c.control1,
-      control2: c.control2,
-      points: [], // US-093: interior anchors the TD adds later, on demand.
-      label,
-      labelManual: false,
-      text: null,
-      value: null,
-    };
-  }
-
   // Default bow when drawing a new curve — perpendicular offset matching the
   // pre-midPoint visual default, so new curves look identical.
   function defaultCurveMidPoint(start, end) {
@@ -1539,6 +1581,10 @@
     }
   }
 
+  function isFinitePoint(p) {
+    return !!(p && Number.isFinite(p.x) && Number.isFinite(p.y));
+  }
+
   // ---- src/core/math.js ----
 // Pure math / geometry helpers shared across rendering, interactions,
 // hit testing, and annotation builders. Source part for app.js.
@@ -1590,14 +1636,14 @@
 // US-105: DXF Pattern Measurement — the deterministic, DOM-independent
 // measurement kernel. Pure functions only: no state, no DOM, no canvas. Every
 // function here operates on the NATIVE (as-authored, pre-Y-flip, unscaled)
-// DXF coordinate space produced by src/manual/dxf-native-parser.js — never on
+// DXF coordinate space produced by src/dxf/parse/dxf-native-parser.js — never on
 // board/world/screen coordinates. Board placement, zoom and pan are display
 // transforms applied only when rendering a result; they must never change a
 // value this file computes.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Segment shapes this kernel understands (the same 'straight'/'arc' shapes
-// src/manual/dxf-import.js's dxfSegmentEndpoints/dxfSegmentPoints were
+// src/dxf/dxf-import.js's dxfSegmentEndpoints/dxfSegmentPoints were
 // extended to read for US-105 — see that file for dxfPointOnArcSegment,
 // which this file calls by name; function declarations hoist across the
 // whole bundle, so the load order between the two files does not matter):
@@ -2686,8 +2732,8 @@
   // ---- src/dxf/parse/dxf-pattern-classify.js ----
 // US-124 / ADR 0091: DXF pattern identity is a classified closed outline.
 //
-// Pure, DOM-free grouping shared by BOTH DXF parsers (src/manual/dxf-import.js
-// for the board, src/manual/dxf-native-parser.js for Pattern Measure) so the
+// Pure, DOM-free grouping shared by BOTH DXF parsers (src/dxf/dxf-import.js
+// for the board, src/dxf/parse/dxf-native-parser.js for Pattern Measure) so the
 // two can never disagree about what a pattern is — makeDxfMeasureSession pairs
 // board pieces with native pieces BY INDEX, so a grouping difference between
 // the two would silently null every pieceAnchor.
@@ -2729,10 +2775,10 @@
 // not live here yet.
 //
 // Cross-part symbols used (all `function` declarations, hoisted bundle-wide
-// per CLAUDE.md): distance, pointToSegmentDistance (src/geometry/math.js);
+// per CLAUDE.md): distance, pointToSegmentDistance (src/core/math.js);
 // dxfSegmentEndpoints, dxfPointOnArcSegment, dxfBoundsOfSegments,
 // dxfBoundsOfPoints, dxfUnionFind, dxfBuildPiecesLegacy
-// (src/manual/dxf-import.js).
+// (src/dxf/dxf-import.js).
 // Source part for app.js. Run `npm run build` after editing.
 
   // ASTM D6673-10 / AAMA-292 layer table, verified against the corpus
@@ -3451,7 +3497,7 @@
 
   // ---- src/dxf/parse/dxf-parse.js ----
 // US-124 Phase 5 (ADR 0091): the PURE DXF parse layer, split out of
-// src/manual/dxf-import.js so it can be bundled into dxf-worker.js as well as
+// src/dxf/dxf-import.js so it can be bundled into dxf-worker.js as well as
 // app.js. Nothing in this part touches Board state, the DOM or window — the
 // worker purity gate in scripts/check.mjs enforces that — and every function
 // here is a hoisted declaration, so the board layer (dxf-import.js, later in
@@ -3484,8 +3530,8 @@
 //      createImageRecord's numbers; see the function's own comment).
 //   3. importDxfText(text, rect)            — orchestrates 1 + 2, builds real
 //      annotation objects, and performs the one board mutation.
-// Sibling file: the Tools-menu button / FileReader glue is
-// src/ui/dxf-import-panel.js.
+// A .dxf reaches importDxfText through File > Open project… (the dedicated
+// DXF import panel was retired by ADR 0087).
 // Source part for app.js. Run `npm run build` after editing.
 
   // US-124 Phase 6 (ADR 0091, owner decision 5): the grouping pipeline a
@@ -3912,7 +3958,7 @@
   // sweep of theta from the recovered start angle).
   //
   // US-105: split out of dxfBulgeToBezierChunks so the native-coordinate
-  // measurement kernel (src/manual/dxf-native-parser.js) can get the exact
+  // measurement kernel (src/dxf/parse/dxf-native-parser.js) can get the exact
   // {center, radius, startAngle, sweep} an ARC entity would carry, without
   // going through a Bézier-chunked approximation it does not need — arcs and
   // bulges are already exactly circular, so the measurement kernel's arc
@@ -3959,7 +4005,7 @@
   // computation.
   //
   // The output is the SAME `{kind:'curve'}` cubic the ARC/bulge path already
-  // produces, which is why src/geometry/dxf-path-kernel.js needed no change:
+  // produces, which is why src/dxf/parse/dxf-path-kernel.js needed no change:
   // its header has always documented a cubic-Bezier segment shape that "no
   // parser currently produces" — point-at-t, length, projection and endpoint
   // handling for it were already written and already tested.
@@ -4756,7 +4802,7 @@
   //
   // ADR 0091: this is now the LEGACY grouping — connectivity + bounding-box
   // containment, the pre-2026-09-04 definition of a piece. dxfClassifyPatterns
-  // (src/geometry/dxf-pattern-classify.js) calls it, per instance, for any
+  // (src/dxf/parse/dxf-pattern-classify.js) calls it, per instance, for any
   // instance with no closed ASTM boundary-layer chain (3380.dxf, 2927.dxf,
   // 2892XL-new.dxf have no layer 1 at all), passing the whole-drawing
   // tolerance so the result stays byte-identical to what this function
@@ -5662,7 +5708,8 @@
   }
 
   // ---- src/core/ui/dialog-core.js ----
-// Shared modal shell used by every dialog under src/ui/dialogs/.
+// Shared modal shell used by every dialog in the app (each feature keeps its
+// own dialogs in its own folder since ADR 0103).
 // Source part for app.js. Run `npm run build` after editing.
 //
 // buildDialog gives each dialog a backdrop, header with a close button, and
@@ -7842,7 +7889,7 @@
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Every writeProjectFile() appends an entry to the IndexedDB-backed library
-// in src/project/project-library.js. This pane has two internal sub-tabs:
+// in src/library/project-library.js. This pane has two internal sub-tabs:
 //   - "By Style" (default): one card per styleId, aggregated counts +
 //     evidence/meaning badges, "Open latest" or drill into saves.
 //   - "By Save": flat list, every snapshot is its own row.
@@ -7852,7 +7899,7 @@
 //
 // US-107: this used to be its own openLibraryDialog() modal, reachable from
 // File ▾ ▸ "Project Library…". It is now the Projects tab of the unified
-// Library dialog (src/ui/dialogs/library-manager-dialog.js) — buildDialog()'s
+// Library dialog (src/library/dialog/library-manager-dialog.js) — buildDialog()'s
 // shell, wide-panel class, and footer/Close button all belong to that outer
 // dialog now, so this function renders only its OWN content into a host
 // container the tab switcher supplies, and reports back through callbacks
@@ -8126,15 +8173,15 @@
 // US-106 + US-107: the unified Library dialog — one searchable, categorized
 // place for everything a TD would call "the library": Templates (multi-path
 // saved sketch geometry), Line Treatments (named looks and layered stitch
-// recipes, src/manual/line-presets.js), and Projects (saved whole boards,
-// IndexedDB-backed, src/project/project-library.js). Three tabs, one dialog,
+// recipes, src/library/line-presets.js), and Projects (saved whole boards,
+// IndexedDB-backed, src/library/project-library.js). Three tabs, one dialog,
 // one toolbar entry point (#libraryBtn) — replacing the three separate,
 // scattered entry points US-106 review found (Tools ▾ ▸ Templates, the
 // Stitches ▸ Line Library section, and File ▾ ▸ "Project Library…").
 //
 // Every mutation still goes through the three owning model files — this file
-// is presentation only, same split as src/ui/shape-stamp-panel.js and
-// src/ui/line-preset-panel.js, which remain the board-selection-dependent
+// is presentation only, same split as src/library/shape-stamp-panel.js and
+// src/library/line-preset-panel.js, which remain the board-selection-dependent
 // quick actions (Save selection as Template…, Save as new treatment…,
 // Customize selected…) that need a live board selection and so stay in the
 // toolbar rather than move into this "browse what I've already saved" modal.
@@ -8143,7 +8190,7 @@
 // Source part for app.js. Run `npm run build` after editing.
 
   // A bigger, gallery-scaled rendering of the same idea as
-  // shapeStampPreviewSvg (src/ui/shape-stamp-panel.js) — a separate function
+  // shapeStampPreviewSvg (src/library/shape-stamp-panel.js) — a separate function
   // rather than a shared one with a size parameter, because the two contexts
   // want different aspect ratios (a slim menu row vs a near-square card) and
   // forcing one function to serve both would smuggle a magic number through
@@ -10280,9 +10327,9 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
 // Per-POM line visibility on the canvas: the state helpers plus the DOM
 // controls (the per-row × / + toggle and the sticky "Hide all / Show all"
 // row) that expose it in the Measurements panel.
-// Extracted from src/ui/spec-panel.js; the panel orchestrator that calls
+// Extracted from src/measurements/spec-panel.js; the panel orchestrator that calls
 // these lives there, and the row builders that embed the toggle live in
-// src/ui/spec-row-builders.js.
+// src/measurements/spec-row-builders.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // ---- Per-POM visibility (review overlay) ----
@@ -10296,7 +10343,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   // panel-only refresh leaves "Add point" visible and .active on a line every
   // click now silently refuses. Hence updateUI(), not renderSpecPanel(), and
   // one exit for it: the mutators here plus the setHiddenAnnIds debug hook
-  // (src/auto/debug-api.js), which drifted once by taking its own route. The
+  // (src/debug/debug-api.js), which drifted once by taking its own route. The
   // only other writers clear the set inside a bigger reset (board-reset.js,
   // project-load.js) and already end in updateUI(). Drafts are out of scope:
   // nothing updateUI() syncs reads isDraftHidden, so toggleDraftHidden
@@ -10501,8 +10548,8 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
 // tolerance evaluation shared with the on-canvas readout. buildSpecInputCell
 // lives here too because its ArrowUp/Down stepping is bound to
 // scheduleSpecStepCommit's module-private timer.
-// Extracted from src/ui/spec-panel.js; the row/cell DOM that consumes these
-// values lives in src/ui/spec-row-builders.js.
+// Extracted from src/measurements/spec-panel.js; the row/cell DOM that consumes these
+// values lives in src/measurements/spec-row-builders.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // ---- Size L / TOL cell helpers ----
@@ -10865,9 +10912,9 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
 // decoration, the English-description / POM / measured-value cells, the
 // pairing hint, the template and annotation row shapes, and the custom-POM
 // (US-011) remove control + "+ Add POM" row.
-// Extracted from src/ui/spec-panel.js; the values these cells display come
-// from src/ui/spec-values.js, the × / + toggle from src/ui/spec-visibility.js,
-// and the orchestrator that assembles the rows stays in src/ui/spec-panel.js.
+// Extracted from src/measurements/spec-panel.js; the values these cells display come
+// from src/measurements/spec-values.js, the × / + toggle from src/measurements/spec-visibility.js,
+// and the orchestrator that assembles the rows stays in src/measurements/spec-panel.js.
 //
 // NOTE: renderSpecPanel's focus-preservation guard decides what is "mid-edit
 // safe" during a rebuild from three row selectors — tr[data-ann-id],
@@ -11278,12 +11325,12 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
 //
 // This file owns the assembly and the US-033 rebuild-skip fingerprint plus
 // the Auto Mode status prose and draft-review rows. The pieces it assembles
-// live next door: src/ui/spec-values.js (Size L / TOL value model, fraction
-// math, pomSpecs read/write), src/ui/spec-row-builders.js (row + cell DOM),
-// src/ui/spec-visibility.js (per-POM line visibility on the canvas), and
-// src/ui/anchor-manager-panel.js (the separate floating anchor panel).
+// live next door: src/measurements/spec-values.js (Size L / TOL value model, fraction
+// math, pomSpecs read/write), src/measurements/spec-row-builders.js (row + cell DOM),
+// src/measurements/spec-visibility.js (per-POM line visibility on the canvas), and
+// src/auto/ui/anchor-manager-panel.js (the separate floating anchor panel).
 // The calibration commands the panel's note refers to (setScaleFromSelection
-// / clearScale) live with their toolbar listeners in src/ui/bindings.js.
+// / clearScale) live with their toolbar listeners in src/app/bindings.js.
 
   // ---- Measurement table panel ----
   // Total column count in the spec table:
@@ -11688,7 +11735,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     el.specBody.appendChild(headerTr);
   }
 
-  // escapeHtml lives in src/ui/dialogs/core.js — one declaration for the whole
+  // escapeHtml lives in src/core/ui/dialog-core.js — one declaration for the whole
   // bundle. This file used to carry a byte-equivalent second copy; because every
   // part shares one scope, the later declaration silently won for BOTH call
   // sites, so editing either copy would have had a surprising blast radius.
@@ -11891,7 +11938,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
 
   // One shared observer for every draggable panel's common offsetParent
   // (the board card), armed once on the first panel registered — mirrors
-  // src/manual/viewport.js's initCanvasResizeObserver, the same "react to
+  // src/board/view/viewport.js's initCanvasResizeObserver, the same "react to
   // the actual box changing, not every event that might cause it" approach
   // this codebase already uses for the canvas's own backing-buffer invariant.
   let draggablePanelResizeObserverArmed = false;
@@ -11986,7 +12033,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   // ---- src/auto/ui/anchor-manager-panel.js ----
 // The Anchor Manager: a floating, non-modal panel over the board for hiding,
 // showing and isolating detected anchors while checking Auto Mode's accuracy.
-// Extracted from src/ui/spec-panel.js — see the US-038 note below for why it
+// Extracted from src/measurements/spec-panel.js — see the US-038 note below for why it
 // is deliberately NOT part of the exported Measurements panel.
 // Source part for app.js. Run `npm run build` after editing.
 
@@ -21196,7 +21243,7 @@ const BOM_MATERIAL_LIBRARY = [
 // Phase 2/3 learning-sample hook on commit. worldToScreen, the canvas ->
 // screen coordinate helper it needs, lives here and is shared with the
 // renderers. The two el.labelEditor listeners are wired in bindUI()
-// (src/ui/bindings.js).
+// (src/app/bindings.js).
 // Source part for app.js. Run `npm run build` after editing.
 
   function worldToScreen(x, y) {
@@ -21284,7 +21331,7 @@ const BOM_MATERIAL_LIBRARY = [
 // The Board note editor (US-092): a floating <textarea> over the canvas that
 // either places a NEW note where the Text tool was clicked, or re-opens an
 // existing one for editing. The note record and its geometry live in
-// src/manual/note-model.js; drawing in src/render/render-notes.js.
+// src/notes/note-model.js; drawing in src/notes/render-notes.js.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Why not reuse #labelEditor: that one is a single-line <input> whose Enter
@@ -21529,10 +21576,10 @@ const BOM_MATERIAL_LIBRARY = [
   // ---- src/library/line-preset-panel.js ----
 // US-096 + US-098 / ADR 0060: Line Treatment Library and layer editor.
 //
-// Presentation only. Every mutation goes through src/manual/line-presets.js,
+// Presentation only. Every mutation goes through src/library/line-presets.js,
 // which owns the model, the storage and the apply semantics — this file decides
 // what the rows look like and which control calls what, exactly the split
-// src/ui/board-toolbar.js already uses for the rest of the toolbar.
+// src/board/board-toolbar.js already uses for the rest of the toolbar.
 //
 // The rows are rendered from stored data rather than written into index.html,
 // because the list is the TD's own and changes at runtime.
@@ -21907,7 +21954,7 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   // US-107: browsing/picking/managing a saved preset moved to the unified
-  // Library dialog (src/ui/dialogs/library-manager-dialog.js). What stays
+  // Library dialog (src/library/dialog/library-manager-dialog.js). What stays
   // here reads the board's LIVE selection (Save as new treatment…, Customize
   // selected…) — a board-context action, not a library-browsing one — so it
   // belongs in the Stitches menu the TD is already looking at.
@@ -21937,12 +21984,12 @@ const BOM_MATERIAL_LIBRARY = [
 //
 // US-107: this used to also render #shapeStampList (a quick-pick browse list)
 // and own Export/Import Templates JSON here — all of that moved into the
-// unified Library dialog (src/ui/dialogs/library-manager-dialog.js), which is
+// unified Library dialog (src/library/dialog/library-manager-dialog.js), which is
 // now the ONLY place a TD browses, picks, or manages saved Templates. What
 // stays here is "Save selection as Template…" specifically BECAUSE it reads
 // the board's live selection — a board-context action, not a library-browsing
 // one — so it belongs in the toolbar the TD is already looking at, not buried
-// behind a modal. Every mutation still goes through src/manual/shape-stamps.js,
+// behind a modal. Every mutation still goes through src/library/shape-stamps.js,
 // which owns the model, the storage and the placement semantics.
 // Source part for app.js. Run `npm run build` after editing.
 
@@ -21984,10 +22031,10 @@ const BOM_MATERIAL_LIBRARY = [
 
   // ---- src/dxf/measure/dxf-measure-panel.js ----
 // US-105: DXF Pattern Measurement — Tools-menu entry wiring. Sibling to
-// src/ui/dxf-import-panel.js, same split: this file owns only the button
+// the (since retired, ADR 0087) DXF import panel, same split: this file owns only the button
 // click -> tool-mode wiring; the actual interaction lives in
-// src/manual/dxf-measure-interaction.js, the session model in
-// src/manual/dxf-measure-session.js.
+// src/dxf/measure/dxf-measure-interaction.js, the session model in
+// src/dxf/measure/dxf-measure-session.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   function setDxfMeasureMode(mode) {
@@ -22195,7 +22242,7 @@ const BOM_MATERIAL_LIBRARY = [
 // templateGroupId group on the board (DXF-imported grading-nest pieces, and
 // Template placements, since both share the same field), so the TD can tell
 // apart a stack of overlapping same-position sizes and keep only the ones
-// they want. Mirrors src/ui/anchor-manager-panel.js's shape (floating panel,
+// they want. Mirrors src/auto/ui/anchor-manager-panel.js's shape (floating panel,
 // row-per-item, a Select action, plain DOM row-building), but the per-row
 // action here is REMOVE, not hide: ADR 0067's research found no reliable way
 // to auto-detect which size is "standard," so this is a manual, decisive
@@ -22278,7 +22325,7 @@ const BOM_MATERIAL_LIBRARY = [
   // Selects the group's annotations on the board so the existing multi-select
   // halo (render-loop.js) highlights exactly this outline among the stack —
   // reuses the click-a-group-member selection behavior already wired for
-  // templateGroupId (src/manual/selection.js), just triggered from the panel
+  // templateGroupId (src/board/input/selection.js), just triggered from the panel
   // instead of a canvas click.
   function selectPatternPieceGroup(ids) {
     if (!ids || !ids.length) return;
@@ -22457,12 +22504,12 @@ const BOM_MATERIAL_LIBRARY = [
 // measurements. Every mutation (rename/select/delete/clear) goes through the
 // same session functions the canvas interaction already uses
 // (dxf-measure-session.js) — this file only builds rows and reacts to
-// clicks, mirroring src/ui/pattern-pieces-panel.js's shape. Unlike that
+// clicks, mirroring src/dxf/pattern-pieces-panel.js's shape. Unlike that
 // panel's one-shot "review then Apply" model, this one is a LIVE view:
 // measurements are created/deleted from the CANVAS as often as from here, so
 // renderDxfMeasurementsPanel() is called from updateUI() (ui-status.js) on
 // every app-state refresh and fingerprint-skips when nothing it displays
-// changed — same convention as src/ui/spec-panel.js's renderSpecPanel.
+// changed — same convention as src/measurements/spec-panel.js's renderSpecPanel.
 // Source part for app.js. Run `npm run build` after editing.
 
   let lastDxfMeasurementsFingerprint = null;
@@ -22508,7 +22555,7 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   // Frames the measurement's route/endpoints in the viewport — the same
-  // fitBoundsToViewport used by "Fit board" (src/manual/viewport.js), so pan/
+  // fitBoundsToViewport used by "Fit board" (src/board/view/viewport.js), so pan/
   // zoom math has exactly one implementation. A fixed world-space pad keeps a
   // degenerate (near-zero extent, e.g. two very close points) bound from
   // zooming in absurdly tight.
@@ -22814,7 +22861,7 @@ const BOM_MATERIAL_LIBRARY = [
 // style setters live here next to the bindings that drive them, as do the
 // two calibration commands (setScaleFromSelection / clearScale) their
 // toolbar buttons invoke. The label editor the keydown/blur listeners point
-// at is implemented in src/ui/label-editor.js.
+// at is implemented in src/board/annotations/label-editor.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   function bindUI() {
@@ -24034,7 +24081,7 @@ const BOM_MATERIAL_LIBRARY = [
 // Open a .json project file, or import a .dxf sketch: shared file-input
 // handling for the File menu's "Open project…" item, then dispatch to
 // whichever flow the chosen file actually is. Saving is project-save.js;
-// the DXF geometry importer itself is src/manual/dxf-import.js.
+// the DXF geometry importer itself is src/dxf/dxf-import.js.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // loadProject restores a saved snapshot, including image pixel data, and
@@ -24159,7 +24206,7 @@ const BOM_MATERIAL_LIBRARY = [
 
   // Bytes, not readAsText (ADR 0091 follow-up): GBK block names from Chinese
   // vendor exports collided after lossy UTF-8 decoding and made INSERTs draw
-  // the wrong block — decodeDxfBytes (src/manual/dxf-import.js) picks the
+  // the wrong block — decodeDxfBytes (src/dxf/dxf-import.js) picks the
   // charset from strict UTF-8 → $DWGCODEPAGE → GBK → windows-1252.
   function importDxfFileIntoBoard(file) {
     const reader = new FileReader();
@@ -24268,7 +24315,7 @@ const BOM_MATERIAL_LIBRARY = [
       // makes one deliberate exception below: a compatible durable DXF
       // source enters Sketch Focus so Pattern Measure is immediately usable.
       // applySketchModeVisual is the single state+body-class+button-sync
-      // path the toolbar button itself uses (src/manual/sketch-mode.js), so
+      // path the toolbar button itself uses (src/board/sketch-mode.js), so
       // the button cannot stay showing "Sketch" active after a reopen.
       //
       // US-103: called BEFORE state.arrowType is restored from the file, not
@@ -24967,7 +25014,7 @@ const BOM_MATERIAL_LIBRARY = [
 // Split out of src/import/pptx.js. Domain logic specific to PowerPoint's
 // XML schema, distinct from the generic ZIP layer below it
 // (src/import/zip-reader.js, which it calls into) and the picker UI above
-// it (src/ui/dialogs/pptx-picker-dialog.js). Must load after
+// it (src/import/pptx-picker-dialog.js). Must load after
 // src/import/zip-reader.js.
 
   // A .pptx is a ZIP container. Parse it natively and pull one or more
@@ -25282,7 +25329,7 @@ const BOM_MATERIAL_LIBRARY = [
 //
 // The ZIP container reader lives in zip-reader.js (hand-rolled, dependency-
 // free), slide/picture extraction in pptx-xml.js, and the picker UI the TD
-// uses to choose which pages to import in ui/dialogs/pptx-picker-dialog.js.
+// uses to choose which pages to import in import/pptx-picker-dialog.js.
 
   async function onPptxFileChosen(e) {
     const input = e.target;
@@ -25322,12 +25369,13 @@ const BOM_MATERIAL_LIBRARY = [
 
   // ---- src/board/annotations/annotation-factory.js ----
 // Annotation factory: pure builders for constructing a new annotation record
-// and its default label position. createStraightAnnotation and
-// computeDefaultLabelPosition are the canonical builders used by the drawing
-// flow and the clipboard (src/manual/annotation-clipboard.js).
-// Label-collision nudging lives in src/manual/label-layout.js; delete/clear
-// lifecycle lives in src/manual/annotation-lifecycle.js; copy/paste/reflect
-// lives in src/manual/annotation-clipboard.js.
+// and its default label position. createStraightAnnotation,
+// createCurvedAnnotation and computeDefaultLabelPosition are the canonical
+// builders used by the drawing
+// flow and the clipboard (src/board/annotations/annotation-clipboard.js).
+// Label-collision nudging lives in src/board/annotations/label-layout.js; delete/clear
+// lifecycle lives in src/board/annotations/annotation-lifecycle.js; copy/paste/reflect
+// lives in src/board/annotations/annotation-clipboard.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   function createStraightAnnotation(start, end, style, color = 'red', arrowType = 'double', lineWidth = DEFAULT_LINE_WIDTH) {
@@ -25349,6 +25397,45 @@ const BOM_MATERIAL_LIBRARY = [
       end: clonePoint(end),
       control1: null,
       control2: null,
+      label,
+      labelManual: false,
+      text: null,
+      value: null,
+    };
+  }
+
+  function createCurvedAnnotation(start, end, style, color = 'red', arrowType = 'double', lineWidth = DEFAULT_LINE_WIDTH, mid = null) {
+    const id = state.idCounter++;
+    // A curve is ONE cubic Bézier: two endpoints + two control handles
+    // (control1 off start, control2 off end) — TD 2026-07-18, edited like a
+    // standard pen tool. No middle anchor. A 3-click draw fits the single cubic
+    // so it passes through the middle click at t=0.5; otherwise seed a default
+    // bow. `midPoint`/`midHandleIn`/`midHandleOut` stay null.
+    const midRaw = mid || defaultCurveMidPoint(start, end);
+    const c = controlsFromMidPoint(start, end, midRaw);
+    const label = computeDefaultLabelPosition({
+      type: 'curved',
+      start,
+      end,
+      control1: c.control1,
+      control2: c.control2,
+    });
+    return {
+      id,
+      seq: state.nextSequence,
+      type: 'curved',
+      style,
+      color,
+      arrowType,
+      lineWidth: normalizeLineWidth(lineWidth),
+      start: clonePoint(start),
+      end: clonePoint(end),
+      midPoint: null,
+      midHandleIn: null,
+      midHandleOut: null,
+      control1: c.control1,
+      control2: c.control2,
+      points: [], // US-093: interior anchors the TD adds later, on demand.
       label,
       labelManual: false,
       text: null,
@@ -25476,9 +25563,9 @@ const BOM_MATERIAL_LIBRARY = [
 // the manual annotation flow and also from src/auto/drafts/generate-pom-fixture.js
 // and draft-actions.js, so nudgeAutoLabelsToAvoidCollisions must keep its name
 // exactly. Sibling files: annotation builders live in
-// src/manual/annotation-factory.js; delete/clear lifecycle lives in
-// src/manual/annotation-lifecycle.js; copy/paste/reflect lives in
-// src/manual/annotation-clipboard.js.
+// src/board/annotations/annotation-factory.js; delete/clear lifecycle lives in
+// src/board/annotations/annotation-lifecycle.js; copy/paste/reflect lives in
+// src/board/annotations/annotation-clipboard.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // Numbered callouts cluster at the bra center-front: POMs 1, 5, 6, 7, 8 all
@@ -25553,9 +25640,9 @@ const BOM_MATERIAL_LIBRARY = [
 // Destructive board-mutation lifecycle: deleteImageById (purges Auto Mode
 // anchors/drafts/detection for a removed photo), deleteSelected, and
 // clearAllAnnotations. Sibling files: annotation builders live in
-// src/manual/annotation-factory.js; label-collision nudging lives in
-// src/manual/label-layout.js; copy/paste/reflect lives in
-// src/manual/annotation-clipboard.js.
+// src/board/annotations/annotation-factory.js; label-collision nudging lives in
+// src/board/annotations/label-layout.js; copy/paste/reflect lives in
+// src/board/annotations/annotation-clipboard.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // Remove one image and purge everything tied to it (erase strokes, and in
@@ -25734,13 +25821,13 @@ const BOM_MATERIAL_LIBRARY = [
 // and is not snapshotted in history. reflectSelectedAnnotation uses the
 // detected view box (when present) to mirror across the local front/back
 // column instead of the whole image, so a front-view line stays in the front
-// view. Must load after src/manual/annotation-factory.js (uses
+// view. Must load after src/board/annotations/annotation-factory.js (uses
 // computeDefaultLabelPosition). Sibling files: annotation builders live in
-// src/manual/annotation-factory.js; label-collision nudging lives in
-// src/manual/label-layout.js; delete/clear lifecycle lives in
-// src/manual/annotation-lifecycle.js; the analogous shape clipboard
+// src/board/annotations/annotation-factory.js; label-collision nudging lives in
+// src/board/annotations/label-layout.js; delete/clear lifecycle lives in
+// src/board/annotations/annotation-lifecycle.js; the analogous shape clipboard
 // (copySelectedGraphic / pasteGraphicFromClipboard) lives in
-// src/manual/board-graphics.js. copySelectedLineOrGraphic and
+// src/graphics/board-graphics.js. copySelectedLineOrGraphic and
 // pasteFromClipboard below are the single dispatchers every caller (the
 // keyboard router, the toolbar buttons, the Command Palette, and the native
 // paste event) goes through, so "last copy wins" is decided in one place —
@@ -27162,7 +27249,7 @@ function setSelection(kind, id) {
       if (dx || dy) {
         // Caption only: the leader tips stay on whatever they point at, and
         // the lines re-aim from the box's new edge (moveNoteCaption,
-        // manual/note-model.js). The PHOTO drag further down still uses
+        // notes/note-model.js). The PHOTO drag further down still uses
         // moveNote, where the whole callout has to travel with the garment.
         moveNoteCaption(note, dx, dy);
         interaction.changed = true;
@@ -28218,7 +28305,7 @@ function onWheel(e) {
         // US-096 / ADR 0055: not a bare `state.nextSequence += 1` any more. A
         // POM number is a measurement identity, so a construction line (an
         // unlabelled zigzag/cover/bartack) spends none — see
-        // consumePomSequenceFor in src/manual/annotation-factory.js. The other
+        // consumePomSequenceFor in src/board/annotations/annotation-factory.js. The other
         // two commit paths below call the same helper.
         consumePomSequenceFor(ann);
         state.drawSession = null;
@@ -28941,7 +29028,7 @@ function onWheel(e) {
   // long it is". US-096 / ADR 0055 makes this the load-bearing predicate: a
   // line wearing one of them is a construction mark, not a measurement, unless
   // the TD explicitly labelled it with a POM number. See
-  // isMeasurementAnnotation in src/manual/annotation-lookup.js.
+  // isMeasurementAnnotation in src/board/annotations/annotation-lookup.js.
   // A function, not a module-scope const: the parts share one scope and a
   // `const` read during load would throw a TDZ ReferenceError from any part
   // that happens to run earlier. See CLAUDE.md "Living in one shared scope".
@@ -28959,7 +29046,7 @@ function onWheel(e) {
   //
   // US-096: this reads state.drawStyle — the style the NEXT line is born with —
   // and nothing else. Restyling a selection deliberately no longer touches it
-  // (see setLineStyle in src/ui/bindings.js), because it used to mean that
+  // (see setLineStyle in src/app/bindings.js), because it used to mean that
   // converting one line to zigzag blanked every callout number on the board.
   function isStitchMode() {
     return isStitchStyle(state.drawStyle);
@@ -28972,7 +29059,7 @@ function onWheel(e) {
   // Excel embedded sketch, and the Preview board sheet) — Sketch Focus is a
   // live-authoring aid and must never silently change what an export
   // contains. The live-canvas-only Sketch Focus suppression lives in
-  // annotationShowsCallout (src/manual/annotation-lookup.js) instead.
+  // annotationShowsCallout (src/board/annotations/annotation-lookup.js) instead.
   function labelsVisible() {
     return state.showLabels && !isStitchMode();
   }
@@ -29408,8 +29495,8 @@ function onWheel(e) {
 //     machine can still show — and offer to import — the presets it was drawn
 //     with. Opening a project never silently overwrites the local library.
 //
-// Sibling files: the dropdown UI is src/ui/line-preset-panel.js; the style
-// normalizers it builds on are src/manual/style.js.
+// Sibling files: the dropdown UI is src/library/line-preset-panel.js; the style
+// normalizers it builds on are src/board/annotations/style.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // Functions, not module-scope consts: every part shares one scope, and a
@@ -30865,9 +30952,9 @@ function onWheel(e) {
 // stay outside the measurement contract even when their visual style is solid.
 // ADR 0059 supersedes the single-line/POM semantics in ADR 0056.
 //
-// Sibling files: the Tools-menu UI is src/ui/shape-stamp-panel.js; the shared
-// storage policy is src/manual/library-store.js; the placement gesture lives
-// with the other tools in src/manual/pointer-events.js.
+// Sibling files: the Tools-menu UI is src/library/shape-stamp-panel.js; the shared
+// storage policy is src/library/library-store.js; the placement gesture lives
+// with the other tools in src/board/input/pointer-events.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // Functions, not module-scope consts: the parts share one scope and a const
@@ -31530,7 +31617,7 @@ function onWheel(e) {
   // dialog, a test driving the debug seam) can set one part and forget
   // another, or leave the toolbar/status bar showing a stale armed name.
   // setTool('stamp') runs first: it only clears activeStampId when switching
-  // AWAY from 'stamp' (src/ui/bindings.js), so it never undoes the
+  // AWAY from 'stamp' (src/app/bindings.js), so it never undoes the
   // setActiveShapeStamp call that follows it here. The explicit updateUI()
   // at the end matters: setTool('stamp') already re-rendered once, but at
   // that point activeStampId still held whatever it was BEFORE this call —
@@ -31619,7 +31706,7 @@ function onWheel(e) {
 // US-104: DXF import — the BOARD layer. The pure parse layer (tokenizer,
 // section scan, converters, INSERT resolution, decoding, marks, legacy
 // grouping, placement transform, parseDxfDocument) moved to
-// src/geometry/dxf-parse.js in US-124 Phase 5 so dxf-worker.js can run it
+// src/dxf/parse/dxf-parse.js in US-124 Phase 5 so dxf-worker.js can run it
 // off the main thread; this part keeps everything that mutates state:
 // annotation building, the one-shot board mutation (importDxfText /
 // dxfPlaceParsedDocument), the measure-session hand-off, the toast, and the
@@ -31672,7 +31759,7 @@ function onWheel(e) {
     }
   }
 
-  // (dxfFormatCount lives in the pure parse layer, src/geometry/dxf-parse.js —
+  // (dxfFormatCount lives in the pure parse layer, src/dxf/parse/dxf-parse.js —
   // parseDxfDocument's total-cap message uses it too, in the worker.)
 
   // Phase 3: the skip summary names what was skipped (quality-curve twins,
@@ -31954,14 +32041,14 @@ function onWheel(e) {
 // US-105: DXF Pattern Measurement — the native-coordinate parser adapter.
 // Parses the SAME DXF text US-104's importDxfText already accepts, but into
 // exact native `{kind:'straight'|'arc', ...}` geometry (see
-// src/geometry/dxf-path-kernel.js's header comment for the shapes) instead of
+// src/dxf/parse/dxf-path-kernel.js's header comment for the shapes) instead of
 // the board-annotation-ready straight/Bézier segments parseDxfDocument
 // builds — arcs and bulges stay exactly circular here, never
 // Bézier-approximated, so the measurement kernel's arc length stays
 // analytic.
 //
 // Deliberately a SEPARATE parse over the same tokenized pairs, not a
-// modification of parseDxfDocument: that function (src/manual/dxf-import.js)
+// modification of parseDxfDocument: that function (src/dxf/dxf-import.js)
 // is a closed, 119-assertion-tested contract (dxf-import-check.mjs), and this
 // story's own "compatibility-preserving adapter" requirement is satisfied
 // most safely by never touching its observable output at all. This file
@@ -32270,7 +32357,7 @@ function onWheel(e) {
     };
   }
 
-  // Same shared reader the board converter uses (src/geometry/dxf-parse.js),
+  // Same shared reader the board converter uses (src/dxf/parse/dxf-parse.js),
   // mapped onto the native `{kind:'curve', p0,p1,p2,p3}` shape the
   // measurement kernel already understands. The two parsers are paired by
   // index, so they must accept and reject the identical set of splines —
@@ -32885,7 +32972,7 @@ function onWheel(e) {
       history: { past: [], future: [] },
       diagnostics: { dragPreviewRecomputes: 0 },
       // US-112: per-piece snap point cache (endpoints/midpoints/lazy
-      // intersections) — see src/manual/dxf-measure-snap.js. Derived purely
+      // intersections) — see src/dxf/measure/dxf-measure-snap.js. Derived purely
       // from `pieces`, which never changes after import, so this is safe to
       // build lazily and keep for the life of the session; never included in
       // dxfMeasureSnapshot (nothing here is TD-editable state).
@@ -33601,7 +33688,7 @@ function onWheel(e) {
   // ---- src/dxf/measure/dxf-measure-snap.js ----
 // US-112: Pattern Measure snap modes — endpoint / midpoint / intersection
 // snap targets computed from the SAME native geometry dxf-measure-session.js
-// and the kernel (src/geometry/dxf-path-kernel.js) already treat as
+// and the kernel (src/dxf/parse/dxf-path-kernel.js) already treat as
 // measurement authority. A snap candidate is a PREVIEW the TD sees before
 // clicking (drawn by drawDxfMeasureSnapHover in render-dxf-measurements.js);
 // it never resolves an ambiguity silently on its own — when a snap point is
@@ -34699,7 +34786,7 @@ function onWheel(e) {
   }
 
   // Shared by the Cmd+Z/Cmd+Shift+Z keyboard shortcut, the toolbar Undo/Redo
-  // buttons (src/ui/bindings.js), and the Command Palette (board.template.
+  // buttons (src/app/bindings.js), and the Command Palette (board.template.
   // import-dxf's siblings, project.undo/project.redo in command-registry.js)
   // — every one of those three surfaces must route to the session's own mini
   // stack while Pattern Measure is active, or the visible Undo button would
@@ -35070,8 +35157,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // ---- src/board/images/image-records.js ----
 // Manual mode: pure image-record helpers. createImageRecord turns a
 // loaded Image into the state.images shape (size, world position, id) and
-// stashes the data URL by id; blobToDataURL / loadImageFromDataURL are
-// promise wrappers around the matching browser APIs.
+// stashes the data URL by id. The blobToDataURL / loadImageFromDataURL
+// promise wrappers it uses live in src/core/browser-io.js (ADR 0103 Phase B).
 // Source part for app.js. Run `npm run build` after editing.
 
   function createImageRecord(img, dataURL, stackIndex) {
@@ -35116,24 +35203,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     return { id, dataURL, img, width, height, x, y, locked: false };
   }
 
-  function blobToDataURL(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  function loadImageFromDataURL(dataURL) {
-    return new Promise((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = reject;
-      image.src = dataURL;
-    });
-  }
-
   // ---- src/board/ui-status.js ----
 // Manual mode UI status sync: updateUI() is the single largest DOM-sync
 // surface in the app — nearly every mutation in the codebase ends by calling
@@ -35141,8 +35210,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // autoStepStates, and updateAutoModeUI are Auto-Mode-specific toolbar/status
 // wiring, kept here only because updateUI() calls updateAutoModeUI().
 // Sibling files: paste / drag-drop image import lives in
-// src/manual/image-import.js; POM/annotation lookup helpers live in
-// src/manual/annotation-lookup.js.
+// src/board/images/image-import.js; POM/annotation lookup helpers live in
+// src/board/annotations/annotation-lookup.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // US-104 "Quick length readout": a read-only, non-persisted length for the
@@ -35779,10 +35848,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // Manual mode image import pipeline: clipboard paste (onPasteEvent),
 // addImagesFromDataURLs, the file-input picker (onImageFileChosen), and
 // drag-and-drop (setupDragAndDrop, handleDroppedFiles). Must load after
-// src/manual/image-records.js (uses createImageRecord, blobToDataURL,
+// src/board/images/image-records.js (uses createImageRecord, blobToDataURL,
 // loadImageFromDataURL). Sibling files: the big UI status updater lives in
-// src/manual/ui-status.js; POM/annotation lookup helpers live in
-// src/manual/annotation-lookup.js.
+// src/board/ui-status.js; POM/annotation lookup helpers live in
+// src/board/annotations/annotation-lookup.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   async function onPasteEvent(e) {
@@ -35935,17 +36004,14 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   }
 
   // ---- src/board/annotations/annotation-lookup.js ----
-// Manual mode POM/annotation lookup & predicate helpers, plus small pure
-// state utilities (clone, inferNextIdCounter): annotationCrossesViews,
+// Manual mode POM/annotation lookup & predicate helpers, plus a small pure
+// state utility (inferNextIdCounter): annotationCrossesViews,
 // getLabelText, lineLength, getPomInfo, getAnnotationById, isAutoDraft,
-// isReviewOnlyDraft, createUniqueAnnotationId, getImageById. Sibling files:
-// the big UI status updater lives in src/manual/ui-status.js; paste /
-// drag-drop image import lives in src/manual/image-import.js.
+// isReviewOnlyDraft, createUniqueAnnotationId, getImageById. clone() moved
+// to src/core/clone.js (ADR 0103 Phase B). Sibling files:
+// the big UI status updater lives in src/board/ui-status.js; paste /
+// drag-drop image import lives in src/board/images/image-import.js.
 // Source part for app.js. Run `npm run build` after editing.
-
-  function clone(value) {
-    return value == null ? value : JSON.parse(JSON.stringify(value));
-  }
 
   function inferNextIdCounter() {
     let max = 0;
@@ -36196,8 +36262,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 
   // ---- src/notes/note-model.js ----
 // Board text notes (US-092): the note record and the pure geometry that acts
-// on it. Rendering lives in src/render/render-notes.js; pointer handling in
-// src/manual/pointer-events.js.
+// on it. Rendering lives in src/notes/render-notes.js; pointer handling in
+// src/board/input/pointer-events.js.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // A note is NOT an annotation, and that separation is the point of the whole
@@ -36505,12 +36571,12 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // so dragging the caption clear of the artwork must not drag the arrow off
   // the thing it names. Nothing else has to be recomputed: drawNoteLeader
   // derives its start from the note's CURRENT box every frame
-  // (render/render-notes.js), so the line re-aims itself and only the tips are
+  // (notes/render-notes.js), so the line re-aims itself and only the tips are
   // stored state.
   //
   // Deliberately not the same function as moveNote. That one is for when the
   // whole annotation travels WITH the garment — the photo drag
-  // (manual/pointer-events.js) and the photo resize (scaleNote below) — where
+  // (board/input/pointer-events.js) and the photo resize (scaleNote below) — where
   // the tips must come along or the note slides off the feature it describes.
   // Two callers, two intents; keeping them apart is what stops the photo path
   // from inheriting a change meant only for the caption path.
@@ -36629,7 +36695,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     return (state.notches || []).find(n => n.id === id) || null;
   }
 
-  // Mirrors normalizeNote's own defensiveness (src/manual/note-model.js): a
+  // Mirrors normalizeNote's own defensiveness (src/notes/note-model.js): a
   // record whose position isn't finite is dropped rather than crashing the
   // load or drawing garbage at (NaN, NaN).
   function normalizeNotch(raw) {
@@ -36738,7 +36804,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // More menu, hidden POM numbers) would otherwise silently survive the
       // switch with no way for the TD to see or undo it from this mode.
       // applySketchModeVisual is the single state+body-class+button-sync
-      // path the toolbar button itself uses (src/manual/sketch-mode.js).
+      // path the toolbar button itself uses (src/board/sketch-mode.js).
       applySketchModeVisual(false);
       // US-105: Pattern Measure is Manual + Sketch Focus only — a measure
       // session (and every overlay it holds) must not survive a switch back
@@ -38692,7 +38758,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // ink-mask.js into the cleaned foreground mask the rest of the pipeline reads.
 //
 // Holds the pluggable external-segmenter registry (the adapter seam consumed by
-// src/auto/debug-api.js's test hooks), the backend-id classifier, the
+// src/debug/debug-api.js's test hooks), the backend-id classifier, the
 // deterministic segmentation-quality score and its serializable view, the mask
 // statistics / bounds helpers, the in-house connected-component ink filter, and
 // the segmentSketch stage itself.
@@ -42908,7 +42974,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // src/auto/detect/cup-model.js, src/auto/detect/pom6-cradle-cf.js,
 // src/auto/detect/pom7-cradle-cup.js, src/auto/detect/cv-debug-payload.js and
 // src/auto/detect/landmark-qa.js — so this part must load after all of them.
-// Its caller is the pipeline composer in src/auto-detection.js.
+// Its caller is the pipeline composer in src/auto/detect/auto-detection.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // ---- Stage 5: landmark construction (+ confidence + assembly) ----
@@ -47837,10 +47903,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     return ann;
   }
 
-  function isFinitePoint(p) {
-    return !!(p && Number.isFinite(p.x) && Number.isFinite(p.y));
-  }
-
   // ---- src/auto/drafts/board-reset.js ----
 // Whole-board destructive operations: discard the current Auto Mode drafts,
 // wipe the working board (photos + lines + detection), or delete every line
@@ -50080,7 +50142,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // "handles interpolate the strap span" invariant (validate-fixture.js) still
   // holds after a blend that validateAutoFixture ran before.
   //
-  // The field list mirrors scaleAnnotationAbout (src/manual/viewport.js) on
+  // The field list mirrors scaleAnnotationAbout (src/board/view/viewport.js) on
   // purpose: that is the other place a whole annotation's geometry moves as a
   // unit, and a field added to one and not the other is exactly how ann.points
   // got torn once already (ADR 0053).
@@ -50171,7 +50233,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // used by the Engineering Workflow debug view.
 //
 // The window.__braAutoModeDebug facade that wires these onto the by-name
-// test-suite contract lives in the sibling src/auto/debug-api.js, which
+// test-suite contract lives in the sibling src/debug/debug-api.js, which
 // loads after this file.
 
   // -------- Ground-truth labeling export (accuracy harness) --------
@@ -50206,7 +50268,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   }
 
   // Trigger an in-browser download of the current ground truth. Used by the
-  // ?label=1 labeling button (see maybeShowGroundTruthLabeler in src/dev/url-bootstrap.js).
+  // ?label=1 labeling button (see maybeShowGroundTruthLabeler in src/app/url-bootstrap.js).
   function downloadGroundTruth(imageName) {
     if (!state.autoMode.anchors.length) {
       showToast('No anchors to save. Run Detect Sketch and correct the anchors first.', 4200);
@@ -50627,7 +50689,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 //
 // The export builders this facade calls (exportGroundTruth/downloadGroundTruth,
 // buildCvDebugExport/downloadCvDebugExport, buildStageDebugSummary) live in
-// the sibling src/auto/debug-export.js, which loads before this file.
+// the sibling src/debug/debug-export.js, which loads before this file.
 //
 // window.__braAutoModeDebug is a by-NAME contract with the headless test
 // suites (smoke, golden, invariants, contract, learning-tests, evidence-tests,
@@ -50804,7 +50866,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // Lets the export suite assert hidden lines are omitted from the spec
       // without faking clicks. Not persisted, mirroring the UI it stands in for.
       // US-093 / ADR 0053 code review, 2026-08-21: it exits through the panel's
-      // own syncAfterHiddenPomChange() (src/ui/spec-visibility.js). While it
+      // own syncAfterHiddenPomChange() (src/measurements/spec-visibility.js). While it
       // only re-rendered the panel it missed the toolbar sync a real × click
       // does — "Add point" stays armed on the line just hidden — so it quietly
       // stopped standing in for the button it exists to stand in for.
@@ -51004,7 +51066,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         ? importLinePresetsFromJson(text) : 0),
       // US-107: a project's own presets the local library does not have yet —
       // the model half of the Library dialog's "Import N from project" action
-      // (src/manual/line-presets.js), so a suite can assert the offer without
+      // (src/library/line-presets.js), so a suite can assert the offer without
       // the dialog's own visibility rule standing in for it.
       getPendingLinePresets: () => (typeof getPendingProjectLinePresets === 'function'
         ? clone(getPendingProjectLinePresets()) : null),
@@ -51122,7 +51184,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         },
         source: () => (state.dxfPatternSource ? clone(state.dxfPatternSource) : null),
         // ADR 0070: the Pattern Pieces panel's pure state operations, exposed
-        // independently of the real DOM panel (src/ui/pattern-pieces-panel.js)
+        // independently of the real DOM panel (src/dxf/pattern-pieces-panel.js)
         // so a headless suite can assert the group-list/remove logic without
         // driving live checkbox clicks for every case.
         patternPieces: {
@@ -51141,12 +51203,12 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         // tests), plus read-only session getters an E2E suite can compare
         // against real pointer-driven results. Every mutating action
         // (create/delete/undo/redo) also has a real UI path — see
-        // src/manual/dxf-measure-interaction.js / dxf-measure-panel.js — this
+        // src/dxf/measure/dxf-measure-interaction.js / dxf-measure-panel.js — this
         // namespace never substitutes for driving that path in an
         // integration-level test, only for isolating the pure math.
         measure: {
           parseNative: (text) => (typeof parseDxfNativeModel === 'function' ? clone(parseDxfNativeModel(text)) : null),
-          // Pure kernel primitives (src/geometry/dxf-path-kernel.js), exposed
+          // Pure kernel primitives (src/dxf/parse/dxf-path-kernel.js), exposed
           // independently of any session/board state so a unit test can
           // drive exact synthetic segments (bulge signs, wraparound sweeps,
           // adaptive Bézier tolerance, degenerate input) without importing a
@@ -51163,7 +51225,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           // read-only convention as pieceSegments below — this file's header
           // comment is explicit that a MUTATING action (toggling a snap kind
           // on/off) always goes through its real UI path
-          // (#dxfMeasureSnapEndpointBtn etc., src/ui/dxf-measure-panel.js),
+          // (#dxfMeasureSnapEndpointBtn etc., src/dxf/measure/dxf-measure-panel.js),
           // never a debug shortcut, so there is deliberately no setter here.
           lineArcIntersections: (lineSeg, arcSeg) => (typeof dxfMeasureLineArcIntersections === 'function'
             ? clone(dxfMeasureLineArcIntersections(lineSeg, arcSeg)) : null),
@@ -51542,7 +51604,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         drawStyle: state.drawStyle,
         // US-103: the pending "next line" arrow default, and its POM-side
         // backup while Sketch Focus is on (applySketchModeVisual,
-        // src/manual/sketch-mode.js) — both session-only, neither persisted.
+        // src/board/sketch-mode.js) — both session-only, neither persisted.
         arrowType: state.arrowType,
         pomArrowType: state.pomArrowType != null ? state.pomArrowType : null,
         smartAlignGuides: clone(state.smartAlignGuides || []),
@@ -51821,7 +51883,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // exportPdf orchestrates: createExportCanvas redirects the global ctx onto
 // a high-DPI temp canvas, drawBoardContentForExport paints the board at full
 // alpha, then dataURLToUint8Array + makeSinglePagePdfBlob assemble a PDF 1.4
-// byte stream that downloadBlob hands off to the browser.
+// byte stream that downloadBlob (src/core/browser-io.js) hands off to the
+// browser.
 //
 // drawBoardContentForExport is also Copy Image's painter (copy-image.js), so
 // the export z-order is defined once and cannot drift between the two.
@@ -52054,17 +52117,6 @@ function makeSinglePagePdfBlob(jpegBytes, imageWidthPx, imageHeightPx, pageWidth
 
 function fixed(value) {
   return Number(value).toFixed(2).replace(/\.00$/, '');
-}
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 function makeExportFileName() {
@@ -52787,7 +52839,7 @@ function makeExportFileName() {
         // TOL is written VERBATIM as an inline string — never coerced to a
         // number/date. So any fraction family (halves, quarters, eighths,
         // incl. ¾ = "3/4") round-trips to Excel exactly as authored, with no
-        // conversion; fractionToNumber (src/ui/spec-panel.js) parses it back.
+        // conversion; fractionToNumber (src/measurements/spec-panel.js) parses it back.
         // US-048: TOL exports as an imperial fraction in inch mode (0.375 →
         // 3/8) to match the fraction-formatted size values; cm stays decimal.
         // Still written verbatim as text — no coercion to number/date.
@@ -54108,9 +54160,9 @@ function makeExportFileName() {
 
   // ---- src/treatments/render-stitches.js ----
 // Stitch-pattern rendering: zigzag, cover, and bartack stitches
-// rendered along an annotation polyline, plus the polyline sampling
-// helpers they share. Source part for app.js. Run `npm run build`
-// after editing.
+// rendered along an annotation polyline. The polyline sampler itself,
+// getAnnotationPolyline, lives in src/core/curves.js (ADR 0103 Phase B).
+// Source part for app.js. Run `npm run build` after editing.
 
   // US-098 / ADR 0060: a configurable Treatment is a stack of layers sampled
   // from the SAME source path. Offsets and pattern sizes are screen-feature
@@ -54284,37 +54336,6 @@ function makeExportFileName() {
       );
       ctx.stroke();
     }
-  }
-
-  function getAnnotationPolyline(ann, samples) {
-    if (ann.type === 'straight') return [ann.start, ann.end];
-    const segs = getCurveBeziers(ann);
-    const basePer = Math.max(2, Math.round(samples / segs.length));
-    // Before US-093 every annotation reaching this helper had one cubic (or
-    // the retired legacy midpoint pair), so `samples` was a whole-curve
-    // budget. Keep that path byte-identical: existing 2-handle curves must not
-    // change their measured value, hit shape, stitches, or label placement.
-    //
-    // `points[]` changes the contract: it can grow the curve to any number of
-    // cubics. Dividing the same fixed budget across that chain eventually left
-    // only two chords per segment (25/50 samples reaches that floor at about
-    // 10/20 segments). A strong S-bend then collapses to its endpoint chord,
-    // severely under-counting length and making the bulge unhittable. Give
-    // every added-anchor segment its own curvature-driven budget instead. The
-    // shared curveChordSampleCount bound is deterministic and zoom-independent,
-    // floors each segment at the old 24-chord precision, and caps corrupt or
-    // extreme geometry at 512 evaluations per segment.
-    const adaptivePerSegment = Array.isArray(ann.points) && ann.points.length > 0;
-    const points = [ann.start];
-    for (const s of segs) {
-      const per = adaptivePerSegment
-        ? Math.min(CURVE_CHORD_MAX_SAMPLES, Math.max(basePer, curveChordSampleCount(s)))
-        : basePer;
-      for (let i = 1; i <= per; i += 1) {
-        points.push(bezierPoint(s.p0, s.p1, s.p2, s.p3, i / per));
-      }
-    }
-    return points;
   }
 
   function polylineLength(points) {
@@ -54817,7 +54838,7 @@ function makeExportFileName() {
 
   // ---- src/notes/render-notes.js ----
 // Board text note drawing (US-092). The record and its geometry live in
-// src/manual/note-model.js; this file only paints.
+// src/notes/note-model.js; this file only paints.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Everything here is drawn in WORLD coordinates and sized off the note's own
@@ -55706,8 +55727,7 @@ function makeExportFileName() {
 // detection diagnostic overlay (bbox/axis/band/cradle/etc.) lives in the
 // sibling detection-overlay.js.
 //
-// hitTestAutoDraftAnnotations is called from src/manual/interactions.js,
-// so this file must still load before that interaction file.
+// hitTestAutoDraftAnnotations is called from src/board/input/pointer-events.js.
 
   function drawAutoDraftAnnotation(ann, withLabel = true) {
     if (isReviewOnlyDraft(ann)) return;

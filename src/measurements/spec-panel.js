@@ -13,12 +13,12 @@
 //
 // This file owns the assembly and the US-033 rebuild-skip fingerprint plus
 // the Auto Mode status prose and draft-review rows. The pieces it assembles
-// live next door: src/ui/spec-values.js (Size L / TOL value model, fraction
-// math, pomSpecs read/write), src/ui/spec-row-builders.js (row + cell DOM),
-// src/ui/spec-visibility.js (per-POM line visibility on the canvas), and
-// src/ui/anchor-manager-panel.js (the separate floating anchor panel).
+// live next door: src/measurements/spec-values.js (Size L / TOL value model, fraction
+// math, pomSpecs read/write), src/measurements/spec-row-builders.js (row + cell DOM),
+// src/measurements/spec-visibility.js (per-POM line visibility on the canvas), and
+// src/auto/ui/anchor-manager-panel.js (the separate floating anchor panel).
 // The calibration commands the panel's note refers to (setScaleFromSelection
-// / clearScale) live with their toolbar listeners in src/ui/bindings.js.
+// / clearScale) live with their toolbar listeners in src/app/bindings.js.
 
   // ---- Measurement table panel ----
   // Total column count in the spec table:
@@ -423,7 +423,7 @@
     el.specBody.appendChild(headerTr);
   }
 
-  // escapeHtml lives in src/ui/dialogs/core.js — one declaration for the whole
+  // escapeHtml lives in src/core/ui/dialog-core.js — one declaration for the whole
   // bundle. This file used to carry a byte-equivalent second copy; because every
   // part shares one scope, the later declaration silently won for BOTH call
   // sites, so editing either copy would have had a surprising blast radius.

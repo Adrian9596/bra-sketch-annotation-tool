@@ -1,7 +1,7 @@
 // The Board note editor (US-092): a floating <textarea> over the canvas that
 // either places a NEW note where the Text tool was clicked, or re-opens an
 // existing one for editing. The note record and its geometry live in
-// src/manual/note-model.js; drawing in src/render/render-notes.js.
+// src/notes/note-model.js; drawing in src/notes/render-notes.js.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Why not reuse #labelEditor: that one is a single-line <input> whose Enter

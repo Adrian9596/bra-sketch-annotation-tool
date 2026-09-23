@@ -1,7 +1,7 @@
 // US-104: DXF import — the BOARD layer. The pure parse layer (tokenizer,
 // section scan, converters, INSERT resolution, decoding, marks, legacy
 // grouping, placement transform, parseDxfDocument) moved to
-// src/geometry/dxf-parse.js in US-124 Phase 5 so dxf-worker.js can run it
+// src/dxf/parse/dxf-parse.js in US-124 Phase 5 so dxf-worker.js can run it
 // off the main thread; this part keeps everything that mutates state:
 // annotation building, the one-shot board mutation (importDxfText /
 // dxfPlaceParsedDocument), the measure-session hand-off, the toast, and the
@@ -54,7 +54,7 @@
     }
   }
 
-  // (dxfFormatCount lives in the pure parse layer, src/geometry/dxf-parse.js —
+  // (dxfFormatCount lives in the pure parse layer, src/dxf/parse/dxf-parse.js —
   // parseDxfDocument's total-cap message uses it too, in the worker.)
 
   // Phase 3: the skip summary names what was skipped (quality-curve twins,

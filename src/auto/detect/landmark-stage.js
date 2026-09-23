@@ -10,7 +10,7 @@
 // src/auto/detect/cup-model.js, src/auto/detect/pom6-cradle-cf.js,
 // src/auto/detect/pom7-cradle-cup.js, src/auto/detect/cv-debug-payload.js and
 // src/auto/detect/landmark-qa.js — so this part must load after all of them.
-// Its caller is the pipeline composer in src/auto-detection.js.
+// Its caller is the pipeline composer in src/auto/detect/auto-detection.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // ---- Stage 5: landmark construction (+ confidence + assembly) ----

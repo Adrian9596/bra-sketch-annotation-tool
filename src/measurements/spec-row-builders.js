@@ -2,9 +2,9 @@
 // decoration, the English-description / POM / measured-value cells, the
 // pairing hint, the template and annotation row shapes, and the custom-POM
 // (US-011) remove control + "+ Add POM" row.
-// Extracted from src/ui/spec-panel.js; the values these cells display come
-// from src/ui/spec-values.js, the × / + toggle from src/ui/spec-visibility.js,
-// and the orchestrator that assembles the rows stays in src/ui/spec-panel.js.
+// Extracted from src/measurements/spec-panel.js; the values these cells display come
+// from src/measurements/spec-values.js, the × / + toggle from src/measurements/spec-visibility.js,
+// and the orchestrator that assembles the rows stays in src/measurements/spec-panel.js.
 //
 // NOTE: renderSpecPanel's focus-preservation guard decides what is "mid-edit
 // safe" during a rebuild from three row selectors — tr[data-ann-id],

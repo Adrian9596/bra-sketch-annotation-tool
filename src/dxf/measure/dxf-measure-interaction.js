@@ -770,7 +770,7 @@
   }
 
   // Shared by the Cmd+Z/Cmd+Shift+Z keyboard shortcut, the toolbar Undo/Redo
-  // buttons (src/ui/bindings.js), and the Command Palette (board.template.
+  // buttons (src/app/bindings.js), and the Command Palette (board.template.
   // import-dxf's siblings, project.undo/project.redo in command-registry.js)
   // — every one of those three surfaces must route to the session's own mini
   // stack while Pattern Measure is active, or the visible Undo button would

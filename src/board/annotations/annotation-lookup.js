@@ -1,14 +1,11 @@
-// Manual mode POM/annotation lookup & predicate helpers, plus small pure
-// state utilities (clone, inferNextIdCounter): annotationCrossesViews,
+// Manual mode POM/annotation lookup & predicate helpers, plus a small pure
+// state utility (inferNextIdCounter): annotationCrossesViews,
 // getLabelText, lineLength, getPomInfo, getAnnotationById, isAutoDraft,
-// isReviewOnlyDraft, createUniqueAnnotationId, getImageById. Sibling files:
-// the big UI status updater lives in src/manual/ui-status.js; paste /
-// drag-drop image import lives in src/manual/image-import.js.
+// isReviewOnlyDraft, createUniqueAnnotationId, getImageById. clone() moved
+// to src/core/clone.js (ADR 0103 Phase B). Sibling files:
+// the big UI status updater lives in src/board/ui-status.js; paste /
+// drag-drop image import lives in src/board/images/image-import.js.
 // Source part for app.js. Run `npm run build` after editing.
-
-  function clone(value) {
-    return value == null ? value : JSON.parse(JSON.stringify(value));
-  }
 
   function inferNextIdCounter() {
     let max = 0;

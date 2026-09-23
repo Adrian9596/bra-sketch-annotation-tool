@@ -90,7 +90,7 @@
     return (state.notches || []).find(n => n.id === id) || null;
   }
 
-  // Mirrors normalizeNote's own defensiveness (src/manual/note-model.js): a
+  // Mirrors normalizeNote's own defensiveness (src/notes/note-model.js): a
   // record whose position isn't finite is dropped rather than crashing the
   // load or drawing garbage at (NaN, NaN).
   function normalizeNotch(raw) {

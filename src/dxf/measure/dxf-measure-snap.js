@@ -1,6 +1,6 @@
 // US-112: Pattern Measure snap modes — endpoint / midpoint / intersection
 // snap targets computed from the SAME native geometry dxf-measure-session.js
-// and the kernel (src/geometry/dxf-path-kernel.js) already treat as
+// and the kernel (src/dxf/parse/dxf-path-kernel.js) already treat as
 // measurement authority. A snap candidate is a PREVIEW the TD sees before
 // clicking (drawn by drawDxfMeasureSnapHover in render-dxf-measurements.js);
 // it never resolves an ambiguity silently on its own — when a snap point is

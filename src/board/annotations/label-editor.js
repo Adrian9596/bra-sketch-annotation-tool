@@ -3,7 +3,7 @@
 // Phase 2/3 learning-sample hook on commit. worldToScreen, the canvas ->
 // screen coordinate helper it needs, lives here and is shared with the
 // renderers. The two el.labelEditor listeners are wired in bindUI()
-// (src/ui/bindings.js).
+// (src/app/bindings.js).
 // Source part for app.js. Run `npm run build` after editing.
 
   function worldToScreen(x, y) {

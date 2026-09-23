@@ -245,7 +245,7 @@
         // US-096 / ADR 0055: not a bare `state.nextSequence += 1` any more. A
         // POM number is a measurement identity, so a construction line (an
         // unlabelled zigzag/cover/bartack) spends none — see
-        // consumePomSequenceFor in src/manual/annotation-factory.js. The other
+        // consumePomSequenceFor in src/board/annotations/annotation-factory.js. The other
         // two commit paths below call the same helper.
         consumePomSequenceFor(ann);
         state.drawSession = null;

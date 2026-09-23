@@ -5,7 +5,7 @@
 // Split out of src/import/pptx.js. Domain logic specific to PowerPoint's
 // XML schema, distinct from the generic ZIP layer below it
 // (src/import/zip-reader.js, which it calls into) and the picker UI above
-// it (src/ui/dialogs/pptx-picker-dialog.js). Must load after
+// it (src/import/pptx-picker-dialog.js). Must load after
 // src/import/zip-reader.js.
 
   // A .pptx is a ZIP container. Parse it natively and pull one or more

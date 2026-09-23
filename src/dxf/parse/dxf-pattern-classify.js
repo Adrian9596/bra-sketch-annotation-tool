@@ -1,7 +1,7 @@
 // US-124 / ADR 0091: DXF pattern identity is a classified closed outline.
 //
-// Pure, DOM-free grouping shared by BOTH DXF parsers (src/manual/dxf-import.js
-// for the board, src/manual/dxf-native-parser.js for Pattern Measure) so the
+// Pure, DOM-free grouping shared by BOTH DXF parsers (src/dxf/dxf-import.js
+// for the board, src/dxf/parse/dxf-native-parser.js for Pattern Measure) so the
 // two can never disagree about what a pattern is — makeDxfMeasureSession pairs
 // board pieces with native pieces BY INDEX, so a grouping difference between
 // the two would silently null every pieceAnchor.
@@ -43,10 +43,10 @@
 // not live here yet.
 //
 // Cross-part symbols used (all `function` declarations, hoisted bundle-wide
-// per CLAUDE.md): distance, pointToSegmentDistance (src/geometry/math.js);
+// per CLAUDE.md): distance, pointToSegmentDistance (src/core/math.js);
 // dxfSegmentEndpoints, dxfPointOnArcSegment, dxfBoundsOfSegments,
 // dxfBoundsOfPoints, dxfUnionFind, dxfBuildPiecesLegacy
-// (src/manual/dxf-import.js).
+// (src/dxf/dxf-import.js).
 // Source part for app.js. Run `npm run build` after editing.
 
   // ASTM D6673-10 / AAMA-292 layer table, verified against the corpus

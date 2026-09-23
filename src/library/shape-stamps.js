@@ -10,9 +10,9 @@
 // stay outside the measurement contract even when their visual style is solid.
 // ADR 0059 supersedes the single-line/POM semantics in ADR 0056.
 //
-// Sibling files: the Tools-menu UI is src/ui/shape-stamp-panel.js; the shared
-// storage policy is src/manual/library-store.js; the placement gesture lives
-// with the other tools in src/manual/pointer-events.js.
+// Sibling files: the Tools-menu UI is src/library/shape-stamp-panel.js; the shared
+// storage policy is src/library/library-store.js; the placement gesture lives
+// with the other tools in src/board/input/pointer-events.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // Functions, not module-scope consts: the parts share one scope and a const
@@ -675,7 +675,7 @@
   // dialog, a test driving the debug seam) can set one part and forget
   // another, or leave the toolbar/status bar showing a stale armed name.
   // setTool('stamp') runs first: it only clears activeStampId when switching
-  // AWAY from 'stamp' (src/ui/bindings.js), so it never undoes the
+  // AWAY from 'stamp' (src/app/bindings.js), so it never undoes the
   // setActiveShapeStamp call that follows it here. The explicit updateUI()
   // at the end matters: setTool('stamp') already re-rendered once, but at
   // that point activeStampId still held whatever it was BEFORE this call —

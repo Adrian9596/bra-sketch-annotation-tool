@@ -2,9 +2,9 @@
 // the manual annotation flow and also from src/auto/drafts/generate-pom-fixture.js
 // and draft-actions.js, so nudgeAutoLabelsToAvoidCollisions must keep its name
 // exactly. Sibling files: annotation builders live in
-// src/manual/annotation-factory.js; delete/clear lifecycle lives in
-// src/manual/annotation-lifecycle.js; copy/paste/reflect lives in
-// src/manual/annotation-clipboard.js.
+// src/board/annotations/annotation-factory.js; delete/clear lifecycle lives in
+// src/board/annotations/annotation-lifecycle.js; copy/paste/reflect lives in
+// src/board/annotations/annotation-clipboard.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   // Numbered callouts cluster at the bra center-front: POMs 1, 5, 6, 7, 8 all

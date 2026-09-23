@@ -2,7 +2,7 @@
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Every writeProjectFile() appends an entry to the IndexedDB-backed library
-// in src/project/project-library.js. This pane has two internal sub-tabs:
+// in src/library/project-library.js. This pane has two internal sub-tabs:
 //   - "By Style" (default): one card per styleId, aggregated counts +
 //     evidence/meaning badges, "Open latest" or drill into saves.
 //   - "By Save": flat list, every snapshot is its own row.
@@ -12,7 +12,7 @@
 //
 // US-107: this used to be its own openLibraryDialog() modal, reachable from
 // File ▾ ▸ "Project Library…". It is now the Projects tab of the unified
-// Library dialog (src/ui/dialogs/library-manager-dialog.js) — buildDialog()'s
+// Library dialog (src/library/dialog/library-manager-dialog.js) — buildDialog()'s
 // shell, wide-panel class, and footer/Close button all belong to that outer
 // dialog now, so this function renders only its OWN content into a host
 // container the tab switcher supplies, and reports back through callbacks

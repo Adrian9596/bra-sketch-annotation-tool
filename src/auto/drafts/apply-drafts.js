@@ -241,7 +241,3 @@
     ensureCurveControls(ann);
     return ann;
   }
-
-  function isFinitePoint(p) {
-    return !!(p && Number.isFinite(p.x) && Number.isFinite(p.y));
-  }

@@ -5,7 +5,8 @@
 // exportPdf orchestrates: createExportCanvas redirects the global ctx onto
 // a high-DPI temp canvas, drawBoardContentForExport paints the board at full
 // alpha, then dataURLToUint8Array + makeSinglePagePdfBlob assemble a PDF 1.4
-// byte stream that downloadBlob hands off to the browser.
+// byte stream that downloadBlob (src/core/browser-io.js) hands off to the
+// browser.
 //
 // drawBoardContentForExport is also Copy Image's painter (copy-image.js), so
 // the export z-order is defined once and cannot drift between the two.
@@ -238,17 +239,6 @@ function makeSinglePagePdfBlob(jpegBytes, imageWidthPx, imageHeightPx, pageWidth
 
 function fixed(value) {
   return Number(value).toFixed(2).replace(/\.00$/, '');
-}
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 function makeExportFileName() {

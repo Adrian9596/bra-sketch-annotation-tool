@@ -1,14 +1,14 @@
 // US-105: DXF Pattern Measurement — the deterministic, DOM-independent
 // measurement kernel. Pure functions only: no state, no DOM, no canvas. Every
 // function here operates on the NATIVE (as-authored, pre-Y-flip, unscaled)
-// DXF coordinate space produced by src/manual/dxf-native-parser.js — never on
+// DXF coordinate space produced by src/dxf/parse/dxf-native-parser.js — never on
 // board/world/screen coordinates. Board placement, zoom and pan are display
 // transforms applied only when rendering a result; they must never change a
 // value this file computes.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // Segment shapes this kernel understands (the same 'straight'/'arc' shapes
-// src/manual/dxf-import.js's dxfSegmentEndpoints/dxfSegmentPoints were
+// src/dxf/dxf-import.js's dxfSegmentEndpoints/dxfSegmentPoints were
 // extended to read for US-105 — see that file for dxfPointOnArcSegment,
 // which this file calls by name; function declarations hoist across the
 // whole bundle, so the load order between the two files does not matter):
