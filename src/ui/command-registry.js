@@ -372,7 +372,7 @@
       when: appCommandSoloSelectedAnnotationReason, action: () => setScaleFromSelection() }),
     appCommand({ id: 'board.scale.clear', label: 'Clear Scale', category: 'Board · Measurements',
       page: 'board', mode: 'manual', target: '#clearScaleBtn',
-      when: () => state.pixelsPerUnit ? true : 'No scale is currently set.', action: () => clearScale() }),
+      when: () => state.calibration.unitsPerPx != null ? true : 'No scale is currently set.', action: () => clearScale() }),
     appCommand({ id: 'board.size-run', label: 'Size Run…', category: 'Board · Measurements',
       page: 'board', mode: 'manual', target: '#sizeRunBtn', action: () => openSizeRunDialog() }),
     appCommand({ id: 'board.grading', label: 'Grading Rules…', category: 'Board · Measurements',

@@ -161,8 +161,22 @@
     return dxfAutosaveDbPromise;
   }
 
+  // Autosave re-persists the same source after every edit, and re-hashing a
+  // 36 MB nest costs ~48 ms on the main thread each time. Remember the
+  // text/fingerprint pair a source last verified against; a WeakMap keeps the
+  // memo off the serialized source and lets it die with the source object.
+  const dxfPatternVerifiedSources = new WeakMap();
+
+  function dxfPatternSourceTextVerified(source) {
+    const seen = dxfPatternVerifiedSources.get(source);
+    if (seen && seen.text === source.text && seen.fingerprint === source.fingerprint) return true;
+    if (dxfPatternFingerprint(source.text) !== source.fingerprint) return false;
+    dxfPatternVerifiedSources.set(source, { text: source.text, fingerprint: source.fingerprint });
+    return true;
+  }
+
   async function persistDxfPatternSourceForAutosave(source) {
-    if (!source || !source.text || dxfPatternFingerprint(source.text) !== source.fingerprint) return false;
+    if (!source || !source.text || !dxfPatternSourceTextVerified(source)) return false;
     const db = await openDxfAutosaveDB();
     await new Promise((resolve, reject) => {
       const tx = db.transaction(DXF_AUTOSAVE_STORE, 'readwrite');

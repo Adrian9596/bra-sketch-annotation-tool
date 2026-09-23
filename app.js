@@ -5,7 +5,7 @@
   const BUILTIN_AUTO_MODE_RULE_JSON = {"version":{"pom_unit":"in","template_version":"core18-2026-07-18b","rule_version":"offline-vision-rules-v3","anchor_version":"anchors-2026-08-24-hem-offset-preserved","suggestions_version":"sizeL-suggestions-v1"},"pomTemplate":{"rows":[{"id":"1","name":"1/2 Bottom band - Relax","zh":"下围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"primary","partner":"2","groupName":"1/2 Bottom band","primaryLabel":"Relax","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"2","name":"1/2 Bottom band - Extend","zh":"下围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"secondary","primary":"1"},"expected_confidence_tier":"high"},{"id":"3","name":"1/2 chest - Measure straight","zh":"胸围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"primary","partner":"4","groupName":"1/2 Chest","primaryLabel":"Measure straight","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"4","name":"1/2 chest - Extend","zh":"胸围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"secondary","primary":"3"},"expected_confidence_tier":"high"},{"id":"5","name":"Center front height","zh":"前中高度","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"6","name":"Cradle height at center front","zh":"托架前中高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"7","name":"Cradle height at bottom cup","zh":"托架底杯高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cup-top","cradle-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"8","name":"Cup height at center front","zh":"前中杯高","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cradle-cf-top"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"9","name":"Cup height","zh":"杯高","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-top","inner-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"10","name":"Cup width","zh":"杯宽","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-left","inner-cup-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"11","name":"Side seam length","zh":"侧缝长度","view":"back","refL":null,"requiredAnchors":["side-top","side-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"12","name":"Back center length","zh":"后中高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"13","name":"Back panel height","zh":"后背片高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"optionalAnchors":["back-panel-top","back-panel-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"14","name":"Shoulder strap length","zh":"肩带长度","view":"front_to_back","placementViewRole":"back","refL":null,"requiredAnchors":["strap-top","strap-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"},{"id":"15","name":"Back strap distances","zh":"后肩带间距","view":"back","refL":null,"requiredAnchors":["back-strap-left","back-strap-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"16","name":"Front apex distance","zh":"乳点间距","view":"front_outer","refL":null,"requiredAnchors":["apex-left","apex-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"17","name":"Neckline length","zh":"领口长","view":"front_outer","refL":null,"requiredAnchors":["171","172"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"18","name":"Armhole curve length","zh":"袖窿弧长","view":"front_outer","refL":null,"requiredAnchors":["181","182"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"}]},"anchorSchema":{"anchors":[{"kind":"cf-top","name":"CF top","group":"axis","hint":"Top of the center-front, where the cradle meets the chest line."},{"kind":"cf-bottom","name":"CF bottom","group":"axis","hint":"Bottom of the center front, on the underbust band.","derivation":{"method":"drop_to_line","args":["cf-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"cradle-cf-top","name":"Cradle CF","group":"axis","hint":"Where the cradle / cup-bottom seam approaches the center front. POM 6 top."},{"kind":"cradle-cup-top","name":"Cradle cup top","group":"axis","hint":"Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."},{"kind":"cradle-cup-bottom","name":"Cradle cup btm","group":"axis","hint":"Band baseline directly below the bottom-cup cradle point (POM 7 bottom).","derivation":{"method":"drop_to_line","args":["cradle-cup-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"band-left","name":"Band L","group":"band","hint":"Leftmost end of the underbust band line."},{"kind":"band-right","name":"Band R","group":"band","hint":"Rightmost end of the underbust band line."},{"kind":"chest-left","name":"Chest L","group":"chest","hint":"Left end of the chest / overbust horizontal line."},{"kind":"chest-right","name":"Chest R","group":"chest","hint":"Right end of the chest / overbust horizontal line."},{"kind":"inner-cup-top","name":"IC top","group":"inner-cup","hint":"Top of the cup (apex) on the front (outer) view — POM 9 start."},{"kind":"inner-cup-bottom","name":"IC btm","group":"inner-cup","hint":"Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."},{"kind":"inner-cup-left","name":"IC L","group":"inner-cup","hint":"Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."},{"kind":"inner-cup-right","name":"IC R","group":"inner-cup","hint":"Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."},{"kind":"side-top","name":"Side top","group":"side","hint":"Top of the side seam at the underarm."},{"kind":"side-bottom","name":"Side btm","group":"side","hint":"Bottom of the side seam at the band."},{"kind":"apex-left","name":"Apex L","group":"apex","hint":"Left shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"apex-right","name":"Apex R","group":"apex","hint":"Right shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"strap-top","name":"Front strap join","group":"strap","hint":"Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."},{"kind":"strap-bottom","name":"Back strap join","group":"strap","hint":"End of the shoulder strap at the back / back-panel join — POM 14 end."},{"kind":"back-top","name":"Back top","group":"back","hint":"Top edge of the back panel."},{"kind":"back-bottom","name":"Back btm","group":"back","hint":"Bottom edge of the back panel."},{"kind":"back-panel-top","name":"Panel top","group":"back","hint":"Upper point for back panel height."},{"kind":"back-panel-bottom","name":"Panel btm","group":"back","hint":"Lower point for back panel height."},{"kind":"back-strap-left","name":"Back strap L","group":"back","hint":"Left point of the back strap distance."},{"kind":"back-strap-right","name":"Back strap R","group":"back","hint":"Right point of the back strap distance."},{"kind":"171","name":"171","group":"neckline","hint":"Left upper neckline corner, where the cup/gore top edge meets the strap base."},{"kind":"172","name":"172","group":"neckline","hint":"Right upper neckline corner (mirror of Neckline L)."},{"kind":"181","name":"181","group":"armhole","hint":"Underarm side point at the bottom of the arm opening."},{"kind":"182","name":"182","group":"armhole","hint":"Strap/shoulder junction at the top of the arm opening."}]},"sizeLSuggestions":{"suggestions_version":"sizeL-suggestions-v1","unit":"in","provenance":{"corpus":"Measurements 2/library/_raw_intake/measurements_size_l.csv","conceptMap":"Measurements 2/library/pom_concepts.csv","tolDefaults":"Measurements 2/library/pom_tol_defaults.csv","sketchRatios":"Measurements 2/library/sketch_ratios.csv","generatedBy":"scripts/generate-sizeL-suggestions.mjs","corpusRows":2950,"styleVersions":225,"droppedRows":26,"note":"Derived from the approved Size-L corpus. Regenerate with the generator; never hand-edit. droppedRows = corpus rows whose concept is not yet canonicalized (raw_* intake phrases)."},"poms":{"1":{"concept":"band_relax","median":14,"min":12.74,"max":14.38,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"2":{"concept":"band_extended","median":19,"min":18,"max":19.25,"tol":"1/2","tolType":"min","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"3":{"concept":"chest_relax","median":17,"min":15.5,"max":17.5,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":198,"confidence":"medium","source":"library"},"4":{"concept":"chest_extended","median":22,"min":20,"max":22.77,"tol":"1/2","tolType":"min","sketchReliable":false,"n":197,"confidence":"medium","source":"library"},"5":{"concept":"cf_height","median":5.5,"min":1.32,"max":6.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":217,"confidence":"medium","source":"library"},"6":{"concept":"cradle_cf","median":2.25,"min":1.31,"max":3,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":163,"confidence":"medium","source":"library"},"7":{"concept":"cradle_under_cup","median":1.75,"min":1.11,"max":2.64,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":173,"confidence":"medium","source":"library"},"8":{"concept":"cup_height_cf","median":3,"min":1.75,"max":4,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":113,"confidence":"low","source":"library"},"9":{"concept":"cup_height","median":8,"min":5.805,"max":9.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":237,"confidence":"medium","source":"library"},"10":{"concept":"cup_width","median":8,"min":6.6,"max":9,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":221,"confidence":"medium","source":"library"},"11":{"concept":"sideseam_length","median":5.5,"min":4.5,"max":6,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":211,"confidence":"medium","source":"library"},"12":{"concept":"cb_height","median":3.75,"min":2,"max":7.24,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":239,"confidence":"medium","source":"library"},"13":{"concept":"back_panel_height","median":7.25,"min":3,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":181,"confidence":"medium","source":"library"},"14":{"concept":"strap_length","median":8,"min":4,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":155,"confidence":"low","source":"library"},"15":{"concept":"back_straps_distance","median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"16":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"17":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"18":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"}}}};
 
   // US-124: URL of the DXF Worker bundle, content-hashed like app.js?v=.
-  const DXF_WORKER_URL = "dxf-worker.js?v=c45527531212";
+  const DXF_WORKER_URL = "dxf-worker.js?v=646c6cab17a8";
 
   // ---- src/auto/rules/load-rules.js ----
 // Loads TD-editable Auto Mode rules from auto_mode_rules/*.json.
@@ -1782,17 +1782,12 @@
   // yields undefined, and that took down the whole pattern-classify pass the
   // first time a SPLINE produced native curves.
   // The two single-field readers are the hot form: dxfPatternCubicPoint runs
-  // them per sampled point per segment while classifying a pattern, and the
-  // array-building variant below cost a measured 50.5ms against a 50ms
-  // responsiveness budget on 3380.dxf when it was used there.
+  // them per sampled point per segment while classifying a pattern. An
+  // array-building variant (`[p0, c1, c2, p3]`) cost a measured 50.5ms against
+  // a 50ms responsiveness budget on 3380.dxf, lost its last caller, and was
+  // removed — do not reintroduce it on a hot path.
   function dxfCubicC1(seg) { return seg.c1 || seg.p1; }
   function dxfCubicC2(seg) { return seg.c2 || seg.p2; }
-
-  function dxfCubicControls(seg) {
-    const c1 = dxfCubicC1(seg);
-    const c2 = dxfCubicC2(seg);
-    return (seg.p0 && c1 && c2 && seg.p3) ? [seg.p0, c1, c2, seg.p3] : null;
-  }
 
   function dxfPointOnSegment(seg, t) {
     if (!seg) return null;
@@ -20719,7 +20714,7 @@ const BOM_MATERIAL_LIBRARY = [
       when: appCommandSoloSelectedAnnotationReason, action: () => setScaleFromSelection() }),
     appCommand({ id: 'board.scale.clear', label: 'Clear Scale', category: 'Board · Measurements',
       page: 'board', mode: 'manual', target: '#clearScaleBtn',
-      when: () => state.pixelsPerUnit ? true : 'No scale is currently set.', action: () => clearScale() }),
+      when: () => state.calibration.unitsPerPx != null ? true : 'No scale is currently set.', action: () => clearScale() }),
     appCommand({ id: 'board.size-run', label: 'Size Run…', category: 'Board · Measurements',
       page: 'board', mode: 'manual', target: '#sizeRunBtn', action: () => openSizeRunDialog() }),
     appCommand({ id: 'board.grading', label: 'Grading Rules…', category: 'Board · Measurements',
@@ -23526,8 +23521,22 @@ const BOM_MATERIAL_LIBRARY = [
     return dxfAutosaveDbPromise;
   }
 
+  // Autosave re-persists the same source after every edit, and re-hashing a
+  // 36 MB nest costs ~48 ms on the main thread each time. Remember the
+  // text/fingerprint pair a source last verified against; a WeakMap keeps the
+  // memo off the serialized source and lets it die with the source object.
+  const dxfPatternVerifiedSources = new WeakMap();
+
+  function dxfPatternSourceTextVerified(source) {
+    const seen = dxfPatternVerifiedSources.get(source);
+    if (seen && seen.text === source.text && seen.fingerprint === source.fingerprint) return true;
+    if (dxfPatternFingerprint(source.text) !== source.fingerprint) return false;
+    dxfPatternVerifiedSources.set(source, { text: source.text, fingerprint: source.fingerprint });
+    return true;
+  }
+
   async function persistDxfPatternSourceForAutosave(source) {
-    if (!source || !source.text || dxfPatternFingerprint(source.text) !== source.fingerprint) return false;
+    if (!source || !source.text || !dxfPatternSourceTextVerified(source)) return false;
     const db = await openDxfAutosaveDB();
     await new Promise((resolve, reject) => {
       const tx = db.transaction(DXF_AUTOSAVE_STORE, 'readwrite');
@@ -31452,10 +31461,6 @@ function onWheel(e) {
     if (!stamp) return [];
     const members = Array.isArray(stamp.members) && stamp.members.length ? stamp.members : [stamp];
     return members.map(member => createAnnotationFromTemplateMember(member, rawBox, groupId, mirrored)).filter(Boolean);
-  }
-
-  function createAnnotationFromStamp(stamp, rawBox, mirrored) {
-    return createAnnotationsFromStamp(stamp, rawBox, null, mirrored)[0] || null;
   }
 
   // The one entry point the pointer layer calls on mouseup. Mirroring
@@ -51959,29 +51964,35 @@ function createExportCanvas(bounds) {
   const oldZoom = state.zoom;
   const oldPanX = state.panX;
   const oldPanY = state.panY;
-  ctx = exportCtx;
-  state.zoom = exportZoom;
-  // US-056 doubled the page density (150 -> 300 DPI), which doubled exportZoom and
-  // so halved the on-page size of the POM lines/labels (they divide by state.zoom).
-  // Size features against half the zoom to restore the pre-300-DPI proportions
-  // while the image keeps rendering at the higher resolution. See featureZoom().
-  state.exportFeatureZoom = exportZoom / 2;
-  state.panX = exportPanX;
-  state.panY = exportPanY;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
-  ctx.save();
-  ctx.translate(state.panX, state.panY);
-  ctx.scale(state.zoom, state.zoom);
-  drawBoardContentForExport();
-  ctx.restore();
-  ctx = oldCtx;
-  state.zoom = oldZoom;
-  state.exportFeatureZoom = null;
-  state.panX = oldPanX;
-  state.panY = oldPanY;
-  requestRender();
+  // The redirect is undone in `finally` so a draw that throws cannot leave the
+  // live board painting into this off-screen canvas at the export's zoom/pan
+  // (copy-image.js restores the same way).
+  try {
+    ctx = exportCtx;
+    state.zoom = exportZoom;
+    // US-056 doubled the page density (150 -> 300 DPI), which doubled exportZoom and
+    // so halved the on-page size of the POM lines/labels (they divide by state.zoom).
+    // Size features against half the zoom to restore the pre-300-DPI proportions
+    // while the image keeps rendering at the higher resolution. See featureZoom().
+    state.exportFeatureZoom = exportZoom / 2;
+    state.panX = exportPanX;
+    state.panY = exportPanY;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
+    ctx.save();
+    ctx.translate(state.panX, state.panY);
+    ctx.scale(state.zoom, state.zoom);
+    drawBoardContentForExport();
+    ctx.restore();
+  } finally {
+    ctx = oldCtx;
+    state.zoom = oldZoom;
+    state.exportFeatureZoom = null;
+    state.panX = oldPanX;
+    state.panY = oldPanY;
+    requestRender();
+  }
   return { canvas: exportCanvas, pageWidthPt: pageWidthMm * 72 / 25.4, pageHeightPt: pageHeightMm * 72 / 25.4 };
 }
 

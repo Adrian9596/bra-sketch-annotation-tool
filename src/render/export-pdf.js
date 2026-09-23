@@ -151,29 +151,35 @@ function createExportCanvas(bounds) {
   const oldZoom = state.zoom;
   const oldPanX = state.panX;
   const oldPanY = state.panY;
-  ctx = exportCtx;
-  state.zoom = exportZoom;
-  // US-056 doubled the page density (150 -> 300 DPI), which doubled exportZoom and
-  // so halved the on-page size of the POM lines/labels (they divide by state.zoom).
-  // Size features against half the zoom to restore the pre-300-DPI proportions
-  // while the image keeps rendering at the higher resolution. See featureZoom().
-  state.exportFeatureZoom = exportZoom / 2;
-  state.panX = exportPanX;
-  state.panY = exportPanY;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
-  ctx.save();
-  ctx.translate(state.panX, state.panY);
-  ctx.scale(state.zoom, state.zoom);
-  drawBoardContentForExport();
-  ctx.restore();
-  ctx = oldCtx;
-  state.zoom = oldZoom;
-  state.exportFeatureZoom = null;
-  state.panX = oldPanX;
-  state.panY = oldPanY;
-  requestRender();
+  // The redirect is undone in `finally` so a draw that throws cannot leave the
+  // live board painting into this off-screen canvas at the export's zoom/pan
+  // (copy-image.js restores the same way).
+  try {
+    ctx = exportCtx;
+    state.zoom = exportZoom;
+    // US-056 doubled the page density (150 -> 300 DPI), which doubled exportZoom and
+    // so halved the on-page size of the POM lines/labels (they divide by state.zoom).
+    // Size features against half the zoom to restore the pre-300-DPI proportions
+    // while the image keeps rendering at the higher resolution. See featureZoom().
+    state.exportFeatureZoom = exportZoom / 2;
+    state.panX = exportPanX;
+    state.panY = exportPanY;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
+    ctx.save();
+    ctx.translate(state.panX, state.panY);
+    ctx.scale(state.zoom, state.zoom);
+    drawBoardContentForExport();
+    ctx.restore();
+  } finally {
+    ctx = oldCtx;
+    state.zoom = oldZoom;
+    state.exportFeatureZoom = null;
+    state.panX = oldPanX;
+    state.panY = oldPanY;
+    requestRender();
+  }
   return { canvas: exportCanvas, pageWidthPt: pageWidthMm * 72 / 25.4, pageHeightPt: pageHeightMm * 72 / 25.4 };
 }
 

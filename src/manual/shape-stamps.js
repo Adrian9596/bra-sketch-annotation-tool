@@ -611,10 +611,6 @@
     return members.map(member => createAnnotationFromTemplateMember(member, rawBox, groupId, mirrored)).filter(Boolean);
   }
 
-  function createAnnotationFromStamp(stamp, rawBox, mirrored) {
-    return createAnnotationsFromStamp(stamp, rawBox, null, mirrored)[0] || null;
-  }
-
   // The one entry point the pointer layer calls on mouseup. Mirroring
   // (US-106) is read from state — armed once per placement via
   // armShapeStampForPlacement/setActiveShapeStamp, not passed by the caller —

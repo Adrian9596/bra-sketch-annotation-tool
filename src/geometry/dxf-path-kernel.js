@@ -193,17 +193,12 @@
   // yields undefined, and that took down the whole pattern-classify pass the
   // first time a SPLINE produced native curves.
   // The two single-field readers are the hot form: dxfPatternCubicPoint runs
-  // them per sampled point per segment while classifying a pattern, and the
-  // array-building variant below cost a measured 50.5ms against a 50ms
-  // responsiveness budget on 3380.dxf when it was used there.
+  // them per sampled point per segment while classifying a pattern. An
+  // array-building variant (`[p0, c1, c2, p3]`) cost a measured 50.5ms against
+  // a 50ms responsiveness budget on 3380.dxf, lost its last caller, and was
+  // removed — do not reintroduce it on a hot path.
   function dxfCubicC1(seg) { return seg.c1 || seg.p1; }
   function dxfCubicC2(seg) { return seg.c2 || seg.p2; }
-
-  function dxfCubicControls(seg) {
-    const c1 = dxfCubicC1(seg);
-    const c2 = dxfCubicC2(seg);
-    return (seg.p0 && c1 && c2 && seg.p3) ? [seg.p0, c1, c2, seg.p3] : null;
-  }
 
   function dxfPointOnSegment(seg, t) {
     if (!seg) return null;

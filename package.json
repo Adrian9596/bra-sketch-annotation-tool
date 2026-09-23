@@ -68,9 +68,5 @@
     "dxf-worker-check": "node scripts/dxf-worker-check.mjs",
     "semantic-seam-vectorization-check": "node scripts/semantic-seam-vectorization-check.mjs",
     "treatment-runs-browser-check": "node scripts/treatment-runs-browser-check.mjs"
-  },
-  "devDependencies": {
-    "@slidev/cli": "^52.16.0",
-    "@slidev/theme-seriph": "^0.25.0"
   }
 }
