@@ -5,7 +5,7 @@
   const BUILTIN_AUTO_MODE_RULE_JSON = {"version":{"pom_unit":"in","template_version":"core18-2026-07-18b","rule_version":"offline-vision-rules-v3","anchor_version":"anchors-2026-08-24-hem-offset-preserved","suggestions_version":"sizeL-suggestions-v1"},"pomTemplate":{"rows":[{"id":"1","name":"1/2 Bottom band - Relax","zh":"下围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"primary","partner":"2","groupName":"1/2 Bottom band","primaryLabel":"Relax","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"2","name":"1/2 Bottom band - Extend","zh":"下围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"secondary","primary":"1"},"expected_confidence_tier":"high"},{"id":"3","name":"1/2 chest - Measure straight","zh":"胸围半宽（放松量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"primary","partner":"4","groupName":"1/2 Chest","primaryLabel":"Measure straight","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"4","name":"1/2 chest - Extend","zh":"胸围半宽（延伸量）","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"secondary","primary":"3"},"expected_confidence_tier":"high"},{"id":"5","name":"Center front height","zh":"前中高度","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"6","name":"Cradle height at center front","zh":"托架前中高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"7","name":"Cradle height at bottom cup","zh":"托架底杯高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cup-top","cradle-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"8","name":"Cup height at center front","zh":"前中杯高","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cradle-cf-top"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"9","name":"Cup height","zh":"杯高","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-top","inner-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"10","name":"Cup width","zh":"杯宽","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-left","inner-cup-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"11","name":"Side seam length","zh":"侧缝长度","view":"back","refL":null,"requiredAnchors":["side-top","side-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"12","name":"Back center length","zh":"后中高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"13","name":"Back panel height","zh":"后背片高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"optionalAnchors":["back-panel-top","back-panel-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"14","name":"Shoulder strap length","zh":"肩带长度","view":"front_to_back","placementViewRole":"back","refL":null,"requiredAnchors":["strap-top","strap-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"},{"id":"15","name":"Back strap distances","zh":"后肩带间距","view":"back","refL":null,"requiredAnchors":["back-strap-left","back-strap-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"16","name":"Front apex distance","zh":"乳点间距","view":"front_outer","refL":null,"requiredAnchors":["apex-left","apex-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"17","name":"Neckline length","zh":"领口长","view":"front_outer","refL":null,"requiredAnchors":["171","172"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"18","name":"Armhole curve length","zh":"袖窿弧长","view":"front_outer","refL":null,"requiredAnchors":["181","182"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"}]},"anchorSchema":{"anchors":[{"kind":"cf-top","name":"CF top","group":"axis","hint":"Top of the center-front, where the cradle meets the chest line."},{"kind":"cf-bottom","name":"CF bottom","group":"axis","hint":"Bottom of the center front, on the underbust band.","derivation":{"method":"drop_to_line","args":["cf-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"cradle-cf-top","name":"Cradle CF","group":"axis","hint":"Where the cradle / cup-bottom seam approaches the center front. POM 6 top."},{"kind":"cradle-cup-top","name":"Cradle cup top","group":"axis","hint":"Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."},{"kind":"cradle-cup-bottom","name":"Cradle cup btm","group":"axis","hint":"Band baseline directly below the bottom-cup cradle point (POM 7 bottom).","derivation":{"method":"drop_to_line","args":["cradle-cup-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"band-left","name":"Band L","group":"band","hint":"Leftmost end of the underbust band line."},{"kind":"band-right","name":"Band R","group":"band","hint":"Rightmost end of the underbust band line."},{"kind":"chest-left","name":"Chest L","group":"chest","hint":"Left end of the chest / overbust horizontal line."},{"kind":"chest-right","name":"Chest R","group":"chest","hint":"Right end of the chest / overbust horizontal line."},{"kind":"inner-cup-top","name":"IC top","group":"inner-cup","hint":"Top of the cup (apex) on the front (outer) view — POM 9 start."},{"kind":"inner-cup-bottom","name":"IC btm","group":"inner-cup","hint":"Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."},{"kind":"inner-cup-left","name":"IC L","group":"inner-cup","hint":"Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."},{"kind":"inner-cup-right","name":"IC R","group":"inner-cup","hint":"Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."},{"kind":"side-top","name":"Side top","group":"side","hint":"Top of the side seam at the underarm."},{"kind":"side-bottom","name":"Side btm","group":"side","hint":"Bottom of the side seam at the band."},{"kind":"apex-left","name":"Apex L","group":"apex","hint":"Left shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"apex-right","name":"Apex R","group":"apex","hint":"Right shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"strap-top","name":"Front strap join","group":"strap","hint":"Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."},{"kind":"strap-bottom","name":"Back strap join","group":"strap","hint":"End of the shoulder strap at the back / back-panel join — POM 14 end."},{"kind":"back-top","name":"Back top","group":"back","hint":"Top edge of the back panel."},{"kind":"back-bottom","name":"Back btm","group":"back","hint":"Bottom edge of the back panel."},{"kind":"back-panel-top","name":"Panel top","group":"back","hint":"Upper point for back panel height."},{"kind":"back-panel-bottom","name":"Panel btm","group":"back","hint":"Lower point for back panel height."},{"kind":"back-strap-left","name":"Back strap L","group":"back","hint":"Left point of the back strap distance."},{"kind":"back-strap-right","name":"Back strap R","group":"back","hint":"Right point of the back strap distance."},{"kind":"171","name":"171","group":"neckline","hint":"Left upper neckline corner, where the cup/gore top edge meets the strap base."},{"kind":"172","name":"172","group":"neckline","hint":"Right upper neckline corner (mirror of Neckline L)."},{"kind":"181","name":"181","group":"armhole","hint":"Underarm side point at the bottom of the arm opening."},{"kind":"182","name":"182","group":"armhole","hint":"Strap/shoulder junction at the top of the arm opening."}]},"sizeLSuggestions":{"suggestions_version":"sizeL-suggestions-v1","unit":"in","provenance":{"corpus":"Measurements 2/library/_raw_intake/measurements_size_l.csv","conceptMap":"Measurements 2/library/pom_concepts.csv","tolDefaults":"Measurements 2/library/pom_tol_defaults.csv","sketchRatios":"Measurements 2/library/sketch_ratios.csv","generatedBy":"scripts/generate-sizeL-suggestions.mjs","corpusRows":2950,"styleVersions":225,"droppedRows":26,"note":"Derived from the approved Size-L corpus. Regenerate with the generator; never hand-edit. droppedRows = corpus rows whose concept is not yet canonicalized (raw_* intake phrases)."},"poms":{"1":{"concept":"band_relax","median":14,"min":12.74,"max":14.38,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"2":{"concept":"band_extended","median":19,"min":18,"max":19.25,"tol":"1/2","tolType":"min","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"3":{"concept":"chest_relax","median":17,"min":15.5,"max":17.5,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":198,"confidence":"medium","source":"library"},"4":{"concept":"chest_extended","median":22,"min":20,"max":22.77,"tol":"1/2","tolType":"min","sketchReliable":false,"n":197,"confidence":"medium","source":"library"},"5":{"concept":"cf_height","median":5.5,"min":1.32,"max":6.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":217,"confidence":"medium","source":"library"},"6":{"concept":"cradle_cf","median":2.25,"min":1.31,"max":3,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":163,"confidence":"medium","source":"library"},"7":{"concept":"cradle_under_cup","median":1.75,"min":1.11,"max":2.64,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":173,"confidence":"medium","source":"library"},"8":{"concept":"cup_height_cf","median":3,"min":1.75,"max":4,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":113,"confidence":"low","source":"library"},"9":{"concept":"cup_height","median":8,"min":5.805,"max":9.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":237,"confidence":"medium","source":"library"},"10":{"concept":"cup_width","median":8,"min":6.6,"max":9,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":221,"confidence":"medium","source":"library"},"11":{"concept":"sideseam_length","median":5.5,"min":4.5,"max":6,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":211,"confidence":"medium","source":"library"},"12":{"concept":"cb_height","median":3.75,"min":2,"max":7.24,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":239,"confidence":"medium","source":"library"},"13":{"concept":"back_panel_height","median":7.25,"min":3,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":181,"confidence":"medium","source":"library"},"14":{"concept":"strap_length","median":8,"min":4,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":155,"confidence":"low","source":"library"},"15":{"concept":"back_straps_distance","median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"16":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"17":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"18":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"}}}};
 
   // US-124: URL of the DXF Worker bundle, content-hashed like app.js?v=.
-  const DXF_WORKER_URL = "dxf-worker.js?v=646c6cab17a8";
+  const DXF_WORKER_URL = "dxf-worker.js?v=888dce5219c7";
 
   // ---- src/auto/rules/load-rules.js ----
 // Loads TD-editable Auto Mode rules from auto_mode_rules/*.json.
@@ -207,7 +207,7 @@
     }
   }
 
-  // ---- src/state.js ----
+  // ---- src/core/state.js ----
 // Core app state shape: shared constants, the RULES-derived POM/anchor
 // aliases, and the `state` object itself. DOM handles live in dom-refs.js,
 // boot sequencing in bootstrap.js, URL-driven test/demo bootstrap in
@@ -583,7 +583,7 @@
     };
   }
 
-  // ---- src/dom-refs.js ----
+  // ---- src/core/dom-refs.js ----
 // DOM element handle registry.
 // Source part for app.js. Run `npm run build` after editing.
 
@@ -769,7 +769,7 @@
   // reference images by id instead of carrying (and re-serializing) base64 copies.
   const imageDataById = new Map();
 
-  // ---- src/project/grade-rules.js ----
+  // ---- src/measurements/grading/grade-rules.js ----
 // Grade-rules v2 data model + custom-POM registry lookup.
 // Source part for app.js. Run `npm run build` after editing.
 
@@ -1087,7 +1087,7 @@
     return 'auto-session-' + timestamp.toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   }
 
-  // ---- src/curves.js ----
+  // ---- src/core/curves.js ----
   // ===========================================================================
   // Curve geometry. All cubic Bézier math and curved-line construction live
   // here so future curve tweaks are in one place. The build concatenates every
@@ -1539,7 +1539,7 @@
     }
   }
 
-  // ---- src/geometry/math.js ----
+  // ---- src/core/math.js ----
 // Pure math / geometry helpers shared across rendering, interactions,
 // hit testing, and annotation builders. Source part for app.js.
 // Run `npm run build` after editing.
@@ -1586,7 +1586,7 @@
     return { x: a1.x + t * rX, y: a1.y + t * rY };
   }
 
-  // ---- src/geometry/dxf-path-kernel.js ----
+  // ---- src/dxf/parse/dxf-path-kernel.js ----
 // US-105: DXF Pattern Measurement — the deterministic, DOM-independent
 // measurement kernel. Pure functions only: no state, no DOM, no canvas. Every
 // function here operates on the NATIVE (as-authored, pre-Y-flip, unscaled)
@@ -2683,7 +2683,7 @@
     }, 0);
   }
 
-  // ---- src/geometry/dxf-pattern-classify.js ----
+  // ---- src/dxf/parse/dxf-pattern-classify.js ----
 // US-124 / ADR 0091: DXF pattern identity is a classified closed outline.
 //
 // Pure, DOM-free grouping shared by BOTH DXF parsers (src/manual/dxf-import.js
@@ -3449,7 +3449,7 @@
     return { pieces, patterns, stats };
   }
 
-  // ---- src/geometry/dxf-parse.js ----
+  // ---- src/dxf/parse/dxf-parse.js ----
 // US-124 Phase 5 (ADR 0091): the PURE DXF parse layer, split out of
 // src/manual/dxf-import.js so it can be bundled into dxf-worker.js as well as
 // app.js. Nothing in this part touches Board state, the DOM or window — the
@@ -5052,7 +5052,7 @@
     return { total, cap: DXF_TOTAL_OUTPUT_CAP, instances: Array.from(rows.values()) };
   }
 
-  // ---- src/manual/board-graphics.js ----
+  // ---- src/graphics/board-graphics.js ----
 // US-095 / ADR 0054: non-measurement Board Graphics and path topology.
 // Board Graphics deliberately live outside state.annotations: nothing in the
 // POM/spec/grading/learning/Excel path reads this collection.
@@ -5587,7 +5587,7 @@
     drawBoardGraphic(temp, 0.65);
   }
 
-  // ---- src/ui/toast.js ----
+  // ---- src/core/ui/toast.js ----
 // Lightweight on-screen toast helper.
 // Source part for app.js. Run `npm run build` after editing.
 //
@@ -5661,7 +5661,7 @@
     if (next) displayToast(next);
   }
 
-  // ---- src/ui/dialogs/core.js ----
+  // ---- src/core/ui/dialog-core.js ----
 // Shared modal shell used by every dialog under src/ui/dialogs/.
 // Source part for app.js. Run `npm run build` after editing.
 //
@@ -5765,7 +5765,7 @@
       .replace(/'/g, '&#39;');
   }
 
-  // ---- src/ui/dialogs/command-palette-dialog.js ----
+  // ---- src/commands/command-palette-dialog.js ----
 // Searchable, keyboard-first Command Palette (US-094). Source part for app.js.
 // Run `npm run build` after editing.
 
@@ -5920,7 +5920,7 @@
     search.focus();
   }
 
-  // ---- src/ui/dialogs/help-dialog.js ----
+  // ---- src/commands/help-dialog.js ----
 // Help & shortcuts dialog (read-only quick reference).
 // Source part for app.js. Run `npm run build` after editing.
 
@@ -6007,7 +6007,7 @@
     okBtn.focus();
   }
 
-  // ---- src/ui/dialogs/scale-dialog.js ----
+  // ---- src/measurements/scale-dialog.js ----
 // Set Scale dialog: calibrate board units-per-pixel from one known line.
 // Source part for app.js. Run `npm run build` after editing.
 
@@ -6106,7 +6106,7 @@
     input.select();
   }
 
-  // ---- src/ui/dialogs/auto-exit-dialog.js ----
+  // ---- src/auto/ui/auto-exit-dialog.js ----
 // Auto Mode exit guard: Apply / Discard / Stay prompt for unapplied drafts.
 // Source part for app.js. Run `npm run build` after editing.
 
@@ -6189,7 +6189,7 @@
     });
   }
 
-  // ---- src/ui/dialogs/save-evidence-dialog.js ----
+  // ---- src/auto/learning/ui/save-evidence-dialog.js ----
 // Save-time style-evidence prompt shown when saveProject() sees TD-edited
 // auto-applied lines (or other evidence candidates).
 // Source part for app.js. Run `npm run build` after editing.
@@ -6621,7 +6621,7 @@
     });
   }
 
-  // ---- src/ui/dialogs/learning-data-shared.js ----
+  // ---- src/auto/learning/ui/learning-data-shared.js ----
 // Transparent Learning panel: pure formatting helpers reused across the
 // telemetry, corrections, meanings and evidence tabs.
 // Source part for app.js. Run `npm run build` after editing.
@@ -6720,7 +6720,7 @@
     return Number.isFinite(n) ? String(Math.round(n * 10) / 10) : '—';
   }
 
-  // ---- src/ui/dialogs/learning-data-tabs.js ----
+  // ---- src/auto/learning/ui/learning-data-tabs.js ----
 // Transparent Learning panel: generic reusable tab-shell widget — not
 // learning-specific at all, it just takes {id,label,count,build} defs.
 // Source part for app.js. Run `npm run build` after editing.
@@ -6797,7 +6797,7 @@
     return wrap;
   }
 
-  // ---- src/ui/dialogs/learning-data-telemetry.js ----
+  // ---- src/auto/learning/ui/learning-data-telemetry.js ----
 // Transparent Learning panel: Telemetry tab — reaches into
 // getAutoTelemetryReport/getAutoTelemetryLog from src/auto/telemetry/*
 // rather than the learning/meaning/evidence stores the other tabs use.
@@ -6911,7 +6911,7 @@
     downloadBlob(blob, 'auto-telemetry-log.json');
   }
 
-  // ---- src/ui/dialogs/learning-data-summary.js ----
+  // ---- src/auto/learning/ui/learning-data-summary.js ----
 // Transparent Learning panel: always-visible top summary strip above the
 // tabs.
 // Source part for app.js. Run `npm run build` after editing.
@@ -6994,7 +6994,7 @@
     return best > 0 ? new Date(best).toISOString() : null;
   }
 
-  // ---- src/ui/dialogs/learning-data-corrections.js ----
+  // ---- src/auto/learning/ui/learning-data-corrections.js ----
 // Transparent Learning panel: Learning Corrections (anchor calibration) tab.
 // Source part for app.js. Run `npm run build` after editing.
 
@@ -7083,7 +7083,7 @@
     return section;
   }
 
-  // ---- src/ui/dialogs/learning-data-meanings.js ----
+  // ---- src/auto/learning/ui/learning-data-meanings.js ----
 // Transparent Learning panel: POM Meanings tab.
 // Source part for app.js. Run `npm run build` after editing.
 
@@ -7168,7 +7168,7 @@
     return section;
   }
 
-  // ---- src/ui/dialogs/learning-data-evidence.js ----
+  // ---- src/auto/learning/ui/learning-data-evidence.js ----
 // Transparent Learning panel: Style Evidence tab, incl. expandable
 // per-record detail rows.
 // Improved columns: POM, Status, Meaning, View, Evidence Source, Records,
@@ -7404,7 +7404,7 @@
     dl.appendChild(dd);
   }
 
-  // ---- src/ui/dialogs/learning-data-dialog.js ----
+  // ---- src/auto/learning/ui/learning-data-dialog.js ----
 // Transparent Learning panel (read-only TD review).
 // Reads from summarizeLearningStore + summarizeMeaningStore +
 // summarizeStyleEvidence + listStyleEvidence. Renders a top summary plus
@@ -7494,7 +7494,7 @@
     closeBtn.focus();
   }
 
-  // ---- src/ui/dialogs/library-shared.js ----
+  // ---- src/library/dialog/library-shared.js ----
 // Library dialog: cross-view grouping/formatting helpers used by BOTH the
 // "By Style" card grid and the "By Save" flat list.
 // Source part for app.js. Run `npm run build` after editing.
@@ -7546,7 +7546,7 @@
     return el;
   }
 
-  // ---- src/ui/dialogs/library-list-view.js ----
+  // ---- src/library/dialog/library-list-view.js ----
 // Library dialog: "By Save" flat-list rendering — every snapshot is its own
 // row, grouped under a per-style header.
 // Source part for app.js. Run `npm run build` after editing.
@@ -7681,7 +7681,7 @@
     return row;
   }
 
-  // ---- src/ui/dialogs/library-grid-view.js ----
+  // ---- src/library/dialog/library-grid-view.js ----
 // Library dialog: "By Style" card-grid rendering — one card per styleId,
 // aggregated counts + evidence/meaning badges.
 // Source part for app.js. Run `npm run build` after editing.
@@ -7837,7 +7837,7 @@
     return row;
   }
 
-  // ---- src/ui/dialogs/library-dialog.js ----
+  // ---- src/library/dialog/library-dialog.js ----
 // Project Library pane: browse, reopen, and delete saved project snapshots.
 // Source part for app.js. Run `npm run build` after editing.
 //
@@ -8122,7 +8122,7 @@
     };
   }
 
-  // ---- src/ui/dialogs/library-manager-dialog.js ----
+  // ---- src/library/dialog/library-manager-dialog.js ----
 // US-106 + US-107: the unified Library dialog — one searchable, categorized
 // place for everything a TD would call "the library": Templates (multi-path
 // saved sketch geometry), Line Treatments (named looks and layered stitch
@@ -9104,7 +9104,7 @@
     showTab(activeTabId);
   }
 
-  // ---- src/ui/dialogs/grading-rules-model.js ----
+  // ---- src/measurements/grading/grading-rules-model.js ----
 // Shared grade-rule domain model: base sizes, the house default step table,
 // and the pure functions that turn a base value + rule into a graded run.
 // Used by both size-run-dialog.js (read-only preview) and grading-dialog.js
@@ -9182,7 +9182,7 @@
     return GRADE_SIZES.map((_, i) => (rule.hold ? base : base + (i - baseIdx) * rule.step));
   }
 
-  // ---- src/ui/dialogs/size-run-dialog.js ----
+  // ---- src/measurements/grading/size-run-dialog.js ----
 // Size-run grading dialog: grade the base spec into a full size run.
 // Additive and offline — reads each POM's base value (its Size L, else the
 // calibrated measured value), applies a per-POM per-size-step increment, and
@@ -9344,7 +9344,7 @@
     dialog.open();
   }
 
-  // ---- src/ui/dialogs/export-size-dialog.js ----
+  // ---- src/measurements/export/export-size-dialog.js ----
 // Export size picker (US-011 S2). Opens from Export Excel: checkboxes for
 // every SPEC_SIZE_RUN column (grouped alpha / depth) with one-click presets.
 // The choice persists in state.sizeSelection (null = all sizes) so the next
@@ -9478,7 +9478,7 @@
     dlg.open();
   }
 
-  // ---- src/ui/dialogs/dxf-pattern-picker-dialog.js ----
+  // ---- src/dxf/dxf-pattern-picker-dialog.js ----
 // US-124 Phase 4 (ADR 0091, owner decision 3): the pre-placement pattern
 // picker. Opens from importDxfText when a DXF would place more lines than
 // DXF_TOTAL_OUTPUT_CAP (board performance, the one remaining hard stop).
@@ -9629,7 +9629,7 @@
     return dlg;
   }
 
-  // ---- src/ui/dialogs/grading-dialog.js ----
+  // ---- src/measurements/grading/grading-dialog.js ----
 // Grading dialog (US-011 S3): view and edit the grade rule inside the tool.
 // One row per POM (the 18 + any custom POMs), one column per size. Cells show
 // the EFFECTIVE per-size delta — per-size TD override, else constant-step
@@ -9902,7 +9902,7 @@
     dlg.open();
   }
 
-  // ---- src/ui/dialogs/view-roles-dialog.js ----
+  // ---- src/auto/ui/view-roles-dialog.js ----
 // View-role confirmation dialog: replaces the old window.prompt letter-code
 // flow (F/B/I/U) after Detect Sketch when the classifier is unsure.
 // Source part for app.js. Run `npm run build` after editing.
@@ -10097,7 +10097,7 @@
     });
   }
 
-  // ---- src/auto/measure/fusion.js ----
+  // ---- src/measurements/fusion.js ----
 // Mode B measurement: library × sketch fusion (ADR 0033), ported to production
 // from the validated lab engine (test/engine.js) via US-039 Stage 1.
 //
@@ -10276,7 +10276,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   return out;
 }
 
-  // ---- src/ui/spec-visibility.js ----
+  // ---- src/measurements/spec-visibility.js ----
 // Per-POM line visibility on the canvas: the state helpers plus the DOM
 // controls (the per-row × / + toggle and the sticky "Hide all / Show all"
 // row) that expose it in the Measurements panel.
@@ -10493,7 +10493,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     td.appendChild(btn);
   }
 
-  // ---- src/ui/spec-values.js ----
+  // ---- src/measurements/spec-values.js ----
 // Value model behind the Measurements panel's Size L / Size L2 / TOL / 中文 /
 // English columns: built-in POM name fallbacks, the Tier-0 library-suggestion
 // lookup, the ADR 0033 Mode-B measured-fusion gate, the imperial
@@ -10860,7 +10860,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     return ev.status === 'in' ? signed + ' ✓' : ev.status === 'out' ? signed + ' ✗' : signed;
   }
 
-  // ---- src/ui/spec-row-builders.js ----
+  // ---- src/measurements/spec-row-builders.js ----
 // Row and cell DOM builders for the Measurements table: the suggestion badge
 // decoration, the English-description / POM / measured-value cells, the
 // pairing hint, the template and annotation row shapes, and the custom-POM
@@ -11262,7 +11262,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     return tr;
   }
 
-  // ---- src/ui/spec-panel.js ----
+  // ---- src/measurements/spec-panel.js ----
 // Measurement / spec panel orchestration.
 // Source part for app.js. Run `npm run build` after editing.
 //
@@ -11825,7 +11825,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     });
   }
 
-  // ---- src/ui/draggable-panel.js ----
+  // ---- src/core/ui/draggable-panel.js ----
 // Drag-to-reposition for a floating `.anchor-panel` by its header — generic,
 // reusable across every panel that opts in (currently Pattern Pieces and
 // Pattern Measurements; Anchor Manager deliberately not wired, see its CSS
@@ -11983,7 +11983,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     handle.addEventListener('pointercancel', endDrag);
   }
 
-  // ---- src/ui/anchor-manager-panel.js ----
+  // ---- src/auto/ui/anchor-manager-panel.js ----
 // The Anchor Manager: a floating, non-modal panel over the board for hiding,
 // showing and isolating detected anchors while checking Auto Mode's accuracy.
 // Extracted from src/ui/spec-panel.js — see the US-038 note below for why it
@@ -12141,7 +12141,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     }
   }
 
-  // ---- src/ui/main-page-data.js ----
+  // ---- src/techpack/main-page/main-page-data.js ----
 // MAIN PAGE sheet — static rosters and pure helpers (US-068, ADR 0037).
 // Source part for app.js. Run `npm run build` after editing.
 //
@@ -12331,7 +12331,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     { key: 'season', re: /Season/i, values: mpSeasonOpts },
   ];
 
-  // ---- src/ui/main-page-sketches.js ----
+  // ---- src/techpack/main-page/main-page-sketches.js ----
 // MAIN PAGE sheet — version sketches (US-080, ADR 0047).
 // Source part for app.js. Run `npm run build` after editing.
 //
@@ -12530,7 +12530,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     mpSketchOpen = null;
   }
 
-  // ---- src/ui/main-page-fields.js ----
+  // ---- src/techpack/main-page/main-page-fields.js ----
 // MAIN PAGE sheet — field table + field suggestion picker (US-068, ADR 0037;
 // breakdown sub-cells US-080/ADR 0047).
 // Source part for app.js. Run `npm run build` after editing.
@@ -12716,7 +12716,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     showToast(label + ': ' + (v || '(blank)') + ' · Ctrl/Cmd+Z to undo');
   }
 
-  // ---- src/ui/main-page-colorways.js ----
+  // ---- src/techpack/main-page/main-page-colorways.js ----
 // MAIN PAGE sheet — colorway rows + the Color Master List picker (US-068,
 // ADR 0037; BOM columns US-072/ADR 0041).
 // Source part for app.js. Run `npm run build` after editing.
@@ -12811,7 +12811,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     pushHistoryIfChanged();
   }
 
-  // ---- src/ui/main-page.js ----
+  // ---- src/techpack/main-page/main-page.js ----
 // MAIN PAGE sheet: state owner + DOM wiring (US-068, ADR 0037).
 // Source part for app.js. Run `npm run build` after editing.
 //
@@ -13104,7 +13104,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     renderMainPage();
   }
 
-  // ---- src/ui/construction-phrase-data.js ----
+  // ---- src/techpack/construction/construction-phrase-data.js ----
 // Ported from the sibling "Bra construction" project (construction.html) per ADR 0039.
 // Verbatim data — do not hand-edit without checking the source stays in sync.
 
@@ -16231,7 +16231,7 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     }
 ];
 
-  // ---- src/ui/construction-state.js ----
+  // ---- src/techpack/construction/construction-state.js ----
 // Construction working sheets (US-078, ADR 0045) — schema constants, module
 // view/selection state, state.construction seeding/normalization, the legacy
 // notes[] -> rows/callouts[] migration, and project serialize/load.
@@ -16530,7 +16530,7 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     return JSON.stringify(comparable) !== JSON.stringify(ccExpectedSeedRows());
   }
 
-  // ---- src/ui/construction-images.js ----
+  // ---- src/techpack/construction/construction-images.js ----
 // Construction working sheets (US-078, ADR 0045) — working-board image
 // management: lookup, reflow, upload/paste, zoom, delete, and the bitmap
 // stores that live outside history state.
@@ -16669,7 +16669,7 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     return null;
   }
 
-  // ---- src/ui/construction-canvas.js ----
+  // ---- src/techpack/construction/construction-canvas.js ----
 // Construction working sheets (US-078, ADR 0045) — the leader-line annotation
 // engine: panel layout, world/canvas geometry, hit-testing, callout and leader
 // placement, drawing, the offscreen sheet renderer, and canvas pointer drag.
@@ -17118,7 +17118,7 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     pushHistoryIfChanged();
   }
 
-  // ---- src/ui/construction-rows.js ----
+  // ---- src/techpack/construction/construction-rows.js ----
 // Construction working sheets (US-078, ADR 0045) — row/callout lookup
 // accessors, row CRUD, the "arm the next missing row" callout workflow, the
 // editable row table markup, and the construction-phrase quick picker.
@@ -17379,7 +17379,7 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     pushHistoryIfChanged();
   }
 
-  // ---- src/ui/construction.js ----
+  // ---- src/techpack/construction/construction.js ----
 // Construction working sheets (US-078, ADR 0045) — top-level orchestration:
 // toolbar/tool UI sync, the page render entry point, and DOM wiring.
 // Source part for app.js. Run `npm run build` after editing.
@@ -17659,7 +17659,7 @@ const CONSTRUCTION_GENERATED_PHRASES = [
     renderConstruction();
   }
 
-  // ---- src/ui/bom-material-data.js ----
+  // ---- src/techpack/bom/bom-material-data.js ----
 // Ported from the sibling tech-pack project's #bom-lib data island (mod-bom)
 // per ADR 0041 — a static 27-material suggestion library mined from 1,748
 // historical BOM records. Verbatim data — do not hand-edit without checking
@@ -17913,7 +17913,7 @@ const BOM_MATERIAL_LIBRARY = [
   },
 ];
 
-  // ---- src/ui/bom-state.js ----
+  // ---- src/techpack/bom/bom-state.js ----
 // BOM page — schema constants, seeding, project persistence, session UI
 // state, and row CRUD/numbering for state.bom (US-072, ADR 0041). Source
 // part for app.js. Run `npm run build` after editing. Loads first of the
@@ -18346,7 +18346,7 @@ const BOM_MATERIAL_LIBRARY = [
     return cw.value || '';
   }
 
-  // ---- src/ui/bom-images.js ----
+  // ---- src/techpack/bom/bom-images.js ----
 // BOM page — Material Key image board: the per-variant image records, their
 // bitmap-byte stores, and upload/paste/reflow/zoom/delete (US-072, ADR
 // 0041). Source part for app.js. Run `npm run build` after editing. Loads
@@ -18464,7 +18464,7 @@ const BOM_MATERIAL_LIBRARY = [
     pushHistoryIfChanged();
   }
 
-  // ---- src/ui/bom-materials.js ----
+  // ---- src/techpack/bom/bom-materials.js ----
 // BOM page — material-suggestion engine (library lookup, fill-empty-only
 // autofill, floating in-cell ▾ dropdown, side-panel search list) plus the
 // per-row material photo popover (US-072, ADR 0041). Source part for
@@ -18762,7 +18762,7 @@ const BOM_MATERIAL_LIBRARY = [
       || '<div class="bm-mat-empty">No material matches — type your own description in the row</div>';
   }
 
-  // ---- src/ui/bom-canvas.js ----
+  // ---- src/techpack/bom/bom-canvas.js ----
 // BOM page — Material Key leader-line canvas engine: callout lookup,
 // geometry, hit-testing, placement/drag, drawing, the offscreen render the
 // tech-pack Excel export reuses (bmRenderMatkeyToCanvas), and the canvas
@@ -19378,7 +19378,7 @@ const BOM_MATERIAL_LIBRARY = [
     bmDeleteAnchorAt(bmCanvasPointFromEvent(e, canvas));
   }
 
-  // ---- src/ui/bom-table.js ----
+  // ---- src/techpack/bom/bom-table.js ----
 // BOM page — factory-format table + print-sheet rendering, including the
 // bilingual header, the material-key SVG markup and bmPrintSheetHtml, which
 // the tech-pack workbook export reads directly (US-072/US-073/US-079, ADR
@@ -19622,7 +19622,7 @@ const BOM_MATERIAL_LIBRARY = [
       + '<td class="bm-num">' + seq + '</td>' + cells + photoCell + cw + act + '</tr>';
   }
 
-  // ---- src/ui/bom.js ----
+  // ---- src/techpack/bom/bom.js ----
 // BOM page: editable material table + material-key canvas annotation
 // (US-072, ADR 0041). Source part for app.js. Run `npm run build` after
 // editing.
@@ -19946,7 +19946,7 @@ const BOM_MATERIAL_LIBRARY = [
     renderBom();
   }
 
-  // ---- src/ui/preview-page.js ----
+  // ---- src/techpack/preview/preview-page.js ----
 // Preview & Export page (US-079, ADR 0046). Source part for app.js.
 // Run `npm run build` after editing.
 //
@@ -20199,7 +20199,7 @@ const BOM_MATERIAL_LIBRARY = [
     if (btn) btn.addEventListener('click', () => { void exportTechPackXlsx(); });
   }
 
-  // ---- src/ui/page-nav.js ----
+  // ---- src/app/page-nav.js ----
 // Page navigation shell (US-069, ADR 0038). Source part for app.js.
 //
 // The tool now hosts more than one page of the tech pack: the Board (sketch
@@ -20339,7 +20339,7 @@ const BOM_MATERIAL_LIBRARY = [
     setActivePage('board');
   }
 
-  // ---- src/ui/command-registry.js ----
+  // ---- src/commands/command-registry.js ----
 // Context-aware command registry (US-094). Source part for app.js.
 // Run `npm run build` after editing.
 //
@@ -20968,7 +20968,7 @@ const BOM_MATERIAL_LIBRARY = [
       .join('');
   }
 
-  // ---- src/ui/board-toolbar.js ----
+  // ---- src/board/board-toolbar.js ----
 // US-082: Contextual Board toolbar. This module owns only presentation and
 // menu behavior; the original command buttons and their existing bindings
 // remain the single execution path for every action.
@@ -21190,7 +21190,7 @@ const BOM_MATERIAL_LIBRARY = [
     }
   }
 
-  // ---- src/ui/label-editor.js ----
+  // ---- src/board/annotations/label-editor.js ----
 // Editable callout labels: positions a floating textarea (el.labelEditor)
 // over a canvas-space point, then commits or cancels the edit — firing the
 // Phase 2/3 learning-sample hook on commit. worldToScreen, the canvas ->
@@ -21280,7 +21280,7 @@ const BOM_MATERIAL_LIBRARY = [
     requestRender();
   }
 
-  // ---- src/ui/note-editor.js ----
+  // ---- src/notes/note-editor.js ----
 // The Board note editor (US-092): a floating <textarea> over the canvas that
 // either places a NEW note where the Text tool was clicked, or re-opens an
 // existing one for editing. The note record and its geometry live in
@@ -21526,7 +21526,7 @@ const BOM_MATERIAL_LIBRARY = [
     requestRender();
   }
 
-  // ---- src/ui/line-preset-panel.js ----
+  // ---- src/library/line-preset-panel.js ----
 // US-096 + US-098 / ADR 0060: Line Treatment Library and layer editor.
 //
 // Presentation only. Every mutation goes through src/manual/line-presets.js,
@@ -21932,7 +21932,7 @@ const BOM_MATERIAL_LIBRARY = [
     // under the TD's hand.
   }
 
-  // ---- src/ui/shape-stamp-panel.js ----
+  // ---- src/library/shape-stamp-panel.js ----
 // US-097 + US-098 / ADR 0059: the Template quick action in the Tools menu.
 //
 // US-107: this used to also render #shapeStampList (a quick-pick browse list)
@@ -21982,7 +21982,7 @@ const BOM_MATERIAL_LIBRARY = [
     });
   }
 
-  // ---- src/ui/dxf-measure-panel.js ----
+  // ---- src/dxf/measure/dxf-measure-panel.js ----
 // US-105: DXF Pattern Measurement — Tools-menu entry wiring. Sibling to
 // src/ui/dxf-import-panel.js, same split: this file owns only the button
 // click -> tool-mode wiring; the actual interaction lives in
@@ -22070,7 +22070,7 @@ const BOM_MATERIAL_LIBRARY = [
     }
   }
 
-  // ---- src/manual/simplify-piece.js ----
+  // ---- src/dxf/simplify-piece.js ----
 // ADR 0072: "Simplify piece" — merges redundant, near-perfectly-collinear
 // runs of a piece's STRAIGHT segments into fewer, longer ones. A TD reported
 // "trong piece còn nhiều điểm rác không cần thiết" (still many unnecessary
@@ -22190,7 +22190,7 @@ const BOM_MATERIAL_LIBRARY = [
     return { chains: runs.length, removed };
   }
 
-  // ---- src/ui/pattern-pieces-panel.js ----
+  // ---- src/dxf/pattern-pieces-panel.js ----
 // ADR 0070: the Pattern Pieces panel — a floating, non-modal list of every
 // templateGroupId group on the board (DXF-imported grading-nest pieces, and
 // Template placements, since both share the same field), so the TD can tell
@@ -22451,7 +22451,7 @@ const BOM_MATERIAL_LIBRARY = [
     makeDraggablePanel(el.patternPiecesPanel, el.patternPiecesHead, '.anchor-panel-close');
   }
 
-  // ---- src/ui/dxf-measurements-panel.js ----
+  // ---- src/dxf/measure/dxf-measurements-panel.js ----
 // US-113: Pattern Measurements list panel — ADR 0062's own "tabular output"
 // Follow-Up, landed as a session-only VIEW over state.dxfMeasureSession.
 // measurements. Every mutation (rename/select/delete/clear) goes through the
@@ -22808,7 +22808,7 @@ const BOM_MATERIAL_LIBRARY = [
     });
   }
 
-  // ---- src/ui/bindings.js ----
+  // ---- src/app/bindings.js ----
 // Top-level UI bindings: bindUI() wires the toolbar, dropdowns, file
 // inputs, the canvas, the label editor, and keyboard shortcuts. Tool and
 // style setters live here next to the bindings that drive them, as do the
@@ -23357,7 +23357,7 @@ const BOM_MATERIAL_LIBRARY = [
     requestRender();
   }
 
-  // ---- src/project/dxf-pattern-source.js ----
+  // ---- src/dxf/dxf-pattern-source.js ----
 // Durable source contract for the newest imported DXF pattern. Pattern
 // measurements remain session-only; this record carries only the factory DXF
 // text and the import mapping needed to rebuild a fresh native session after
@@ -24543,7 +24543,7 @@ const BOM_MATERIAL_LIBRARY = [
     });
   }
 
-  // ---- src/ui/dialogs/autosave-restore-banner.js ----
+  // ---- src/project/autosave-restore-banner.js ----
 // Autosave restore banner: the hand-rolled floating UI that offers to
 // restore a recovered autosave record after a crash or accidental reload.
 // Source part for app.js. Run `npm run build` after editing.
@@ -24675,7 +24675,7 @@ const BOM_MATERIAL_LIBRARY = [
     document.body.appendChild(banner);
   }
 
-  // ---- src/project/project-library.js ----
+  // ---- src/library/project-library.js ----
 // Per-tool library of saved project snapshots.
 // Source part for app.js. Run `npm run build` after editing.
 //
@@ -25106,7 +25106,7 @@ const BOM_MATERIAL_LIBRARY = [
     return 'data:' + mime + ';base64,' + bytesToBase64(bytes);
   }
 
-  // ---- src/ui/dialogs/pptx-picker-dialog.js ----
+  // ---- src/import/pptx-picker-dialog.js ----
 // PowerPoint (.pptx) import picker: a modal that previews every page found
 // in a deck and lets the user choose which ones to add to the board.
 // Source part for app.js. Run `npm run build` after editing.
@@ -25320,7 +25320,7 @@ const BOM_MATERIAL_LIBRARY = [
     }
   }
 
-  // ---- src/manual/annotation-factory.js ----
+  // ---- src/board/annotations/annotation-factory.js ----
 // Annotation factory: pure builders for constructing a new annotation record
 // and its default label position. createStraightAnnotation and
 // computeDefaultLabelPosition are the canonical builders used by the drawing
@@ -25471,7 +25471,7 @@ const BOM_MATERIAL_LIBRARY = [
     };
   }
 
-  // ---- src/manual/label-layout.js ----
+  // ---- src/board/annotations/label-layout.js ----
 // Label-collision-avoidance physics loop for numbered callouts. Called from
 // the manual annotation flow and also from src/auto/drafts/generate-pom-fixture.js
 // and draft-actions.js, so nudgeAutoLabelsToAvoidCollisions must keep its name
@@ -25549,7 +25549,7 @@ const BOM_MATERIAL_LIBRARY = [
     }
   }
 
-  // ---- src/manual/annotation-lifecycle.js ----
+  // ---- src/board/annotations/annotation-lifecycle.js ----
 // Destructive board-mutation lifecycle: deleteImageById (purges Auto Mode
 // anchors/drafts/detection for a removed photo), deleteSelected, and
 // clearAllAnnotations. Sibling files: annotation builders live in
@@ -25728,7 +25728,7 @@ const BOM_MATERIAL_LIBRARY = [
     requestRender();
   }
 
-  // ---- src/manual/annotation-clipboard.js ----
+  // ---- src/board/annotations/annotation-clipboard.js ----
 // Line clipboard feature: copy / paste / reflect(mirror) a line, plus the
 // module-scope lineClipboard template that deliberately survives undo/redo
 // and is not snapshotted in history. reflectSelectedAnnotation uses the
@@ -26010,7 +26010,7 @@ const BOM_MATERIAL_LIBRARY = [
     pasteLineFromClipboard();
   }
 
-  // ---- src/manual/selection.js ----
+  // ---- src/board/input/selection.js ----
 // Manual-mode selection model: what is currently picked on the board.
 // Source part for app.js. Run `npm run build` after editing.
 //
@@ -26377,7 +26377,7 @@ function setSelection(kind, id) {
       : `Unlocked all ${state.images.length} image${state.images.length === 1 ? '' : 's'}.`);
   }
 
-  // ---- src/manual/smart-align.js ----
+  // ---- src/board/input/smart-align.js ----
 // US-099: translation-only Smart Align for lines and Template groups.
 // computeSmartIntersectionSnapForHandle is a separate, later addition: it
 // snaps a SINGLE dragged straight-line endpoint onto the crossing point of
@@ -26612,7 +26612,7 @@ function setSelection(kind, id) {
     ann.points = clone(source.points || []);
   }
 
-  // ---- src/manual/pointer-events.js ----
+  // ---- src/board/input/pointer-events.js ----
 // Manual-mode canvas pointer state machine: mouse down/move/up dispatch,
 // the drag-session starters, and the per-frame drag geometry.
 // Source part for app.js. Run `npm run build` after editing.
@@ -27087,7 +27087,10 @@ function setSelection(kind, id) {
       const dy = screen.y - interaction.startScreen.y;
       state.panX = interaction.startPan.x + dx;
       state.panY = interaction.startPan.y + dy;
-      updateUI();
+      // No updateUI() here: a pan changes only panX/panY, nothing the chrome
+      // shows, and render() already re-places the label/note editors. It cost
+      // ~11 ms per move on a 6k-line DXF board at 4x CPU throttle, and 30
+      // moves of it left the page DOM byte-identical (audit 2026-09-23).
       requestRender();
       return;
     }
@@ -27831,7 +27834,7 @@ function resizeImagesFromCorner(interaction, world) {
     ann.label.x += dx; ann.label.y += dy;
   }
 
-  // ---- src/manual/touch-input.js ----
+  // ---- src/board/input/touch-input.js ----
 // Manual-mode touch/pen input layer (US-036). Source part for app.js.
 // Run `npm run build` after editing.
 //
@@ -27967,7 +27970,7 @@ function onWheel(e) {
   zoomAtScreenPoint(state.zoom * factor, mouse.x, mouse.y);
 }
 
-  // ---- src/manual/canvas-tools.js ----
+  // ---- src/board/input/canvas-tools.js ----
 // Manual-mode canvas tool state machines: the eraser and the click-to-draw
 // flow. Source part for app.js. Run `npm run build` after editing.
 //
@@ -28329,7 +28332,7 @@ function onWheel(e) {
     return { distance, perp, qualifies: distance > minDist && perp <= maxPerp };
   }
 
-  // ---- src/manual/line-nudge.js ----
+  // ---- src/board/input/line-nudge.js ----
 // Manual-mode keyboard line nudge (US-027). Source part for app.js.
 // Run `npm run build` after editing.
 //
@@ -28469,7 +28472,7 @@ function onWheel(e) {
     }
   }
 
-  // ---- src/manual/keyboard-shortcuts.js ----
+  // ---- src/commands/keyboard-shortcuts.js ----
 // Manual-mode keyboard shortcut router. Source part for app.js.
 // Run `npm run build` after editing.
 //
@@ -28891,7 +28894,7 @@ function onWheel(e) {
     }
   }
 
-  // ---- src/manual/format.js ----
+  // ---- src/board/annotations/format.js ----
 // Manual mode: small pure formatters used by spec panel, label rendering,
 // and the line-width input.
 // Source part for app.js. Run `npm run build` after editing.
@@ -28917,7 +28920,7 @@ function onWheel(e) {
     return 'Plain';
   }
 
-  // ---- src/manual/style.js ----
+  // ---- src/board/annotations/style.js ----
 // Manual mode: color / line-style / arrow / line-width normalizers and
 // getters. These are pure helpers that map raw annotation fields onto the
 // canonical values used by rendering, plus the Stitches/POM mode flag.
@@ -29025,7 +29028,7 @@ function onWheel(e) {
     return selectedNote ? noteFontSizeOf(selectedNote) : normalizeNoteFontSize(state.noteFontSize);
   }
 
-  // ---- src/manual/sketch-mode.js ----
+  // ---- src/board/sketch-mode.js ----
 // US-102: POM Focus / Sketch Focus — a session-only display/tool-visibility
 // toggle WITHIN Manual Mode (not a new state.appMode value, not a new page).
 // POM Focus is the IMPLICIT default and has no button of its own; the one
@@ -29148,7 +29151,7 @@ function onWheel(e) {
     return setSketchModeEnabled(!state.sketchMode, true);
   }
 
-  // ---- src/manual/mindmap-mode.js ----
+  // ---- src/mindmap/mindmap-mode.js ----
 // Mind Map: a fully separate, self-contained tool (vendor/mindmap.html,
 // embedded byte-for-byte in an <iframe>) reachable from a single
 // Manual-only toolbar button (#mindMapBtn, index.html). It shares no code
@@ -29314,7 +29317,7 @@ function onWheel(e) {
     });
   }
 
-  // ---- src/manual/library-store.js ----
+  // ---- src/library/library-store.js ----
 // US-097 / ADR 0056: the storage policy shared by the two board libraries —
 // line presets (US-096) and shape stamps.
 //
@@ -29389,7 +29392,7 @@ function onWheel(e) {
     return prefix + '-' + Math.random().toString(36).slice(2, 10);
   }
 
-  // ---- src/manual/line-presets.js ----
+  // ---- src/library/line-presets.js ----
 // US-096 + US-098 / ADR 0060: line looks and layered Line Treatments.
 //
 // A preset is a NAMED LOOK and nothing else — style, colour, line width, arrow
@@ -29943,7 +29946,7 @@ function onWheel(e) {
     return added;
   }
 
-  // ---- src/manual/seam-path.js ----
+  // ---- src/treatments/seam-path.js ----
 // US-125 / ADR 0092-0098: Semantic Seam Path + Treatment Run model.
 //
 // The annotation's existing start/control/points/end fields remain the ONE
@@ -30849,7 +30852,7 @@ function onWheel(e) {
     return target.seamPath;
   }
 
-  // ---- src/manual/shape-stamps.js ----
+  // ---- src/library/shape-stamps.js ----
 // US-097 + US-098 / ADR 0059: reusable multi-path Templates.
 //
 // A Template is one or more selected paths — every anchor and both handles of
@@ -31612,7 +31615,7 @@ function onWheel(e) {
     return added;
   }
 
-  // ---- src/manual/dxf-import.js ----
+  // ---- src/dxf/dxf-import.js ----
 // US-104: DXF import — the BOARD layer. The pure parse layer (tokenizer,
 // section scan, converters, INSERT resolution, decoding, marks, legacy
 // grouping, placement transform, parseDxfDocument) moved to
@@ -31947,7 +31950,7 @@ function onWheel(e) {
     };
   }
 
-  // ---- src/manual/dxf-native-parser.js ----
+  // ---- src/dxf/parse/dxf-native-parser.js ----
 // US-105: DXF Pattern Measurement — the native-coordinate parser adapter.
 // Parses the SAME DXF text US-104's importDxfText already accepts, but into
 // exact native `{kind:'straight'|'arc', ...}` geometry (see
@@ -32480,7 +32483,7 @@ function onWheel(e) {
     };
   }
 
-  // ---- src/manual/dxf-worker-client.js ----
+  // ---- src/dxf/dxf-worker-client.js ----
 // US-124 Phase 5 (ADR 0091): DXF Worker client — the main-thread side of
 // dxf-worker.js.
 //
@@ -32692,7 +32695,7 @@ function onWheel(e) {
     return record;
   }
 
-  // ---- src/manual/dxf-measure-session.js ----
+  // ---- src/dxf/measure/dxf-measure-session.js ----
 // US-105 / ADR 0062: DXF Pattern Measure — session lifecycle
 // (state.dxfMeasureSession), the board<->native coordinate mapping, the
 // pure "create/delete a measurement" builders, and the session's own mini
@@ -33595,7 +33598,7 @@ function onWheel(e) {
     return true;
   }
 
-  // ---- src/manual/dxf-measure-snap.js ----
+  // ---- src/dxf/measure/dxf-measure-snap.js ----
 // US-112: Pattern Measure snap modes — endpoint / midpoint / intersection
 // snap targets computed from the SAME native geometry dxf-measure-session.js
 // and the kernel (src/geometry/dxf-path-kernel.js) already treat as
@@ -33923,7 +33926,7 @@ function onWheel(e) {
     dxfMeasureSetSnapKind(kind, !current);
   }
 
-  // ---- src/manual/dxf-measure-interaction.js ----
+  // ---- src/dxf/measure/dxf-measure-interaction.js ----
 // US-105: DXF Pattern Measurement — the "Pattern Measure" tool's pointer +
 // keyboard interaction. Owns session.interaction (a session-scoped gesture
 // record, deliberately separate from state.interaction — Pattern Measure
@@ -34740,7 +34743,7 @@ function onWheel(e) {
     return ok;
   }
 
-  // ---- src/manual/viewport.js ----
+  // ---- src/board/view/viewport.js ----
 // Manual mode: viewport / fit / panel-toggle helpers. resizeCanvas keeps the
 // canvas backing buffer in sync with its CSS box and holds the board still on
 // screen while it does; the fit-to-* helpers compute pan/zoom to frame either
@@ -35064,7 +35067,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   for (const note of notesWithinBounds(previousBounds)) scaleNoteAbout(note, origin, factor);
 }
 
-  // ---- src/manual/image-records.js ----
+  // ---- src/board/images/image-records.js ----
 // Manual mode: pure image-record helpers. createImageRecord turns a
 // loaded Image into the state.images shape (size, world position, id) and
 // stashes the data URL by id; blobToDataURL / loadImageFromDataURL are
@@ -35131,7 +35134,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     });
   }
 
-  // ---- src/manual/ui-status.js ----
+  // ---- src/board/ui-status.js ----
 // Manual mode UI status sync: updateUI() is the single largest DOM-sync
 // surface in the app — nearly every mutation in the codebase ends by calling
 // it, and it touches ~50+ el.* toolbar/status references. AUTO_STATUS_COPY,
@@ -35772,7 +35775,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     }
   }
 
-  // ---- src/manual/image-import.js ----
+  // ---- src/board/images/image-import.js ----
 // Manual mode image import pipeline: clipboard paste (onPasteEvent),
 // addImagesFromDataURLs, the file-input picker (onImageFileChosen), and
 // drag-and-drop (setupDragAndDrop, handleDroppedFiles). Must load after
@@ -35931,7 +35934,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     }
   }
 
-  // ---- src/manual/annotation-lookup.js ----
+  // ---- src/board/annotations/annotation-lookup.js ----
 // Manual mode POM/annotation lookup & predicate helpers, plus small pure
 // state utilities (clone, inferNextIdCounter): annotationCrossesViews,
 // getLabelText, lineLength, getPomInfo, getAnnotationById, isAutoDraft,
@@ -36191,7 +36194,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     return state.images.find(image => image.id === id) || null;
   }
 
-  // ---- src/manual/note-model.js ----
+  // ---- src/notes/note-model.js ----
 // Board text notes (US-092): the note record and the pure geometry that acts
 // on it. Rendering lives in src/render/render-notes.js; pointer handling in
 // src/manual/pointer-events.js.
@@ -36533,7 +36536,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     note.boxWidth = normalizeNoteBoxWidth(note.boxWidth * factor);
   }
 
-  // ---- src/manual/notches.js ----
+  // ---- src/board/annotations/notches.js ----
 // ADR 0071: the Notch tool. A garment-pattern notch is a small alignment mark
 // cut into a piece's outline, used to match up two pieces while sewing. The
 // TD clicks near an existing line (most often a DXF-imported piece's
@@ -43532,7 +43535,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     return detectionResult;
   }
 
-  // ---- src/auto-detection.js ----
+  // ---- src/auto/detect/auto-detection.js ----
 // Detection pipeline composer. Wires the four named stages together —
 // segment -> contours -> geometry -> landmarks — with per-stage wall-clock
 // timing, and holds Stage 3 itself (the contour / topology extraction glue and
@@ -50156,7 +50159,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     return changed;
   }
 
-  // ---- src/auto/debug-export.js ----
+  // ---- src/debug/debug-export.js ----
 // Debug / introspection export builders for offline tooling. Source part
 // for app.js. Run `npm run build` after editing.
 //
@@ -50616,7 +50619,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     };
   }
 
-  // ---- src/auto/debug-api.js ----
+  // ---- src/debug/debug-api.js ----
 // Debug / introspection API facade for offline tooling: the single
 // window.__braAutoModeDebug object literal, wiring together functions
 // defined throughout the rest of the bundle by name. Source part for
@@ -51810,7 +51813,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     };
   }
 
-  // ---- src/render/export-pdf.js ----
+  // ---- src/board/export/export-pdf.js ----
 // PDF export pipeline: build an A4 page snapshot of the board and
 // emit a single-page PDF blob without any external dependencies.
 // Source part for app.js. Run `npm run build` after editing.
@@ -52070,7 +52073,7 @@ function makeExportFileName() {
   return 'bra-sketch-annotation-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' + pad(now.getHours()) + pad(now.getMinutes()) + '.pdf';
 }
 
-  // ---- src/render/copy-image.js ----
+  // ---- src/board/export/copy-image.js ----
 // Copy Image: render the whole board (sketch + applied lines + labels) to
 // an offscreen canvas at content bounds and place a PNG on the system
 // clipboard. Fully offline — canvas.toBlob feeds navigator.clipboard
@@ -52175,7 +52178,7 @@ function makeExportFileName() {
     return copyCanvas;
   }
 
-  // ---- src/render/export-xlsx-grading.js ----
+  // ---- src/measurements/export/export-xlsx-grading.js ----
 // Export Excel — grading math: the 15-size run (8 alpha + 7 depth columns)
 // and the per-POM delta tables that grade a proto's Size L measurement
 // across the full run. Source part for app.js. Run `npm run build` after
@@ -52365,7 +52368,7 @@ function makeExportFileName() {
     });
   }
 
-  // ---- src/render/xlsx-writer.js ----
+  // ---- src/core/xlsx-writer.js ----
 // Export Excel — generic OOXML/SpreadsheetML + ZIP toolkit: a hand-written
 // offline ZIP (STORE method) writer and the low-level cell/style/sheet XML
 // builders shared by every .xlsx export in this app. Source part for
@@ -52661,7 +52664,7 @@ function makeExportFileName() {
       + '</xdr:wsDr>';
   }
 
-  // ---- src/render/export-spec-xlsx.js ----
+  // ---- src/measurements/export/export-spec-xlsx.js ----
 // Export Excel — the single-sheet 'Measurement Spec' export: title band,
 // styleId + date, one row per visible POM (EN + 中文 + TOL; lines hidden
 // via the review × toggle are omitted entirely), the full 15-column graded
@@ -52931,7 +52934,7 @@ function makeExportFileName() {
     }
   }
 
-  // ---- src/render/export-techpack-xlsx.js ----
+  // ---- src/techpack/preview/export-techpack-xlsx.js ----
 // Export Excel — the 6-sheet tech-pack workbook (US-079, ADR 0046): one
 // worksheet per enabled Preview & Export sheet, in the preview's fixed
 // order. MAIN PAGE and the two BOM sheets are real cells; the two
@@ -53393,7 +53396,7 @@ function makeExportFileName() {
     };
   }
 
-  // ---- src/render/export-mindmap-notes.js ----
+  // ---- src/mindmap/export-mindmap-notes.js ----
 // Mind Map notes → .xlsx outline.
 //
 // The Mind Map (vendor/mindmap.html, "Atlas") already exports itself as JSON,
@@ -53569,7 +53572,7 @@ function makeExportFileName() {
     return true;
   }
 
-  // ---- src/render/hit-testing.js ----
+  // ---- src/board/input/hit-testing.js ----
 // Hit-testing helpers: turn world-space coordinates into selected
 // annotations, images, draft annotations, label hits, and image-corner
 // resize anchors. Source part for app.js. Run `npm run build` after
@@ -54103,7 +54106,7 @@ function makeExportFileName() {
     return Math.max(0, pointToPolylineDistance(point, points) - getLineWidth(ann) / (2 * z));
   }
 
-  // ---- src/render/render-stitches.js ----
+  // ---- src/treatments/render-stitches.js ----
 // Stitch-pattern rendering: zigzag, cover, and bartack stitches
 // rendered along an annotation polyline, plus the polyline sampling
 // helpers they share. Source part for app.js. Run `npm run build`
@@ -54358,7 +54361,7 @@ function makeExportFileName() {
     return { x: -ty, y: tx };
   }
 
-  // ---- src/render/render-annotations.js ----
+  // ---- src/board/render/render-annotations.js ----
 // Annotation drawing primitives: line core + path, arrowheads, label,
 // selection helpers, and handles. Source part for app.js.
 // Run `npm run build` after editing.
@@ -54812,7 +54815,7 @@ function makeExportFileName() {
     ctx.restore();
   }
 
-  // ---- src/render/render-notes.js ----
+  // ---- src/notes/render-notes.js ----
 // Board text note drawing (US-092). The record and its geometry live in
 // src/manual/note-model.js; this file only paints.
 // Source part for app.js. Run `npm run build` after editing.
@@ -55005,7 +55008,7 @@ function makeExportFileName() {
     ctx.restore();
   }
 
-  // ---- src/render/render-dxf-measurements.js ----
+  // ---- src/dxf/measure/render-dxf-measurements.js ----
 // US-105: DXF Pattern Measurement — the overlay renderer. Drawn as its own
 // layer, last (topmost), inside the same world-space ctx.save()/translate/
 // scale block every other board layer uses (see render-loop.js), so
@@ -55343,7 +55346,7 @@ function makeExportFileName() {
     }
   }
 
-  // ---- src/render/detection-overlay.js ----
+  // ---- src/auto/ui/detection-overlay.js ----
 // Auto Mode detection overlay: the read-only diagnostic layer showing the
 // detector's bbox, axis, band, chest, cradle, side seams, apex points,
 // strap/back-center markers, corner labels, an optional junction/endpoint
@@ -55691,7 +55694,7 @@ function makeExportFileName() {
     ctx.restore();
   }
 
-  // ---- src/render/anchor-pins.js ----
+  // ---- src/auto/ui/anchor-pins.js ----
 // Auto Mode draft line rendering + its dedicated label pass + hit-testing,
 // and the draggable anchor pins (what a TD actually drags to correct
 // detection). Source part for app.js. Run `npm run build` after editing.
@@ -55970,7 +55973,7 @@ function makeExportFileName() {
     return 0;
   }
 
-  // ---- src/render/render-images.js ----
+  // ---- src/board/render/render-images.js ----
 // Image and erase-stroke rendering: photo frame, lock badge, eraser
 // strokes (and the live in-progress stroke), image selection chrome and
 // resize handles, and the drawing preview shown during click-twice-draw.
@@ -56205,7 +56208,7 @@ function makeExportFileName() {
     drawLabel(temp.label, seq, false, 0.9, getAnnotationColor(temp));
   }
 
-  // ---- src/render/viewport.js ----
+  // ---- src/board/view/viewport-render.js ----
 // Pointer/viewport math + double-click dispatch. Source part for app.js.
 // Run `npm run build` after editing.
 //
@@ -56348,7 +56351,7 @@ function onDoubleClick(e) {
   fitSelectionOrAll();
 }
 
-  // ---- src/render/render-loop.js ----
+  // ---- src/board/render/render-loop.js ----
 // Render scheduling + the main draw loop, and label editor positioning.
 // Source part for app.js. Run `npm run build` after editing.
 //
@@ -56663,7 +56666,7 @@ function requestRender() {
     el.labelEditor.style.top = screen.y + 'px';
   }
 
-  // ---- src/bootstrap.js ----
+  // ---- src/app/bootstrap.js ----
 // App bootstrap sequencing: init() and the vision-engine warm-up watcher.
 // Source part for app.js. Run `npm run build` after editing.
 
@@ -56727,7 +56730,7 @@ function requestRender() {
       });
   }
 
-  // ---- src/dev/url-bootstrap.js ----
+  // ---- src/app/url-bootstrap.js ----
 // URL-query-param test/demo boot paths: ground-truth labeling, URL project
 // load, and URL auto-draft demo automation.
 // Source part for app.js. Run `npm run build` after editing.

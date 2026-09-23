@@ -472,7 +472,10 @@
       const dy = screen.y - interaction.startScreen.y;
       state.panX = interaction.startPan.x + dx;
       state.panY = interaction.startPan.y + dy;
-      updateUI();
+      // No updateUI() here: a pan changes only panX/panY, nothing the chrome
+      // shows, and render() already re-places the label/note editors. It cost
+      // ~11 ms per move on a 6k-line DXF board at 4x CPU throttle, and 30
+      // moves of it left the page DOM byte-identical (audit 2026-09-23).
       requestRender();
       return;
     }

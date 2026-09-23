@@ -25,7 +25,7 @@ AI_Ideas_Registry.xlsx
 demo/
 scripts/golden/
 scripts/groundtruth/
-library/
+/library/
 pitch/
 
 # ---- Internal docs / planning — kept out of the public repo ----

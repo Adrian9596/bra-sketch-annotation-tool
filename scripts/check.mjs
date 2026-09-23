@@ -101,7 +101,7 @@ failures.push(...validateSharedScope(appDir, DXF_WORKER_PARTS, 'dxf-worker.js'))
 // keeps the worker-only entry honest too. `typeof document` feature checks
 // are allowed.
 const WORKER_BUNDLES = [
-  { name: 'dxf-worker.js', parts: DXF_WORKER_PARTS, hint: 'Keep the DXF parse layer (src/geometry/dxf-parse.js, dxf-pattern-classify.js, dxf-native-parser.js) pure; Board code belongs in src/manual/dxf-import.js / dxf-worker-client.js.' },
+  { name: 'dxf-worker.js', parts: DXF_WORKER_PARTS, hint: 'Keep the DXF parse layer (src/dxf/parse/: dxf-parse.js, dxf-pattern-classify.js, dxf-native-parser.js) pure; Board code belongs in src/dxf/dxf-import.js / dxf-worker-client.js.' },
 ];
 for (const bundle of WORKER_BUNDLES) {
   for (const rel of bundle.parts) {

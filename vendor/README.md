@@ -33,7 +33,7 @@ See the runtime load-order notes in [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
 CSS + one inline `<script>`, no external requests, own `localStorage`
 namespace `atlas.mindmap.*`). Embedded byte-for-byte, unmodified, and loaded
 in an `<iframe>` from the Manual-mode "Mind Map" toolbar button — see
-`src/manual/mindmap-mode.js`. It shares no code and no state with the rest of
+`src/mindmap/mindmap-mode.js`. It shares no code and no state with the rest of
 this app; the two happen to sit in the same repo for offline distribution
 only.
 

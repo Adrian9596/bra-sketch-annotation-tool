@@ -47,12 +47,12 @@ vm.runInContext(`
 `, context);
 
 for (const relative of [
-  'src/curves.js',
-  'src/render/render-stitches.js',
-  'src/render/hit-testing.js',
-  'src/manual/selection.js',
-  'src/manual/annotation-factory.js',
-  'src/manual/annotation-lookup.js',
+  'src/core/curves.js',
+  'src/treatments/render-stitches.js',
+  'src/board/input/hit-testing.js',
+  'src/board/input/selection.js',
+  'src/board/annotations/annotation-factory.js',
+  'src/board/annotations/annotation-lookup.js',
 ]) {
   vm.runInContext(readFileSync(path.join(appDir, relative), 'utf8'), context, { filename: relative });
 }

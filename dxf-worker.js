@@ -3,7 +3,7 @@
 (() => {
   'use strict';
 
-  // ---- src/geometry/math.js ----
+  // ---- src/core/math.js ----
 // Pure math / geometry helpers shared across rendering, interactions,
 // hit testing, and annotation builders. Source part for app.js.
 // Run `npm run build` after editing.
@@ -50,7 +50,7 @@
     return { x: a1.x + t * rX, y: a1.y + t * rY };
   }
 
-  // ---- src/geometry/dxf-path-kernel.js ----
+  // ---- src/dxf/parse/dxf-path-kernel.js ----
 // US-105: DXF Pattern Measurement — the deterministic, DOM-independent
 // measurement kernel. Pure functions only: no state, no DOM, no canvas. Every
 // function here operates on the NATIVE (as-authored, pre-Y-flip, unscaled)
@@ -1147,7 +1147,7 @@
     }, 0);
   }
 
-  // ---- src/geometry/dxf-pattern-classify.js ----
+  // ---- src/dxf/parse/dxf-pattern-classify.js ----
 // US-124 / ADR 0091: DXF pattern identity is a classified closed outline.
 //
 // Pure, DOM-free grouping shared by BOTH DXF parsers (src/manual/dxf-import.js
@@ -1913,7 +1913,7 @@
     return { pieces, patterns, stats };
   }
 
-  // ---- src/geometry/dxf-parse.js ----
+  // ---- src/dxf/parse/dxf-parse.js ----
 // US-124 Phase 5 (ADR 0091): the PURE DXF parse layer, split out of
 // src/manual/dxf-import.js so it can be bundled into dxf-worker.js as well as
 // app.js. Nothing in this part touches Board state, the DOM or window — the
@@ -3516,7 +3516,7 @@
     return { total, cap: DXF_TOTAL_OUTPUT_CAP, instances: Array.from(rows.values()) };
   }
 
-  // ---- src/manual/dxf-native-parser.js ----
+  // ---- src/dxf/parse/dxf-native-parser.js ----
 // US-105: DXF Pattern Measurement — the native-coordinate parser adapter.
 // Parses the SAME DXF text US-104's importDxfText already accepts, but into
 // exact native `{kind:'straight'|'arc', ...}` geometry (see
@@ -4049,7 +4049,7 @@
     };
   }
 
-  // ---- src/manual/dxf-worker-entry.js ----
+  // ---- src/dxf/parse/dxf-worker-entry.js ----
 // US-124 Phase 5: DXF Worker entry. The ONLY part built into dxf-worker.js
 // and NOT into app.js (see DXF_WORKER_PARTS in scripts/source-parts.mjs).
 // Everything above it in the worker bundle is the same pure parse code app.js
