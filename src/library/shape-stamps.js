@@ -24,6 +24,10 @@
   // is not rewritten until the TD next saves/edits something, so bumping this
   // costs nothing for an existing library and is not itself a migration.
   function shapeStampsFormatVersion() { return 3; }
+  // The most paths one Template holds. A selection over it is REFUSED, never
+  // cut short: storage used to keep the first 80 members while the UI said
+  // "Saved" (findings-dxf.md Finding 8 — every 3380.dxf piece has 103–295).
+  function shapeStampMaxMembers() { return 80; }
 
   // ---- Library taxonomy (US-106) ---------------------------------------------
   //
@@ -194,7 +198,7 @@
     if (!bounds) return null;
     const eps = stampEpsilon();
     const members = anns.map(ann => shapeTemplateMemberFromAnnotation(ann, bounds)).filter(Boolean);
-    if (!members.length) return null;
+    if (!members.length || members.length > shapeStampMaxMembers()) return null;
     const first = members[0];
     const opts = options || {};
     const now = new Date().toISOString();
@@ -270,7 +274,10 @@
     const name = String(raw.name == null ? '' : raw.name).trim();
     if (!name) return null;
     let members = (Array.isArray(raw.members) ? raw.members : [])
-      .map(normalizeShapeStampMember).filter(Boolean).slice(0, 80);
+      .map(normalizeShapeStampMember).filter(Boolean);
+    // Rejected whole rather than truncated: a partial outline is worse than
+    // none, because it places as if it were the real thing.
+    if (members.length > shapeStampMaxMembers()) return null;
     if (!members.length) {
       const legacy = normalizeShapeStampMember(raw);
       if (legacy) members = [legacy];
@@ -355,7 +362,10 @@
   }
 
   function canSaveShapeStampReason() {
-    if (!shapeStampSaveTargets().length) return 'Select one or more lines to save as a Template.';
+    const count = shapeStampSaveTargets().length;
+    if (!count) return 'Select one or more lines to save as a Template.';
+    const max = shapeStampMaxMembers();
+    if (count > max) return `A Template holds at most ${max} paths — this selection has ${count}. Select fewer paths to save it.`;
     return true;
   }
 
@@ -721,7 +731,14 @@
     return true;
   }
 
+  // How many entries the last import could not take (unreadable, or over the
+  // member limit) — so the import toast can say so instead of only counting
+  // what arrived.
+  let lastShapeStampImportRejected = 0;
+  function shapeStampImportRejectedCount() { return lastShapeStampImportRejected; }
+
   function importShapeStamps(list) {
+    lastShapeStampImportRejected = (Array.isArray(list) ? list : []).filter(raw => !normalizeShapeStamp(raw)).length;
     const incoming = normalizeShapeStampList(list);
     if (!incoming.length) return 0;
     commitShapeStamps(libraryImportMerge(getShapeStamps(), incoming));
@@ -729,6 +746,7 @@
   }
 
   function importShapeStampsFromJson(text) {
+    lastShapeStampImportRejected = 0;
     let parsed = null;
     try { parsed = JSON.parse(text); } catch (_) { return 0; }
     const list = Array.isArray(parsed) ? parsed : (parsed && parsed.stamps);

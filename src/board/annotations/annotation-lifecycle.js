@@ -71,11 +71,17 @@
       // Delete every selected line (Shift+click / marquee group).
       const ids = getSelectedAnnotationIds();
       if (!ids.length) return;
-      const targets = ids.map(id => state.annotations.find(a => a.id === id)).filter(Boolean);
+      // One pass, not a find per id: deleting a whole imported DXF selection
+      // (up to 20,000 lines) was selection x annotations comparisons. First
+      // occurrence wins, like find().
+      const byId = new Map();
+      for (const ann of state.annotations) if (!byId.has(ann.id)) byId.set(ann.id, ann);
+      const targets = ids.map(id => byId.get(id)).filter(Boolean);
       const idSet = new Set(ids);
       const before = state.annotations.length;
       state.annotations = state.annotations.filter(a => !idSet.has(a.id));
       if (state.annotations.length === before) return;
+      removeNotchesOwnedBy(idSet);
       if (!Array.isArray(state.deletedPomKeys)) state.deletedPomKeys = [];
       for (const ann of targets) {
         // US-096 / ADR 0055 code review, 2026-08-23: a construction line owns no
@@ -163,6 +169,8 @@
   function clearAllAnnotations() {
     if (!state.annotations.length) return;
     if (state.dxfPatternSource || state.dxfMeasureSession) clearDxfPatternSource();
+    // A line's notches go with it (ADR 0071 amendment).
+    removeNotchesOwnedBy(new Set(state.annotations.map(a => a.id)));
     state.annotations = [];
     state.deletedAutoAnnotations = [];
     state.deletedPomKeys = [];

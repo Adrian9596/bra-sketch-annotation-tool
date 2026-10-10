@@ -1818,6 +1818,262 @@ window.__DXF = (() => {
     `clicking the REAL "Simplify" button in the Pattern Pieces panel must merge the 3-segment collinear piece down to 1 annotation, got ${simplify.annsAfterDomClick.length}`);
 
   // ===========================================================================
+  // 15b. findings-dxf.md Finding 10: Simplify must keep its "same outline"
+  //      promise. Each fixture is a real imported piece whose WORLD
+  //      coordinates are then set exactly (export -> edit -> loadProject), so
+  //      the geometry under test does not depend on the import's fit scale.
+  // ===========================================================================
+
+  const simplifyFidelity = await s.eval(`(async () => {
+    const h = window.__DXF, d = window.__braAutoModeDebug;
+    const blank = async () => {
+      await d.loadProject(await (async () => { const p = d.exportProject(); p.state.annotations = []; p.state.images = []; p.state.notches = []; return p; })());
+      document.getElementById('modeManualBtn').click();
+      if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    };
+    // Import a connected chain of n LINEs (one piece), then overwrite each
+    // straight annotation's endpoints with pts[i] -> pts[i+1] exactly. Extra
+    // entities (e.g. an ARC) ride along in the same piece via 'extraText'.
+    const pieceFromPoints = async (pts, extraEntities, editCurve) => {
+      await blank();
+      await h.importViaRealInput(extraEntities);
+      const p = d.exportProject();
+      const straights = p.state.annotations.filter(a => a.type === 'straight');
+      straights.forEach((a, i) => {
+        a.start = { x: pts[i].x, y: pts[i].y }; a.end = { x: pts[i + 1].x, y: pts[i + 1].y };
+        a.label = { x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2 };
+      });
+      if (editCurve) p.state.annotations.filter(a => a.type === 'curved').forEach(editCurve);
+      await d.loadProject(p);
+      const anns = d.getAnnotations();
+      return { groupId: anns[0].templateGroupId, before: anns };
+    };
+    const segDist = (q, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy; let t = L > 0 ? ((q.x - a.x) * dx + (q.y - a.y) * dy) / L : 0; t = Math.max(0, Math.min(1, t)); return Math.hypot(a.x + dx * t - q.x, a.y + dy * t - q.y); };
+    const worstDrift = (before, after) => {
+      let worst = 0;
+      for (const s of before.filter(a => a.type === 'straight')) for (const q of [s.start, s.end]) {
+        let best = Infinity;
+        for (const a of after.filter(x => x.type === 'straight')) best = Math.min(best, segDist(q, a.start, a.end));
+        worst = Math.max(worst, best);
+      }
+      return worst;
+    };
+    // (a) A curve exported as LINE facets: 30 facets on a radius-500 arc, each
+    // joint turning 0.9° — under the old 1°-per-joint gate, so the old code
+    // merged all 30 into ONE straight chord (27° of curve gone).
+    const R = 500, step = 0.9 * Math.PI / 180;
+    const arcPts = Array.from({ length: 31 }, (_, i) => ({ x: R * Math.sin(i * step), y: R - R * Math.cos(i * step) }));
+    const a = await pieceFromPoints(arcPts, ${JSON.stringify(doc([dxfChain(30)]))});
+    const arcResult = d.dxf.patternPieces.simplify(a.groupId);
+    const arcAfter = d.getAnnotations();
+
+    // (b) A truly straight run with float-noise jitter (1e-9 of its length)
+    // still merges — the job Simplify exists for.
+    const noisyPts = Array.from({ length: 7 }, (_, i) => ({ x: i * 100, y: (i % 2 ? 1 : -1) * 6e-7 }));
+    noisyPts[0].y = 0; noisyPts[6].y = 0;
+    const b = await pieceFromPoints(noisyPts, ${JSON.stringify(doc([dxfChain(6)]))});
+    const noisyResult = d.dxf.patternPieces.simplify(b.groupId);
+    const noisyAfter = d.getAnnotations();
+
+    // (c) A real gap smaller than the 0.01-unit endpoint grid: (11.000,10) and
+    // (11.004,10) share a grid key, but the gap is 0.2% of the 2-unit run.
+    const gapPts = [{ x: 10, y: 10 }, { x: 11, y: 10 }];
+    const c = await pieceFromPoints(gapPts.concat([{ x: 12, y: 10 }]), ${JSON.stringify(doc([dxfChain(2)]))});
+    {
+      const p = d.exportProject();
+      const second = p.state.annotations.filter(x => x.type === 'straight')[1];
+      second.start = { x: 11.004, y: 10 };
+      await d.loadProject(p);
+    }
+    const gapKeysShared = Math.round(11 * 100) === Math.round(11.004 * 100);
+    const gapResult = d.dxf.patternPieces.simplify(c.groupId);
+
+    // (d) Two collinear straights meeting where a CURVE of the same piece also
+    // ends: a real junction even though only one other straight continues.
+    const curvePiece = ${JSON.stringify(doc([dxfLine(0, 0, 100, 0), dxfLine(100, 0, 200, 0), dxfArc(100, 50, 50, 270, 360)]))};
+    const dd = await pieceFromPoints([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 0 }], curvePiece, (cv) => {
+      const dx = 100 - cv.start.x, dy = 0 - cv.start.y;
+      for (const k of ['start', 'end', 'control1', 'control2', 'label']) if (cv[k]) { cv[k] = { x: cv[k].x + dx, y: cv[k].y + dy }; }
+      for (const pt of (cv.points || [])) for (const k of ['point', 'handleIn', 'handleOut']) if (pt[k]) pt[k] = { x: pt[k].x + dx, y: pt[k].y + dy };
+    });
+    const curveCount = dd.before.filter(x => x.type === 'curved').length;
+    const curveTouches = dd.before.some(x => x.type === 'curved' && Math.hypot(x.start.x - 100, x.start.y) < 1e-9);
+    const junctionResult = d.dxf.patternPieces.simplify(dd.groupId);
+
+    return {
+      arcResult, arcDrift: worstDrift(a.before, arcAfter), arcChord: Math.hypot(arcPts[30].x, arcPts[30].y),
+      maxJointTurnDeg: 0.9,
+      noisyResult, noisyAfterCount: noisyAfter.length, noisyDrift: worstDrift(b.before, noisyAfter),
+      gapKeysShared, gapResult,
+      curveCount, curveTouches, junctionResult,
+    };
+  })()`);
+
+  check(simplifyFidelity.arcResult.removed === 0 && simplifyFidelity.arcDrift === 0,
+    `a 30-facet arc (0.9° per joint — under the per-joint 1° gate) must NOT be flattened into a chord: removed=${simplifyFidelity.arcResult.removed}, worst vertex drift ${simplifyFidelity.arcDrift.toFixed(3)} on a ${simplifyFidelity.arcChord.toFixed(0)}-unit chord (the pre-fix code merged it into one line)`);
+  check(simplifyFidelity.noisyResult.chains === 1 && simplifyFidelity.noisyResult.removed === 5 && simplifyFidelity.noisyAfterCount === 1,
+    `a straight 6-segment run with 1e-9 float jitter must still merge into one line, got ${JSON.stringify(simplifyFidelity.noisyResult)} / ${simplifyFidelity.noisyAfterCount} left`);
+  check(simplifyFidelity.noisyDrift < 1e-5,
+    `merging float-noise jitter must move no vertex measurably, worst drift ${simplifyFidelity.noisyDrift}`);
+  check(simplifyFidelity.gapKeysShared, 'precondition: the two gap endpoints must share one 0.01 grid key (else the case proves nothing)');
+  check(simplifyFidelity.gapResult.removed === 0,
+    `a real gap (0.004 on a 2-unit run) must not be bridged just because both ends round to the same 0.01 grid key, got ${JSON.stringify(simplifyFidelity.gapResult)}`);
+  check(simplifyFidelity.curveCount === 1 && simplifyFidelity.curveTouches,
+    `precondition: the junction fixture must carry one curve ending exactly at the straights' shared point, got ${simplifyFidelity.curveCount} curve(s), touching=${simplifyFidelity.curveTouches}`);
+  check(simplifyFidelity.junctionResult.removed === 0,
+    `two collinear straights meeting where a curve also ends are a real junction — Simplify must not merge through it, got ${JSON.stringify(simplifyFidelity.junctionResult)}`);
+
+  // ===========================================================================
+  // 14b. findings-dxf.md Finding 9: a notch belongs to the line it was placed
+  //      on. Moving the piece carries it; removing the piece or deleting the
+  //      line deletes it; Simplify re-owns it; save/load keeps the owner; a
+  //      pre-ownership notch (no owner) stays exactly where it was.
+  // ===========================================================================
+
+  const notchOwner = await s.eval(`(async () => {
+    const h = window.__DXF, d = window.__braAutoModeDebug;
+    const blank = async () => {
+      await d.loadProject(await (async () => { const p = d.exportProject(); p.state.annotations = []; p.state.images = []; p.state.notches = []; return p; })());
+      document.getElementById('modeManualBtn').click();
+      if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
+    };
+    const savedNotches = () => d.exportProject().state.notches;
+    const placeNotch = async (x, y) => {
+      document.getElementById('toolsMenuBtn').click();
+      document.getElementById('notchToolBtn').click();
+      await h.click(x, y);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await h.settle();
+    };
+
+    // One closed square piece, notch on its bottom edge at 1/4 of the way.
+    await blank();
+    await h.importViaRealInput(${JSON.stringify(doc([dxfLwpolyline(4, 1, [[0, 0], [200, 0], [200, 200], [0, 200]])]))});
+    const anns = d.getAnnotations();
+    const horizontal = anns.filter(a => Math.abs(a.start.y - a.end.y) < 1e-6);
+    const bottom = horizontal.reduce((m, a) => (a.start.y > m.start.y ? a : m));
+    const at = { x: bottom.start.x + (bottom.end.x - bottom.start.x) * 0.25, y: bottom.start.y + (bottom.end.y - bottom.start.y) * 0.25 };
+    await placeNotch(at.x, at.y);
+    const placed = d.getNotches()[0];
+
+    // Move the whole piece with a real drag from the far side of the square.
+    const top = horizontal.reduce((m, a) => (a.start.y < m.start.y ? a : m));
+    const grab = { x: (top.start.x + top.end.x) / 2, y: (top.start.y + top.end.y) / 2 };
+    await h.click(grab.x, grab.y);
+    const bottomBefore = d.getAnnotations().find(a => a.id === bottom.id);
+    await h.drag(grab.x, grab.y, 37, -23);
+    const bottomAfter = d.getAnnotations().find(a => a.id === bottom.id);
+    const pieceDelta = { x: bottomAfter.start.x - bottomBefore.start.x, y: bottomAfter.start.y - bottomBefore.start.y };
+    const afterMove = savedNotches()[0];
+
+    // Save -> load keeps the owner and the moved position.
+    await d.loadProject(d.exportProject());
+    const afterReload = d.getNotches()[0];
+    const afterReloadSaved = savedNotches()[0];
+
+    // Remove the piece through the Pattern Pieces panel's model op; Undo.
+    const groupId = d.getAnnotations()[0].templateGroupId;
+    d.dxf.patternPieces.remove([groupId]);
+    const afterRemove = d.getNotches().length;
+    document.getElementById('undoBtn').click();
+    await h.settle();
+    const afterUndo = d.getNotches().length;
+
+    // Delete just the owning line (member edit: double-click, then Delete).
+    const owner = d.getAnnotations().find(a => a.id === placed.ownerId);
+    let deletedOwner = false;
+    {
+      const canvas = document.getElementById('boardCanvas');
+      const v = d.getView(); const r = canvas.getBoundingClientRect();
+      const far = { x: (owner.start.x + owner.end.x * 3) / 4, y: (owner.start.y + owner.end.y * 3) / 4 };
+      canvas.dispatchEvent(new MouseEvent('dblclick', { clientX: far.x * v.zoom + v.panX + r.left, clientY: far.y * v.zoom + v.panY + r.top, bubbles: true }));
+      await h.settle();
+      const sel = d.getState().selectedAnnotationIds || [];
+      deletedOwner = sel.length === 1 && sel[0] === owner.id;
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+      await h.settle();
+    }
+    const afterLineDelete = { lineGone: !d.getAnnotations().some(a => a.id === owner.id), notches: d.getNotches().length };
+
+    // Simplify re-owns: a 4-segment straight run, notch on segment 3.
+    await blank();
+    await h.importViaRealInput(${JSON.stringify(doc([dxfLine(0, 0, 100, 0), dxfLine(100, 0, 200, 0), dxfLine(200, 0, 300, 0), dxfLine(300, 0, 400, 0)]))});
+    const run = d.getAnnotations();
+    const third = run.slice().sort((p, q) => Math.min(p.start.x, p.end.x) - Math.min(q.start.x, q.end.x))[2];
+    const thirdMid = { x: (third.start.x + third.end.x) / 2, y: (third.start.y + third.end.y) / 2 };
+    await placeNotch(thirdMid.x, thirdMid.y);
+    const beforeSimplify = savedNotches()[0];
+    d.dxf.patternPieces.simplify(run[0].templateGroupId);
+    const merged = d.getAnnotations();
+    const afterSimplify = savedNotches()[0];
+
+    // A notch saved before ownership existed: no owner, never moves.
+    await blank();
+    await h.importViaRealInput(${JSON.stringify(doc([dxfLine(0, 0, 200, 0)]))});
+    const legacyLine = d.getAnnotations()[0];
+    {
+      const p = d.exportProject();
+      p.state.notches = [{ id: 999001, x: legacyLine.start.x + 10, y: legacyLine.start.y, angle: Math.PI / 2, length: 8, color: 'black' }];
+      await d.loadProject(p);
+    }
+    const lg = d.getAnnotations()[0];
+    await h.click((lg.start.x + lg.end.x) / 2 + 30, lg.start.y);
+    await h.drag((lg.start.x + lg.end.x) / 2 + 30, lg.start.y, 25, 25);
+    const legacyAfter = savedNotches()[0];
+
+    // Reset working board takes notches too: it used to leave them floating
+    // on an empty board, and a board holding ONLY notches read as "already
+    // empty" so it could not be reset at all. Driven through the board.reset
+    // command (the R shortcut / Command Palette path): the toolbar's Reset
+    // Board… button is auto-only and its disabled state is not refreshed in
+    // Manual, so a .click() on it is a no-op here.
+    const realConfirm = window.confirm;
+    window.confirm = () => true;
+    try {
+      d.commands.run('board.reset');
+      await h.settle();
+      var afterReset = { notches: d.getNotches().length, lines: d.getAnnotations().length };
+      const p = d.exportProject();
+      p.state.notches = [{ id: 999002, x: 5, y: 5, angle: 0, length: 8, color: 'black' }];
+      await d.loadProject(p);
+      d.commands.run('board.reset');
+      await h.settle();
+      var afterNotchOnlyReset = d.getNotches().length;
+    } finally { window.confirm = realConfirm; }
+
+    return { afterReset, afterNotchOnlyReset, placed, at, pieceDelta, afterMove, afterReload, afterReloadSaved, afterRemove, afterUndo, deletedOwner, afterLineDelete,
+      thirdId: third.id, beforeSimplify, merged, afterSimplify, legacyAfter, legacyLineStart: legacyLine.start };
+  })()`);
+
+  check(notchOwner.placed && notchOwner.placed.ownerId != null && notchOwner.placed.ownerSeg === 0 && Math.abs(notchOwner.placed.ownerT - 0.25) < 0.02,
+    `a notch placed on a line must record its owner and where on it (t≈0.25), got ${JSON.stringify(notchOwner.placed)}`);
+  check(Math.abs(notchOwner.pieceDelta.x - 37) < 0.5 && Math.abs(notchOwner.pieceDelta.y + 23) < 0.5,
+    `precondition: the real drag must move the piece by (37,-23), got ${JSON.stringify(notchOwner.pieceDelta)}`);
+  check(Math.abs(notchOwner.afterMove.x - (notchOwner.placed.x + notchOwner.pieceDelta.x)) < 1e-6
+    && Math.abs(notchOwner.afterMove.y - (notchOwner.placed.y + notchOwner.pieceDelta.y)) < 1e-6,
+    `moving the piece must carry its notch by the same delta (Finding 9), got ${JSON.stringify(notchOwner.afterMove)} from ${JSON.stringify(notchOwner.placed)}`);
+  check(notchOwner.afterReload.ownerId === notchOwner.placed.ownerId && Math.abs(notchOwner.afterReloadSaved.x - notchOwner.afterMove.x) < 1e-6,
+    `save -> load must keep the notch's owner and its moved position, got ${JSON.stringify(notchOwner.afterReload)}`);
+  check(notchOwner.afterRemove === 0, `removing the piece must remove the notch placed on it (Finding 9), got ${notchOwner.afterRemove} left`);
+  check(notchOwner.afterUndo === 1, `Undo of the piece removal must bring the notch back with it, got ${notchOwner.afterUndo}`);
+  check(notchOwner.deletedOwner && notchOwner.afterLineDelete.lineGone && notchOwner.afterLineDelete.notches === 0,
+    `deleting the notch's own line must delete the notch, got ${JSON.stringify({ soloSelected: notchOwner.deletedOwner, ...notchOwner.afterLineDelete })}`);
+  {
+    const mergedLine = notchOwner.merged.length === 1 ? notchOwner.merged[0] : null;
+    check(!!mergedLine && notchOwner.beforeSimplify.ownerId === notchOwner.thirdId && notchOwner.afterSimplify.ownerId === mergedLine.id,
+      `Simplify must re-own a notch on a merged segment to the replacement line, got before=${JSON.stringify(notchOwner.beforeSimplify)} after=${JSON.stringify(notchOwner.afterSimplify)} lines=${notchOwner.merged.length}`);
+    check(Math.hypot(notchOwner.afterSimplify.x - notchOwner.beforeSimplify.x, notchOwner.afterSimplify.y - notchOwner.beforeSimplify.y) < 1e-6,
+      `re-owning through Simplify must not move the notch, got ${JSON.stringify(notchOwner.afterSimplify)} vs ${JSON.stringify(notchOwner.beforeSimplify)}`);
+  }
+  check(notchOwner.afterReset.lines === 0 && notchOwner.afterReset.notches === 0,
+    `Reset working board must take notches with the lines, got ${JSON.stringify(notchOwner.afterReset)}`);
+  check(notchOwner.afterNotchOnlyReset === 0,
+    `a board holding only a notch is not "already empty" — Reset must clear it, got ${notchOwner.afterNotchOnlyReset} left`);
+  check(notchOwner.legacyAfter && notchOwner.legacyAfter.ownerId === undefined
+    && Math.abs(notchOwner.legacyAfter.x - (notchOwner.legacyLineStart.x + 10)) < 1e-9 && Math.abs(notchOwner.legacyAfter.y - notchOwner.legacyLineStart.y) < 1e-9,
+    `a notch saved before ownership existed must load and stay exactly where it was, got ${JSON.stringify(notchOwner.legacyAfter)}`);
+
+  // ===========================================================================
   // 11. ADR 0091 / US-124 Phase 2 — a DXF pattern is a CLASSIFIED closed
   //     outline (ASTM layer 1, 84 as fallback) plus the marks assigned to it,
   //     not a bounding-box-merged connected component. Every fixture here

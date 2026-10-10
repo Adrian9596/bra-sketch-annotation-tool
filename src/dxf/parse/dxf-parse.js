@@ -1226,15 +1226,35 @@
     const diag = Math.hypot(bbox.width, bbox.height) || 1;
     const tol = Number.isFinite(tolOverride) ? tolOverride : 0.0001 * diag;
     const uf = dxfUnionFind(segments.length);
+    // findings-dxf.md Finding 5: this was an all-pairs scan — 13,894 segments
+    // (2892XL-new.dxf) held the main thread for ~19 s. Endpoints are bucketed
+    // on a grid of cell size `tol`, so two endpoints within `tol` always sit
+    // in the same or adjacent cells and only those are compared. The touching
+    // PAIRS are exactly the ones the scan found, and union order cannot change
+    // the result: groups are emitted by their lowest segment index below.
+    const cell = tol > 0 ? tol : 1;
+    const cellKey = (cx, cy) => cx + ',' + cy;
+    const grid = new Map();
     for (let i = 0; i < segments.length; i += 1) {
-      for (let j = i + 1; j < segments.length; j += 1) {
-        if (segments[i].instance !== segments[j].instance) continue;
-        let touch = false;
-        for (const p of endpoints[i]) {
-          for (const q of endpoints[j]) if (distance(p, q) <= tol) { touch = true; break; }
-          if (touch) break;
+      for (const p of endpoints[i]) {
+        const key = cellKey(Math.floor(p.x / cell), Math.floor(p.y / cell));
+        if (!grid.has(key)) grid.set(key, []);
+        grid.get(key).push(i);
+      }
+    }
+    for (let i = 0; i < segments.length; i += 1) {
+      for (const p of endpoints[i]) {
+        const cx = Math.floor(p.x / cell), cy = Math.floor(p.y / cell);
+        for (let dx = -1; dx <= 1; dx += 1) {
+          for (let dy = -1; dy <= 1; dy += 1) {
+            const bucket = grid.get(cellKey(cx + dx, cy + dy));
+            if (!bucket) continue;
+            for (const j of bucket) {
+              if (j <= i || segments[i].instance !== segments[j].instance) continue;
+              for (const q of endpoints[j]) if (distance(p, q) <= tol) { uf.union(i, j); break; }
+            }
+          }
         }
-        if (touch) uf.union(i, j);
       }
     }
     const groups = new Map();

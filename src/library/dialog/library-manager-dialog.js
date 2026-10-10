@@ -440,11 +440,14 @@
       const reader = new FileReader();
       reader.onload = () => {
         const added = importShapeStampsFromJson(String(reader.result || ''));
+        const skipped = shapeStampImportRejectedCount();
         refresh();
-        if (!added) { showToast('That file held no Templates.'); return; }
-        showToast(shapeStampsPersisted()
+        const skippedNote = skipped
+          ? ` ${skipped} skipped — unreadable, or over the ${shapeStampMaxMembers()}-path Template limit.` : '';
+        if (!added) { showToast(skipped ? 'No Templates imported.' + skippedNote : 'That file held no Templates.'); return; }
+        showToast((shapeStampsPersisted()
           ? `Imported ${added} Template${added > 1 ? 's' : ''}.`
-          : `Imported ${added} Template${added > 1 ? 's' : ''} (this session only — the browser refused to store it).`);
+          : `Imported ${added} Template${added > 1 ? 's' : ''} (this session only — the browser refused to store it).`) + skippedNote);
       };
       reader.onerror = () => showToast('Could not read that file.');
       reader.readAsText(file);

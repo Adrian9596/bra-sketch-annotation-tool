@@ -2101,6 +2101,15 @@ async function section1PureKernel(s) {
   const lineLen = await s.eval(`window.__braAutoModeDebug.dxf.measure.segmentLength({kind:'straight', a:{x:0,y:0}, b:{x:3,y:4}})`);
   check(near(lineLen, 5), '3-4-5 straight segment length, got ' + lineLen);
 
+  // findings-dxf.md (Minor): the parser's message already ends a sentence, so
+  // wrapping it read "...this DXF file.)." — one period, inside nothing.
+  const failure = await s.eval(`window.__braAutoModeDebug.dxf.measure.failureMessage({ ok: false, message: 'No supported entities were found in this DXF file.' })`);
+  check(failure === 'Pattern Measure could not build a native measurement model for this file (No supported entities were found in this DXF file).',
+    'native-model failure sentence ends in exactly one period, got ' + JSON.stringify(failure));
+  const failureBare = await s.eval(`window.__braAutoModeDebug.dxf.measure.failureMessage({ ok: false })`);
+  check(failureBare === 'Pattern Measure could not build a native measurement model for this file.',
+    'a failure with no parser message still reads as one sentence, got ' + JSON.stringify(failureBare));
+
   const arcLen = await s.eval(`window.__braAutoModeDebug.dxf.measure.segmentLength({kind:'arc', center:{x:0,y:0}, radius:10, startAngle:0, sweep:Math.PI})`);
   check(near(arcLen, 10 * Math.PI), 'half-circle arc length = pi*r, got ' + arcLen);
 

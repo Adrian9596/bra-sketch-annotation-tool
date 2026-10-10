@@ -1195,6 +1195,102 @@ async function main() {
   // the old claim does not translate onto it. See library-manager-check.mjs
   // for the new dialog's own keyboard/focus contract.
 
+  // ---- 14. Over the member limit: refused, never cut short ----------------
+  //
+  // findings-dxf.md Finding 8: storage kept the first 80 members of a bigger
+  // selection and the UI still said "Saved" — every real 3380.dxf piece has
+  // 103–295 segments, so a saved piece re-placed as a fragment. A selection
+  // over the limit is now refused with both counts; a JSON import says how
+  // many entries it skipped instead of storing them truncated.
+  const overCap = await s.eval(`(async () => {
+    const { d, settle, click, openTools } = window.__SS;
+    const img = d.getImages()[0];
+    d.resetShapeStamps();
+    const lineSet = async (count) => {
+      const p = d.exportProject();
+      const seed = p.state.annotations.find(a => a.type === 'straight');
+      let next = Math.max(0, ...p.state.annotations.map(a => Number(a.id) || 0)) + 1;
+      p.state.annotations = Array.from({ length: count }, (_, i) => {
+        const a = JSON.parse(JSON.stringify(seed));
+        const dy = i * 3;
+        a.id = next++;
+        a.start = { x: img.x + 20, y: img.y + 20 + dy }; a.end = { x: img.x + 220, y: img.y + 20 + dy };
+        a.label = { x: img.x + 120, y: img.y + 20 + dy };
+        delete a.pomKey; delete a.pomNumber; a.manualLabel = '';
+        return a;
+      });
+      await d.loadProject(p);
+      document.getElementById('modeManualBtn').click(); await settle();
+      if (!d.getState().sketchMode) { document.getElementById('sketchFocusBtn').click(); await settle(); }
+      await click(img.x + 120, img.y + 20);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', metaKey: true, ctrlKey: true, bubbles: true }));
+      await settle();
+      return (d.getState().selectedAnnotationIds || []).length;
+    };
+    // toast.js queues a message behind one still in its reading window, so
+    // record every text the toast shows for a while rather than one read.
+    const toastsDuring = async (fn, ms) => {
+      const seen = [];
+      const el = document.getElementById('toast');
+      const obs = new MutationObserver(() => { if (el.textContent && seen[seen.length - 1] !== el.textContent) seen.push(el.textContent); });
+      obs.observe(el, { childList: true, characterData: true, subtree: true });
+      const out = await fn();
+      for (let t = 0; t < ms; t += 130) await settle();
+      obs.disconnect();
+      return Object.assign(out || {}, { toasts: seen });
+    };
+    const trySave = (name) => toastsDuring(async () => {
+      await openTools();
+      document.getElementById('shapeStampSaveBtn').click(); await settle();
+      const input = document.querySelector('.picker-overlay input[type="text"]');
+      if (input) {
+        input.value = name;
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await settle();
+      }
+      return { dialog: !!input };
+    }, 3000);
+
+    const selected81 = await lineSet(81);
+    const save81 = await trySave('Too big');
+    const after81 = d.getShapeStamps().length;
+
+    const selected80 = await lineSet(80);
+    const save80 = await trySave('Exactly eighty');
+    const stamps80 = d.getShapeStamps();
+
+    // Import: one 81-member entry (from a hand-edited or newer file) and one
+    // ordinary entry, through the real Library dialog file input.
+    const member = { type: 'straight', start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, style: 'solid', color: 'black', lineWidth: 2, arrowType: 'none' };
+    const envelope = { format: 'bra-shape-stamps', version: 3, stamps: [
+      { id: 'st-toolarge', name: 'Too large', members: Array.from({ length: 81 }, () => member) },
+      { id: 'st-fine', name: 'Fine', members: [member, member] },
+    ] };
+    d.resetShapeStamps();
+    document.getElementById('libraryBtn').click(); await settle();
+    const input = document.getElementById('shapeStampFileInput');
+    const dt = new DataTransfer();
+    dt.items.add(new File([JSON.stringify(envelope)], 'stamps.json', { type: 'application/json' }));
+    input.files = dt.files;
+    const importToasts = (await toastsDuring(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); }, 3000)).toasts;
+    const importToast = importToasts.find(t => /Imported|Templates/.test(t)) || '';
+    const imported = d.getShapeStamps().map(x => ({ id: x.id, members: x.members.length }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await settle();
+    return { selected81, save81, after81, selected80, save80, stamps80: stamps80.map(x => ({ name: x.name, members: x.members.length })), importToast, imported };
+  })()`);
+  check(overCap.selected81 === 81, `precondition: Cmd+A must select all 81 lines (got ${overCap.selected81})`);
+  check(!overCap.save81.dialog && overCap.after81 === 0,
+    `an 81-path selection must be refused before the name dialog — it used to be saved cut to 80 with a "Saved" toast (dialog=${overCap.save81.dialog}, stored=${overCap.after81})`);
+  check(overCap.save81.toasts.some(t => /at most 80/.test(t) && /81/.test(t)),
+    `...and the refusal names both counts (toasts shown: ${JSON.stringify(overCap.save81.toasts)})`);
+  check(overCap.selected80 === 80 && overCap.save80.dialog && overCap.stamps80.length === 1 && overCap.stamps80[0].members === 80,
+    `exactly 80 paths still saves, whole (got ${JSON.stringify({ selected: overCap.selected80, dialog: overCap.save80.dialog, stamps: overCap.stamps80 })})`);
+  check(overCap.imported.length === 1 && overCap.imported[0].id === 'st-fine' && overCap.imported[0].members === 2,
+    `importing a file with an 81-member Template must skip it whole, not store it cut to 80 (got ${JSON.stringify(overCap.imported)})`);
+  check(/Imported 1 Template/.test(overCap.importToast) && /1 skipped/.test(overCap.importToast),
+    `...and the import toast says it skipped one (got ${JSON.stringify(overCap.importToast)})`);
+
   const errors = [...pageErrors, ...(await s.eval(`window.__ssErrors || []`))];
   check(errors.length === 0, `page errors during the run: ${JSON.stringify(errors)}`);
 

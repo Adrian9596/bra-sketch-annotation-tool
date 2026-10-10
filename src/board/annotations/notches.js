@@ -13,6 +13,15 @@
 // (delete and re-place instead) and no length/angle editing UI — the tick's
 // direction and length are fully derived at placement time from the nearest
 // line there. Revisit if a real workflow need for repositioning shows up.
+//
+// Ownership (findings-dxf.md Finding 9): a notch belongs to the line it was
+// placed on — `ownerId` plus where on it (`ownerSeg`, `ownerT`). Its position
+// is READ from that line whenever it is drawn or hit-tested, so anything that
+// moves the line (dragging or nudging the piece, Smart Align, a photo resize,
+// editing the path) carries the notch along without each of those knowing
+// notches exist. Deleting the line, or removing its piece, deletes the notch.
+// x/y/angle remain the last-known values: what a project file stores, what an
+// older build reads, and the fallback if the owner id ever stops existing.
 
   const NOTCH_TOLERANCE_PX = 16; // same order as other click tolerances (e.g. endpointRadiusPx: 14)
   const NOTCH_LENGTH_PX = 16; // desired ON-SCREEN tick length at the moment it is placed
@@ -32,17 +41,17 @@
       let t = lenSq > 1e-9 ? ((p.x - a.x) * abx + (p.y - a.y) * aby) / lenSq : 0;
       t = Math.max(0, Math.min(1, t));
       const point = { x: a.x + abx * t, y: a.y + aby * t };
-      return { point, tangent: { x: abx, y: aby }, dist: distance(point, p) };
+      return { point, tangent: { x: abx, y: aby }, dist: distance(point, p), seg: 0, t };
     }
     let best = null;
-    for (const seg of getCurveBeziers(ann)) {
+    getCurveBeziers(ann).forEach((seg, segIndex) => {
       for (let i = 0; i <= NOTCH_CURVE_SAMPLES; i += 1) {
         const t = i / NOTCH_CURVE_SAMPLES;
         const point = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t);
         const dist = distance(point, p);
-        if (!best || dist < best.dist) best = { point, tangent: bezierTangent(seg.p0, seg.p1, seg.p2, seg.p3, t), dist };
+        if (!best || dist < best.dist) best = { point, tangent: bezierTangent(seg.p0, seg.p1, seg.p2, seg.p3, t), dist, seg: segIndex, t };
       }
-    }
+    });
     return best;
   }
 
@@ -53,9 +62,74 @@
     let best = null;
     for (const ann of state.annotations) {
       const hit = nearestPointOnAnnotation(ann, p);
-      if (hit && (!best || hit.dist < best.dist)) best = hit;
+      if (hit && (!best || hit.dist < best.dist)) best = Object.assign(hit, { ann });
     }
     return best;
+  }
+
+  // Perpendicular to the line's tangent; either perpendicular draws the same
+  // symmetric tick, so no "which side" choice is needed. null for a
+  // zero-length tangent (a degenerate line has no direction to be across).
+  function notchAngleFromTangent(tangent) {
+    const len = Math.hypot(tangent.x, tangent.y);
+    if (!(len > 0)) return null;
+    return Math.atan2(-tangent.x / len, tangent.y / len);
+  }
+
+  // Where the notch sits NOW on its owning line, or null when it has no owner
+  // or the owner can no longer place it (id gone, that curve segment gone).
+  function notchOwnerPlacement(notch) {
+    if (!notch || notch.ownerId == null) return null;
+    const owner = state.annotations.find(a => a.id === notch.ownerId);
+    if (!owner || !owner.start || !owner.end) return null;
+    const t = notch.ownerT;
+    let point, tangent;
+    if (owner.type === 'straight') {
+      point = { x: owner.start.x + (owner.end.x - owner.start.x) * t, y: owner.start.y + (owner.end.y - owner.start.y) * t };
+      tangent = { x: owner.end.x - owner.start.x, y: owner.end.y - owner.start.y };
+    } else {
+      const seg = getCurveBeziers(owner)[notch.ownerSeg];
+      if (!seg) return null;
+      point = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t);
+      tangent = bezierTangent(seg.p0, seg.p1, seg.p2, seg.p3, t);
+    }
+    const angle = notchAngleFromTangent(tangent);
+    if (angle == null || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+    return { x: point.x, y: point.y, angle };
+  }
+
+  // The notch as it should be drawn, hit-tested and saved right now.
+  function resolveNotch(notch) {
+    const at = notchOwnerPlacement(notch);
+    return at ? Object.assign({}, notch, at) : notch;
+  }
+
+  // A deleted line takes its notches with it (Delete key, Remove unchecked
+  // pieces). Returns true when any notch went.
+  function removeNotchesOwnedBy(annotationIds) {
+    const gone = annotationIds instanceof Set ? annotationIds : new Set(annotationIds || []);
+    const before = (state.notches || []).length;
+    if (!before || !gone.size) return false;
+    state.notches = state.notches.filter(notch => notch.ownerId == null || !gone.has(notch.ownerId));
+    if (state.selection && state.selection.kind === 'notch' && !state.notches.some(n => n.id === state.selection.id)) {
+      state.selection = { kind: null, id: null };
+    }
+    return state.notches.length !== before;
+  }
+
+  // Simplify replaced `sourceIds` with the straight line `replacement`: re-own
+  // their notches to it at the same spot, instead of leaving them on ids that
+  // no longer exist.
+  function reownNotchesToLine(sourceIds, replacement) {
+    const a = replacement.start, b = replacement.end;
+    const abx = b.x - a.x, aby = b.y - a.y;
+    const lenSq = abx * abx + aby * aby;
+    for (const notch of (state.notches || [])) {
+      if (notch.ownerId == null || !sourceIds.has(notch.ownerId)) continue;
+      const at = resolveNotch(notch);
+      const t = lenSq > 1e-9 ? ((at.x - a.x) * abx + (at.y - a.y) * aby) / lenSq : 0;
+      Object.assign(notch, { x: at.x, y: at.y, angle: at.angle, ownerId: replacement.id, ownerSeg: 0, ownerT: Math.max(0, Math.min(1, t)) });
+    }
   }
 
   // Click too far from any line: do nothing rather than guess a direction
@@ -67,17 +141,17 @@
       showToast('Click closer to a line to place a notch.');
       return;
     }
-    const tangentLen = Math.hypot(hit.tangent.x, hit.tangent.y) || 1;
-    // Rotate the tangent 90°; either perpendicular direction draws the same
-    // symmetric tick, so no "which side" choice is needed.
-    const angle = Math.atan2(-hit.tangent.x / tangentLen, hit.tangent.y / tangentLen);
+    const angle = notchAngleFromTangent(hit.tangent);
     const notch = {
       id: state.idCounter++,
       x: hit.point.x,
       y: hit.point.y,
-      angle,
+      angle: angle == null ? 0 : angle,
       length: NOTCH_LENGTH_PX / Math.max(0.0001, state.zoom),
       color: 'black',
+      ownerId: hit.ann.id,
+      ownerSeg: hit.seg,
+      ownerT: hit.t,
     };
     if (!Array.isArray(state.notches)) state.notches = [];
     state.notches.push(notch);
@@ -95,7 +169,10 @@
   // load or drawing garbage at (NaN, NaN).
   function normalizeNotch(raw) {
     if (!raw || !Number.isFinite(raw.x) || !Number.isFinite(raw.y)) return null;
-    return {
+    const owned = raw.ownerId != null && (typeof raw.ownerId === 'number' || typeof raw.ownerId === 'string')
+      && Number.isInteger(raw.ownerSeg) && raw.ownerSeg >= 0
+      && Number.isFinite(raw.ownerT) && raw.ownerT >= 0 && raw.ownerT <= 1;
+    const notch = {
       id: raw.id,
       x: raw.x,
       y: raw.y,
@@ -103,14 +180,19 @@
       length: Number.isFinite(raw.length) && raw.length > 0 ? raw.length : NOTCH_LENGTH_PX,
       color: normalizeColorKey(raw.color || 'black'),
     };
+    // A notch from before ownership existed (or with a damaged owner record)
+    // stays where it is, exactly as it always did.
+    if (owned) Object.assign(notch, { ownerId: raw.ownerId, ownerSeg: raw.ownerSeg, ownerT: raw.ownerT });
+    return notch;
   }
 
   // Endpoints of the tick, for both rendering and hit-testing — a notch is
   // drawn straddling its anchor point, half each side along its own angle.
   function notchEndpoints(notch) {
-    const half = notch.length / 2;
-    const dx = Math.cos(notch.angle) * half, dy = Math.sin(notch.angle) * half;
-    return { a: { x: notch.x - dx, y: notch.y - dy }, b: { x: notch.x + dx, y: notch.y + dy } };
+    const at = resolveNotch(notch);
+    const half = at.length / 2;
+    const dx = Math.cos(at.angle) * half, dy = Math.sin(at.angle) * half;
+    return { a: { x: at.x - dx, y: at.y - dy }, b: { x: at.x + dx, y: at.y + dy } };
   }
 
   // A fixed WORLD length (set once at placement — see placeNotchAt), unlike
@@ -132,7 +214,8 @@
     if (state.selection.kind === 'notch' && state.selection.id === notch.id) {
       ctx.beginPath();
       ctx.fillStyle = SELECT_COLOR;
-      ctx.arc(notch.x, notch.y, 4 / featureZoom(), 0, Math.PI * 2);
+      const at = resolveNotch(notch);
+      ctx.arc(at.x, at.y, 4 / featureZoom(), 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();

@@ -371,18 +371,23 @@
   // parseDxfNativeModel on the same text with the same options; reuse it
   // instead of parsing a second time on the main thread. Omitted -> parse
   // here (the synchronous path and every project reopen).
-  function startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNativeModel) {
+  // `options.quietFailure`: the caller puts dxfMeasureLastFailureMessage() into
+  // its own toast. importDxfText does — a separate toast fired here, a moment
+  // before its "Imported N pieces" toast, was swapped away after toast.js's
+  // ~900ms fair-reading window (findings-dxf.md, Minor).
+  function startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNativeModel, options) {
     const parseStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
     const nativeModel = precomputedNativeModel || parseDxfNativeModel(text, importOptions || {});
     const parseFinishedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    dxfMeasureLastFailure = null;
     if (!nativeModel.ok) {
       // RB-5: the board-annotation import (importDxfText, US-104) already
       // succeeded by the time this runs — that atomic behavior must not be
       // disturbed — but a TD who just imported a DXF and reaches for Pattern
       // Measure deserves an explicit reason it is not available, rather than
       // a silently-missing Tools-menu feature.
-      showToast('DXF imported, but Pattern Measure could not build a native measurement '
-        + 'model for this file' + (nativeModel.message ? ' (' + nativeModel.message + ')' : '') + '.');
+      dxfMeasureLastFailure = dxfMeasureFailureMessage(nativeModel);
+      if (!(options && options.quietFailure)) showToast('DXF imported, but ' + dxfMeasureLastFailure);
       state.dxfMeasureSession = null;
       return null;
     }
@@ -391,6 +396,20 @@
     state.dxfMeasureSession.source.nativeParserExecution = precomputedNativeModel ? 'worker-precomputed' : 'main-thread-measured';
     dxfMeasureSeedHistory();
     return state.dxfMeasureSession;
+  }
+
+  // Why the last startDxfMeasureSession built no session (null when it did).
+  let dxfMeasureLastFailure = null;
+  function dxfMeasureLastFailureMessage() { return dxfMeasureLastFailure; }
+
+  // The parser's message is already a sentence ("No supported entities were
+  // found in this DXF file."); its own period is dropped so the wrapper's
+  // closing ")." does not double it.
+  function dxfMeasureFailureMessage(nativeModel) {
+    const reason = nativeModel && nativeModel.message
+      ? String(nativeModel.message).trim().replace(/[.\s]+$/, '') : '';
+    return 'Pattern Measure could not build a native measurement model for this file'
+      + (reason ? ' (' + reason + ')' : '') + '.';
   }
 
   // Opening another DXF, loading a project, or resetting the board all call

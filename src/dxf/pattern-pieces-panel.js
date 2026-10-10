@@ -103,7 +103,14 @@
   function removePatternPieceGroups(groupIds) {
     const kill = new Set(groupIds);
     if (!kill.size) return;
-    state.annotations = state.annotations.filter(ann => !kill.has(ann.templateGroupId));
+    const removedIds = new Set();
+    state.annotations = state.annotations.filter((ann) => {
+      if (!kill.has(ann.templateGroupId)) return true;
+      removedIds.add(ann.id);
+      return false;
+    });
+    // findings-dxf.md Finding 9: a notch placed on a removed piece goes with it.
+    removeNotchesOwnedBy(removedIds);
     if (state.templateGroupLabels) {
       for (const gid of kill) delete state.templateGroupLabels[gid];
     }
@@ -114,8 +121,8 @@
         && !state.annotations.some(a => a.id === state.selection.id)) {
       state.selection = { kind: null, id: null };
     }
-    state.selectedAnnotationIds = (state.selectedAnnotationIds || [])
-      .filter(id => state.annotations.some(a => a.id === id));
+    const remaining = new Set(state.annotations.map(a => a.id));
+    state.selectedAnnotationIds = (state.selectedAnnotationIds || []).filter(id => remaining.has(id));
     if (kill.has(state.templateGroupEditId)) state.templateGroupEditId = null;
     // findings-dxf.md Finding 7: a removed piece must not stay measurable at
     // its old, now-invisible position.

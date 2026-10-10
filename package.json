@@ -67,6 +67,10 @@
     "dxf-measurement-release-check": "node scripts/dxf-measurement-check.mjs",
     "dxf-worker-check": "node scripts/dxf-worker-check.mjs",
     "semantic-seam-vectorization-check": "node scripts/semantic-seam-vectorization-check.mjs",
-    "treatment-runs-browser-check": "node scripts/treatment-runs-browser-check.mjs"
+    "treatment-runs-browser-check": "node scripts/treatment-runs-browser-check.mjs",
+    "group-deps-check": "node scripts/group-deps-check.mjs",
+    "group-deps-selftest": "node scripts/group-deps-check.mjs --selftest",
+    "boundary-characterization-check": "node scripts/boundary-characterization-check.mjs",
+    "boundary-characterization-selftest": "node scripts/boundary-characterization-check.mjs --selftest"
   }
 }

@@ -17,7 +17,9 @@
       state: {
         annotations: clone(state.annotations),
         // ADR 0071: additive — files saved before this existed have no key.
-        notches: clone(state.notches || []),
+        // Where each notch sits NOW on its line (notches.js: position is read
+        // from the owner), so the file is right for a reader that ignores owners.
+        notches: clone((state.notches || []).map(resolveNotch)),
         // ADR 0070: sparse groupId -> label map (DXF block names). Additive —
         // files saved before this existed have no key and default to {}.
         templateGroupLabels: clone(state.templateGroupLabels || {}),

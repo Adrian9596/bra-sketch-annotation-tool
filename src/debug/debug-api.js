@@ -530,6 +530,9 @@
           // adaptive Bézier tolerance, degenerate input) without importing a
           // file at all.
           reasonCodes: () => clone(DXF_MEASURE_REASON),
+          // The sentence a TD reads when the native model could not be built
+          // (dxf-import.js folds it into the import toast).
+          failureMessage: (nativeModel) => (typeof dxfMeasureFailureMessage === 'function' ? dxfMeasureFailureMessage(nativeModel) : null),
           segmentLength: (seg) => (typeof dxfSegmentLength === 'function' ? dxfSegmentLength(seg) : null),
           segmentFailureReason: (seg) => (typeof dxfSegmentFailureReason === 'function' ? dxfSegmentFailureReason(seg) : null),
           partialLength: (seg, t0, t1) => (typeof dxfPartialLength === 'function' ? dxfPartialLength(seg, t0, t1) : null),

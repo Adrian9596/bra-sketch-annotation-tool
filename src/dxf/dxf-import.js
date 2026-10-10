@@ -264,7 +264,7 @@
     // what actually got drawn. Reset first — opening another DXF must never
     // leave a prior session's measurements dangling over new geometry.
     resetDxfMeasureSession();
-    const measureSession = startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNative || null);
+    const measureSession = startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNative || null, { quietFailure: true });
     // ADR 0088: only a successful native-model build becomes the durable,
     // newest measurable source. A failed native build remains fail-closed.
     if (measureSession) {
@@ -312,7 +312,10 @@
         : measureSession
           ? ' Units assumed (in) — set them under Tools ▸ Pattern Measure if the file is mm/cm.'
           : '';
+    // A failed native build rides on this toast for the same reason.
+    const measureFailure = measureSession ? '' : (dxfMeasureLastFailureMessage() || '');
     showToast('Imported ' + pieceCount + ' ' + pieceWord + ' (' + allNewIds.length + ' ' + lineWord + ').'
+      + (measureFailure ? ' ' + measureFailure : '')
       + (skipMsg ? ' ' + skipMsg : '') + unitWarning);
     // ADR 0070: a grading-nest file places every chosen size's piece at the
     // same board position (see ADR 0069's Context) — more than one piece

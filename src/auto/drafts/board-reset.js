@@ -44,6 +44,7 @@
     return state.images.length === 0
       && state.annotations.length === 0
       && (state.notes || []).length === 0
+      && (state.notches || []).length === 0
       && (state.graphics || []).length === 0
       && state.eraseStrokes.length === 0
       && state.autoMode.draftAnnotations.length === 0
@@ -71,6 +72,10 @@
     // US-092: notes are board content, so a whole-board reset takes them too.
     // clearAllLinesKeepImage deliberately does NOT — a note is not a line.
     state.notes = [];
+    // ADR 0071: so are notches — a reset used to leave them floating on an
+    // empty board (and isWorkingBoardEmpty ignored them, so a board holding
+    // only notches could not be reset at all).
+    state.notches = [];
     state.nextSequence = 1;
     state.selection = { kind: null, id: null };
     state.graphicEdit = null;
@@ -110,6 +115,8 @@
     }
 
     if (state.dxfPatternSource || state.dxfMeasureSession) clearDxfPatternSource();
+    // A line's notches go with it (ADR 0071 amendment).
+    removeNotchesOwnedBy(new Set(state.annotations.map(a => a.id)));
     state.annotations = [];
     state.deletedAutoAnnotations = [];
     state.autoMode.draftAnnotations = [];

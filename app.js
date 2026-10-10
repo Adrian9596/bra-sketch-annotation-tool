@@ -5,7 +5,7 @@
   const BUILTIN_AUTO_MODE_RULE_JSON = {"version":{"pom_unit":"in","template_version":"core18-2026-07-18b","rule_version":"offline-vision-rules-v3","anchor_version":"anchors-2026-08-24-hem-offset-preserved","suggestions_version":"sizeL-suggestions-v1"},"pomTemplate":{"rows":[{"id":"1","name":"1/2 Bottom band (2nd hook from tightest) - Relax","zh":"下围半宽（扣最紧起第2排）- 放松量","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"primary","partner":"2","groupName":"1/2 Bottom band (2nd hook from tightest)","primaryLabel":"Relax","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"2","name":"1/2 Bottom band (2nd hook from tightest) - Extend","zh":"下围半宽（扣最紧起第2排）- 拉伸量","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"secondary","primary":"1"},"expected_confidence_tier":"high"},{"id":"3","name":"1/2 chest (2nd hook from tightest) - Measure straight","zh":"胸围半宽（扣最紧起第2排）- 直量","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"primary","partner":"4","groupName":"1/2 Chest (2nd hook from tightest)","primaryLabel":"Measure straight","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"4","name":"1/2 chest (2nd hook from tightest) - Extend","zh":"胸围半宽（扣最紧起第2排）- 拉伸量","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"secondary","primary":"3"},"expected_confidence_tier":"high"},{"id":"5","name":"Center front height","zh":"前中高度","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"6","name":"Cradle height at center front","zh":"托架前中高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"7","name":"Cradle height at bottom cup","zh":"托架底杯高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cup-top","cradle-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"8","name":"Cup height at center front","zh":"前中杯高","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cradle-cf-top"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"9","name":"Cup height","zh":"杯高","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-top","inner-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"10","name":"Cup width","zh":"杯宽","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-left","inner-cup-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"11","name":"Side seam length","zh":"侧缝长度","view":"back","refL":null,"requiredAnchors":["side-top","side-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"12","name":"Back center length","zh":"后中高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"13","name":"Back panel height","zh":"后背片高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"optionalAnchors":["back-panel-top","back-panel-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"14","name":"Shoulder strap length","zh":"肩带长度","view":"front_to_back","placementViewRole":"back","refL":null,"requiredAnchors":["strap-top","strap-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"},{"id":"15","name":"Back strap distances","zh":"后肩带间距","view":"back","refL":null,"requiredAnchors":["back-strap-left","back-strap-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"16","name":"Front apex distance","zh":"乳点间距","view":"front_outer","refL":null,"requiredAnchors":["apex-left","apex-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"17","name":"Neckline length","zh":"领口长","view":"front_outer","refL":null,"requiredAnchors":["171","172"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"18","name":"Armhole curve length","zh":"袖窿弧长","view":"front_outer","refL":null,"requiredAnchors":["181","182"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"}]},"anchorSchema":{"anchors":[{"kind":"cf-top","name":"CF top","group":"axis","hint":"Top of the center-front, where the cradle meets the chest line."},{"kind":"cf-bottom","name":"CF bottom","group":"axis","hint":"Bottom of the center front, on the underbust band.","derivation":{"method":"drop_to_line","args":["cf-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"cradle-cf-top","name":"Cradle CF","group":"axis","hint":"Where the cradle / cup-bottom seam approaches the center front. POM 6 top."},{"kind":"cradle-cup-top","name":"Cradle cup top","group":"axis","hint":"Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."},{"kind":"cradle-cup-bottom","name":"Cradle cup btm","group":"axis","hint":"Band baseline directly below the bottom-cup cradle point (POM 7 bottom).","derivation":{"method":"drop_to_line","args":["cradle-cup-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"band-left","name":"Band L","group":"band","hint":"Leftmost end of the underbust band line."},{"kind":"band-right","name":"Band R","group":"band","hint":"Rightmost end of the underbust band line."},{"kind":"chest-left","name":"Chest L","group":"chest","hint":"Left end of the chest / overbust horizontal line."},{"kind":"chest-right","name":"Chest R","group":"chest","hint":"Right end of the chest / overbust horizontal line."},{"kind":"inner-cup-top","name":"IC top","group":"inner-cup","hint":"Top of the cup (apex) on the front (outer) view — POM 9 start."},{"kind":"inner-cup-bottom","name":"IC btm","group":"inner-cup","hint":"Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."},{"kind":"inner-cup-left","name":"IC L","group":"inner-cup","hint":"Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."},{"kind":"inner-cup-right","name":"IC R","group":"inner-cup","hint":"Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."},{"kind":"side-top","name":"Side top","group":"side","hint":"Top of the side seam at the underarm."},{"kind":"side-bottom","name":"Side btm","group":"side","hint":"Bottom of the side seam at the band."},{"kind":"apex-left","name":"Apex L","group":"apex","hint":"Left shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"apex-right","name":"Apex R","group":"apex","hint":"Right shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"strap-top","name":"Front strap join","group":"strap","hint":"Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."},{"kind":"strap-bottom","name":"Back strap join","group":"strap","hint":"End of the shoulder strap at the back / back-panel join — POM 14 end."},{"kind":"back-top","name":"Back top","group":"back","hint":"Top edge of the back panel."},{"kind":"back-bottom","name":"Back btm","group":"back","hint":"Bottom edge of the back panel."},{"kind":"back-panel-top","name":"Panel top","group":"back","hint":"Upper point for back panel height."},{"kind":"back-panel-bottom","name":"Panel btm","group":"back","hint":"Lower point for back panel height."},{"kind":"back-strap-left","name":"Back strap L","group":"back","hint":"Left point of the back strap distance."},{"kind":"back-strap-right","name":"Back strap R","group":"back","hint":"Right point of the back strap distance."},{"kind":"171","name":"171","group":"neckline","hint":"Left upper neckline corner, where the cup/gore top edge meets the strap base."},{"kind":"172","name":"172","group":"neckline","hint":"Right upper neckline corner (mirror of Neckline L)."},{"kind":"181","name":"181","group":"armhole","hint":"Underarm side point at the bottom of the arm opening."},{"kind":"182","name":"182","group":"armhole","hint":"Strap/shoulder junction at the top of the arm opening."}]},"sizeLSuggestions":{"suggestions_version":"sizeL-suggestions-v1","unit":"in","provenance":{"corpus":"Measurements 2/library/_raw_intake/measurements_size_l.csv","conceptMap":"Measurements 2/library/pom_concepts.csv","tolDefaults":"Measurements 2/library/pom_tol_defaults.csv","sketchRatios":"Measurements 2/library/sketch_ratios.csv","generatedBy":"scripts/generate-sizeL-suggestions.mjs","corpusRows":2950,"styleVersions":225,"droppedRows":26,"note":"Derived from the approved Size-L corpus. Regenerate with the generator; never hand-edit. droppedRows = corpus rows whose concept is not yet canonicalized (raw_* intake phrases)."},"poms":{"1":{"concept":"band_relax","median":14,"min":12.74,"max":14.38,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"2":{"concept":"band_extended","median":19,"min":18,"max":19.25,"tol":"1/2","tolType":"min","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"3":{"concept":"chest_relax","median":17,"min":15.5,"max":17.5,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":198,"confidence":"medium","source":"library"},"4":{"concept":"chest_extended","median":22,"min":20,"max":22.77,"tol":"1/2","tolType":"min","sketchReliable":false,"n":197,"confidence":"medium","source":"library"},"5":{"concept":"cf_height","median":5.5,"min":1.32,"max":6.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":217,"confidence":"medium","source":"library"},"6":{"concept":"cradle_cf","median":2.25,"min":1.31,"max":3,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":163,"confidence":"medium","source":"library"},"7":{"concept":"cradle_under_cup","median":1.75,"min":1.11,"max":2.64,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":173,"confidence":"medium","source":"library"},"8":{"concept":"cup_height_cf","median":3,"min":1.75,"max":4,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":113,"confidence":"low","source":"library"},"9":{"concept":"cup_height","median":8,"min":5.805,"max":9.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":237,"confidence":"medium","source":"library"},"10":{"concept":"cup_width","median":8,"min":6.6,"max":9,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":221,"confidence":"medium","source":"library"},"11":{"concept":"sideseam_length","median":5.5,"min":4.5,"max":6,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":211,"confidence":"medium","source":"library"},"12":{"concept":"cb_height","median":3.75,"min":2,"max":7.24,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":239,"confidence":"medium","source":"library"},"13":{"concept":"back_panel_height","median":7.25,"min":3,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":181,"confidence":"medium","source":"library"},"14":{"concept":"strap_length","median":8,"min":4,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":155,"confidence":"low","source":"library"},"15":{"concept":"back_straps_distance","median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"16":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"17":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"18":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"}}}};
 
   // US-124: URL of the DXF Worker bundle, content-hashed like app.js?v=.
-  const DXF_WORKER_URL = "dxf-worker.js?v=84e658893acf";
+  const DXF_WORKER_URL = "dxf-worker.js?v=27d2a61c3330";
 
   // ---- src/auto/rules/load-rules.js ----
 // Loads TD-editable Auto Mode rules from auto_mode_rules/*.json.
@@ -4724,15 +4724,35 @@
     const diag = Math.hypot(bbox.width, bbox.height) || 1;
     const tol = Number.isFinite(tolOverride) ? tolOverride : 0.0001 * diag;
     const uf = dxfUnionFind(segments.length);
+    // findings-dxf.md Finding 5: this was an all-pairs scan — 13,894 segments
+    // (2892XL-new.dxf) held the main thread for ~19 s. Endpoints are bucketed
+    // on a grid of cell size `tol`, so two endpoints within `tol` always sit
+    // in the same or adjacent cells and only those are compared. The touching
+    // PAIRS are exactly the ones the scan found, and union order cannot change
+    // the result: groups are emitted by their lowest segment index below.
+    const cell = tol > 0 ? tol : 1;
+    const cellKey = (cx, cy) => cx + ',' + cy;
+    const grid = new Map();
     for (let i = 0; i < segments.length; i += 1) {
-      for (let j = i + 1; j < segments.length; j += 1) {
-        if (segments[i].instance !== segments[j].instance) continue;
-        let touch = false;
-        for (const p of endpoints[i]) {
-          for (const q of endpoints[j]) if (distance(p, q) <= tol) { touch = true; break; }
-          if (touch) break;
+      for (const p of endpoints[i]) {
+        const key = cellKey(Math.floor(p.x / cell), Math.floor(p.y / cell));
+        if (!grid.has(key)) grid.set(key, []);
+        grid.get(key).push(i);
+      }
+    }
+    for (let i = 0; i < segments.length; i += 1) {
+      for (const p of endpoints[i]) {
+        const cx = Math.floor(p.x / cell), cy = Math.floor(p.y / cell);
+        for (let dx = -1; dx <= 1; dx += 1) {
+          for (let dy = -1; dy <= 1; dy += 1) {
+            const bucket = grid.get(cellKey(cx + dx, cy + dy));
+            if (!bucket) continue;
+            for (const j of bucket) {
+              if (j <= i || segments[i].instance !== segments[j].instance) continue;
+              for (const q of endpoints[j]) if (distance(p, q) <= tol) { uf.union(i, j); break; }
+            }
+          }
         }
-        if (touch) uf.union(i, j);
       }
     }
     const groups = new Map();
@@ -8612,11 +8632,14 @@
       const reader = new FileReader();
       reader.onload = () => {
         const added = importShapeStampsFromJson(String(reader.result || ''));
+        const skipped = shapeStampImportRejectedCount();
         refresh();
-        if (!added) { showToast('That file held no Templates.'); return; }
-        showToast(shapeStampsPersisted()
+        const skippedNote = skipped
+          ? ` ${skipped} skipped — unreadable, or over the ${shapeStampMaxMembers()}-path Template limit.` : '';
+        if (!added) { showToast(skipped ? 'No Templates imported.' + skippedNote : 'That file held no Templates.'); return; }
+        showToast((shapeStampsPersisted()
           ? `Imported ${added} Template${added > 1 ? 's' : ''}.`
-          : `Imported ${added} Template${added > 1 ? 's' : ''} (this session only — the browser refused to store it).`);
+          : `Imported ${added} Template${added > 1 ? 's' : ''} (this session only — the browser refused to store it).`) + skippedNote);
       };
       reader.onerror = () => showToast('Could not read that file.');
       reader.readAsText(file);
@@ -22157,64 +22180,121 @@ const BOM_MATERIAL_LIBRARY = [
     return d;
   }
 
+  // findings-dxf.md Finding 10. The joint test above compares each segment
+  // with the one BEFORE it, so on its own it let a run bend by up to 1° at
+  // every joint: a pattern curve exported as LINE facets (the normal case)
+  // became one straight chord. On the 45-file corpus that removed 22,023
+  // segments, one run turned 92° and a dropped vertex sat 53 mm off its
+  // replacement — ADR 0072 promised the opposite. So a run may also only
+  // grow while EVERY vertex it would drop stays within
+  // SIMPLIFY_MAX_DEVIATION_RATIO x chord length of the new chord — a bound
+  // on the run as a whole, which no number of small joints can add up past.
+  const SIMPLIFY_MAX_DEVIATION_RATIO = 1e-4;
+
+  function simplifyMaxDeviation(points, next) {
+    const a = points[0];
+    const len = Math.hypot(next.x - a.x, next.y - a.y);
+    if (!(len > 0)) return Infinity;
+    let worst = 0;
+    for (let i = 1; i < points.length; i += 1) {
+      const p = points[i];
+      const d = Math.abs((next.x - a.x) * (a.y - p.y) - (a.x - p.x) * (next.y - a.y)) / len;
+      if (d > worst) worst = d;
+    }
+    return worst / len;
+  }
+
   // Merges one piece's collinear straight-segment runs in place. Returns
   // {chains, removed} — chains merged, and how many annotations that freed
   // up (each N-segment run becomes 1, so removed = sum(N) - chains).
   function simplifyPieceGroup(groupId) {
-    const straights = state.annotations.filter(a => a.templateGroupId === groupId && a.type === 'straight');
+    const groupAnns = state.annotations.filter(a => a.templateGroupId === groupId);
+    const straights = groupAnns.filter(a => a.type === 'straight');
     if (straights.length < 2) return { chains: 0, removed: 0 };
 
-    // endpoint key -> every {segId, other} touching that point
+    // endpoint key -> every {segId, at, other} touching that point
     const atPoint = new Map();
     const addEndpoint = (p, other, segId) => {
       const k = simplifyPointKey(p);
       if (!atPoint.has(k)) atPoint.set(k, []);
-      atPoint.get(k).push({ segId, other });
+      atPoint.get(k).push({ segId, at: p, other });
     };
     for (const s of straights) {
       addEndpoint(s.start, s.end, s.id);
       addEndpoint(s.end, s.start, s.id);
     }
+    // A curve ending at a point makes it a junction even when only one other
+    // STRAIGHT segment continues there (Finding 10's topology gap).
+    const curveEnds = new Set();
+    for (const a of groupAnns) {
+      if (a.type === 'straight' || !a.start || !a.end) continue;
+      curveEnds.add(simplifyPointKey(a.start));
+      curveEnds.add(simplifyPointKey(a.end));
+    }
 
     const used = new Set();
     const neighborsAt = (k, excludeId) => (atPoint.get(k) || [])
       .filter(c => c.segId !== excludeId && !used.has(c.segId));
+    // The key is a 0.01 grid cell, so sharing one is not the same as sharing a
+    // vertex: the continuing segment must start where this one ends, to
+    // within the same bound a dropped vertex gets (no bridging a real gap).
+    const joins = (tail, cand, chordLen) => Math.hypot(cand.at.x - tail.x, cand.at.y - tail.y)
+      <= SIMPLIFY_MAX_DEVIATION_RATIO * chordLen;
+    const continuesBackward = (seg) => {
+      const k = simplifyPointKey(seg.start);
+      if (curveEnds.has(k)) return false;
+      const back = neighborsAt(k, seg.id);
+      if (back.length !== 1) return false;
+      return simplifyAngleDiffDeg(simplifyAngleDeg(seg.end, seg.start), simplifyAngleDeg(seg.start, back[0].other))
+        <= SIMPLIFY_COLLINEAR_ANGLE_DEG;
+    };
 
     const runs = [];
-    for (const seg of straights) {
-      if (used.has(seg.id)) continue;
-      // Skip this segment as a chain START if it continues BACKWARD into
-      // exactly one collinear neighbor — that neighbor's own walk (or an
-      // earlier segment further back in the same run) will reach it.
-      const backNeighbors = neighborsAt(simplifyPointKey(seg.start), seg.id);
-      if (backNeighbors.length === 1) {
-        const backDir = simplifyAngleDeg(seg.end, seg.start);
-        const nDir = simplifyAngleDeg(seg.start, backNeighbors[0].other);
-        if (simplifyAngleDiffDeg(backDir, nDir) <= SIMPLIFY_COLLINEAR_ANGLE_DEG) continue;
-      }
-
+    const walkFrom = (seg) => {
       used.add(seg.id);
       const sourceIds = new Set([seg.id]);
       const points = [seg.start, seg.end];
       let currentDir = simplifyAngleDeg(seg.start, seg.end);
       let tail = seg.end;
       for (;;) {
-        const fwd = neighborsAt(simplifyPointKey(tail), null);
+        const tailKey = simplifyPointKey(tail);
+        if (curveEnds.has(tailKey)) break;
+        const fwd = neighborsAt(tailKey, null);
         if (fwd.length !== 1) break;
-        const nDir = simplifyAngleDeg(tail, fwd[0].other);
+        const next = fwd[0].other;
+        const nDir = simplifyAngleDeg(tail, next);
         if (simplifyAngleDiffDeg(currentDir, nDir) > SIMPLIFY_COLLINEAR_ANGLE_DEG) break;
+        const chordLen = Math.hypot(next.x - points[0].x, next.y - points[0].y);
+        if (!joins(tail, fwd[0], chordLen)) break;
+        if (simplifyMaxDeviation(points, next) > SIMPLIFY_MAX_DEVIATION_RATIO) break;
         used.add(fwd[0].segId);
         sourceIds.add(fwd[0].segId);
-        points.push(fwd[0].other);
-        tail = fwd[0].other;
+        points.push(next);
+        tail = next;
         currentDir = nDir;
       }
       if (points.length > 2) runs.push({ points, sourceIds, template: seg });
+    };
+    // A segment that continues backward into an unused collinear neighbour is
+    // not a chain start — that neighbour's walk will reach it. But a walk can
+    // now stop short (the deviation bound), which makes its successor a start
+    // on the NEXT pass; repeat until nothing new starts, then let whatever is
+    // left (a closed loop of facets has no natural start) start anywhere.
+    for (let progress = true; progress;) {
+      progress = false;
+      for (const seg of straights) {
+        if (used.has(seg.id) || continuesBackward(seg)) continue;
+        walkFrom(seg);
+        progress = true;
+      }
     }
+    for (const seg of straights) if (!used.has(seg.id)) walkFrom(seg);
 
     if (!runs.length) return { chains: 0, removed: 0 };
 
     let removed = 0;
+    const merged = new Set();
+    const replacements = [];
     for (const run of runs) {
       const replacement = Object.assign({}, run.template, {
         id: state.idCounter++,
@@ -22222,10 +22302,14 @@ const BOM_MATERIAL_LIBRARY = [
         end: run.points[run.points.length - 1],
       });
       replacement.label = computeDefaultLabelPosition(replacement);
-      state.annotations = state.annotations.filter(a => !run.sourceIds.has(a.id));
-      state.annotations.push(replacement);
+      // Before the sources go: a notch's current spot is read from its owner.
+      reownNotchesToLine(run.sourceIds, replacement);
+      for (const id of run.sourceIds) merged.add(id);
+      replacements.push(replacement);
       removed += run.sourceIds.size - 1;
     }
+    // One pass for every run (same final order as removing run by run).
+    state.annotations = state.annotations.filter(a => !merged.has(a.id)).concat(replacements);
     // findings-dxf.md Finding 7: a merged run can consume the piece's
     // measure-session anchor annotation id, silently detaching the Pattern
     // Measure overlay from the piece's real position (dxfMeasureCurrentPieceOffset
@@ -22343,7 +22427,14 @@ const BOM_MATERIAL_LIBRARY = [
   function removePatternPieceGroups(groupIds) {
     const kill = new Set(groupIds);
     if (!kill.size) return;
-    state.annotations = state.annotations.filter(ann => !kill.has(ann.templateGroupId));
+    const removedIds = new Set();
+    state.annotations = state.annotations.filter((ann) => {
+      if (!kill.has(ann.templateGroupId)) return true;
+      removedIds.add(ann.id);
+      return false;
+    });
+    // findings-dxf.md Finding 9: a notch placed on a removed piece goes with it.
+    removeNotchesOwnedBy(removedIds);
     if (state.templateGroupLabels) {
       for (const gid of kill) delete state.templateGroupLabels[gid];
     }
@@ -22354,8 +22445,8 @@ const BOM_MATERIAL_LIBRARY = [
         && !state.annotations.some(a => a.id === state.selection.id)) {
       state.selection = { kind: null, id: null };
     }
-    state.selectedAnnotationIds = (state.selectedAnnotationIds || [])
-      .filter(id => state.annotations.some(a => a.id === id));
+    const remaining = new Set(state.annotations.map(a => a.id));
+    state.selectedAnnotationIds = (state.selectedAnnotationIds || []).filter(id => remaining.has(id));
     if (kill.has(state.templateGroupEditId)) state.templateGroupEditId = null;
     // findings-dxf.md Finding 7: a removed piece must not stay measurable at
     // its old, now-invisible position.
@@ -23922,7 +24013,9 @@ const BOM_MATERIAL_LIBRARY = [
       state: {
         annotations: clone(state.annotations),
         // ADR 0071: additive — files saved before this existed have no key.
-        notches: clone(state.notches || []),
+        // Where each notch sits NOW on its line (notches.js: position is read
+        // from the owner), so the file is right for a reader that ignores owners.
+        notches: clone((state.notches || []).map(resolveNotch)),
         // ADR 0070: sparse groupId -> label map (DXF block names). Additive —
         // files saved before this existed have no key and default to {}.
         templateGroupLabels: clone(state.templateGroupLabels || {}),
@@ -25710,11 +25803,17 @@ const BOM_MATERIAL_LIBRARY = [
       // Delete every selected line (Shift+click / marquee group).
       const ids = getSelectedAnnotationIds();
       if (!ids.length) return;
-      const targets = ids.map(id => state.annotations.find(a => a.id === id)).filter(Boolean);
+      // One pass, not a find per id: deleting a whole imported DXF selection
+      // (up to 20,000 lines) was selection x annotations comparisons. First
+      // occurrence wins, like find().
+      const byId = new Map();
+      for (const ann of state.annotations) if (!byId.has(ann.id)) byId.set(ann.id, ann);
+      const targets = ids.map(id => byId.get(id)).filter(Boolean);
       const idSet = new Set(ids);
       const before = state.annotations.length;
       state.annotations = state.annotations.filter(a => !idSet.has(a.id));
       if (state.annotations.length === before) return;
+      removeNotchesOwnedBy(idSet);
       if (!Array.isArray(state.deletedPomKeys)) state.deletedPomKeys = [];
       for (const ann of targets) {
         // US-096 / ADR 0055 code review, 2026-08-23: a construction line owns no
@@ -25802,6 +25901,8 @@ const BOM_MATERIAL_LIBRARY = [
   function clearAllAnnotations() {
     if (!state.annotations.length) return;
     if (state.dxfPatternSource || state.dxfMeasureSession) clearDxfPatternSource();
+    // A line's notches go with it (ADR 0071 amendment).
+    removeNotchesOwnedBy(new Set(state.annotations.map(a => a.id)));
     state.annotations = [];
     state.deletedAutoAnnotations = [];
     state.deletedPomKeys = [];
@@ -30966,6 +31067,10 @@ function onWheel(e) {
   // is not rewritten until the TD next saves/edits something, so bumping this
   // costs nothing for an existing library and is not itself a migration.
   function shapeStampsFormatVersion() { return 3; }
+  // The most paths one Template holds. A selection over it is REFUSED, never
+  // cut short: storage used to keep the first 80 members while the UI said
+  // "Saved" (findings-dxf.md Finding 8 — every 3380.dxf piece has 103–295).
+  function shapeStampMaxMembers() { return 80; }
 
   // ---- Library taxonomy (US-106) ---------------------------------------------
   //
@@ -31136,7 +31241,7 @@ function onWheel(e) {
     if (!bounds) return null;
     const eps = stampEpsilon();
     const members = anns.map(ann => shapeTemplateMemberFromAnnotation(ann, bounds)).filter(Boolean);
-    if (!members.length) return null;
+    if (!members.length || members.length > shapeStampMaxMembers()) return null;
     const first = members[0];
     const opts = options || {};
     const now = new Date().toISOString();
@@ -31212,7 +31317,10 @@ function onWheel(e) {
     const name = String(raw.name == null ? '' : raw.name).trim();
     if (!name) return null;
     let members = (Array.isArray(raw.members) ? raw.members : [])
-      .map(normalizeShapeStampMember).filter(Boolean).slice(0, 80);
+      .map(normalizeShapeStampMember).filter(Boolean);
+    // Rejected whole rather than truncated: a partial outline is worse than
+    // none, because it places as if it were the real thing.
+    if (members.length > shapeStampMaxMembers()) return null;
     if (!members.length) {
       const legacy = normalizeShapeStampMember(raw);
       if (legacy) members = [legacy];
@@ -31297,7 +31405,10 @@ function onWheel(e) {
   }
 
   function canSaveShapeStampReason() {
-    if (!shapeStampSaveTargets().length) return 'Select one or more lines to save as a Template.';
+    const count = shapeStampSaveTargets().length;
+    if (!count) return 'Select one or more lines to save as a Template.';
+    const max = shapeStampMaxMembers();
+    if (count > max) return `A Template holds at most ${max} paths — this selection has ${count}. Select fewer paths to save it.`;
     return true;
   }
 
@@ -31663,7 +31774,14 @@ function onWheel(e) {
     return true;
   }
 
+  // How many entries the last import could not take (unreadable, or over the
+  // member limit) — so the import toast can say so instead of only counting
+  // what arrived.
+  let lastShapeStampImportRejected = 0;
+  function shapeStampImportRejectedCount() { return lastShapeStampImportRejected; }
+
   function importShapeStamps(list) {
+    lastShapeStampImportRejected = (Array.isArray(list) ? list : []).filter(raw => !normalizeShapeStamp(raw)).length;
     const incoming = normalizeShapeStampList(list);
     if (!incoming.length) return 0;
     commitShapeStamps(libraryImportMerge(getShapeStamps(), incoming));
@@ -31671,6 +31789,7 @@ function onWheel(e) {
   }
 
   function importShapeStampsFromJson(text) {
+    lastShapeStampImportRejected = 0;
     let parsed = null;
     try { parsed = JSON.parse(text); } catch (_) { return 0; }
     const list = Array.isArray(parsed) ? parsed : (parsed && parsed.stamps);
@@ -31969,7 +32088,7 @@ function onWheel(e) {
     // what actually got drawn. Reset first — opening another DXF must never
     // leave a prior session's measurements dangling over new geometry.
     resetDxfMeasureSession();
-    const measureSession = startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNative || null);
+    const measureSession = startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNative || null, { quietFailure: true });
     // ADR 0088: only a successful native-model build becomes the durable,
     // newest measurable source. A failed native build remains fail-closed.
     if (measureSession) {
@@ -32017,7 +32136,10 @@ function onWheel(e) {
         : measureSession
           ? ' Units assumed (in) — set them under Tools ▸ Pattern Measure if the file is mm/cm.'
           : '';
+    // A failed native build rides on this toast for the same reason.
+    const measureFailure = measureSession ? '' : (dxfMeasureLastFailureMessage() || '');
     showToast('Imported ' + pieceCount + ' ' + pieceWord + ' (' + allNewIds.length + ' ' + lineWord + ').'
+      + (measureFailure ? ' ' + measureFailure : '')
       + (skipMsg ? ' ' + skipMsg : '') + unitWarning);
     // ADR 0070: a grading-nest file places every chosen size's piece at the
     // same board position (see ADR 0069's Context) — more than one piece
@@ -33156,18 +33278,23 @@ function onWheel(e) {
   // parseDxfNativeModel on the same text with the same options; reuse it
   // instead of parsing a second time on the main thread. Omitted -> parse
   // here (the synchronous path and every project reopen).
-  function startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNativeModel) {
+  // `options.quietFailure`: the caller puts dxfMeasureLastFailureMessage() into
+  // its own toast. importDxfText does — a separate toast fired here, a moment
+  // before its "Imported N pieces" toast, was swapped away after toast.js's
+  // ~900ms fair-reading window (findings-dxf.md, Minor).
+  function startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNativeModel, options) {
     const parseStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
     const nativeModel = precomputedNativeModel || parseDxfNativeModel(text, importOptions || {});
     const parseFinishedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    dxfMeasureLastFailure = null;
     if (!nativeModel.ok) {
       // RB-5: the board-annotation import (importDxfText, US-104) already
       // succeeded by the time this runs — that atomic behavior must not be
       // disturbed — but a TD who just imported a DXF and reaches for Pattern
       // Measure deserves an explicit reason it is not available, rather than
       // a silently-missing Tools-menu feature.
-      showToast('DXF imported, but Pattern Measure could not build a native measurement '
-        + 'model for this file' + (nativeModel.message ? ' (' + nativeModel.message + ')' : '') + '.');
+      dxfMeasureLastFailure = dxfMeasureFailureMessage(nativeModel);
+      if (!(options && options.quietFailure)) showToast('DXF imported, but ' + dxfMeasureLastFailure);
       state.dxfMeasureSession = null;
       return null;
     }
@@ -33176,6 +33303,20 @@ function onWheel(e) {
     state.dxfMeasureSession.source.nativeParserExecution = precomputedNativeModel ? 'worker-precomputed' : 'main-thread-measured';
     dxfMeasureSeedHistory();
     return state.dxfMeasureSession;
+  }
+
+  // Why the last startDxfMeasureSession built no session (null when it did).
+  let dxfMeasureLastFailure = null;
+  function dxfMeasureLastFailureMessage() { return dxfMeasureLastFailure; }
+
+  // The parser's message is already a sentence ("No supported entities were
+  // found in this DXF file."); its own period is dropped so the wrapper's
+  // closing ")." does not double it.
+  function dxfMeasureFailureMessage(nativeModel) {
+    const reason = nativeModel && nativeModel.message
+      ? String(nativeModel.message).trim().replace(/[.\s]+$/, '') : '';
+    return 'Pattern Measure could not build a native measurement model for this file'
+      + (reason ? ' (' + reason + ')' : '') + '.';
   }
 
   // Opening another DXF, loading a project, or resetting the board all call
@@ -36618,6 +36759,15 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // (delete and re-place instead) and no length/angle editing UI — the tick's
 // direction and length are fully derived at placement time from the nearest
 // line there. Revisit if a real workflow need for repositioning shows up.
+//
+// Ownership (findings-dxf.md Finding 9): a notch belongs to the line it was
+// placed on — `ownerId` plus where on it (`ownerSeg`, `ownerT`). Its position
+// is READ from that line whenever it is drawn or hit-tested, so anything that
+// moves the line (dragging or nudging the piece, Smart Align, a photo resize,
+// editing the path) carries the notch along without each of those knowing
+// notches exist. Deleting the line, or removing its piece, deletes the notch.
+// x/y/angle remain the last-known values: what a project file stores, what an
+// older build reads, and the fallback if the owner id ever stops existing.
 
   const NOTCH_TOLERANCE_PX = 16; // same order as other click tolerances (e.g. endpointRadiusPx: 14)
   const NOTCH_LENGTH_PX = 16; // desired ON-SCREEN tick length at the moment it is placed
@@ -36637,17 +36787,17 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       let t = lenSq > 1e-9 ? ((p.x - a.x) * abx + (p.y - a.y) * aby) / lenSq : 0;
       t = Math.max(0, Math.min(1, t));
       const point = { x: a.x + abx * t, y: a.y + aby * t };
-      return { point, tangent: { x: abx, y: aby }, dist: distance(point, p) };
+      return { point, tangent: { x: abx, y: aby }, dist: distance(point, p), seg: 0, t };
     }
     let best = null;
-    for (const seg of getCurveBeziers(ann)) {
+    getCurveBeziers(ann).forEach((seg, segIndex) => {
       for (let i = 0; i <= NOTCH_CURVE_SAMPLES; i += 1) {
         const t = i / NOTCH_CURVE_SAMPLES;
         const point = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t);
         const dist = distance(point, p);
-        if (!best || dist < best.dist) best = { point, tangent: bezierTangent(seg.p0, seg.p1, seg.p2, seg.p3, t), dist };
+        if (!best || dist < best.dist) best = { point, tangent: bezierTangent(seg.p0, seg.p1, seg.p2, seg.p3, t), dist, seg: segIndex, t };
       }
-    }
+    });
     return best;
   }
 
@@ -36658,9 +36808,74 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     let best = null;
     for (const ann of state.annotations) {
       const hit = nearestPointOnAnnotation(ann, p);
-      if (hit && (!best || hit.dist < best.dist)) best = hit;
+      if (hit && (!best || hit.dist < best.dist)) best = Object.assign(hit, { ann });
     }
     return best;
+  }
+
+  // Perpendicular to the line's tangent; either perpendicular draws the same
+  // symmetric tick, so no "which side" choice is needed. null for a
+  // zero-length tangent (a degenerate line has no direction to be across).
+  function notchAngleFromTangent(tangent) {
+    const len = Math.hypot(tangent.x, tangent.y);
+    if (!(len > 0)) return null;
+    return Math.atan2(-tangent.x / len, tangent.y / len);
+  }
+
+  // Where the notch sits NOW on its owning line, or null when it has no owner
+  // or the owner can no longer place it (id gone, that curve segment gone).
+  function notchOwnerPlacement(notch) {
+    if (!notch || notch.ownerId == null) return null;
+    const owner = state.annotations.find(a => a.id === notch.ownerId);
+    if (!owner || !owner.start || !owner.end) return null;
+    const t = notch.ownerT;
+    let point, tangent;
+    if (owner.type === 'straight') {
+      point = { x: owner.start.x + (owner.end.x - owner.start.x) * t, y: owner.start.y + (owner.end.y - owner.start.y) * t };
+      tangent = { x: owner.end.x - owner.start.x, y: owner.end.y - owner.start.y };
+    } else {
+      const seg = getCurveBeziers(owner)[notch.ownerSeg];
+      if (!seg) return null;
+      point = bezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, t);
+      tangent = bezierTangent(seg.p0, seg.p1, seg.p2, seg.p3, t);
+    }
+    const angle = notchAngleFromTangent(tangent);
+    if (angle == null || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+    return { x: point.x, y: point.y, angle };
+  }
+
+  // The notch as it should be drawn, hit-tested and saved right now.
+  function resolveNotch(notch) {
+    const at = notchOwnerPlacement(notch);
+    return at ? Object.assign({}, notch, at) : notch;
+  }
+
+  // A deleted line takes its notches with it (Delete key, Remove unchecked
+  // pieces). Returns true when any notch went.
+  function removeNotchesOwnedBy(annotationIds) {
+    const gone = annotationIds instanceof Set ? annotationIds : new Set(annotationIds || []);
+    const before = (state.notches || []).length;
+    if (!before || !gone.size) return false;
+    state.notches = state.notches.filter(notch => notch.ownerId == null || !gone.has(notch.ownerId));
+    if (state.selection && state.selection.kind === 'notch' && !state.notches.some(n => n.id === state.selection.id)) {
+      state.selection = { kind: null, id: null };
+    }
+    return state.notches.length !== before;
+  }
+
+  // Simplify replaced `sourceIds` with the straight line `replacement`: re-own
+  // their notches to it at the same spot, instead of leaving them on ids that
+  // no longer exist.
+  function reownNotchesToLine(sourceIds, replacement) {
+    const a = replacement.start, b = replacement.end;
+    const abx = b.x - a.x, aby = b.y - a.y;
+    const lenSq = abx * abx + aby * aby;
+    for (const notch of (state.notches || [])) {
+      if (notch.ownerId == null || !sourceIds.has(notch.ownerId)) continue;
+      const at = resolveNotch(notch);
+      const t = lenSq > 1e-9 ? ((at.x - a.x) * abx + (at.y - a.y) * aby) / lenSq : 0;
+      Object.assign(notch, { x: at.x, y: at.y, angle: at.angle, ownerId: replacement.id, ownerSeg: 0, ownerT: Math.max(0, Math.min(1, t)) });
+    }
   }
 
   // Click too far from any line: do nothing rather than guess a direction
@@ -36672,17 +36887,17 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       showToast('Click closer to a line to place a notch.');
       return;
     }
-    const tangentLen = Math.hypot(hit.tangent.x, hit.tangent.y) || 1;
-    // Rotate the tangent 90°; either perpendicular direction draws the same
-    // symmetric tick, so no "which side" choice is needed.
-    const angle = Math.atan2(-hit.tangent.x / tangentLen, hit.tangent.y / tangentLen);
+    const angle = notchAngleFromTangent(hit.tangent);
     const notch = {
       id: state.idCounter++,
       x: hit.point.x,
       y: hit.point.y,
-      angle,
+      angle: angle == null ? 0 : angle,
       length: NOTCH_LENGTH_PX / Math.max(0.0001, state.zoom),
       color: 'black',
+      ownerId: hit.ann.id,
+      ownerSeg: hit.seg,
+      ownerT: hit.t,
     };
     if (!Array.isArray(state.notches)) state.notches = [];
     state.notches.push(notch);
@@ -36700,7 +36915,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // load or drawing garbage at (NaN, NaN).
   function normalizeNotch(raw) {
     if (!raw || !Number.isFinite(raw.x) || !Number.isFinite(raw.y)) return null;
-    return {
+    const owned = raw.ownerId != null && (typeof raw.ownerId === 'number' || typeof raw.ownerId === 'string')
+      && Number.isInteger(raw.ownerSeg) && raw.ownerSeg >= 0
+      && Number.isFinite(raw.ownerT) && raw.ownerT >= 0 && raw.ownerT <= 1;
+    const notch = {
       id: raw.id,
       x: raw.x,
       y: raw.y,
@@ -36708,14 +36926,19 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       length: Number.isFinite(raw.length) && raw.length > 0 ? raw.length : NOTCH_LENGTH_PX,
       color: normalizeColorKey(raw.color || 'black'),
     };
+    // A notch from before ownership existed (or with a damaged owner record)
+    // stays where it is, exactly as it always did.
+    if (owned) Object.assign(notch, { ownerId: raw.ownerId, ownerSeg: raw.ownerSeg, ownerT: raw.ownerT });
+    return notch;
   }
 
   // Endpoints of the tick, for both rendering and hit-testing — a notch is
   // drawn straddling its anchor point, half each side along its own angle.
   function notchEndpoints(notch) {
-    const half = notch.length / 2;
-    const dx = Math.cos(notch.angle) * half, dy = Math.sin(notch.angle) * half;
-    return { a: { x: notch.x - dx, y: notch.y - dy }, b: { x: notch.x + dx, y: notch.y + dy } };
+    const at = resolveNotch(notch);
+    const half = at.length / 2;
+    const dx = Math.cos(at.angle) * half, dy = Math.sin(at.angle) * half;
+    return { a: { x: at.x - dx, y: at.y - dy }, b: { x: at.x + dx, y: at.y + dy } };
   }
 
   // A fixed WORLD length (set once at placement — see placeNotchAt), unlike
@@ -36737,7 +36960,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     if (state.selection.kind === 'notch' && state.selection.id === notch.id) {
       ctx.beginPath();
       ctx.fillStyle = SELECT_COLOR;
-      ctx.arc(notch.x, notch.y, 4 / featureZoom(), 0, Math.PI * 2);
+      const at = resolveNotch(notch);
+      ctx.arc(at.x, at.y, 4 / featureZoom(), 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -47950,6 +48174,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     return state.images.length === 0
       && state.annotations.length === 0
       && (state.notes || []).length === 0
+      && (state.notches || []).length === 0
       && (state.graphics || []).length === 0
       && state.eraseStrokes.length === 0
       && state.autoMode.draftAnnotations.length === 0
@@ -47977,6 +48202,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // US-092: notes are board content, so a whole-board reset takes them too.
     // clearAllLinesKeepImage deliberately does NOT — a note is not a line.
     state.notes = [];
+    // ADR 0071: so are notches — a reset used to leave them floating on an
+    // empty board (and isWorkingBoardEmpty ignored them, so a board holding
+    // only notches could not be reset at all).
+    state.notches = [];
     state.nextSequence = 1;
     state.selection = { kind: null, id: null };
     state.graphicEdit = null;
@@ -48016,6 +48245,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     }
 
     if (state.dxfPatternSource || state.dxfMeasureSession) clearDxfPatternSource();
+    // A line's notches go with it (ADR 0071 amendment).
+    removeNotchesOwnedBy(new Set(state.annotations.map(a => a.id)));
     state.annotations = [];
     state.deletedAutoAnnotations = [];
     state.autoMode.draftAnnotations = [];
@@ -51214,6 +51445,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           // adaptive Bézier tolerance, degenerate input) without importing a
           // file at all.
           reasonCodes: () => clone(DXF_MEASURE_REASON),
+          // The sentence a TD reads when the native model could not be built
+          // (dxf-import.js folds it into the import toast).
+          failureMessage: (nativeModel) => (typeof dxfMeasureFailureMessage === 'function' ? dxfMeasureFailureMessage(nativeModel) : null),
           segmentLength: (seg) => (typeof dxfSegmentLength === 'function' ? dxfSegmentLength(seg) : null),
           segmentFailureReason: (seg) => (typeof dxfSegmentFailureReason === 'function' ? dxfSegmentFailureReason(seg) : null),
           partialLength: (seg, t0, t1) => (typeof dxfPartialLength === 'function' ? dxfPartialLength(seg, t0, t1) : null),
