@@ -71,6 +71,8 @@
     "group-deps-check": "node scripts/group-deps-check.mjs",
     "group-deps-selftest": "node scripts/group-deps-check.mjs --selftest",
     "boundary-characterization-check": "node scripts/boundary-characterization-check.mjs",
-    "boundary-characterization-selftest": "node scripts/boundary-characterization-check.mjs --selftest"
+    "boundary-characterization-selftest": "node scripts/boundary-characterization-check.mjs --selftest",
+    "publish-mirror": "node scripts/publish-mirror.mjs",
+    "publish-mirror-selftest": "node scripts/publish-mirror.mjs --selftest"
   }
 }
