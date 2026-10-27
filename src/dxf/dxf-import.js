@@ -308,9 +308,9 @@
       : unitStatus === 'inferred-geometry'
         ? ' Units auto-scaled to ' + ((measureSession.source.unitDiagnostic
           && measureSession.source.unitDiagnostic.inferredKey) || 'in')
-          + ' from piece size (file declares none) — change under Tools ▸ Pattern Measure if wrong.'
+          + ' from piece size (file declares none) — change under Pattern ▸ File units if wrong.'
         : measureSession
-          ? ' Units assumed (in) — set them under Tools ▸ Pattern Measure if the file is mm/cm.'
+          ? ' Units assumed (in) — set them under Pattern ▸ File units if the file is mm/cm.'
           : '';
     // A failed native build rides on this toast for the same reason.
     const measureFailure = measureSession ? '' : (dxfMeasureLastFailureMessage() || '');

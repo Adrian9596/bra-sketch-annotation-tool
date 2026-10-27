@@ -73,6 +73,11 @@
   // diagonal whose endpoint lies within the notch tolerance of an outline.
   const DXF_PATTERN_NOTCH_MAX_LEN_RATIO = 0.02;
   const DXF_PATTERN_NOTCH_TOL_RATIO = 0.005;
+  // Margin (fraction of the instance diagonal) on the notch search's
+  // bounding-box skip, so floating-point rounding can never skip an outline
+  // whose true distance is exactly on the line. It only ever costs a few extra
+  // distance calls, never a different result.
+  const DXF_PATTERN_PRUNE_SLACK_RATIO = 1e-9;
   const DXF_PATTERN_ASSIGN_MIN_SCORE = 0.5;
   // Sampling density for the containment score / polygon flattening.
   const DXF_PATTERN_SAMPLES_PER_CURVE = 8;
@@ -334,6 +339,15 @@
     return best;
   }
 
+  // Distance from a point to an axis-aligned rectangle {x, y, width, height}:
+  // 0 inside it, and never more than the distance to anything the rectangle
+  // contains (a lower bound on the distance to a polygon inside it).
+  function dxfPatternDistanceToBounds(p, b) {
+    const dx = Math.max(b.x - p.x, 0, p.x - (b.x + b.width));
+    const dy = Math.max(b.y - p.y, 0, p.y - (b.y + b.height));
+    return Math.hypot(dx, dy);
+  }
+
   function dxfPatternMakeOutline(segments, chain) {
     const poly = dxfPatternLoopPolygon(segments, chain);
     const bounds = dxfBoundsOfPoints(poly);
@@ -500,6 +514,7 @@
     const instDiag = Math.hypot(instBounds.width, instBounds.height) || 1;
     const notchMaxLen = DXF_PATTERN_NOTCH_MAX_LEN_RATIO * instDiag;
     const notchTol = DXF_PATTERN_NOTCH_TOL_RATIO * instDiag;
+    const notchPruneSlack = DXF_PATTERN_PRUNE_SLACK_RATIO * instDiag;
 
     const inOutline = new Set();
     for (const o of outlines) for (const i of o.segIdxs) inOutline.add(i);
@@ -561,13 +576,26 @@
         let len = 0;
         for (const i of chain.segIdxs) len += dxfPatternSegmentLength(segments[i]);
         if (len <= notchMaxLen) {
+          // The nearest outline, ties to the lowest index — visit order
+          // (outline, then segment, then endpoint) and the strict `<` are what
+          // decide a tie, so they stay exactly as the exhaustive search had
+          // them. What changed (US-134): the chain's endpoints are gathered
+          // once instead of once per outline, and an outline is skipped when
+          // even the rectangle around it is farther than a result could still
+          // use. A polygon is never nearer than its own bounding box, so such
+          // an outline can neither beat the best distance so far nor land
+          // within notchTol, and skipping it cannot change the answer. On
+          // 2938常规L.dxf (620 outlines) the exhaustive search made 938,574
+          // point-to-polygon calls = 15.1 s of a 15.5 s parse, in BOTH parsers.
+          const ends = [];
+          for (const i of chain.segIdxs) for (const p of dxfSegmentEndpoints(segments[i])) ends.push(p);
           let nearest = -1, nearestD = Infinity;
           for (let oi = 0; oi < outlines.length; oi += 1) {
-            for (const i of chain.segIdxs) {
-              for (const p of dxfSegmentEndpoints(segments[i])) {
-                const d = dxfPatternDistanceToPolygon(p, outlines[oi].poly);
-                if (d < nearestD) { nearestD = d; nearest = oi; }
-              }
+            const outline = outlines[oi];
+            for (const p of ends) {
+              if (dxfPatternDistanceToBounds(p, outline.bounds) > Math.min(nearestD, notchTol) + notchPruneSlack) continue;
+              const d = dxfPatternDistanceToPolygon(p, outline.poly);
+              if (d < nearestD) { nearestD = d; nearest = oi; }
             }
           }
           if (nearest !== -1 && nearestD <= notchTol) { target = nearest; isNotch = true; }

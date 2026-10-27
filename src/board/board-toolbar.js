@@ -17,6 +17,14 @@
     ['measureMenuWrap', 'measureMenuBtn', 'measureMenuList'],
   ];
 
+  // Arrow-key stops inside a drop-down. A <select> (Pattern ▸ File units,
+  // Measure size) is deliberately absent: its arrows change its value, so it
+  // is reached with Tab, never by arrowing through the menu.
+  const BOARD_MENU_ITEM_SELECTOR = '[role="menuitem"], [role="menuitemcheckbox"], summary';
+  // Keys an open menu owns outright — they must never also reach the board
+  // shortcut router, which would nudge the selected line or cycle its point.
+  const BOARD_MENU_OWNED_KEYS = ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Tab'];
+
   const TOOL_MENU_LABELS = { straight: 'Straight', curved: 'Curved', eraser: 'Eraser', text: 'Text', rectangle:'Rectangle', circle:'Circle', hexagon:'Hexagon' };
 
   function boardToolbarMenuRecords() {
@@ -42,7 +50,7 @@
     closeBoardToolbarMenus(record.list, false);
     record.list.hidden = false;
     record.button.setAttribute('aria-expanded', 'true');
-    const first = Array.from(record.list.querySelectorAll('[role="menuitem"]'))
+    const first = Array.from(record.list.querySelectorAll(BOARD_MENU_ITEM_SELECTOR))
       .find(item => !item.disabled && !item.hidden && item.offsetParent !== null);
     if (first) first.focus();
   }
@@ -54,8 +62,13 @@
   }
 
   function moveBoardMenuFocus(event, list) {
+    if (!BOARD_MENU_OWNED_KEYS.includes(event.key)) return;
+    event.stopPropagation();
+    // Tab moves focus natively (into and out of a select alike); a focused
+    // select keeps its own arrow/Home/End keys for unit and size changes.
+    if (event.key === 'Tab' || event.target.closest('select')) return;
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-    const items = Array.from(list.querySelectorAll('[role="menuitem"]'))
+    const items = Array.from(list.querySelectorAll(BOARD_MENU_ITEM_SELECTOR))
       .filter(item => !item.disabled && !item.hidden && item.offsetParent !== null);
     if (!items.length) return;
     event.preventDefault();
@@ -206,7 +219,7 @@
       const session = state.dxfMeasureSession;
       const armed = state.tool === 'pattern-measure' && session ? session.pendingMode : null;
       const measureLabel = armed === 'along-path' ? 'Along Path' : armed === 'out-of-path' ? 'Out of Path' : null;
-      measureMenuBtn.textContent = measureLabel ? ('Measure: ' + measureLabel) : 'Measure ▾';
+      measureMenuBtn.textContent = measureLabel ? ('Pattern: ' + measureLabel) : 'Pattern ▾';
     }
 
     // A mode/page transition never leaves a detached popup floating over the

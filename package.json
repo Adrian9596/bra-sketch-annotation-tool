@@ -73,6 +73,7 @@
     "boundary-characterization-check": "node scripts/boundary-characterization-check.mjs",
     "boundary-characterization-selftest": "node scripts/boundary-characterization-check.mjs --selftest",
     "publish-mirror": "node scripts/publish-mirror.mjs",
-    "publish-mirror-selftest": "node scripts/publish-mirror.mjs --selftest"
+    "publish-mirror-selftest": "node scripts/publish-mirror.mjs --selftest",
+    "dxf-notch-assign-check": "node scripts/dxf-notch-assign-check.mjs"
   }
 }

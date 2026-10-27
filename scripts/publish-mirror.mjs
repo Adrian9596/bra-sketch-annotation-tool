@@ -94,7 +94,7 @@ const MIRROR_SUITES = {
     'autosave-check', 'mainpage-check', 'construction-check', 'bom-check', 'preview-check',
     'notes-check', 'library-manager-check', 'personal-library-check', 'shape-stamps-check',
     'line-presets-check', 'export-xlsx', 'export-hidden', 'pipeline-tests', 'junction-tests',
-    'suggestions-tests', 'dxf-worker-check', 'dxf-measurement-check', 'dxf-import-check',
+    'suggestions-tests', 'dxf-worker-check', 'dxf-measurement-check', 'dxf-import-check', 'dxf-notch-assign-check',
   ],
   quick: ['check', 'group-deps-check', 'keyboard-shortcuts-check'],
   none: [],

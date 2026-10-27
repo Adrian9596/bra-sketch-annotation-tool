@@ -142,10 +142,8 @@
     return b;
   }
 
-  // Rebuilt on open and after Apply only (not on every generic updateUI, like
-  // Anchor Manager's live-refresh) — a checkbox's unchecked state lives only
-  // in this render's own closure until Apply reads it, matching the shape of
-  // a one-shot "review this list, then act" tool rather than a live view.
+  // Rebuilt on open and after Apply/Simplify, not every generic updateUI.
+  // Simplify passes the current keep set so it cannot reset pending removals.
   // Phase 3 (ADR 0091, owner decision 2): the "keep quality curves" import
   // toggle lives in this panel because this is where a TD looks at what an
   // import produced. It applies to the NEXT import (nothing can be added back
@@ -155,7 +153,7 @@
     if (box) box.checked = !!(state.dxfImportOptions && state.dxfImportOptions.keepQualityCurves);
   }
 
-  function renderPatternPiecesPanel() {
+  function renderPatternPiecesPanel(keptGroupIds) {
     const panel = el.patternPiecesPanel;
     const body = el.patternPiecesBody;
     if (!panel || !body) return;
@@ -166,7 +164,14 @@
       el.patternPiecesCount.textContent = groups.length + (groups.length === 1 ? ' piece' : ' pieces');
     }
     body.innerHTML = '';
-    const keep = new Set(groups.map(g => g.groupId)); // every row starts checked ("keep")
+    const keep = new Set(groups.filter(g => !keptGroupIds || keptGroupIds.has(g.groupId)).map(g => g.groupId));
+    const updateRemoveAction = () => {
+      if (!el.patternPiecesApplyBtn) return;
+      const count = groups.filter(g => !keep.has(g.groupId)).length;
+      el.patternPiecesApplyBtn.disabled = !count;
+      el.patternPiecesApplyBtn.textContent = count ? 'Remove unchecked (' + count + ')' : 'Remove unchecked';
+    };
+    updateRemoveAction();
     for (const g of groups) {
       const row = document.createElement('div');
       row.className = 'pattern-piece-row';
@@ -174,21 +179,39 @@
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.className = 'pattern-piece-checkbox';
-      box.checked = true;
+      box.checked = keep.has(g.groupId);
+      box.setAttribute('aria-label', 'Keep ' + g.label);
       box.title = 'Uncheck to remove this piece from the board';
       box.addEventListener('change', () => {
         if (box.checked) keep.add(g.groupId); else keep.delete(g.groupId);
+        updateRemoveAction();
       });
       row.appendChild(box);
 
       const labelWrap = document.createElement('div');
       labelWrap.className = 'pattern-piece-label-wrap';
-      const label = document.createElement('span');
+      const label = document.createElement('button');
+      label.type = 'button';
       label.className = 'pattern-piece-label';
       label.textContent = g.label;
       label.title = g.label + ' — click to select on the board';
       label.addEventListener('click', (e) => { e.stopPropagation(); selectPatternPieceGroup(g.ids); });
       labelWrap.appendChild(label);
+      const summaryParts = g.meta
+        ? [g.meta.size && 'Size ' + g.meta.size, g.meta.quantity != null && 'Qty ' + g.meta.quantity].filter(Boolean)
+        : [];
+      if (summaryParts.length) {
+        const summary = document.createElement('span');
+        summary.className = 'pattern-piece-summary';
+        summary.textContent = summaryParts.join(' · ');
+        labelWrap.appendChild(summary);
+      }
+      if (g.meta && g.meta.outOfScale) {
+        const warning = document.createElement('span');
+        warning.className = 'pattern-piece-summary pattern-piece-warning';
+        warning.textContent = 'Out of scale — excluded from the fit';
+        labelWrap.appendChild(warning);
+      }
       if (g.meta && g.meta.orphan) {
         const badge = document.createElement('span');
         badge.className = 'pattern-piece-badge pattern-piece-badge-orphan';
@@ -196,28 +219,28 @@
         badge.title = 'No outline in this block could claim these lines — check them before keeping';
         label.appendChild(badge);
       }
+      const advanced = document.createElement('div');
+      advanced.className = 'pattern-piece-advanced';
       const subtitle = patternPieceSubtitle(g.meta);
       if (subtitle) {
         const sub = document.createElement('span');
         sub.className = 'pattern-piece-sub';
         sub.textContent = subtitle;
         sub.title = subtitle;
-        labelWrap.appendChild(sub);
+        advanced.appendChild(sub);
       }
       row.appendChild(labelWrap);
 
       const count = document.createElement('span');
       count.className = 'pattern-piece-count';
       count.textContent = g.count + (g.count === 1 ? ' line' : ' lines');
-      row.appendChild(count);
+      advanced.appendChild(count);
 
-      row.appendChild(patternPieceMiniBtn('Select', 'Highlight this piece on the board',
-        () => selectPatternPieceGroup(g.ids)));
       // ADR 0072: merges redundant collinear points within this piece's
       // straight segments — same outline, fewer annotations. Re-renders
       // (not just updates the count span) because the merge changes which
       // annotation ids belong to this row's "Select" button.
-      row.appendChild(patternPieceMiniBtn('Simplify', 'Merge redundant collinear points in this piece’s straight lines — same outline, fewer segments',
+      advanced.appendChild(patternPieceMiniBtn('Simplify', 'Merge redundant collinear points in this piece’s straight lines — same outline, fewer segments',
         () => {
           const result = simplifyPieceGroup(g.groupId);
           if (!result.chains) { showToast('Nothing to simplify — no redundant collinear points found.'); return; }
@@ -226,8 +249,9 @@
           if (typeof requestRender === 'function') requestRender();
           showToast('Simplified ' + result.chains + (result.chains === 1 ? ' run' : ' runs')
             + ', removed ' + result.removed + (result.removed === 1 ? ' point.' : ' points.'));
-          renderPatternPiecesPanel();
+          renderPatternPiecesPanel(keep);
         }));
+      labelWrap.appendChild(advanced);
       body.appendChild(row);
     }
 

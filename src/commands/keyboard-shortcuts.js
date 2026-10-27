@@ -8,7 +8,11 @@
 
   function onKeyDown(e) {
     const target = e.target;
-    const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+    // A focused <select> owns its arrows, Home/End, Tab and type-ahead letters
+    // just like a text field; without it, ArrowDown on Pattern ▸ File units
+    // also nudged the selected DXF piece.
+    const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+      || target.tagName === 'SELECT' || target.isContentEditable);
 
 
     // A modal (Help, Set Scale, PPTX picker) is open — let it own the keyboard.

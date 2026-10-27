@@ -1513,34 +1513,83 @@ window.__DXF = (() => {
     d.dxf.importText(soloDoc);
     const soloAutoOpen = d.dxf.patternPieces.isOpen();
 
-    // E. Real DOM: Tools-menu entry opens the panel; the close button closes
+    // E. Real DOM: Pattern-menu entry opens the panel; the close button closes
     // it; the live checkbox + "Remove unchecked" button flow (not the debug
     // hook) removes exactly the unchecked piece from the board.
     await resetBoard();
     d.dxf.patternPieces.close();
-    document.getElementById('toolsMenuBtn').click();
+    document.getElementById('measureMenuBtn').click();
     const btnVisible = document.getElementById('patternPiecesBtn').offsetParent !== null;
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     d.dxf.importText(namedDoc);
     const openedByImport = d.dxf.patternPieces.isOpen();
     document.getElementById('patternPiecesCloseBtn').click();
     const closedByButton = d.dxf.patternPieces.isOpen();
+    document.getElementById('measureMenuBtn').click();
     document.getElementById('patternPiecesBtn').click();
-    const reopenedByToolsMenu = d.dxf.patternPieces.isOpen();
+    const reopenedByPatternMenu = d.dxf.patternPieces.isOpen();
     const rows = Array.from(document.querySelectorAll('#patternPiecesBody .pattern-piece-row'));
     const row36 = rows.find(r => r.querySelector('.pattern-piece-label').textContent === 'CUP_36C');
+    const removeInitiallyDisabled = document.getElementById('patternPiecesApplyBtn').disabled;
+    const name = row36.querySelector('.pattern-piece-label');
+    name.focus();
+    name.click();
+    const selectedIds = d.getState().selectedAnnotationIds;
+    const nameSelectsGroup = name.tagName === 'BUTTON' && selectedIds.length === namedGroups[0].ids.length
+      && d.getAnnotations().filter(a => selectedIds.includes(a.id)).every(a => a.templateGroupId === d.dxf.patternPieces.groups()[0].groupId);
+    const advancedHidden = row36.querySelector('.pattern-piece-advanced').offsetParent === null;
+    document.querySelector('#patternPiecesAdvanced summary').click();
+    const advancedVisible = row36.querySelector('.pattern-piece-mini-btn').offsetParent !== null
+      && document.getElementById('patternPiecesKeepQvChk').offsetParent !== null;
+    document.querySelector('#patternPiecesAdvanced summary').click();
     row36.querySelector('.pattern-piece-checkbox').click();
+    const pendingCount = document.getElementById('patternPiecesApplyBtn').textContent;
     document.getElementById('patternPiecesApplyBtn').click();
     const afterDomRemove = d.getAnnotations();
+    document.getElementById('undoBtn').click();
+    const afterDomUndo = d.getAnnotations().length;
+
+    // F. Keys pressed inside the Pattern menu stay there. Import selects the
+    // new piece, so an arrow or Tab that leaked to the board shortcut router
+    // would nudge it or cycle its nudge point.
+    await resetBoard();
+    d.dxf.importText(namedDoc);
+    d.dxf.patternPieces.close();
+    const press = (node, key) => node.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    const pieceGeometry = () => JSON.stringify(d.getAnnotations().map(a => [a.start, a.end]));
+    const geometryBeforeKeys = pieceGeometry();
+    const keySetup = { pieceSelected: d.getState().selection.kind === 'annotation',
+      partBefore: d.getState().selection.part };
+    document.getElementById('measureMenuBtn').click();
+    const unitSelect = document.getElementById('dxfMeasureUnitSelect');
+    keySetup.unitSelectEnabled = !unitSelect.disabled;
+    keySetup.focusOnOpen = document.activeElement.id;
+    press(document.activeElement, 'ArrowDown');
+    const arrowFocus = document.activeElement.id;
+    press(document.activeElement, 'Tab');
+    for (const key of ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight']) press(document.activeElement, key);
+    unitSelect.focus();
+    for (const key of ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Tab']) press(unitSelect, key);
+    const menuKeys = { ...keySetup, arrowFocus, geometryUnchanged: pieceGeometry() === geometryBeforeKeys,
+      partAfter: d.getState().selection.part };
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
     return {
       namedImport, namedGroups, panelAutoOpen, scatteredGroups,
       beforeRemove, afterRemove, soloAutoOpen,
-      btnVisible, openedByImport, closedByButton, reopenedByToolsMenu,
+      btnVisible, openedByImport, closedByButton, reopenedByPatternMenu,
       rowsCountBeforeDom: rows.length, afterDomRemoveLen: afterDomRemove.length,
+      removeInitiallyDisabled, nameSelectsGroup, advancedHidden, advancedVisible, pendingCount, afterDomUndo,
+      menuKeys,
     };
   })()`);
 
+  check(patternPieces.removeInitiallyDisabled && patternPieces.pendingCount === 'Remove unchecked (1)',
+    'piece deletion is enabled only for an explicit unchecked choice and names its count');
+  check(patternPieces.nameSelectsGroup, 'the keyboard-focusable piece name selects exactly its group');
+  check(patternPieces.advancedHidden && patternPieces.advancedVisible,
+    'Advanced reveals Simplify and import options without crowding the default piece list');
+  check(patternPieces.afterDomUndo === 2, 'Undo restores the piece deleted through the compact list');
   check(patternPieces.namedImport.ok === true && patternPieces.namedImport.pieceCount === 2,
     `fixture sanity: two far-apart named blocks must import as 2 pieces, got ${JSON.stringify(patternPieces.namedImport)}`);
   check(patternPieces.namedGroups.length === 2
@@ -1571,10 +1620,17 @@ window.__DXF = (() => {
     '"Pattern pieces…" must be visible in the Tools menu in Sketch Focus');
   check(patternPieces.openedByImport === true, 'a multi-piece import must open the panel');
   check(patternPieces.closedByButton === false, 'the panel close button must actually close it');
-  check(patternPieces.reopenedByToolsMenu === true, 'the Tools-menu entry must reopen the panel on demand');
+  check(patternPieces.reopenedByPatternMenu === true, 'the Pattern-menu entry must reopen the panel on demand');
   check(patternPieces.rowsCountBeforeDom === 2, `the panel must render one row per piece, got ${patternPieces.rowsCountBeforeDom}`);
   check(patternPieces.afterDomRemoveLen === 1,
     `unchecking one row and clicking "Remove unchecked" through the REAL DOM (not the debug hook) must remove exactly that piece, got ${patternPieces.afterDomRemoveLen} annotations left`);
+  const menuKeys = patternPieces.menuKeys;
+  check(menuKeys.pieceSelected && menuKeys.unitSelectEnabled && menuKeys.focusOnOpen === 'patternPiecesBtn',
+    `fixture sanity: an imported piece is selected and File units is live, got ${JSON.stringify(menuKeys)}`);
+  check(menuKeys.arrowFocus === 'dxfMeasureAlongBtn',
+    `ArrowDown from "Pattern pieces…" must skip the File units select and reach Along Path, got ${menuKeys.arrowFocus}`);
+  check(menuKeys.geometryUnchanged && menuKeys.partAfter === menuKeys.partBefore,
+    `arrows and Tab inside the Pattern menu (menu items and File units) must not nudge the selected piece or cycle its point, got ${JSON.stringify(menuKeys)}`);
 
   // ===========================================================================
   // 13. TD-reported bug: "Move piece only moves one segment." Double-clicking
@@ -1789,12 +1845,20 @@ window.__DXF = (() => {
     d.dxf.patternPieces.open();
     const rowsBefore = Array.from(document.querySelectorAll('#patternPiecesBody .pattern-piece-row'));
     const simplifyBtn = Array.from(rowsBefore[0].querySelectorAll('.pattern-piece-mini-btn')).find(b => b.textContent === 'Simplify');
+    const advanced = document.getElementById('patternPiecesAdvanced');
+    if (!advanced.open) advanced.querySelector('summary').click();
+    rowsBefore[0].querySelector('.pattern-piece-checkbox').click();
+    const simplifyVisible = simplifyBtn.offsetParent !== null;
     simplifyBtn.click();
     const annsAfterDomClick = d.getAnnotations();
+    const keepChoicePreserved = !document.querySelector('#patternPiecesBody .pattern-piece-checkbox').checked
+      && document.getElementById('patternPiecesApplyBtn').textContent === 'Remove unchecked (1)';
 
-    return { before, runResult, after, noopResult, soloBefore, soloAfter, annsAfterDomClick };
+    return { before, runResult, after, noopResult, soloBefore, soloAfter, annsAfterDomClick, simplifyVisible, keepChoicePreserved };
   })()`);
 
+  check(simplify.simplifyVisible && simplify.keepChoicePreserved,
+    'Simplify through Advanced keeps the pending unchecked choice after rebuilding rows');
   check(simplify.runResult.chains === 1 && simplify.runResult.removed === 4,
     `5 collinear segments must merge into 1 run (removing 4 annotations), got ${JSON.stringify(simplify.runResult)}`);
   check(simplify.after.length === 2, `the piece must end with exactly 2 annotations (the merged run + the untouched corner), got ${simplify.after.length}`);

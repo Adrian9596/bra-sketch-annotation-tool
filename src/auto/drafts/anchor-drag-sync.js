@@ -171,7 +171,10 @@
     if (innerView) {
       const innerImage = getImageById(innerView.sourceImageId);
       if (innerImage && innerImage.width) {
-        const innerRows = draftFixtureRowsByPom(innerView.anchors, innerView.detection);
+        // History replaces the working anchors, so never rely on identity
+        // shared with the auxiliary detection's original seeds.
+        const innerRows = draftFixtureRowsByPom(
+          anchors.filter(an => an.sourceImageId === innerImage.id), innerView.detection);
         if (innerRows) rowsByImageId.set(String(innerImage.id), innerRows);
       }
     }

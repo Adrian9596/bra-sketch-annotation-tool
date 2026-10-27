@@ -459,6 +459,28 @@
     color:#334155; flex:0 0 auto;
   }
   .pattern-piece-mini-btn:hover{ border-color:#94a3b8; }
+
+  /* US-135: progressive disclosure keeps the common Pattern workflow short. */
+  .pattern-menu{ width:280px; }
+  .dxf-measure-units-row{ display:grid; grid-template-columns:1fr 76px; gap:5px 10px; padding:8px 10px; border-block:1px solid var(--hairline); }
+  .dxf-measure-units-row label{ align-self:center; }
+  .dxf-measure-units-row select{ width:100%; }
+  #dxfMeasureUnitNote{ grid-column:1 / -1; white-space:normal; line-height:1.4; }
+  .pattern-advanced{ border-top:1px solid var(--hairline); }
+  .pattern-advanced summary{ padding:9px 10px; cursor:pointer; font-size:12px; color:#475569; }
+  .pattern-advanced-hint{ margin:0; padding:0 10px 6px; font-size:11px; color:#64748b; }
+  .pattern-pieces-panel{ width:320px; max-width:calc(100% - 24px); }
+  .pattern-pieces-panel .anchor-panel-sub{ color:#64748b; }
+  .pattern-piece-row{ align-items:flex-start; padding-block:8px; }
+  .pattern-piece-checkbox{ margin:5px 0 0; flex:0 0 auto; }
+  button.pattern-piece-label{ display:block; width:100%; border:0; border-radius:4px; background:none; box-shadow:none; padding:3px 0; text-align:left; font:600 12px/1.4 system-ui,sans-serif; }
+  .pattern-piece-label:focus-visible, .pattern-advanced summary:focus-visible{ outline:2px solid #2563eb; outline-offset:2px; }
+  .pattern-piece-summary{ font-size:11px; color:#64748b; white-space:normal; }
+  .pattern-piece-warning{ color:#b45309; }
+  .pattern-piece-advanced{ display:none; }
+  .pattern-pieces-panel:has(#patternPiecesAdvanced[open]) .pattern-piece-advanced{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding-top:4px; }
+  .pattern-piece-advanced .pattern-piece-sub{ flex-basis:100%; white-space:normal; }
+  .pattern-pieces-panel .anchor-panel-btn:disabled{ opacity:.45; cursor:default; }
   /* US-113: Pattern Measurements panel reuses the .anchor-panel shell,
      docked at the third free corner (Anchor Manager top-left, Pattern
      Pieces top-right, this bottom-right). */
@@ -3342,13 +3364,6 @@
                  already dispatches a .dxf to the exact same importDxfText
                  engine, from any app mode, so the two entry points were
                  redundant. See ADR 0087. -->
-            <!-- ADR 0070: a grading-nest DXF places every size of a piece at
-                 the same board position, overlapping. This opens the
-                 floating panel that lists every piece so the TD can pick
-                 which ones to keep — see src/ui/pattern-pieces-panel.js. -->
-            <div class="preset-menu-actions sketch-mode-only">
-              <button id="patternPiecesBtn" type="button" role="menuitem" title="List every sketch-element piece on the board (e.g. one per grading-nest size) so you can keep only the ones you want">Pattern pieces…</button>
-            </div>
             <!-- ADR 0071: place a small alignment-notch tick on a piece's
                  outline. Stays armed after each click, like the drawing
                  tools above — see src/manual/notches.js. -->
@@ -3371,26 +3386,7 @@
               <button id="sketchSetScaleBtn" type="button" role="menuitem" title="Calibrate from a selected line whose real length you know">Set Scale…</button>
               <button id="sketchClearScaleBtn" type="button" role="menuitem" title="Remove calibration">Clear Scale</button>
             </div>
-            <!-- US-105 / ADR 0062: Pattern Measure (Along Path / Out of Path)
-                 moved out to its own #measureMenuWrap next to #libraryBtn —
-                 see the board-menu-tray group below. -->
 
-            <!-- ADR 0073: the DXF's native unit. Real factory files routinely
-                 omit $INSUNITS, so the parser's inch default is a guess — the
-                 note names the provenance (from file / assumed / unsupported
-                 code / set by you) and the select lets the TD correct it.
-                 Deliberately NOT role="menuitem": board-toolbar.js closes the
-                 menu on menuitem clicks, and picking a unit must not dismiss
-                 the menu mid-thought. -->
-            <div class="preset-menu-actions sketch-mode-only dxf-measure-units-row">
-              <label for="dxfMeasureUnitSelect" style="font-size:12px;">Units</label>
-              <select id="dxfMeasureUnitSelect" title="The unit the DXF file's own coordinates are in" disabled>
-                <option value="in">in</option>
-                <option value="mm">mm</option>
-                <option value="cm">cm</option>
-              </select>
-              <span id="dxfMeasureUnitNote" class="muted" style="font-size:11px;"></span>
-            </div>
           </div>
         </div>
         <!-- US-093 / ADR 0053: only reachable while a curved annotation is
@@ -3532,17 +3528,24 @@
            button, not a toolbar-menu dropdown, since it opens a dialog rather
            than a menu — same pattern as addImageBtn. -->
       <button id="libraryBtn" class="manual-only" type="button" title="Browse and organize Templates, Line Treatments, and saved Projects">Library</button>
-      <!-- US-105 / ADR 0062: Pattern Measure (DXF length — Along Path / Out
-           of Path), promoted from inside the Tools ▾ dropdown to its own
-           top-level button next to Library so a TD can find it without
-           digging through the drawing-tools menu. Sketch-Focus-only, like
-           the rest of the Pattern Measure concept — the buttons stay the
-           same #dxfMeasureAlongBtn/#dxfMeasureOutBtn, only relocated;
-           src/ui/dxf-measure-panel.js and src/manual/ui-status.js are
-           unchanged. Not the Measurements spec panel (#togglePanelBtn). -->
+      <!-- US-135 / ADR 0104: one Pattern menu for piece management,
+           native units and measurements. IDs preserve existing commands. -->
       <div id="measureMenuWrap" class="toolbar-menu sketch-mode-only">
-        <button id="measureMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="measureMenuList" title="Measure a length on the imported DXF pattern — along its own path, or straight out of it">Measure ▾</button>
-        <div id="measureMenuList" class="toolbar-menu-list menu-left" role="menu" hidden>
+        <button id="measureMenuBtn" class="toolbar-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="measureMenuList" title="Manage pattern pieces, check DXF units and measure lengths">Pattern ▾</button>
+        <div id="measureMenuList" class="toolbar-menu-list pattern-menu" role="menu" hidden>
+            <div class="preset-menu-actions sketch-mode-only">
+              <button id="patternPiecesBtn" type="button" role="menuitem" title="List every sketch-element piece on the board (e.g. one per grading-nest size) so you can keep only the ones you want">Pattern pieces…</button>
+            </div>
+            <div class="dxf-measure-units-row">
+              <label for="dxfMeasureUnitSelect" style="font-size:12px;">File units</label>
+              <select id="dxfMeasureUnitSelect" title="The unit the DXF file's own coordinates are in" disabled>
+                <option value="in">in</option>
+                <option value="mm">mm</option>
+                <option value="cm">cm</option>
+              </select>
+              <span id="dxfMeasureUnitNote" class="muted" style="font-size:11px;"></span>
+            </div>
+          <div class="toolbar-menu-label">Measure</div>
           <button id="dxfMeasureAlongBtn" type="button" role="menuitem" title="Import a DXF file first">Along Path</button>
           <button id="dxfMeasureOutBtn" type="button" role="menuitem" title="Import a DXF file first">Out of Path</button>
           <!-- US-113: the session's own measurement list — ADR 0062's own
@@ -3550,13 +3553,6 @@
                Along/Out above (no session yet = no list to show). -->
           <div class="toolbar-menu-label">View</div>
           <button id="dxfMeasurementsListBtn" type="button" role="menuitem" title="Import a DXF file first">Measurements…</button>
-          <!-- US-112: snap preferences. role="menuitemcheckbox" + no-close-on-click,
-               same pattern as #smartAlignToggleBtn — a TD toggling several of
-               these in a row should not have to reopen the menu each time. -->
-          <div class="toolbar-menu-label">Snap</div>
-          <button id="dxfMeasureSnapEndpointBtn" type="button" role="menuitemcheckbox" aria-checked="true" title="Snap to the endpoints (corners) of the imported pattern — hold Alt/Option to bypass for one click">✓ Endpoints</button>
-          <button id="dxfMeasureSnapMidpointBtn" type="button" role="menuitemcheckbox" aria-checked="true" title="Snap to the midpoint of each pattern edge — hold Alt/Option to bypass for one click">✓ Midpoints</button>
-          <button id="dxfMeasureSnapIntersectionBtn" type="button" role="menuitemcheckbox" aria-checked="false" title="Snap to where a dart or style line crosses another edge — hold Alt/Option to bypass for one click">Intersections</button>
           <!-- US-114: a raw grading-nest import places every detected size's
                pieces at the same board position (ADR 0069/0070), which makes
                two different sizes' near-identical points genuinely hard to
@@ -3567,11 +3563,18 @@
                actually carries 2+ distinct size labels; see
                dxfMeasureAvailableSizeLabels. -->
           <div id="dxfMeasureSizeWrap" hidden>
-            <div class="toolbar-menu-label">Size</div>
+            <label class="toolbar-menu-label" for="dxfMeasureSizeSelect">Measure size</label>
             <div style="padding:2px 10px 6px;">
               <select id="dxfMeasureSizeSelect" title="Scope Pattern Measure clicks to one detected size — Pattern Pieces and the board stay unaffected" style="width:100%;"></select>
             </div>
           </div>
+          <details class="pattern-advanced" id="dxfMeasureAdvanced">
+            <summary>Advanced</summary>
+          <div class="toolbar-menu-label">Snap</div>
+          <button id="dxfMeasureSnapEndpointBtn" type="button" role="menuitemcheckbox" aria-checked="true" title="Snap to the endpoints (corners) of the imported pattern — hold Alt/Option to bypass for one click">✓ Endpoints</button>
+          <button id="dxfMeasureSnapMidpointBtn" type="button" role="menuitemcheckbox" aria-checked="true" title="Snap to the midpoint of each pattern edge — hold Alt/Option to bypass for one click">✓ Midpoints</button>
+          <button id="dxfMeasureSnapIntersectionBtn" type="button" role="menuitemcheckbox" aria-checked="false" title="Snap to where a dart or style line crosses another edge — hold Alt/Option to bypass for one click">Intersections</button>
+          </details>
         </div>
       </div>
       <div id="fileMenuWrap" class="toolbar-menu">
@@ -3579,7 +3582,7 @@
         <div id="fileMenuList" class="toolbar-menu-list" role="menu" hidden>
           <button id="addImageMenuBtn" class="manual-only" role="menuitem" type="button">Add image…</button>
           <button id="saveProjectBtn" data-key="⌘S" role="menuitem" type="button" title="Save the whole board (images, lines, measurements) to a file you can reopen later">Save project</button>
-          <button id="openProjectBtn" data-key="⌘O" role="menuitem" type="button" title="Open a previously saved project (.json), or import a DXF sketch (.dxf) onto the board">Open project…</button>
+          <button id="openProjectBtn" data-key="⌘O" role="menuitem" type="button" title="Open a previously saved project (.json), or import a DXF sketch (.dxf) onto the board">Open project or DXF…</button>
           <button id="importPptxBtn" data-key="I" class="manual-only" role="menuitem" type="button" title="Import sketches from a PowerPoint (.pptx) deck">Import PowerPoint…</button>
         </div>
       </div>
@@ -3674,21 +3677,22 @@
           <div id="patternPiecesHead" class="anchor-panel-head" title="Drag to move">
             <div class="anchor-panel-titles">
               <div class="anchor-panel-title">Pattern pieces</div>
-              <div class="anchor-panel-sub">Pick which pieces to keep</div>
+              <div class="anchor-panel-sub">Click a name to select · Uncheck to remove</div>
             </div>
             <button id="patternPiecesCloseBtn" type="button" class="anchor-panel-close" title="Close">×</button>
           </div>
           <div class="anchor-panel-actions">
             <span id="patternPiecesCount" class="anchor-panel-count">0 pieces</span>
             <span class="anchor-panel-spacer"></span>
-            <button id="patternPiecesApplyBtn" type="button" class="anchor-panel-btn">Remove unchecked</button>
+            <button id="patternPiecesApplyBtn" type="button" class="anchor-panel-btn" disabled>Remove unchecked</button>
           </div>
-          <!-- US-124 Phase 3 (ADR 0091): import-time option. Applies to the
-               NEXT import — twins dropped by a past import cannot be added
-               back; re-import the file with this on. -->
+          <details class="pattern-advanced" id="patternPiecesAdvanced">
+            <summary>Advanced</summary>
+            <p class="pattern-advanced-hint">Piece details and Simplify are shown below.</p>
           <label class="anchor-panel-option" title="ASTM D6673 layers 84/85/86/87 repeat the boundary, internal and sew lines as smoother 'quality validation' curves. Off (default): they are dropped so each edge is drawn once. On: the next DXF import places them too.">
             <input id="patternPiecesKeepQvChk" type="checkbox" /> Keep quality-curve twins (ASTM 84/85/87) on next import
           </label>
+          </details>
           <div id="patternPiecesBody" class="anchor-panel-body"></div>
         </div>
         <!-- US-113: lists every Pattern Measure session measurement — ADR
@@ -3947,6 +3951,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=61d8417decc0"></script>
+<script src="app.js?v=3c062d01d9a3"></script>
 </body>
 </html>

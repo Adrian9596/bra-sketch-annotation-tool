@@ -709,6 +709,8 @@ async function section9PieceEditInvalidation(s) {
     };
     const openPanelAndFindRow = (predicate) => {
       dbg.dxf.patternPieces.open();
+      const advanced = document.getElementById('patternPiecesAdvanced');
+      if (!advanced.open) advanced.querySelector('summary').click();
       const rows = Array.from(document.querySelectorAll('#patternPiecesBody .pattern-piece-row'));
       return rows.find(predicate);
     };

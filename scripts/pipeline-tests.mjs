@@ -86,8 +86,24 @@ windowStub.BraMeasurementRules = readRuleFixture();
 // Step 2: load app.js. init() will fail on DOM access, but the pipeline is
 // registered on window.__braAutoModeDebug before init() runs.
 const appSrc = readFileSync(path.join(appDir, 'app.js'), 'utf8');
+// Expose private orchestration only in this VM, without widening the shipped
+// debug API. The inner-photo regression below needs real history and actions.
+const reviewHook = `
+  window.__innerAnchorTest = { state, seedAndRelocateAnchors, resetAnchorsToDetection,
+    generatePOMDraftsFromAnchors, moveAnchorBy, makeSnapshot, restoreSnapshot,
+    buildPOMFixtureFromAnchors, validateAutoFixture,
+    silenceUI: function() {
+      updateUI = function() {}; requestRender = function() {}; showToast = function() {};
+      renderMainPage = function() {}; renderConstruction = function() {}; renderBom = function() {};
+      scheduleAutosave = function() {}; recordAutoTelemetryEvent = function() {};
+      loadImageFromDataURL = async function() { return { complete: true, naturalWidth: 1000, naturalHeight: 1000 }; };
+    }
+  };
+`;
+const initMarker = '  init();\n})();';
+if (appSrc.split(initMarker).length !== 2) throw new Error('App bootstrap hook must match exactly once');
 try {
-  vm.runInContext(appSrc, sandbox);
+  vm.runInContext(appSrc.replace(initMarker, reviewHook + initMarker), sandbox);
 } catch (_initError) {
   // Expected: init() touches DOM that the stub doesn't model fully.
 }
@@ -1658,6 +1674,93 @@ console.log('\nstage: empty-ink early return carries a weak segmentation block')
     detection.segmentation && detection.segmentation.emptyMask === true
       && detection.segmentation.weak === true,
     `seg=${JSON.stringify(detection.segmentation)}`);
+}
+
+// Separate inner-photo anchors must remain authoritative through history and
+// reset. Synthetic coordinates isolate lifecycle behavior from detector accuracy.
+console.log('\nstage: separate inner-photo draft anchors through Undo / Reset');
+{
+  const h = sandbox.window.__innerAnchorTest;
+  h.silenceUI();
+  const st = h.state;
+  const image = (id, width) => ({ id, x: 0, y: 0, width, height: 1000,
+    img: { complete: true, naturalWidth: width, naturalHeight: 1000 } });
+  st.images = [image('outer', 2000), image('inner', 1000)];
+  st.appMode = 'auto';
+  st.autoMode.draftAnnotations = [];
+  const det = { sourceImageId: 'outer', bbox: { x: .05, y: .05, width: .9, height: .9 },
+    axisX: .5, bandY: .85, chestY: .5,
+    views: [{ viewRole: 'front_outer', x: 0, y: 0, width: 1, height: 1 }],
+    cupModel: { visibility: 'direct', side: 1 } };
+  const positions = {
+    '171': [.3, .5], '172': [.6, .2], '181': [.8, .6], '182': [.6, .2],
+    'inner-cup-top': [.6, .2], 'inner-cup-bottom': [.6, .7],
+    'inner-cup-left': [.4, .5], 'inner-cup-right': [.8, .5],
+    // A real inner-photo seed set carries every kind, not just the eight
+    // relocated ones; these two must stay on the front photo.
+    'cf-top': [.5, .1], 'band-left': [.2, .85],
+  };
+  let id = 1000;
+  const innerSeeds = Object.entries(positions).map(([kind, [x, y]]) =>
+    ({ id: id++, kind, name: kind, sourceImageId: 'inner', x, y }));
+  const seedBefore = JSON.stringify(innerSeeds);
+  st.autoMode.detection = { ...det, auxViews: [{ sourceImageId: 'inner', viewRole: 'front_inner',
+    detection: { ...det, sourceImageId: 'inner' }, anchors: innerSeeds }] };
+  h.seedAndRelocateAnchors(st.autoMode.detection, st.images[0]);
+  const pin = kind => st.autoMode.anchors.find(a => a.kind === kind);
+  const row = pom => st.autoMode.draftAnnotations.find(a => a.seq === pom);
+  const generate = () => h.generatePOMDraftsFromAnchors({ keepDraftsForReview: true, suppressReplacePrompt: true });
+  const matches = (pom, kind) => row(pom)?.sourceImageId === 'inner'
+    && pin(kind)?.sourceImageId === 'inner' && row(pom).start
+    && Math.abs(row(pom).start.x - pin(kind).x * 1000) < 1e-6
+    && Math.abs(row(pom).start.y - pin(kind).y * 1000) < 1e-6;
+  const innerPins = () => st.autoMode.anchors.filter(a => a.sourceImageId === 'inner');
+  check('only the eight relocated kinds move to the inner photo', innerPins().length === 8
+    && pin('cf-top')?.sourceImageId === 'outer' && pin('band-left')?.sourceImageId === 'outer',
+    innerPins().map(a => a.kind).join(','));
+  generate();
+  check('front-outer fixture validates', st.autoMode.validation.status !== 'fail');
+  // Generate stores only the front pass's validation, so build and validate
+  // the inner pass the way Generate does: inner detection active, inner pins.
+  const innerValidation = (() => {
+    const savedDet = st.autoMode.detection;
+    st.autoMode.detection = savedDet.auxViews[0].detection;
+    try {
+      return h.validateAutoFixture(h.buildPOMFixtureFromAnchors(innerPins()));
+    } finally {
+      st.autoMode.detection = savedDet;
+    }
+  })();
+  check('separate inner-photo fixture validates', innerValidation.status !== 'fail',
+    JSON.stringify(innerValidation.errors));
+  for (const [pom, kind] of [[9, 'inner-cup-top'], [10, 'inner-cup-left'], [17, '171'], [18, '181']]) {
+    check(`POM ${pom} initially follows its inner-photo pin`, matches(pom, kind));
+  }
+  const frontBefore = JSON.stringify(row(1).start);
+  const beforeMove = h.makeSnapshot();
+  for (const kind of ['inner-cup-top', 'inner-cup-left', '171', '181']) h.moveAnchorBy(pin(kind), .05, 0);
+  const afterMove = h.makeSnapshot();
+  check('editing inner pins does not mutate detection seeds', JSON.stringify(innerSeeds) === seedBefore);
+  await h.restoreSnapshot(beforeMove);
+  generate();
+  for (const [pom, kind] of [[9, 'inner-cup-top'], [10, 'inner-cup-left'], [17, '171'], [18, '181']]) {
+    check(`POM ${pom} Generate respects Undo`, matches(pom, kind));
+    h.moveAnchorBy(pin(kind), .02, 0);
+    check(`POM ${pom} follows another drag after Undo`, matches(pom, kind));
+  }
+  await h.restoreSnapshot(afterMove);
+  generate();
+  check('Generate respects Redo of inner anchors', matches(17, '171') && Math.abs(pin('171').x - .35) < 1e-9);
+  h.resetAnchorsToDetection();
+  check('Reset keeps all eight inner-photo pins', innerPins().length === 8);
+  check('Reset restores original inner coordinates', Math.abs(pin('171').x - .3) < 1e-9);
+  for (const [pom, kind] of [[9, 'inner-cup-top'], [10, 'inner-cup-left'], [17, '171'], [18, '181']]) {
+    check(`Reset resyncs POM ${pom} to its visible pin`, matches(pom, kind));
+  }
+  check('inner corrections leave front POM 1 unchanged', JSON.stringify(row(1).start) === frontBefore);
+  const resetGeometry = JSON.stringify([9, 10, 17, 18].map(pom => row(pom).start));
+  generate();
+  check('Generate after Reset agrees with live resync', JSON.stringify([9, 10, 17, 18].map(pom => row(pom).start)) === resetGeometry);
 }
 
 // ---- Summary ----

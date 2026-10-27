@@ -82,7 +82,7 @@
       showToast('No source image for the current detection.');
       return;
     }
-    state.autoMode.anchors = seedAnchorsFromDetection(detection, sourceImage);
+    seedAndRelocateAnchors(detection, sourceImage);
     state.autoMode.anchorSelectedId = null;
     state.autoMode.anchorsHidden = false;
     state.autoMode.hiddenAnchorKinds = []; // US-038: fresh seed shows all

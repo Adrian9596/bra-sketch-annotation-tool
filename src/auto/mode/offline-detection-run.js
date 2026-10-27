@@ -180,7 +180,9 @@
     if (innerViewSeed) {
       const MOVED_ANCHOR_KINDS = ['inner-cup-top', 'inner-cup-bottom', 'inner-cup-left', 'inner-cup-right', '171', '172', '181', '182'];
       const innerByKind = Object.create(null);
-      for (const an of innerViewSeed.anchors) innerByKind[an.kind] = an;
+      // Working pins must not mutate these detection seeds: Reset needs the
+      // original positions, and Undo restores working anchors independently.
+      for (const an of innerViewSeed.anchors) innerByKind[an.kind] = clone(an);
       state.autoMode.anchors = state.autoMode.anchors.map(an =>
         (MOVED_ANCHOR_KINDS.indexOf(an.kind) >= 0 && innerByKind[an.kind]) ? innerByKind[an.kind] : an);
     }

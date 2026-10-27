@@ -8,7 +8,7 @@
   function setDxfMeasureMode(mode) {
     const session = state.dxfMeasureSession;
     if (!session) {
-      showToast('Open a DXF first with File → Open project….');
+      showToast('Open a DXF first with File → Open project or DXF….');
       return;
     }
     session.pendingMode = mode;

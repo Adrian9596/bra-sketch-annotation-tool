@@ -5,7 +5,7 @@
   const BUILTIN_AUTO_MODE_RULE_JSON = {"version":{"pom_unit":"in","template_version":"core18-2026-07-18b","rule_version":"offline-vision-rules-v3","anchor_version":"anchors-2026-08-24-hem-offset-preserved","suggestions_version":"sizeL-suggestions-v1"},"pomTemplate":{"rows":[{"id":"1","name":"1/2 Bottom band (2nd hook from tightest) - Relax","zh":"下围半宽（扣最紧起第2排）- 放松量","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"primary","partner":"2","groupName":"1/2 Bottom band (2nd hook from tightest)","primaryLabel":"Relax","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"2","name":"1/2 Bottom band (2nd hook from tightest) - Extend","zh":"下围半宽（扣最紧起第2排）- 拉伸量","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"secondary","primary":"1"},"expected_confidence_tier":"high"},{"id":"3","name":"1/2 chest (2nd hook from tightest) - Measure straight","zh":"胸围半宽（扣最紧起第2排）- 直量","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"primary","partner":"4","groupName":"1/2 Chest (2nd hook from tightest)","primaryLabel":"Measure straight","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"4","name":"1/2 chest (2nd hook from tightest) - Extend","zh":"胸围半宽（扣最紧起第2排）- 拉伸量","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"secondary","primary":"3"},"expected_confidence_tier":"high"},{"id":"5","name":"Center front height","zh":"前中高度","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"6","name":"Cradle height at center front","zh":"托架前中高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"7","name":"Cradle height at bottom cup","zh":"托架底杯高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cup-top","cradle-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"8","name":"Cup height at center front","zh":"前中杯高","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cradle-cf-top"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"9","name":"Cup height","zh":"杯高","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-top","inner-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"10","name":"Cup width","zh":"杯宽","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-left","inner-cup-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"11","name":"Side seam length","zh":"侧缝长度","view":"back","refL":null,"requiredAnchors":["side-top","side-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"12","name":"Back center length","zh":"后中高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"13","name":"Back panel height","zh":"后背片高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"optionalAnchors":["back-panel-top","back-panel-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"14","name":"Shoulder strap length","zh":"肩带长度","view":"front_to_back","placementViewRole":"back","refL":null,"requiredAnchors":["strap-top","strap-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"},{"id":"15","name":"Back strap distances","zh":"后肩带间距","view":"back","refL":null,"requiredAnchors":["back-strap-left","back-strap-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"16","name":"Front apex distance","zh":"乳点间距","view":"front_outer","refL":null,"requiredAnchors":["apex-left","apex-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"17","name":"Neckline length","zh":"领口长","view":"front_outer","refL":null,"requiredAnchors":["171","172"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"18","name":"Armhole curve length","zh":"袖窿弧长","view":"front_outer","refL":null,"requiredAnchors":["181","182"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"}]},"anchorSchema":{"anchors":[{"kind":"cf-top","name":"CF top","group":"axis","hint":"Top of the center-front, where the cradle meets the chest line."},{"kind":"cf-bottom","name":"CF bottom","group":"axis","hint":"Bottom of the center front, on the underbust band.","derivation":{"method":"drop_to_line","args":["cf-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"cradle-cf-top","name":"Cradle CF","group":"axis","hint":"Where the cradle / cup-bottom seam approaches the center front. POM 6 top."},{"kind":"cradle-cup-top","name":"Cradle cup top","group":"axis","hint":"Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."},{"kind":"cradle-cup-bottom","name":"Cradle cup btm","group":"axis","hint":"Band baseline directly below the bottom-cup cradle point (POM 7 bottom).","derivation":{"method":"drop_to_line","args":["cradle-cup-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"band-left","name":"Band L","group":"band","hint":"Leftmost end of the underbust band line."},{"kind":"band-right","name":"Band R","group":"band","hint":"Rightmost end of the underbust band line."},{"kind":"chest-left","name":"Chest L","group":"chest","hint":"Left end of the chest / overbust horizontal line."},{"kind":"chest-right","name":"Chest R","group":"chest","hint":"Right end of the chest / overbust horizontal line."},{"kind":"inner-cup-top","name":"IC top","group":"inner-cup","hint":"Top of the cup (apex) on the front (outer) view — POM 9 start."},{"kind":"inner-cup-bottom","name":"IC btm","group":"inner-cup","hint":"Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."},{"kind":"inner-cup-left","name":"IC L","group":"inner-cup","hint":"Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."},{"kind":"inner-cup-right","name":"IC R","group":"inner-cup","hint":"Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."},{"kind":"side-top","name":"Side top","group":"side","hint":"Top of the side seam at the underarm."},{"kind":"side-bottom","name":"Side btm","group":"side","hint":"Bottom of the side seam at the band."},{"kind":"apex-left","name":"Apex L","group":"apex","hint":"Left shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"apex-right","name":"Apex R","group":"apex","hint":"Right shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"strap-top","name":"Front strap join","group":"strap","hint":"Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."},{"kind":"strap-bottom","name":"Back strap join","group":"strap","hint":"End of the shoulder strap at the back / back-panel join — POM 14 end."},{"kind":"back-top","name":"Back top","group":"back","hint":"Top edge of the back panel."},{"kind":"back-bottom","name":"Back btm","group":"back","hint":"Bottom edge of the back panel."},{"kind":"back-panel-top","name":"Panel top","group":"back","hint":"Upper point for back panel height."},{"kind":"back-panel-bottom","name":"Panel btm","group":"back","hint":"Lower point for back panel height."},{"kind":"back-strap-left","name":"Back strap L","group":"back","hint":"Left point of the back strap distance."},{"kind":"back-strap-right","name":"Back strap R","group":"back","hint":"Right point of the back strap distance."},{"kind":"171","name":"171","group":"neckline","hint":"Left upper neckline corner, where the cup/gore top edge meets the strap base."},{"kind":"172","name":"172","group":"neckline","hint":"Right upper neckline corner (mirror of Neckline L)."},{"kind":"181","name":"181","group":"armhole","hint":"Underarm side point at the bottom of the arm opening."},{"kind":"182","name":"182","group":"armhole","hint":"Strap/shoulder junction at the top of the arm opening."}]},"sizeLSuggestions":{"suggestions_version":"sizeL-suggestions-v1","unit":"in","provenance":{"corpus":"Measurements 2/library/_raw_intake/measurements_size_l.csv","conceptMap":"Measurements 2/library/pom_concepts.csv","tolDefaults":"Measurements 2/library/pom_tol_defaults.csv","sketchRatios":"Measurements 2/library/sketch_ratios.csv","generatedBy":"scripts/generate-sizeL-suggestions.mjs","corpusRows":2950,"styleVersions":225,"droppedRows":26,"note":"Derived from the approved Size-L corpus. Regenerate with the generator; never hand-edit. droppedRows = corpus rows whose concept is not yet canonicalized (raw_* intake phrases)."},"poms":{"1":{"concept":"band_relax","median":14,"min":12.74,"max":14.38,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"2":{"concept":"band_extended","median":19,"min":18,"max":19.25,"tol":"1/2","tolType":"min","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"3":{"concept":"chest_relax","median":17,"min":15.5,"max":17.5,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":198,"confidence":"medium","source":"library"},"4":{"concept":"chest_extended","median":22,"min":20,"max":22.77,"tol":"1/2","tolType":"min","sketchReliable":false,"n":197,"confidence":"medium","source":"library"},"5":{"concept":"cf_height","median":5.5,"min":1.32,"max":6.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":217,"confidence":"medium","source":"library"},"6":{"concept":"cradle_cf","median":2.25,"min":1.31,"max":3,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":163,"confidence":"medium","source":"library"},"7":{"concept":"cradle_under_cup","median":1.75,"min":1.11,"max":2.64,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":173,"confidence":"medium","source":"library"},"8":{"concept":"cup_height_cf","median":3,"min":1.75,"max":4,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":113,"confidence":"low","source":"library"},"9":{"concept":"cup_height","median":8,"min":5.805,"max":9.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":237,"confidence":"medium","source":"library"},"10":{"concept":"cup_width","median":8,"min":6.6,"max":9,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":221,"confidence":"medium","source":"library"},"11":{"concept":"sideseam_length","median":5.5,"min":4.5,"max":6,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":211,"confidence":"medium","source":"library"},"12":{"concept":"cb_height","median":3.75,"min":2,"max":7.24,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":239,"confidence":"medium","source":"library"},"13":{"concept":"back_panel_height","median":7.25,"min":3,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":181,"confidence":"medium","source":"library"},"14":{"concept":"strap_length","median":8,"min":4,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":155,"confidence":"low","source":"library"},"15":{"concept":"back_straps_distance","median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"16":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"17":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"18":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"}}}};
 
   // US-124: URL of the DXF Worker bundle, content-hashed like app.js?v=.
-  const DXF_WORKER_URL = "dxf-worker.js?v=27d2a61c3330";
+  const DXF_WORKER_URL = "dxf-worker.js?v=0cd238a50d5c";
 
   // ---- src/auto/rules/load-rules.js ----
 // Loads TD-editable Auto Mode rules from auto_mode_rules/*.json.
@@ -2805,6 +2805,11 @@
   // diagonal whose endpoint lies within the notch tolerance of an outline.
   const DXF_PATTERN_NOTCH_MAX_LEN_RATIO = 0.02;
   const DXF_PATTERN_NOTCH_TOL_RATIO = 0.005;
+  // Margin (fraction of the instance diagonal) on the notch search's
+  // bounding-box skip, so floating-point rounding can never skip an outline
+  // whose true distance is exactly on the line. It only ever costs a few extra
+  // distance calls, never a different result.
+  const DXF_PATTERN_PRUNE_SLACK_RATIO = 1e-9;
   const DXF_PATTERN_ASSIGN_MIN_SCORE = 0.5;
   // Sampling density for the containment score / polygon flattening.
   const DXF_PATTERN_SAMPLES_PER_CURVE = 8;
@@ -3066,6 +3071,15 @@
     return best;
   }
 
+  // Distance from a point to an axis-aligned rectangle {x, y, width, height}:
+  // 0 inside it, and never more than the distance to anything the rectangle
+  // contains (a lower bound on the distance to a polygon inside it).
+  function dxfPatternDistanceToBounds(p, b) {
+    const dx = Math.max(b.x - p.x, 0, p.x - (b.x + b.width));
+    const dy = Math.max(b.y - p.y, 0, p.y - (b.y + b.height));
+    return Math.hypot(dx, dy);
+  }
+
   function dxfPatternMakeOutline(segments, chain) {
     const poly = dxfPatternLoopPolygon(segments, chain);
     const bounds = dxfBoundsOfPoints(poly);
@@ -3232,6 +3246,7 @@
     const instDiag = Math.hypot(instBounds.width, instBounds.height) || 1;
     const notchMaxLen = DXF_PATTERN_NOTCH_MAX_LEN_RATIO * instDiag;
     const notchTol = DXF_PATTERN_NOTCH_TOL_RATIO * instDiag;
+    const notchPruneSlack = DXF_PATTERN_PRUNE_SLACK_RATIO * instDiag;
 
     const inOutline = new Set();
     for (const o of outlines) for (const i of o.segIdxs) inOutline.add(i);
@@ -3293,13 +3308,26 @@
         let len = 0;
         for (const i of chain.segIdxs) len += dxfPatternSegmentLength(segments[i]);
         if (len <= notchMaxLen) {
+          // The nearest outline, ties to the lowest index — visit order
+          // (outline, then segment, then endpoint) and the strict `<` are what
+          // decide a tie, so they stay exactly as the exhaustive search had
+          // them. What changed (US-134): the chain's endpoints are gathered
+          // once instead of once per outline, and an outline is skipped when
+          // even the rectangle around it is farther than a result could still
+          // use. A polygon is never nearer than its own bounding box, so such
+          // an outline can neither beat the best distance so far nor land
+          // within notchTol, and skipping it cannot change the answer. On
+          // 2938常规L.dxf (620 outlines) the exhaustive search made 938,574
+          // point-to-polygon calls = 15.1 s of a 15.5 s parse, in BOTH parsers.
+          const ends = [];
+          for (const i of chain.segIdxs) for (const p of dxfSegmentEndpoints(segments[i])) ends.push(p);
           let nearest = -1, nearestD = Infinity;
           for (let oi = 0; oi < outlines.length; oi += 1) {
-            for (const i of chain.segIdxs) {
-              for (const p of dxfSegmentEndpoints(segments[i])) {
-                const d = dxfPatternDistanceToPolygon(p, outlines[oi].poly);
-                if (d < nearestD) { nearestD = d; nearest = oi; }
-              }
+            const outline = outlines[oi];
+            for (const p of ends) {
+              if (dxfPatternDistanceToBounds(p, outline.bounds) > Math.min(nearestD, notchTol) + notchPruneSlack) continue;
+              const d = dxfPatternDistanceToPolygon(p, outline.poly);
+              if (d < nearestD) { nearestD = d; nearest = oi; }
             }
           }
           if (nearest !== -1 && nearestD <= notchTol) { target = nearest; isNotch = true; }
@@ -21058,6 +21086,14 @@ const BOM_MATERIAL_LIBRARY = [
     ['measureMenuWrap', 'measureMenuBtn', 'measureMenuList'],
   ];
 
+  // Arrow-key stops inside a drop-down. A <select> (Pattern ▸ File units,
+  // Measure size) is deliberately absent: its arrows change its value, so it
+  // is reached with Tab, never by arrowing through the menu.
+  const BOARD_MENU_ITEM_SELECTOR = '[role="menuitem"], [role="menuitemcheckbox"], summary';
+  // Keys an open menu owns outright — they must never also reach the board
+  // shortcut router, which would nudge the selected line or cycle its point.
+  const BOARD_MENU_OWNED_KEYS = ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Tab'];
+
   const TOOL_MENU_LABELS = { straight: 'Straight', curved: 'Curved', eraser: 'Eraser', text: 'Text', rectangle:'Rectangle', circle:'Circle', hexagon:'Hexagon' };
 
   function boardToolbarMenuRecords() {
@@ -21083,7 +21119,7 @@ const BOM_MATERIAL_LIBRARY = [
     closeBoardToolbarMenus(record.list, false);
     record.list.hidden = false;
     record.button.setAttribute('aria-expanded', 'true');
-    const first = Array.from(record.list.querySelectorAll('[role="menuitem"]'))
+    const first = Array.from(record.list.querySelectorAll(BOARD_MENU_ITEM_SELECTOR))
       .find(item => !item.disabled && !item.hidden && item.offsetParent !== null);
     if (first) first.focus();
   }
@@ -21095,8 +21131,13 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   function moveBoardMenuFocus(event, list) {
+    if (!BOARD_MENU_OWNED_KEYS.includes(event.key)) return;
+    event.stopPropagation();
+    // Tab moves focus natively (into and out of a select alike); a focused
+    // select keeps its own arrow/Home/End keys for unit and size changes.
+    if (event.key === 'Tab' || event.target.closest('select')) return;
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-    const items = Array.from(list.querySelectorAll('[role="menuitem"]'))
+    const items = Array.from(list.querySelectorAll(BOARD_MENU_ITEM_SELECTOR))
       .filter(item => !item.disabled && !item.hidden && item.offsetParent !== null);
     if (!items.length) return;
     event.preventDefault();
@@ -21247,7 +21288,7 @@ const BOM_MATERIAL_LIBRARY = [
       const session = state.dxfMeasureSession;
       const armed = state.tool === 'pattern-measure' && session ? session.pendingMode : null;
       const measureLabel = armed === 'along-path' ? 'Along Path' : armed === 'out-of-path' ? 'Out of Path' : null;
-      measureMenuBtn.textContent = measureLabel ? ('Measure: ' + measureLabel) : 'Measure ▾';
+      measureMenuBtn.textContent = measureLabel ? ('Pattern: ' + measureLabel) : 'Pattern ▾';
     }
 
     // A mode/page transition never leaves a detached popup floating over the
@@ -22063,7 +22104,7 @@ const BOM_MATERIAL_LIBRARY = [
   function setDxfMeasureMode(mode) {
     const session = state.dxfMeasureSession;
     if (!session) {
-      showToast('Open a DXF first with File → Open project….');
+      showToast('Open a DXF first with File → Open project or DXF….');
       return;
     }
     session.pendingMode = mode;
@@ -22466,10 +22507,8 @@ const BOM_MATERIAL_LIBRARY = [
     return b;
   }
 
-  // Rebuilt on open and after Apply only (not on every generic updateUI, like
-  // Anchor Manager's live-refresh) — a checkbox's unchecked state lives only
-  // in this render's own closure until Apply reads it, matching the shape of
-  // a one-shot "review this list, then act" tool rather than a live view.
+  // Rebuilt on open and after Apply/Simplify, not every generic updateUI.
+  // Simplify passes the current keep set so it cannot reset pending removals.
   // Phase 3 (ADR 0091, owner decision 2): the "keep quality curves" import
   // toggle lives in this panel because this is where a TD looks at what an
   // import produced. It applies to the NEXT import (nothing can be added back
@@ -22479,7 +22518,7 @@ const BOM_MATERIAL_LIBRARY = [
     if (box) box.checked = !!(state.dxfImportOptions && state.dxfImportOptions.keepQualityCurves);
   }
 
-  function renderPatternPiecesPanel() {
+  function renderPatternPiecesPanel(keptGroupIds) {
     const panel = el.patternPiecesPanel;
     const body = el.patternPiecesBody;
     if (!panel || !body) return;
@@ -22490,7 +22529,14 @@ const BOM_MATERIAL_LIBRARY = [
       el.patternPiecesCount.textContent = groups.length + (groups.length === 1 ? ' piece' : ' pieces');
     }
     body.innerHTML = '';
-    const keep = new Set(groups.map(g => g.groupId)); // every row starts checked ("keep")
+    const keep = new Set(groups.filter(g => !keptGroupIds || keptGroupIds.has(g.groupId)).map(g => g.groupId));
+    const updateRemoveAction = () => {
+      if (!el.patternPiecesApplyBtn) return;
+      const count = groups.filter(g => !keep.has(g.groupId)).length;
+      el.patternPiecesApplyBtn.disabled = !count;
+      el.patternPiecesApplyBtn.textContent = count ? 'Remove unchecked (' + count + ')' : 'Remove unchecked';
+    };
+    updateRemoveAction();
     for (const g of groups) {
       const row = document.createElement('div');
       row.className = 'pattern-piece-row';
@@ -22498,21 +22544,39 @@ const BOM_MATERIAL_LIBRARY = [
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.className = 'pattern-piece-checkbox';
-      box.checked = true;
+      box.checked = keep.has(g.groupId);
+      box.setAttribute('aria-label', 'Keep ' + g.label);
       box.title = 'Uncheck to remove this piece from the board';
       box.addEventListener('change', () => {
         if (box.checked) keep.add(g.groupId); else keep.delete(g.groupId);
+        updateRemoveAction();
       });
       row.appendChild(box);
 
       const labelWrap = document.createElement('div');
       labelWrap.className = 'pattern-piece-label-wrap';
-      const label = document.createElement('span');
+      const label = document.createElement('button');
+      label.type = 'button';
       label.className = 'pattern-piece-label';
       label.textContent = g.label;
       label.title = g.label + ' — click to select on the board';
       label.addEventListener('click', (e) => { e.stopPropagation(); selectPatternPieceGroup(g.ids); });
       labelWrap.appendChild(label);
+      const summaryParts = g.meta
+        ? [g.meta.size && 'Size ' + g.meta.size, g.meta.quantity != null && 'Qty ' + g.meta.quantity].filter(Boolean)
+        : [];
+      if (summaryParts.length) {
+        const summary = document.createElement('span');
+        summary.className = 'pattern-piece-summary';
+        summary.textContent = summaryParts.join(' · ');
+        labelWrap.appendChild(summary);
+      }
+      if (g.meta && g.meta.outOfScale) {
+        const warning = document.createElement('span');
+        warning.className = 'pattern-piece-summary pattern-piece-warning';
+        warning.textContent = 'Out of scale — excluded from the fit';
+        labelWrap.appendChild(warning);
+      }
       if (g.meta && g.meta.orphan) {
         const badge = document.createElement('span');
         badge.className = 'pattern-piece-badge pattern-piece-badge-orphan';
@@ -22520,28 +22584,28 @@ const BOM_MATERIAL_LIBRARY = [
         badge.title = 'No outline in this block could claim these lines — check them before keeping';
         label.appendChild(badge);
       }
+      const advanced = document.createElement('div');
+      advanced.className = 'pattern-piece-advanced';
       const subtitle = patternPieceSubtitle(g.meta);
       if (subtitle) {
         const sub = document.createElement('span');
         sub.className = 'pattern-piece-sub';
         sub.textContent = subtitle;
         sub.title = subtitle;
-        labelWrap.appendChild(sub);
+        advanced.appendChild(sub);
       }
       row.appendChild(labelWrap);
 
       const count = document.createElement('span');
       count.className = 'pattern-piece-count';
       count.textContent = g.count + (g.count === 1 ? ' line' : ' lines');
-      row.appendChild(count);
+      advanced.appendChild(count);
 
-      row.appendChild(patternPieceMiniBtn('Select', 'Highlight this piece on the board',
-        () => selectPatternPieceGroup(g.ids)));
       // ADR 0072: merges redundant collinear points within this piece's
       // straight segments — same outline, fewer annotations. Re-renders
       // (not just updates the count span) because the merge changes which
       // annotation ids belong to this row's "Select" button.
-      row.appendChild(patternPieceMiniBtn('Simplify', 'Merge redundant collinear points in this piece’s straight lines — same outline, fewer segments',
+      advanced.appendChild(patternPieceMiniBtn('Simplify', 'Merge redundant collinear points in this piece’s straight lines — same outline, fewer segments',
         () => {
           const result = simplifyPieceGroup(g.groupId);
           if (!result.chains) { showToast('Nothing to simplify — no redundant collinear points found.'); return; }
@@ -22550,8 +22614,9 @@ const BOM_MATERIAL_LIBRARY = [
           if (typeof requestRender === 'function') requestRender();
           showToast('Simplified ' + result.chains + (result.chains === 1 ? ' run' : ' runs')
             + ', removed ' + result.removed + (result.removed === 1 ? ' point.' : ' points.'));
-          renderPatternPiecesPanel();
+          renderPatternPiecesPanel(keep);
         }));
+      labelWrap.appendChild(advanced);
       body.appendChild(row);
     }
 
@@ -28671,7 +28736,11 @@ function onWheel(e) {
 
   function onKeyDown(e) {
     const target = e.target;
-    const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+    // A focused <select> owns its arrows, Home/End, Tab and type-ahead letters
+    // just like a text field; without it, ArrowDown on Pattern ▸ File units
+    // also nudged the selected DXF piece.
+    const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+      || target.tagName === 'SELECT' || target.isContentEditable);
 
 
     // A modal (Help, Set Scale, PPTX picker) is open — let it own the keyboard.
@@ -32132,9 +32201,9 @@ function onWheel(e) {
       : unitStatus === 'inferred-geometry'
         ? ' Units auto-scaled to ' + ((measureSession.source.unitDiagnostic
           && measureSession.source.unitDiagnostic.inferredKey) || 'in')
-          + ' from piece size (file declares none) — change under Tools ▸ Pattern Measure if wrong.'
+          + ' from piece size (file declares none) — change under Pattern ▸ File units if wrong.'
         : measureSession
-          ? ' Units assumed (in) — set them under Tools ▸ Pattern Measure if the file is mm/cm.'
+          ? ' Units assumed (in) — set them under Pattern ▸ File units if the file is mm/cm.'
           : '';
     // A failed native build rides on this toast for the same reason.
     const measureFailure = measureSession ? '' : (dxfMeasureLastFailureMessage() || '');
@@ -45626,7 +45695,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     if (innerViewSeed) {
       const MOVED_ANCHOR_KINDS = ['inner-cup-top', 'inner-cup-bottom', 'inner-cup-left', 'inner-cup-right', '171', '172', '181', '182'];
       const innerByKind = Object.create(null);
-      for (const an of innerViewSeed.anchors) innerByKind[an.kind] = an;
+      // Working pins must not mutate these detection seeds: Reset needs the
+      // original positions, and Undo restores working anchors independently.
+      for (const an of innerViewSeed.anchors) innerByKind[an.kind] = clone(an);
       state.autoMode.anchors = state.autoMode.anchors.map(an =>
         (MOVED_ANCHOR_KINDS.indexOf(an.kind) >= 0 && innerByKind[an.kind]) ? innerByKind[an.kind] : an);
     }
@@ -47398,7 +47469,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     if (innerView) {
       const innerImage = getImageById(innerView.sourceImageId);
       if (innerImage && innerImage.width) {
-        const innerRows = draftFixtureRowsByPom(innerView.anchors, innerView.detection);
+        // History replaces the working anchors, so never rely on identity
+        // shared with the auxiliary detection's original seeds.
+        const innerRows = draftFixtureRowsByPom(
+          anchors.filter(an => an.sourceImageId === innerImage.id), innerView.detection);
         if (innerRows) rowsByImageId.set(String(innerImage.id), innerRows);
       }
     }
@@ -47867,7 +47941,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       showToast('No source image for the current detection.');
       return;
     }
-    state.autoMode.anchors = seedAnchorsFromDetection(detection, sourceImage);
+    seedAndRelocateAnchors(detection, sourceImage);
     state.autoMode.anchorSelectedId = null;
     state.autoMode.anchorsHidden = false;
     state.autoMode.hiddenAnchorKinds = []; // US-038: fresh seed shows all
@@ -48371,7 +48445,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         let innerFixture = null;
         try {
           state.autoMode.detection = innerView.detection;
-          innerFixture = buildPOMFixtureFromAnchors(innerView.anchors);
+          // Read the same pins the TD sees and edits. Undo restores cloned
+          // working anchors; the auxiliary seed set is only a Reset baseline.
+          innerFixture = buildPOMFixtureFromAnchors(
+            state.autoMode.anchors.filter(an => an.sourceImageId === innerImage.id));
         } finally {
           state.autoMode.detection = savedDet;
         }

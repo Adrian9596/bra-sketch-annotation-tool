@@ -92,7 +92,10 @@
         let innerFixture = null;
         try {
           state.autoMode.detection = innerView.detection;
-          innerFixture = buildPOMFixtureFromAnchors(innerView.anchors);
+          // Read the same pins the TD sees and edits. Undo restores cloned
+          // working anchors; the auxiliary seed set is only a Reset baseline.
+          innerFixture = buildPOMFixtureFromAnchors(
+            state.autoMode.anchors.filter(an => an.sourceImageId === innerImage.id));
         } finally {
           state.autoMode.detection = savedDet;
         }
