@@ -10,6 +10,9 @@
     const snap = makeSnapshot();
     state.history.past = [{ snapshot: snap, fingerprint: snapshotFingerprint(snap) }];
     state.history.future = [];
+    // A new board (Open project, a DXF import, Reset Board) replaces the piece
+    // list wholesale; an open Pattern pieces panel must not keep the old one.
+    if (typeof syncPatternPiecesPanelToBoard === 'function') syncPatternPiecesPanelToBoard();
   }
 
   function makeSnapshot() {
@@ -106,6 +109,9 @@
     }
     state.history.future = [];
     updateUI();
+    // US-135 E2E defect 3: a committed change can add or remove pieces
+    // (Delete, paste, Remove unchecked); the open Pattern pieces panel follows.
+    if (typeof syncPatternPiecesPanelToBoard === 'function') syncPatternPiecesPanelToBoard();
     if (typeof scheduleAutosave === 'function') scheduleAutosave();
   }
 
@@ -204,6 +210,9 @@
 
     state.history.restoring = false;
     updateUI();
+    // US-135 E2E defect 3: Undo/Redo can bring pieces back or take them away;
+    // the open Pattern pieces panel used to keep listing the old set.
+    if (typeof syncPatternPiecesPanelToBoard === 'function') syncPatternPiecesPanelToBoard();
     requestRender();
     if (typeof scheduleAutosave === 'function') scheduleAutosave();
   }

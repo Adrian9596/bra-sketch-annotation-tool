@@ -1574,7 +1574,70 @@ window.__DXF = (() => {
       partAfter: d.getState().selection.part };
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
+    // G. US-135 E2E defects 1 and 3. Keys pressed inside the Pattern pieces
+    // panel stay there: once a piece is selected by its name, Tab used to
+    // cycle the nudge point (focus stayed put) and the arrows moved one line
+    // of the piece. And the panel follows history: after Remove + Undo the
+    // board had 2 pieces and the panel listed 1.
+    await resetBoard();
+    d.dxf.importText(namedDoc);
+    if (!d.dxf.patternPieces.isOpen()) d.dxf.patternPieces.open();
+    const names = () => Array.from(document.querySelectorAll('#patternPiecesBody .pattern-piece-label'));
+    const boxes = () => Array.from(document.querySelectorAll('#patternPiecesBody .pattern-piece-checkbox'));
+    const panelRows = () => document.querySelectorAll('#patternPiecesBody .pattern-piece-row').length;
+    const inPanel = () => document.getElementById('patternPiecesPanel').contains(document.activeElement);
+    const tick = () => new Promise(r => setTimeout(r, 60)); // Undo/Redo restore is async
+    const chord = (node, key, shiftKey) => node.dispatchEvent(new KeyboardEvent('keydown',
+      { key, metaKey: true, shiftKey: !!shiftKey, bubbles: true, cancelable: true }));
+    names()[0].focus();
+    names()[0].click();
+    const panelGeometryBefore = pieceGeometry();
+    const tabInPanel = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    names()[0].dispatchEvent(tabInPanel);
+    const downInPanel = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+    names()[0].dispatchEvent(downInPanel);
+    const focusAfterDown = document.activeElement === names()[1];
+    press(document.activeElement, 'ArrowLeft');
+    const focusAfterLeft = document.activeElement === boxes()[1];
+    for (const key of ['ArrowUp', 'ArrowRight', 'Home', 'End']) press(document.activeElement, key);
+    // Shift+arrow nudges 10 px: large enough that Smart Align cannot snap a
+    // leaked nudge back onto the old point and hide it from the geometry check.
+    for (const key of ['ArrowRight', 'ArrowDown']) {
+      document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey: true, bubbles: true, cancelable: true }));
+    }
+    const panelKeys = {
+      pieceSelected: d.getState().selectedAnnotationIds.length > 0,
+      tabLeftToBrowser: !tabInPanel.defaultPrevented, partAfter: d.getState().selection.part,
+      arrowHandledByList: downInPanel.defaultPrevented, focusAfterDown, focusAfterLeft,
+      geometryUnchanged: pieceGeometry() === panelGeometryBefore,
+    };
+
+    const sync = {};
+    boxes()[0].click();
+    document.getElementById('patternPiecesApplyBtn').click();
+    sync.afterRemove = [d.dxf.patternPieces.groups().length, panelRows()];
+    names()[0].focus();
+    chord(names()[0], 'z');
+    await tick();
+    sync.afterUndo = [d.dxf.patternPieces.groups().length, panelRows()];
+    sync.focusKeptAfterUndo = inPanel();
+    // A stale list (the bug) can be missing these rows; record, never crash,
+    // so the assertions below — not a TypeError — report what went wrong.
+    if (boxes()[1]) boxes()[1].click(); // a pending uncheck that later rebuilds must keep
+    if (names()[0]) { names()[0].click(); press(names()[0], 'Delete'); }
+    await tick();
+    sync.afterDelete = [d.dxf.patternPieces.groups().length, panelRows()];
+    sync.pendingAfterDelete = document.getElementById('patternPiecesApplyBtn').textContent;
+    chord(document.activeElement, 'z');
+    await tick();
+    sync.afterDeleteUndo = [d.dxf.patternPieces.groups().length, panelRows()];
+    sync.pendingAfterDeleteUndo = document.getElementById('patternPiecesApplyBtn').textContent;
+    chord(document.activeElement, 'z', true);
+    await tick();
+    sync.afterRedo = [d.dxf.patternPieces.groups().length, panelRows()];
+
     return {
+      panelKeys, sync,
       namedImport, namedGroups, panelAutoOpen, scatteredGroups,
       beforeRemove, afterRemove, soloAutoOpen,
       btnVisible, openedByImport, closedByButton, reopenedByPatternMenu,
@@ -1631,6 +1694,87 @@ window.__DXF = (() => {
     `ArrowDown from "Pattern pieces…" must skip the File units select and reach Along Path, got ${menuKeys.arrowFocus}`);
   check(menuKeys.geometryUnchanged && menuKeys.partAfter === menuKeys.partBefore,
     `arrows and Tab inside the Pattern menu (menu items and File units) must not nudge the selected piece or cycle its point, got ${JSON.stringify(menuKeys)}`);
+
+  const panelKeys = patternPieces.panelKeys;
+  check(panelKeys.pieceSelected,
+    `fixture sanity: the piece name click must select the piece before the keys are pressed, got ${JSON.stringify(panelKeys)}`);
+  check(panelKeys.tabLeftToBrowser && panelKeys.partAfter === null,
+    `Tab inside the Pattern pieces list must move focus, not cycle the selected piece's nudge point, got ${JSON.stringify(panelKeys)}`);
+  check(panelKeys.arrowHandledByList && panelKeys.focusAfterDown && panelKeys.focusAfterLeft,
+    `arrows walk the pieces list (Down: next name, Left: that row's checkbox), got ${JSON.stringify(panelKeys)}`);
+  check(panelKeys.geometryUnchanged,
+    `arrows, Home and End inside the Pattern pieces list must never move the selected piece, got ${JSON.stringify(panelKeys)}`);
+  const sync = patternPieces.sync;
+  check(sync.afterRemove.join() === '1,1', `fixture sanity: Remove unchecked leaves 1 piece on the board and in the list, got ${JSON.stringify(sync)}`);
+  check(sync.afterUndo.join() === '2,2',
+    `after Remove + Cmd+Z the list must show the restored piece too (board, list), got ${JSON.stringify(sync)}`);
+  check(sync.focusKeptAfterUndo,
+    `Cmd+Z pressed in the pieces list must leave keyboard focus in the list, got ${JSON.stringify(sync)}`);
+  check(sync.afterDelete.join() === '1,1' && sync.pendingAfterDelete === 'Remove unchecked (1)',
+    `Delete on a piece selected from the list rebuilds the list and keeps the other row's pending uncheck, got ${JSON.stringify(sync)}`);
+  check(sync.afterDeleteUndo.join() === '2,2' && sync.pendingAfterDeleteUndo === 'Remove unchecked (1)',
+    `Undo of that Delete brings the row back checked and keeps the pending uncheck, got ${JSON.stringify(sync)}`);
+  check(sync.afterRedo.join() === '1,1', `Cmd+Shift+Z re-applies the Delete in the list too, got ${JSON.stringify(sync)}`);
+
+  // US-135 E2E defect 2, with TRUSTED input: only real keys and clicks drive
+  // :focus-visible and native button activation, so synthetic events cannot
+  // see this. The board router's space-pan branch preventDefault-ed every
+  // Space outside a text field, so a focused piece name (or any button) could
+  // never be pressed with Space. Now a button reached by keyboard keeps Space,
+  // and a button that merely kept focus after a mouse click still pans.
+  {
+    const key = (type, name) => {
+      const k = name === 'Tab' ? { key: 'Tab', code: 'Tab', vk: 9 } : { key: ' ', code: 'Space', vk: 32, text: ' ' };
+      return s.cdp('Input.dispatchKeyEvent', { type: type === 'down' ? (k.text ? 'keyDown' : 'rawKeyDown') : 'keyUp',
+        key: k.key, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk,
+        ...(type === 'down' && k.text ? { text: k.text, unmodifiedText: k.text } : {}) });
+    };
+    const settleSpace = () => s.eval(`new Promise(r => setTimeout(r, 60))`);
+    const where = await s.eval(`(async () => {
+      const d = window.__braAutoModeDebug;
+      const p = d.exportProject();
+      p.state.annotations = []; p.state.images = []; p.state.graphics = []; p.state.notes = [];
+      p.state.templateGroupLabels = {};
+      await d.loadProject(p);
+      document.getElementById('modeManualBtn').click();
+      d.dxf.importText(${JSON.stringify(docWithBlocks(
+        [dxfBlock('CUP_36C', dxfLine(0, 0, 10, 0)), dxfBlock('CUP_38C', dxfLine(0, 0, 10, 0))],
+        [dxfInsert('CUP_36C', 0, 0), dxfInsert('CUP_38C', 1000, 0)],
+      ))});
+      if (!d.dxf.patternPieces.isOpen()) d.dxf.patternPieces.open();
+      await new Promise(r => setTimeout(r, 60));
+      const r = document.querySelectorAll('#patternPiecesBody .pattern-piece-label')[0].getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+    for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) {
+      await s.cdp('Input.dispatchMouseEvent', { type, x: where.x, y: where.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 });
+    }
+    await settleSpace();
+    const readSpace = `(() => { const a = document.activeElement; const names = Array.from(document.querySelectorAll('#patternPiecesBody .pattern-piece-label'));
+      return { focusedName: names.indexOf(a), focusVisible: !!a && a.matches(':focus-visible'),
+        pans: document.body.classList.contains('space-pan'), selected: window.__braAutoModeDebug.getState().selectedAnnotationIds.slice() }; })()`;
+    const groupIds = await s.eval(`window.__braAutoModeDebug.dxf.patternPieces.groups().map(g => g.ids)`);
+    const mouseFocused = await s.eval(readSpace);
+    await key('down', 'Space'); await settleSpace();
+    const mouseSpaceDown = await s.eval(readSpace);
+    await key('up', 'Space'); await settleSpace();
+    await s.eval(`document.querySelectorAll('#patternPiecesBody .pattern-piece-checkbox')[1].focus()`);
+    await key('down', 'Tab'); await key('up', 'Tab'); await settleSpace();
+    const keyboardFocused = await s.eval(readSpace);
+    await key('down', 'Space'); await settleSpace();
+    const keyboardSpaceDown = await s.eval(readSpace);
+    await key('up', 'Space'); await settleSpace();
+    const keyboardSpaceUp = await s.eval(readSpace);
+    const space = { groupIds, mouseFocused, mouseSpaceDown, keyboardFocused, keyboardSpaceDown, keyboardSpaceUp };
+    check(mouseFocused.focusedName === 0 && JSON.stringify(mouseFocused.selected) === JSON.stringify(groupIds[0]),
+      `fixture sanity: a real click on the first piece name focuses it and selects its piece, got ${JSON.stringify(space)}`);
+    check(mouseSpaceDown.pans,
+      `holding Space after CLICKING a piece name must still start a board pan, got ${JSON.stringify(space)}`);
+    check(keyboardFocused.focusedName === 1 && keyboardFocused.focusVisible,
+      `fixture sanity: Tab from the second row's checkbox reaches its name with keyboard focus, got ${JSON.stringify(space)}`);
+    check(!keyboardSpaceDown.pans && JSON.stringify(keyboardSpaceUp.selected) === JSON.stringify(groupIds[1]),
+      `Space on a piece name reached by keyboard must press it (select that piece), not pan the board, got ${JSON.stringify(space)}`);
+  }
 
   // ===========================================================================
   // 13. TD-reported bug: "Move piece only moves one segment." Double-clicking
@@ -2662,6 +2806,7 @@ async function session(port) {
   };
   return {
     eval: evalJs,
+    cdp,
     waitFor: async (q, ms) => {
       const end = Date.now() + ms;
       while (Date.now() < end) { try { if (await evalJs(q)) return; } catch { /* retry */ } await sleep(80); }

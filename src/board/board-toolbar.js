@@ -35,11 +35,67 @@
     })).filter(record => record.wrap && record.button && record.list);
   }
 
+  // US-135 E2E defect 4: below 820px the strip scrolls sideways
+  // (.board-toolbar-groups { overflow-x:auto }), and an overflow other than
+  // visible on one axis clips the other axis too — so every drop-down inside
+  // the strip was cut off at the strip's bottom edge. At 768px no item of any
+  // menu (Pattern, File …) was clickable. While the strip scrolls, an open
+  // list is lifted out of that clip with position:fixed, placed under its
+  // trigger with the same alignment the CSS gives it, and kept inside the
+  // viewport. Wide layouts do not scroll, so they keep the CSS placement.
+  const BOARD_DROPDOWN_MARGIN = 12; // the 12px each side of max-width: calc(100vw - 24px)
+
+  function boardToolbarStripScrolls() {
+    const strip = document.getElementById('boardToolbarGroups');
+    return !!strip && getComputedStyle(strip).overflowX !== 'visible';
+  }
+
+  function releaseBoardToolbarDropdown(list) {
+    if (!list || !list.dataset.fixedDropdown) return;
+    delete list.dataset.fixedDropdown;
+    for (const prop of ['position', 'top', 'left', 'right', 'maxHeight', 'overflowY']) list.style[prop] = '';
+  }
+
+  function placeBoardToolbarDropdown(list, trigger) {
+    if (!list || !trigger) return;
+    releaseBoardToolbarDropdown(list);
+    if (list.hidden || !boardToolbarStripScrolls()) return;
+    const anchor = trigger.getBoundingClientRect();
+    const top = Math.round(anchor.bottom + 7);
+    list.dataset.fixedDropdown = 'true';
+    list.style.position = 'fixed';
+    list.style.top = top + 'px';
+    list.style.right = 'auto';
+    const width = list.getBoundingClientRect().width;
+    const alignLeft = list.classList.contains('menu-left') || list.classList.contains('style-menu-list');
+    const wanted = alignLeft ? anchor.left : anchor.right - width;
+    const maxLeft = window.innerWidth - BOARD_DROPDOWN_MARGIN - width;
+    list.style.left = Math.round(Math.max(BOARD_DROPDOWN_MARGIN, Math.min(wanted, maxLeft))) + 'px';
+    const room = Math.floor(window.innerHeight - top - BOARD_DROPDOWN_MARGIN);
+    if (list.getBoundingClientRect().height > room) {
+      list.style.maxHeight = Math.max(120, room) + 'px';
+      list.style.overflowY = 'auto';
+    }
+  }
+
+  // Every open drop-down follows its trigger when the strip scrolls or the
+  // window resizes — and drops back to the CSS placement once the strip
+  // stops scrolling (a resize past 820px).
+  function refreshOpenBoardToolbarDropdowns() {
+    const pairs = boardToolbarMenuRecords().map(record => [record.list, record.button]);
+    if (el.stitchesMenu && el.stitchesBtn) pairs.push([el.stitchesMenu, el.stitchesBtn]);
+    for (const [list, trigger] of pairs) {
+      if (!list.hidden) placeBoardToolbarDropdown(list, trigger);
+      else releaseBoardToolbarDropdown(list);
+    }
+  }
+
   function closeBoardToolbarMenus(exceptList, restoreFocus) {
     for (const record of boardToolbarMenuRecords()) {
       if (record.list === exceptList) continue;
       const wasOpen = !record.list.hidden;
       record.list.hidden = true;
+      releaseBoardToolbarDropdown(record.list);
       record.button.setAttribute('aria-expanded', 'false');
       if (wasOpen && restoreFocus) record.button.focus();
     }
@@ -49,6 +105,7 @@
     closeLineStyleMenu();
     closeBoardToolbarMenus(record.list, false);
     record.list.hidden = false;
+    placeBoardToolbarDropdown(record.list, record.button);
     record.button.setAttribute('aria-expanded', 'true');
     const first = Array.from(record.list.querySelectorAll(BOARD_MENU_ITEM_SELECTOR))
       .find(item => !item.disabled && !item.hidden && item.offsetParent !== null);
@@ -93,6 +150,9 @@
     document.addEventListener('click', event => {
       if (!event.target.closest('.toolbar-menu')) closeBoardToolbarMenus();
     });
+    const strip = document.getElementById('boardToolbarGroups');
+    if (strip) strip.addEventListener('scroll', refreshOpenBoardToolbarDropdowns, { passive: true });
+    window.addEventListener('resize', refreshOpenBoardToolbarDropdowns);
     document.addEventListener('keydown', event => {
       if (event.key !== 'Escape') return;
       const openRecord = boardToolbarMenuRecords().find(record => !record.list.hidden);

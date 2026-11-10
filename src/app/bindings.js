@@ -264,6 +264,7 @@
       if (e.key === 'Escape' && isPatternPiecesPanelOpen()) closePatternPiecesPanel();
     });
     document.addEventListener('paste', onPasteEvent);
+    document.addEventListener('focusin', noteFocusOrigin, true);
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
     window.addEventListener('resize', resizeCanvas);
@@ -335,11 +336,15 @@
   function openLineStyleMenu() {
     if (el.stitchesBtn.disabled) return;
     el.stitchesMenu.hidden = false;
+    // US-135 E2E defect 4: the narrow, scrolling toolbar strip clips this
+    // list like the other drop-downs; see placeBoardToolbarDropdown.
+    placeBoardToolbarDropdown(el.stitchesMenu, el.stitchesBtn);
     el.stitchesBtn.setAttribute('aria-expanded', 'true');
   }
 
   function closeLineStyleMenu() {
     el.stitchesMenu.hidden = true;
+    releaseBoardToolbarDropdown(el.stitchesMenu);
     el.stitchesBtn.setAttribute('aria-expanded', 'false');
   }
 

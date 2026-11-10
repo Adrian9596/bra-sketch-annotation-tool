@@ -448,6 +448,59 @@ async function main() {
       + `${states.widest.toolbarHeight}) — more than the one wrapped row this contextual toolbar is allowed`);
     console.log(`board-toolbar-check: ${width}px authoring ${states.authoring.toolbarHeight}px, `
       + `widest ${states.widest.toolbarHeight}px`);
+
+    // US-135 E2E defect 4. Everything above measures the toolbar itself; none
+    // of it noticed that below 820px the scrolling strip clipped every
+    // drop-down at its own bottom edge, so at 768px no menu item could be
+    // clicked (Pattern 1 of 5, File 1 of 4, Stitches 0 of 11 reachable). Usable
+    // means the item is what a click at its centre actually hits — not that
+    // its rect lies inside the viewport. Triggers behind the sticky File/More
+    // tray are scrolled into the open strip first, as a TD would.
+    const menus = await s.eval(`(async () => {
+      const strip = document.getElementById('boardToolbarGroups');
+      const settle = () => new Promise(r => setTimeout(r, 40));
+      const out = {};
+      for (const [triggerId, listId] of [['toolsMenuBtn', 'toolsMenuList'], ['stitchesBtn', 'stitchesMenu'],
+        ['measureMenuBtn', 'measureMenuList'], ['fileMenuBtn', 'fileMenuList'], ['exportMenuBtn', 'exportMenuList'],
+        ['moreMenuBtn', 'moreMenuList']]) {
+        const trigger = document.getElementById(triggerId);
+        if (!trigger || trigger.hidden || !trigger.getClientRects().length || trigger.disabled) continue;
+        if (!trigger.closest('.board-menu-tray')) {
+          strip.scrollLeft += trigger.getBoundingClientRect().left - strip.getBoundingClientRect().left - 20;
+        }
+        await settle();
+        trigger.click();
+        await settle();
+        const list = document.getElementById(listId);
+        const box = list.getBoundingClientRect();
+        const items = Array.from(list.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"], summary'))
+          .filter(n => n.getClientRects().length && n.checkVisibility());
+        let considered = 0;
+        const blocked = [];
+        for (const n of items) {
+          const r = n.getBoundingClientRect();
+          const x = r.left + r.width / 2, y = r.top + r.height / 2;
+          if (y < box.top || y > box.bottom) continue; // below the list's own scroll area
+          considered += 1;
+          const hit = document.elementFromPoint(x, y);
+          if (!hit || !(hit === n || n.contains(hit))) blocked.push((n.id || n.textContent.trim().slice(0, 24)) + '@' + Math.round(y));
+        }
+        out[triggerId] = { open: !list.hidden, considered, blocked };
+        if (!list.hidden) trigger.click();
+        await settle();
+      }
+      strip.scrollLeft = 0;
+      return out;
+    })()`);
+    check(menus.toolsMenuBtn && menus.fileMenuBtn,
+      `${width}px menu probe did not reach Tools and File, so it proves nothing: ${JSON.stringify(menus)}`);
+    for (const [trigger, result] of Object.entries(menus)) {
+      check(result.open && result.considered > 0 && result.blocked.length === 0,
+        `${width}px ${trigger}: ${result.blocked.length} of ${result.considered} menu items are not clickable at their centre `
+        + `(${result.blocked.join(', ')}) — below 820px the scrolling toolbar strip clips absolutely placed drop-downs; `
+        + `see placeBoardToolbarDropdown: ${JSON.stringify(result)}`);
+    }
+    console.log(`board-toolbar-check: ${width}px every item clickable in ${Object.keys(menus).join(', ')}`);
   }
   await s.cdp('Emulation.clearDeviceMetricsOverride', {});
   console.log('board-toolbar-check: responsive ok');

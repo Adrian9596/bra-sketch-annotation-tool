@@ -144,6 +144,16 @@
       }
     }
 
+    // US-135 E2E defect 2: Space activates a control the TD reached BY
+    // KEYBOARD (Tab, arrows in a menu or the Pattern pieces panel) — the
+    // native button behaviour, which the preventDefault below used to kill
+    // everywhere. A button that merely kept focus after a mouse click is not
+    // keyboard-focused (see noteFocusOrigin), so click-then-hold-Space still
+    // pans exactly as before.
+    if (e.code === 'Space' && !state.spacePan && target && target === keyboardFocusedControl
+        && target.matches('button, summary, a[href], [role="button"], [role="menuitem"], [role="menuitemcheckbox"], [role="tab"]')) {
+      return;
+    }
     if (e.code === 'Space' && !state.spacePan) {
       state.spacePan = true;
       document.body.classList.add('space-pan');
@@ -410,6 +420,20 @@
         clearSelection();
       }
     }
+  }
+
+  // US-135 E2E defect 2: the control that last received focus BY KEYBOARD —
+  // Tab, or a script moving focus in answer to a key (arrows in a menu or the
+  // Pattern pieces panel) — recorded as focus ARRIVES, from :focus-visible.
+  // It cannot be read at keydown time instead: Chrome starts matching
+  // :focus-visible on any key press, so a button focused by a mouse click
+  // reads as keyboard-focused the moment Space goes down, and click-then-
+  // hold-Space would stop panning (measured in the US-135 trusted-input E2E).
+  let keyboardFocusedControl = null;
+
+  function noteFocusOrigin(event) {
+    const node = event.target;
+    keyboardFocusedControl = node && typeof node.matches === 'function' && node.matches(':focus-visible') ? node : null;
   }
 
   function onKeyUp(e) {

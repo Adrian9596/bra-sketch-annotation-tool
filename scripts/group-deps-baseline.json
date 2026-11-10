@@ -677,7 +677,8 @@
       "persistDxfPatternSourceForAutosave",
       "resetDxfMeasureSession",
       "restoreDxfPatternSource",
-      "serializeDxfPatternSourceForProject"
+      "serializeDxfPatternSourceForProject",
+      "syncPatternPiecesPanelToBoard"
     ],
     "project->graphics": [
       "normalizeBoardGraphics"

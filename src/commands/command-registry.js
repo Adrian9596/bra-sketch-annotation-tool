@@ -25,9 +25,15 @@
     if (target) target.click();
   }
 
+  // Blur a focused FIELD so its pending edit commits before the command runs.
+  // Only a field can hold an uncommitted edit; a focused button keeps its
+  // focus (US-135 E2E: Cmd+Z pressed in the Pattern pieces list dropped
+  // keyboard focus to <body>, so the TD lost their place in the list).
   function appCommandBlurField(event) {
     const target = event && event.target;
-    if (target && typeof target.blur === 'function') target.blur();
+    if (!target || typeof target.blur !== 'function') return;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
+        || target.isContentEditable) target.blur();
   }
 
   function appCommandSelectedAnnotationReason() {

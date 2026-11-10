@@ -20465,9 +20465,15 @@ const BOM_MATERIAL_LIBRARY = [
     if (target) target.click();
   }
 
+  // Blur a focused FIELD so its pending edit commits before the command runs.
+  // Only a field can hold an uncommitted edit; a focused button keeps its
+  // focus (US-135 E2E: Cmd+Z pressed in the Pattern pieces list dropped
+  // keyboard focus to <body>, so the TD lost their place in the list).
   function appCommandBlurField(event) {
     const target = event && event.target;
-    if (target && typeof target.blur === 'function') target.blur();
+    if (!target || typeof target.blur !== 'function') return;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
+        || target.isContentEditable) target.blur();
   }
 
   function appCommandSelectedAnnotationReason() {
@@ -21104,11 +21110,67 @@ const BOM_MATERIAL_LIBRARY = [
     })).filter(record => record.wrap && record.button && record.list);
   }
 
+  // US-135 E2E defect 4: below 820px the strip scrolls sideways
+  // (.board-toolbar-groups { overflow-x:auto }), and an overflow other than
+  // visible on one axis clips the other axis too — so every drop-down inside
+  // the strip was cut off at the strip's bottom edge. At 768px no item of any
+  // menu (Pattern, File …) was clickable. While the strip scrolls, an open
+  // list is lifted out of that clip with position:fixed, placed under its
+  // trigger with the same alignment the CSS gives it, and kept inside the
+  // viewport. Wide layouts do not scroll, so they keep the CSS placement.
+  const BOARD_DROPDOWN_MARGIN = 12; // the 12px each side of max-width: calc(100vw - 24px)
+
+  function boardToolbarStripScrolls() {
+    const strip = document.getElementById('boardToolbarGroups');
+    return !!strip && getComputedStyle(strip).overflowX !== 'visible';
+  }
+
+  function releaseBoardToolbarDropdown(list) {
+    if (!list || !list.dataset.fixedDropdown) return;
+    delete list.dataset.fixedDropdown;
+    for (const prop of ['position', 'top', 'left', 'right', 'maxHeight', 'overflowY']) list.style[prop] = '';
+  }
+
+  function placeBoardToolbarDropdown(list, trigger) {
+    if (!list || !trigger) return;
+    releaseBoardToolbarDropdown(list);
+    if (list.hidden || !boardToolbarStripScrolls()) return;
+    const anchor = trigger.getBoundingClientRect();
+    const top = Math.round(anchor.bottom + 7);
+    list.dataset.fixedDropdown = 'true';
+    list.style.position = 'fixed';
+    list.style.top = top + 'px';
+    list.style.right = 'auto';
+    const width = list.getBoundingClientRect().width;
+    const alignLeft = list.classList.contains('menu-left') || list.classList.contains('style-menu-list');
+    const wanted = alignLeft ? anchor.left : anchor.right - width;
+    const maxLeft = window.innerWidth - BOARD_DROPDOWN_MARGIN - width;
+    list.style.left = Math.round(Math.max(BOARD_DROPDOWN_MARGIN, Math.min(wanted, maxLeft))) + 'px';
+    const room = Math.floor(window.innerHeight - top - BOARD_DROPDOWN_MARGIN);
+    if (list.getBoundingClientRect().height > room) {
+      list.style.maxHeight = Math.max(120, room) + 'px';
+      list.style.overflowY = 'auto';
+    }
+  }
+
+  // Every open drop-down follows its trigger when the strip scrolls or the
+  // window resizes — and drops back to the CSS placement once the strip
+  // stops scrolling (a resize past 820px).
+  function refreshOpenBoardToolbarDropdowns() {
+    const pairs = boardToolbarMenuRecords().map(record => [record.list, record.button]);
+    if (el.stitchesMenu && el.stitchesBtn) pairs.push([el.stitchesMenu, el.stitchesBtn]);
+    for (const [list, trigger] of pairs) {
+      if (!list.hidden) placeBoardToolbarDropdown(list, trigger);
+      else releaseBoardToolbarDropdown(list);
+    }
+  }
+
   function closeBoardToolbarMenus(exceptList, restoreFocus) {
     for (const record of boardToolbarMenuRecords()) {
       if (record.list === exceptList) continue;
       const wasOpen = !record.list.hidden;
       record.list.hidden = true;
+      releaseBoardToolbarDropdown(record.list);
       record.button.setAttribute('aria-expanded', 'false');
       if (wasOpen && restoreFocus) record.button.focus();
     }
@@ -21118,6 +21180,7 @@ const BOM_MATERIAL_LIBRARY = [
     closeLineStyleMenu();
     closeBoardToolbarMenus(record.list, false);
     record.list.hidden = false;
+    placeBoardToolbarDropdown(record.list, record.button);
     record.button.setAttribute('aria-expanded', 'true');
     const first = Array.from(record.list.querySelectorAll(BOARD_MENU_ITEM_SELECTOR))
       .find(item => !item.disabled && !item.hidden && item.offsetParent !== null);
@@ -21162,6 +21225,9 @@ const BOM_MATERIAL_LIBRARY = [
     document.addEventListener('click', event => {
       if (!event.target.closest('.toolbar-menu')) closeBoardToolbarMenus();
     });
+    const strip = document.getElementById('boardToolbarGroups');
+    if (strip) strip.addEventListener('scroll', refreshOpenBoardToolbarDropdowns, { passive: true });
+    window.addEventListener('resize', refreshOpenBoardToolbarDropdowns);
     document.addEventListener('keydown', event => {
       if (event.key !== 'Escape') return;
       const openRecord = boardToolbarMenuRecords().find(record => !record.list.hidden);
@@ -22376,6 +22442,16 @@ const BOM_MATERIAL_LIBRARY = [
 // history stack), not a new visibility flag layered onto rendering.
 // Source part for app.js. Run `npm run build` after editing.
 
+  // US-135 E2E defect 3: the group list the panel last drew, so a board change
+  // that adds, removes or re-counts pieces (Undo/Redo, Delete, paste…) can
+  // rebuild the rows — and every other refresh can skip the rebuild, which
+  // would otherwise reset focus on each history step. Panel-local, never saved.
+  let lastPatternPiecesFingerprint = null;
+  // Which piece each row belongs to, kept OFF the DOM: the panel's markup is
+  // part of the pre-Phase-C characterization (boundary-golden.json, dxf
+  // chrome), and a data attribute per control would change it for nothing.
+  const patternPieceRowGroup = new WeakMap();
+
   // One row per distinct templateGroupId currently in state.annotations, in
   // first-seen order. Labeled from state.templateGroupLabels when DXF import
   // recorded a block name for that group; a positional fallback otherwise
@@ -22445,6 +22521,83 @@ const BOM_MATERIAL_LIBRARY = [
     if (!el.patternPiecesPanel) return;
     el.patternPiecesPanel.hidden = true;
     if (el.patternPiecesBtn) el.patternPiecesBtn.classList.remove('active');
+    lastPatternPiecesFingerprint = null;
+  }
+
+  function patternPiecesFingerprint(groups) {
+    return groups.map(g => String(g.groupId) + ':' + g.count + ':' + g.label).join('|');
+  }
+
+  // US-135 E2E defect 3: the panel used to rebuild only on open, Apply and
+  // Simplify, so after Remove of 2 and Cmd+Z the board had 6 pieces and the
+  // panel listed 4. history.js calls this after every committed change and
+  // every Undo/Redo. It rebuilds only when the piece list itself changed, keeps
+  // the TD's pending unchecks for pieces that still exist (a piece brought back
+  // by Undo comes back checked), and puts keyboard focus back on the same
+  // piece — or the row now in its place — when focus was in the list.
+  function syncPatternPiecesPanelToBoard() {
+    if (!isPatternPiecesPanelOpen() || !el.patternPiecesBody) return;
+    const groups = patternPieceGroups();
+    if (patternPiecesFingerprint(groups) === lastPatternPiecesFingerprint) return;
+    const body = el.patternPiecesBody;
+    const unchecked = new Set(Array.from(body.querySelectorAll('.pattern-piece-checkbox'))
+      .filter(box => !box.checked).map(box => patternPieceRowGroup.get(box.closest('.pattern-piece-row'))));
+    const keep = new Set(groups.filter(g => !unchecked.has(g.groupId)).map(g => g.groupId));
+    const active = document.activeElement;
+    const focusRow = active && body.contains(active) ? active.closest('.pattern-piece-row') : null;
+    const focus = focusRow ? {
+      groupId: patternPieceRowGroup.get(focusRow),
+      column: ['pattern-piece-checkbox', 'pattern-piece-mini-btn'].find(c => active.classList.contains(c)) || 'pattern-piece-label',
+      rowIndex: Array.from(body.querySelectorAll('.pattern-piece-row')).indexOf(focusRow),
+    } : null;
+    renderPatternPiecesPanel(keep);
+    if (!focus || !isPatternPiecesPanelOpen()) return;
+    const rows = Array.from(body.querySelectorAll('.pattern-piece-row'));
+    const row = rows.find(r => patternPieceRowGroup.get(r) === focus.groupId)
+      || rows[Math.min(Math.max(focus.rowIndex, 0), rows.length - 1)];
+    const target = row && (row.querySelector('.' + focus.column) || row.querySelector('.pattern-piece-label'));
+    if (target) target.focus();
+  }
+
+  // US-135 E2E defect 1: keys the open panel owns outright, the same contract
+  // as an open toolbar menu (BOARD_MENU_OWNED_KEYS). Selecting a piece by its
+  // name leaves the whole piece selected, so these keys reaching the board
+  // router meant Tab cycled the nudge point instead of moving focus and the
+  // arrows moved one point of one of the piece's lines. Tab keeps its native
+  // focus order; the arrows walk the list (Up/Down/Home/End within a column,
+  // Left/Right across a row's controls). Modifier chords (Cmd+Z…) and Escape
+  // still reach their usual listeners; Space and Enter are not stopped here
+  // because the board router lets a keyboard-focused button keep them.
+  const PATTERN_PIECES_OWNED_KEYS = ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Tab'];
+
+  function onPatternPiecesPanelKeyDown(event) {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (!PATTERN_PIECES_OWNED_KEYS.includes(event.key)) return;
+    event.stopPropagation();
+    const target = event.target;
+    if (event.key === 'Tab' || !target || target.tagName === 'SELECT') return;
+    const row = target.closest('.pattern-piece-row');
+    if (!row || !el.patternPiecesBody || !el.patternPiecesBody.contains(row)) return;
+    const usable = node => !node.disabled && !node.hidden && node.getClientRects().length > 0;
+    let next = null;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      const controls = Array.from(row.querySelectorAll('input, button')).filter(usable);
+      next = controls[controls.indexOf(target) + (event.key === 'ArrowRight' ? 1 : -1)] || null;
+    } else {
+      const column = ['pattern-piece-checkbox', 'pattern-piece-mini-btn'].find(c => target.classList.contains(c)) || 'pattern-piece-label';
+      const items = Array.from(el.patternPiecesBody.querySelectorAll('.pattern-piece-row'))
+        .map(r => r.querySelector('.' + column)).filter(node => node && usable(node));
+      const i = items.indexOf(target);
+      if (event.key === 'Home') next = items[0];
+      else if (event.key === 'End') next = items[items.length - 1];
+      else if (event.key === 'ArrowDown') next = items[Math.min(items.length - 1, i + 1)];
+      else next = items[Math.max(0, i - 1)];
+    }
+    event.preventDefault();
+    if (next && next !== target) {
+      next.focus();
+      next.scrollIntoView({ block: 'nearest' });
+    }
   }
 
   // Selects the group's annotations on the board so the existing multi-select
@@ -22507,8 +22660,10 @@ const BOM_MATERIAL_LIBRARY = [
     return b;
   }
 
-  // Rebuilt on open and after Apply/Simplify, not every generic updateUI.
-  // Simplify passes the current keep set so it cannot reset pending removals.
+  // Rebuilt on open and after Apply, and re-synced (syncPatternPiecesPanelToBoard)
+  // after any history step that changes the piece list — not every generic
+  // updateUI. Re-syncs pass the current keep set so they cannot reset pending
+  // removals.
   // Phase 3 (ADR 0091, owner decision 2): the "keep quality curves" import
   // toggle lives in this panel because this is where a TD looks at what an
   // import produced. It applies to the NEXT import (nothing can be added back
@@ -22525,6 +22680,7 @@ const BOM_MATERIAL_LIBRARY = [
     syncPatternPiecesImportOptions();
     const groups = patternPieceGroups();
     if (!groups.length) { closePatternPiecesPanel(); return; }
+    lastPatternPiecesFingerprint = patternPiecesFingerprint(groups);
     if (el.patternPiecesCount) {
       el.patternPiecesCount.textContent = groups.length + (groups.length === 1 ? ' piece' : ' pieces');
     }
@@ -22540,6 +22696,7 @@ const BOM_MATERIAL_LIBRARY = [
     for (const g of groups) {
       const row = document.createElement('div');
       row.className = 'pattern-piece-row';
+      patternPieceRowGroup.set(row, g.groupId);
 
       const box = document.createElement('input');
       box.type = 'checkbox';
@@ -22605,7 +22762,7 @@ const BOM_MATERIAL_LIBRARY = [
       // straight segments — same outline, fewer annotations. Re-renders
       // (not just updates the count span) because the merge changes which
       // annotation ids belong to this row's "Select" button.
-      advanced.appendChild(patternPieceMiniBtn('Simplify', 'Merge redundant collinear points in this piece’s straight lines — same outline, fewer segments',
+      const simplifyBtn = patternPieceMiniBtn('Simplify', 'Merge redundant collinear points in this piece’s straight lines — same outline, fewer segments',
         () => {
           const result = simplifyPieceGroup(g.groupId);
           if (!result.chains) { showToast('Nothing to simplify — no redundant collinear points found.'); return; }
@@ -22614,8 +22771,12 @@ const BOM_MATERIAL_LIBRARY = [
           if (typeof requestRender === 'function') requestRender();
           showToast('Simplified ' + result.chains + (result.chains === 1 ? ' run' : ' runs')
             + ', removed ' + result.removed + (result.removed === 1 ? ' point.' : ' points.'));
-          renderPatternPiecesPanel(keep);
-        }));
+          // pushHistoryIfChanged above already re-synced the rows (keeping
+          // this panel's unchecks and the focused Simplify button); a second,
+          // unconditional rebuild here would drop that focus again.
+          syncPatternPiecesPanelToBoard();
+        });
+      advanced.appendChild(simplifyBtn);
       labelWrap.appendChild(advanced);
       body.appendChild(row);
     }
@@ -22640,6 +22801,7 @@ const BOM_MATERIAL_LIBRARY = [
       });
     }
     if (el.patternPiecesCloseBtn) el.patternPiecesCloseBtn.addEventListener('click', closePatternPiecesPanel);
+    if (el.patternPiecesPanel) el.patternPiecesPanel.addEventListener('keydown', onPatternPiecesPanelKeyDown);
     const keepQv = document.getElementById('patternPiecesKeepQvChk');
     if (keepQv) {
       keepQv.addEventListener('change', () => {
@@ -23278,6 +23440,7 @@ const BOM_MATERIAL_LIBRARY = [
       if (e.key === 'Escape' && isPatternPiecesPanelOpen()) closePatternPiecesPanel();
     });
     document.addEventListener('paste', onPasteEvent);
+    document.addEventListener('focusin', noteFocusOrigin, true);
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
     window.addEventListener('resize', resizeCanvas);
@@ -23349,11 +23512,15 @@ const BOM_MATERIAL_LIBRARY = [
   function openLineStyleMenu() {
     if (el.stitchesBtn.disabled) return;
     el.stitchesMenu.hidden = false;
+    // US-135 E2E defect 4: the narrow, scrolling toolbar strip clips this
+    // list like the other drop-downs; see placeBoardToolbarDropdown.
+    placeBoardToolbarDropdown(el.stitchesMenu, el.stitchesBtn);
     el.stitchesBtn.setAttribute('aria-expanded', 'true');
   }
 
   function closeLineStyleMenu() {
     el.stitchesMenu.hidden = true;
+    releaseBoardToolbarDropdown(el.stitchesMenu);
     el.stitchesBtn.setAttribute('aria-expanded', 'false');
   }
 
@@ -23845,6 +24012,9 @@ const BOM_MATERIAL_LIBRARY = [
     const snap = makeSnapshot();
     state.history.past = [{ snapshot: snap, fingerprint: snapshotFingerprint(snap) }];
     state.history.future = [];
+    // A new board (Open project, a DXF import, Reset Board) replaces the piece
+    // list wholesale; an open Pattern pieces panel must not keep the old one.
+    if (typeof syncPatternPiecesPanelToBoard === 'function') syncPatternPiecesPanelToBoard();
   }
 
   function makeSnapshot() {
@@ -23941,6 +24111,9 @@ const BOM_MATERIAL_LIBRARY = [
     }
     state.history.future = [];
     updateUI();
+    // US-135 E2E defect 3: a committed change can add or remove pieces
+    // (Delete, paste, Remove unchecked); the open Pattern pieces panel follows.
+    if (typeof syncPatternPiecesPanelToBoard === 'function') syncPatternPiecesPanelToBoard();
     if (typeof scheduleAutosave === 'function') scheduleAutosave();
   }
 
@@ -24039,6 +24212,9 @@ const BOM_MATERIAL_LIBRARY = [
 
     state.history.restoring = false;
     updateUI();
+    // US-135 E2E defect 3: Undo/Redo can bring pieces back or take them away;
+    // the open Pattern pieces panel used to keep listing the old set.
+    if (typeof syncPatternPiecesPanelToBoard === 'function') syncPatternPiecesPanelToBoard();
     requestRender();
     if (typeof scheduleAutosave === 'function') scheduleAutosave();
   }
@@ -28872,6 +29048,16 @@ function onWheel(e) {
       }
     }
 
+    // US-135 E2E defect 2: Space activates a control the TD reached BY
+    // KEYBOARD (Tab, arrows in a menu or the Pattern pieces panel) — the
+    // native button behaviour, which the preventDefault below used to kill
+    // everywhere. A button that merely kept focus after a mouse click is not
+    // keyboard-focused (see noteFocusOrigin), so click-then-hold-Space still
+    // pans exactly as before.
+    if (e.code === 'Space' && !state.spacePan && target && target === keyboardFocusedControl
+        && target.matches('button, summary, a[href], [role="button"], [role="menuitem"], [role="menuitemcheckbox"], [role="tab"]')) {
+      return;
+    }
     if (e.code === 'Space' && !state.spacePan) {
       state.spacePan = true;
       document.body.classList.add('space-pan');
@@ -29138,6 +29324,20 @@ function onWheel(e) {
         clearSelection();
       }
     }
+  }
+
+  // US-135 E2E defect 2: the control that last received focus BY KEYBOARD —
+  // Tab, or a script moving focus in answer to a key (arrows in a menu or the
+  // Pattern pieces panel) — recorded as focus ARRIVES, from :focus-visible.
+  // It cannot be read at keydown time instead: Chrome starts matching
+  // :focus-visible on any key press, so a button focused by a mouse click
+  // reads as keyboard-focused the moment Space goes down, and click-then-
+  // hold-Space would stop panning (measured in the US-135 trusted-input E2E).
+  let keyboardFocusedControl = null;
+
+  function noteFocusOrigin(event) {
+    const node = event.target;
+    keyboardFocusedControl = node && typeof node.matches === 'function' && node.matches(':focus-visible') ? node : null;
   }
 
   function onKeyUp(e) {
