@@ -263,7 +263,7 @@
       // armed shape, so the one control still on screen says what a press will
       // do. Truncated: a TD can name a shape anything.
       let label = TOOL_MENU_LABELS[state.tool];
-      if (state.tool === 'stamp' && typeof getActiveShapeStamp === 'function') {
+      if (state.tool === 'stamp') {
         const stamp = getActiveShapeStamp();
         label = stamp
           ? (stamp.name.length > 18 ? stamp.name.slice(0, 17) + '…' : stamp.name)

@@ -107,7 +107,7 @@
     {
       const detN = state.autoMode && state.autoMode.detection;
       const paths = detN && detN.contours && detN.contours.paths;
-      const traced = (typeof matchContourForCurve === 'function' && paths && paths.length)
+      const traced = (paths && paths.length)
         ? matchContourForCurve(paths, neck17start, neck17end, { preferThin: true })
         : null;
       // POM 17 keeps the plain range behaviour (short neckline arc, tame
@@ -153,7 +153,7 @@
     {
       const detA = state.autoMode && state.autoMode.detection;
       const pathsA = detA && detA.contours && detA.contours.paths;
-      const tracedA = (typeof matchContourForCurve === 'function' && pathsA && pathsA.length)
+      const tracedA = (pathsA && pathsA.length)
         ? matchContourForCurve(pathsA, arm18start, arm18end, { preferThin: true })
         : null;
       if (traceIsUsable(tracedA) && traceShapeOk(tracedA, arm18start, arm18end)) {

@@ -1,12 +1,11 @@
 // US-104: DXF import — the BOARD layer. The pure parse layer (tokenizer,
 // section scan, converters, INSERT resolution, decoding, marks, legacy
-// grouping, placement transform, parseDxfDocument) moved to
-// src/dxf/parse/dxf-parse.js in US-124 Phase 5 so dxf-worker.js can run it
-// off the main thread; this part keeps everything that mutates state:
-// annotation building, the one-shot board mutation (importDxfText /
-// dxfPlaceParsedDocument), the measure-session hand-off, the toast, and the
-// pre-placement picker + worker hand-offs. Source part for app.js. Run
-// `npm run build` after editing.
+// grouping, placement transform, dxfParseDocumentAndModel) lives in
+// src/dxf/parse/ (split out in US-124 Phase 5; `npm run check` keeps it free
+// of Board state); this part keeps everything that mutates state: annotation
+// building, the one-shot board mutation (importDxfText /
+// dxfPlaceParsedDocument), the measure-session hand-off and the toast.
+// Source part for app.js. Run `npm run build` after editing.
 
   // ---- Board mutation (real annotations, real state) -------------------------
 
@@ -55,7 +54,7 @@
   }
 
   // (dxfFormatCount lives in the pure parse layer, src/dxf/parse/dxf-parse.js —
-  // parseDxfDocument's total-cap message uses it too, in the worker.)
+  // dxfParseDocumentAndModel's total-cap message uses it too.)
 
   // Phase 3: the skip summary names what was skipped (quality-curve twins,
   // exact duplicates, points by ASTM class, annotation text) instead of
@@ -82,92 +81,36 @@
     return parts.length ? 'Skipped: ' + parts.join(', ') + '.' : '';
   }
 
-  // The one entry point the Tools-menu button / test hooks call. `rect`
+  // The one entry point File ▸ Open project… / test hooks call. `rect`
   // defaults to the real board viewport; tests may pass a fake one.
-  // `extra` (Phase 4): `{ excludeInstances }` chosen in the pre-placement
-  // picker; the picker calls back into this same function with it.
-  function importDxfText(text, rect, fileName, extra) {
+  // A rejected file (binary, corrupt, empty, or over DXF_TOTAL_OUTPUT_CAP)
+  // changes nothing and says why in a toast.
+  function importDxfText(text, rect, fileName) {
     // Phase 3: the import options travel with the source so the native
-    // measurement model (built below and again on every project reopen)
-    // drops exactly the same twins — and, Phase 4, skips exactly the same
-    // instances — the board did.
+    // measurement model rebuilt on every project reopen drops exactly the
+    // same twins the board did.
     const importOptions = {
       keepQualityCurves: !!(state.dxfImportOptions && state.dxfImportOptions.keepQualityCurves),
-      excludeInstances: (extra && Array.isArray(extra.excludeInstances)) ? extra.excludeInstances.slice() : [],
-      // Phase 6: always the current pipeline for a real import. `1` is a
-      // test-only door (debug hook) that builds a board the way the pre-ADR-
-      // 0091 code did, so the reopen-compatibility suite has a genuine v1
-      // project to open without a checked-in binary fixture.
-      pipelineVersion: (extra && extra.pipelineVersion === 1) ? 1 : DXF_PIPELINE_VERSION,
     };
-    // Phase 5: route. A file with more top-level INSERTs than
-    // DXF_PATTERN_BATCH_THRESHOLD (or a forced route) parses in dxf-worker.js;
-    // the SAME parse functions run there, and the board mutation below runs
-    // here once the whole result is back. `extra.afterWorkerFailure` marks
-    // the in-thread retry after a worker failure so it cannot loop.
-    const route = (extra && extra.afterWorkerFailure)
-      ? { useWorker: false, reason: extra.afterWorkerFailure, estimate: extra.estimate == null ? null : extra.estimate }
-      : (typeof dxfWorkerRoute === 'function' ? dxfWorkerRoute(text) : { useWorker: false, reason: 'no-worker-client', estimate: null });
-    const started = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    const elapsed = () => Math.round((((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - started) * 10) / 10;
-    if (route.useWorker) {
-      const progress = openDxfImportProgressDialog(fileName, route.estimate, () => {
-        dxfCancelActiveWorkerImport();
-        dxfRecordImportExecution({ engine: 'worker', reason: 'cancelled', estimate: route.estimate, elapsedMs: elapsed(), fileName: fileName || null });
-        showToast('DXF import cancelled — nothing was placed.');
-      });
-      dxfWorkerParse(text, importOptions, (stage, done, total) => progress.update(stage, done, total))
-        .then((result) => {
-          if (progress.isCancelled()) return;
-          progress.close();
-          const execution = { engine: 'worker', reason: 'ok', estimate: route.estimate, elapsedMs: elapsed(), progressEvents: result.progressEvents, fileName: fileName || null };
-          dxfHandleParsedDocument(result.board, result.native, text, rect, fileName, importOptions, execution);
-        })
-        .catch((error) => {
-          if (error && error.message === 'cancelled') return;
-          progress.close();
-          if (typeof dxfMarkWorkerBroken === 'function') dxfMarkWorkerBroken();
-          const reason = 'worker-failed: ' + (error && error.message ? error.message : error);
-          console.warn('DXF import: ' + reason + '; parsing on the main thread for the rest of this session.');
-          importDxfText(text, rect, fileName, Object.assign({}, extra || {}, { afterWorkerFailure: reason, estimate: route.estimate }));
-        });
-      return { ok: false, reason: 'pending-worker', pending: true, estimate: route.estimate };
-    }
-    const parsed = parseDxfDocument(text, importOptions);
-    const execution = { engine: 'main-thread', reason: route.reason, estimate: route.estimate, elapsedMs: elapsed(), fileName: fileName || null };
-    return dxfHandleParsedDocument(parsed, null, text, rect, fileName, importOptions, execution);
-  }
-
-  // Shared by both routes: rejection handling (the total-cap picker, the
-  // toast) and then the one board mutation. `precomputedNative` is the
-  // worker's parseDxfNativeModel result; null on the synchronous path.
-  function dxfHandleParsedDocument(parsed, precomputedNative, text, rect, fileName, importOptions, execution) {
-    if (execution) dxfRecordImportExecution(execution);
+    // ONE parse: the board document and the native measurement model are two
+    // views of it (ADR 0105 follow-up), so Pattern Measure reads exactly the
+    // pieces the board draws.
+    const parseStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    const both = dxfParseDocumentAndModel(text, importOptions);
+    const parseDurationMs = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - parseStartedAt;
+    const parsed = both.board;
     if (!parsed.ok) {
-      if (parsed.reason === 'total-cap' && parsed.overCap && typeof openDxfPatternPickerDialog === 'function') {
-        // Phase 4 (owner decision 3): never turn the TD away — let them pick
-        // which placement instances (sizes / pieces) to place. The dialog
-        // re-enters importDxfText with the exclusions; cancel leaves the
-        // board untouched.
-        openDxfPatternPickerDialog(parsed.overCap, {
-          fileName,
-          alreadyExcluded: importOptions.excludeInstances,
-          onConfirm: (excludeInstances) => importDxfText(text, rect, fileName, { excludeInstances }),
-          onCancel: () => showToast('DXF import cancelled — nothing was placed.'),
-        });
-        return { ok: false, reason: 'total-cap', pending: true, overCap: parsed.overCap, message: parsed.message };
-      }
       const toastMsg = [parsed.message, dxfBucketsToast(parsed.buckets)].filter(Boolean).join(' ');
       showToast(toastMsg);
       return { ok: false, reason: parsed.reason, message: parsed.message, buckets: parsed.buckets || null };
     }
-    return dxfPlaceParsedDocument(parsed, precomputedNative, text, rect, fileName, importOptions, execution);
+    return dxfPlaceParsedDocument(parsed, both.native, text, rect, fileName, importOptions, parseDurationMs);
   }
 
-  // The one board mutation, identical for both routes: annotations, labels,
-  // meta, selection, the native measure session, the durable source, one
-  // history push, the toast, the panel.
-  function dxfPlaceParsedDocument(parsed, precomputedNative, text, rect, fileName, importOptions, execution) {
+  // The one board mutation: annotations, labels, meta, selection, the native
+  // measure session, the durable source, one history push, the toast, the
+  // panel.
+  function dxfPlaceParsedDocument(parsed, nativeModel, text, rect, fileName, importOptions, parseDurationMs) {
     const viewportRect = rect || getViewportRect();
     // US-127 / ADR 0102: frame the pieces that are the same order of size as
     // each other, not the raw extent of every coordinate in the file. See
@@ -231,11 +174,9 @@
           quantity: annotation ? annotation.quantity : null,
           kind: pattern ? pattern.kind : null,
           orphan: !!(pattern && pattern.orphan),
-          boundaryLayer: pattern ? pattern.boundaryLayer : null,
           classCounts: pattern ? clone(pattern.classCounts) : {},
           notchChains: pattern ? pattern.notchChains : 0,
           dropped: pattern ? clone(pattern.dropped) : { exact: 0, qvTwin: 0 },
-          totalSegCount: pattern ? pattern.totalSegCount : piece.length,
         };
       }
       // One sourceImageId per PIECE (not per segment), matching
@@ -245,9 +186,7 @@
       // every other sketch-element source.
       const pieceBounds = dxfBoundsOfPoints(pieceAnns.flatMap(a => a.type === 'straight'
         ? [a.start, a.end] : [a.start, a.control1, a.control2, a.end]));
-      const owner = (typeof bgTopImageAt === 'function')
-        ? bgTopImageAt({ x: pieceBounds.x + pieceBounds.width / 2, y: pieceBounds.y + pieceBounds.height / 2 })
-        : null;
+      const owner = bgTopImageAt({ x: pieceBounds.x + pieceBounds.width / 2, y: pieceBounds.y + pieceBounds.height / 2 });
       for (const ann of pieceAnns) {
         if (owner) ann.sourceImageId = owner.id;
         state.annotations.push(ann);
@@ -259,25 +198,21 @@
     state.selectedAnnotationIds = allNewIds;
     state.templateGroupEditId = null;
     // US-105: (re)build the native-coordinate measure session from the SAME
-    // text and the SAME bounds/transform just used for the board
+    // parse and the SAME bounds/transform just used for the board
     // annotations above, so Pattern Measure's overlay is pixel-aligned with
     // what actually got drawn. Reset first — opening another DXF must never
-    // leave a prior session's measurements dangling over new geometry.
+    // leave a prior session's measurements dangling over new geometry. The
+    // native model is the board's own pieces, so this cannot fail here.
     resetDxfMeasureSession();
-    const measureSession = startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNative || null, { quietFailure: true });
-    // ADR 0088: only a successful native-model build becomes the durable,
-    // newest measurable source. A failed native build remains fail-closed.
-    if (measureSession) {
-      setDxfPatternSource(makeDxfPatternSource(
-        text, fileName, bounds, transform,
-        pieceFirstAnnotationIds, pieceAnnotationIds, groupIds, importOptions
-      ));
-    } else {
-      clearDxfPatternSource();
-    }
+    const measureSession = startDxfMeasureSession(nativeModel, bounds, transform, pieceFirstAnnotationIds, { parseDurationMs });
+    // ADR 0088: the newest import is the durable, measurable source.
+    setDxfPatternSource(makeDxfPatternSource(
+      text, fileName, bounds, transform,
+      pieceFirstAnnotationIds, pieceAnnotationIds, groupIds, importOptions
+    ));
     pushHistoryIfChanged();
-    if (typeof updateUI === 'function') updateUI();
-    if (typeof requestRender === 'function') requestRender();
+    updateUI();
+    requestRender();
 
     const pieceCount = parsed.pieces.length;
     const pieceWord = pieceCount === 1 ? 'piece' : 'pieces';
@@ -297,35 +232,27 @@
     // ADR 0073: a guessed unit rides on the import toast itself, not a
     // separate earlier toast — toast.js's fair-reading queue would swap a
     // separate warning away after ~900ms in favor of this success message.
-    // Guarded: startDxfMeasureSession can fail and leave the session null
-    // (it shows its own explanation in that case).
     // US-126: three distinct things to say, not one. A declared unit says
     // nothing; an INFERRED one names what the geometry decided (so the TD can
     // disagree with a real claim rather than a silent default); only a file
     // whose size fits neither candidate still falls back to the old warning.
-    const unitStatus = measureSession ? measureSession.source.unitSource : null;
+    const unitStatus = measureSession.source.unitSource;
     const unitWarning = unitStatus === 'dxf-header' ? ''
       : unitStatus === 'inferred-geometry'
         ? ' Units auto-scaled to ' + ((measureSession.source.unitDiagnostic
           && measureSession.source.unitDiagnostic.inferredKey) || 'in')
           + ' from piece size (file declares none) — change under Pattern ▸ File units if wrong.'
-        : measureSession
-          ? ' Units assumed (in) — set them under Pattern ▸ File units if the file is mm/cm.'
-          : '';
-    // A failed native build rides on this toast for the same reason.
-    const measureFailure = measureSession ? '' : (dxfMeasureLastFailureMessage() || '');
+        : ' Units assumed (in) — set them under Pattern ▸ File units if the file is mm/cm.';
     showToast('Imported ' + pieceCount + ' ' + pieceWord + ' (' + allNewIds.length + ' ' + lineWord + ').'
-      + (measureFailure ? ' ' + measureFailure : '')
       + (skipMsg ? ' ' + skipMsg : '') + unitWarning);
     // ADR 0070: a grading-nest file places every chosen size's piece at the
     // same board position (see ADR 0069's Context) — more than one piece
     // means the TD likely just imported an overlapping stack of sizes and
     // needs the Pattern Pieces panel to tell them apart, not a single
     // "1 piece" import where there is nothing to pick between.
-    if (pieceCount > 1 && typeof openPatternPiecesPanel === 'function') openPatternPiecesPanel();
+    if (pieceCount > 1) openPatternPiecesPanel();
     return {
       ok: true,
-      execution: execution || null,
       pieceCount,
       annotationCount: allNewIds.length,
       annotationIds: allNewIds.slice(),

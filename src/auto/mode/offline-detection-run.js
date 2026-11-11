@@ -1,6 +1,6 @@
 // Auto Mode's "Detect Sketch" edge: the DOM / state glue wrapped around the
 // pure detection pipeline. Runs the detector from the toolbar (toasts,
-// state.autoMode.* writes, telemetry, history), seeds and relocates anchors,
+// state.autoMode.* writes, history), seeds and relocates anchors,
 // recognizes extra board photos as auxiliary views (US-039 / US-049), runs the
 // deferred Potrace trace, lets the TD confirm ambiguous view roles, and reads
 // the ?cvDebug=1 / ?freeCv=1 URL flags and picks the OpenCV adapter.
@@ -41,10 +41,6 @@
       showToast('Source image is not ready yet — try again in a moment.');
       return;
     }
-
-    recordAutoTelemetryEvent('detect_clicked', {
-      sourceImageId: sourceImage.id,
-    });
 
     // ---- Edge: status flip + render so the chip updates before the scan ----
     state.autoMode.status = 'detecting';
@@ -135,26 +131,16 @@
     // "back" vs "front_inner" is genuinely ambiguous from the sketch — let the
     // TD confirm/correct the roles BEFORE anchors are seeded, so a corrected
     // front/back/inner assignment places anchors on the right panels. Awaited so
-    // seeding uses the confirmed roles. In test/label modes it returns
-    // immediately (see maybePromptForViewRoles) and seeding proceeds with the
+    // seeding uses the confirmed roles. In headless-suite and label modes it
+    // returns immediately (see maybePromptForViewRoles) and seeding proceeds with the
     // auto roles, so headless suites are unaffected.
     await maybePromptForViewRoles(detection, sourceImage);
     seedAndRelocateAnchors(detection, sourceImage);
-    recordAutoTelemetryEvent('anchor_seeded', {
-      sourceImageId: sourceImage.id,
-      count: state.autoMode.anchors.length,
-      duration_ms: detection.durationMs,
-    });
     state.autoMode.anchorSelectedId = null;
     state.autoMode.anchorsHidden = false;
     state.autoMode.hiddenAnchorKinds = []; // US-038: fresh detect shows all anchors
     state.autoMode.status = 'detected';
     state.autoMode.lastError = null;
-    recordAutoTelemetryEvent('detect_finished', {
-      sourceImageId: sourceImage.id,
-      duration_ms: detection.durationMs,
-      status: 'ok',
-    });
 
     pushHistoryIfChanged();
     updateUI();
@@ -308,15 +294,11 @@
           (typeof performance !== 'undefined' ? performance.now() : Date.now()) - traceT0
         );
         detection.engine += '+potrace';
-        // Phase 4: normalize the traced outlines into reusable curve candidates
-        // (one shared classification pass) and complete the contour-evidence
-        // summary. Both are the deferred half of extractContours' bundle —
-        // shape evidence only, no geometry decision.
-        detection.curveCandidates = buildContourCurveCandidates(traced, detection);
+        // Phase 4: complete the contour-evidence summary — the deferred half
+        // of extractContours' bundle, shape evidence only, no geometry decision.
         if (detection.contourEvidence) {
           detection.contourEvidence.traced = true;
           detection.contourEvidence.contourCount = traced.paths.length;
-          detection.contourEvidence.curveCandidateCount = detection.curveCandidates.length;
         }
       }
     } catch (err) {
@@ -329,7 +311,7 @@
     if (!detection.viewRoleReviewRequired && !detection.views.some(v => !v.viewRole || v.viewRole === 'unknown')) return;
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search || '');
-    if (params.has('autoDraft') || params.has('smoke') || params.has('learningTests') || params.has('meaningTests') || params.has('evidenceTests') || params.has('golden') || params.has('accuracy') || params.has('invariants') || params.has('contract') || params.get('label') === '1') return;
+    if (params.has('smoke') || params.has('golden') || params.has('accuracy') || params.has('invariants') || params.has('contract') || params.get('label') === '1') return;
     const roles = await askForViewRoles(detection, sourceImage);
     if (!roles || !roles.length) return;
     for (let i = 0; i < detection.views.length && i < roles.length; i += 1) {
@@ -355,7 +337,7 @@
   // the legacy letter-code window.prompt only where the dialog can't run
   // (no DOM dialog shell available, e.g. stripped-down test harnesses).
   async function askForViewRoles(detection, sourceImage) {
-    if (typeof openViewRolesDialog === 'function' && typeof document !== 'undefined' && document.body) {
+    if (typeof document !== 'undefined' && document.body) {
       return openViewRolesDialog({ views: detection.views, sourceImage });
     }
     if (typeof window.prompt !== 'function') return null;

@@ -42,7 +42,7 @@
   // notification — losing it silently would defeat the point).
   function maybeOfferAutosaveRestore() {
     if (typeof document === 'undefined') return;
-    if (hasUnsavedWork()) return; // The URL / demo loader already put work on the board — do not clobber.
+    if (hasUnsavedWork()) return; // Work is already on the board — do not clobber.
     const record = readAutosave();
     if (!record) return;
     const s = record.snapshot && record.snapshot.state;
@@ -52,16 +52,14 @@
     // destructive, not merely quiet: a false here falls through to clearAutosave()
     // and deletes the record. Teaching only hasUnsavedWork about notes would have
     // meant a notes-only board autosaves correctly and is then wiped at next boot.
+    // A construction or BOM section counts as content outright: its row edits can
+    // only be judged against the live seed (hasMeaningful*Work), and the record
+    // was written only because hasUnsavedWork() was true when it was saved.
     const hasContent = s && ((Array.isArray(s.annotations) && s.annotations.length)
       || (Array.isArray(s.images) && s.images.length)
       || (Array.isArray(s.notes) && s.notes.length)
-      || (s.construction && ((s.construction.callouts || []).length
-        || (s.construction.images && ['solid', 'lace'].some(sheet => ['outer', 'inner'].some(view =>
-          ((((s.construction.images[sheet] || {})[view]) || []).length))))
-        || (typeof hasMeaningfulConstructionWork === 'function' && s.construction)))
-      || (s.bom && ((s.bom.callouts || []).length
-        || (s.bom.images && ((s.bom.images.solid || []).length || (s.bom.images.lace || []).length))
-        || (typeof hasMeaningfulBomWork === 'function' && s.bom))));
+      || s.construction
+      || s.bom);
     if (!hasContent) { clearAutosave(); return; }
     showAutosaveRestoreBanner(record);
   }

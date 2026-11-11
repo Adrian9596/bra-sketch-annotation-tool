@@ -73,7 +73,7 @@
       return;
     }
 
-    if ((typeof hasUnsavedWork === 'function' ? hasUnsavedWork() : (state.annotations.length || state.images.length)) &&
+    if (hasUnsavedWork() &&
         !window.confirm('Open this project? Your current board will be replaced. Save it first if you want to keep it.')) {
       return;
     }
@@ -158,7 +158,7 @@
     // Silence autosave while we rewrite state in bulk; any edit after
     // load completes will re-arm it via pushHistoryIfChanged. Wrapped
     // in try/finally so autosave always resumes even on a failed load.
-    if (typeof suspendAutosave === 'function') suspendAutosave();
+    suspendAutosave();
     try {
       const s = project.state;
 
@@ -282,28 +282,14 @@
         ? clone(s.sizeSelection) : null;
       // US-080: mpLoadProjectState pulls the sketch bytes out into the module
       // map and leaves state.mainPage byte-free, the way BOM images load.
-      if (typeof mpLoadProjectState === 'function') mpLoadProjectState(s.mainPage);
-      else {
-        state.mainPage = (s.mainPage && typeof s.mainPage === 'object')
-          ? clone(s.mainPage) : null;
-        if (typeof ensureMainPage === 'function') ensureMainPage();
-      }
-      if (typeof renderMainPage === 'function') renderMainPage();
-      if (typeof ccLoadProjectState === 'function') await ccLoadProjectState(s.construction, s.images);
-      else {
-        state.construction = (s.construction && typeof s.construction === 'object')
-          ? clone(s.construction) : null;
-        if (typeof ensureConstruction === 'function') ensureConstruction(s.images);
-      }
-      if (typeof renderConstruction === 'function') renderConstruction();
-      if (typeof bmLoadProjectState === 'function') await bmLoadProjectState(s.bom);
-      else {
-        state.bom = (s.bom && typeof s.bom === 'object') ? clone(s.bom) : null;
-        if (typeof ensureBom === 'function') ensureBom();
-      }
-      if (typeof renderBom === 'function') renderBom();
+      mpLoadProjectState(s.mainPage);
+      renderMainPage();
+      await ccLoadProjectState(s.construction, s.images);
+      renderConstruction();
+      await bmLoadProjectState(s.bom);
+      renderBom();
       state.preview = (s.preview && typeof s.preview === 'object') ? clone(s.preview) : null;
-      if (typeof ensurePreviewPage === 'function') ensurePreviewPage();
+      ensurePreviewPage();
 
       // Source-bearing projects open measure-ready in Manual + Sketch Focus.
       // Legacy projects omit this additive field and retain POM Focus.
@@ -322,8 +308,8 @@
       requestRender();
       // Loaded state supersedes anything in the autosave slot; drop the
       // stale copy so a next-launch restore prompt does not resurface it.
-      if (typeof clearAutosave === 'function') clearAutosave();
+      clearAutosave();
     } finally {
-      if (typeof resumeAutosave === 'function') resumeAutosave();
+      resumeAutosave();
     }
   }

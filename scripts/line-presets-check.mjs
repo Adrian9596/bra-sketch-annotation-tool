@@ -267,10 +267,6 @@ async function main() {
 
   check(await s.eval(HARNESS) === 'ready', 'harness did not install');
 
-  // Learning OFF before any synthetic edit: a suite that nudges lines around
-  // otherwise feeds the anchor buckets and drifts the real detector.
-  await s.eval(`window.__braAutoModeDebug.learning.setEnabled(false)`);
-
   // ---- Setup: one white sketch, Manual Mode --------------------------------
   await s.eval(`(async () => {
     const { d, settle, solidImage } = window.__LP;
@@ -300,7 +296,7 @@ async function main() {
       ['solid', null], ['dashed', null], ['zigzag', null], ['cover', null],
       ['bartack', null], ['zigzag', '8'], ['zigzag', '   '], ['nonsense-style', null],
     ];
-    cases.forEach(([style, text], i) => d.styleEvidence.pushAnnotation(mk(style, text, i)));
+    cases.forEach(([style, text], i) => d.pushAnnotation(mk(style, text, i)));
     await settle();
     const measured = new Set(d.getMeasurementAnnIds());
     const drawn = new Set(d.getAnnotations().map(a => a.id));
@@ -375,7 +371,7 @@ async function main() {
     const { d, settle, click } = window.__LP;
     const img = d.getImages()[0];
     // A stitch mark that happens to be sitting on sequence number 5.
-    d.styleEvidence.pushAnnotation({
+    d.pushAnnotation({
       id: 9500, seq: 5, type: 'straight', style: 'zigzag', color: 'red',
       arrowType: 'none', lineWidth: 2.5,
       start: { x: img.x + 300, y: img.y + 240 }, end: { x: img.x + 400, y: img.y + 240 },
@@ -424,7 +420,7 @@ async function main() {
     // hidden at all (isAnnHidden is now role-aware, so hiding cannot strand a
     // line with no row left to un-hide it from), which is precisely why hiding
     // them stopped clearing the board.
-    for (const a of d.getAnnotations()) d.styleEvidence.simulateTdDelete(a.id);
+    for (const a of d.getAnnotations()) d.removeAnnotation(a.id);
     await settle();
     const line = await drawLine(320, 300, 470, 300);
     await deselect();
@@ -782,7 +778,7 @@ async function main() {
   const otherConsumers = await s.eval(`(async () => {
     const { d, settle } = window.__LP;
     const img = d.getImages()[0];
-    const mk = (id, seq, style, y) => d.styleEvidence.pushAnnotation({
+    const mk = (id, seq, style, y) => d.pushAnnotation({
       id, seq, type: 'straight', style, color: 'red',
       arrowType: 'none', lineWidth: 2.5,
       start: { x: img.x + 120, y: img.y + y }, end: { x: img.x + 260, y: img.y + y },
@@ -809,7 +805,7 @@ async function main() {
     // on the deleted POM's number: with the filter in place annByPom does not
     // have the key and POM 7 is dropped; without it, the stitch mark
     // masquerades as the redrawn line and POM 7 comes back.
-    // Deleted through the REAL path: simulateTdDelete bypasses deletedPomKeys,
+    // Deleted through the REAL path: removeAnnotation bypasses deletedPomKeys,
     // which is the whole mechanism under test here. Selected through its spec
     // ROW rather than a canvas click — the row is a deterministic target, and
     // a missed click would make the whole section vacuous.
@@ -871,9 +867,9 @@ async function main() {
   check(!workbookPomKeys.includes(String(otherConsumers.freeKey)),
     `control: the workbook drops POM ${otherConsumers.freeKey} too (rows ${workbookPomKeys.join(',')})`);
 
-  // Hide-all and the learning funnel, read AFTER the cross-check above — hiding
-  // changes the exported row set, so the two readings cannot share a moment.
-  const hideAndLearn = await s.eval(`(async () => {
+  // Hide-all, read AFTER the cross-check above — hiding changes the exported
+  // row set, so the two readings cannot share a moment.
+  const hideAllResult = await s.eval(`(async () => {
     const { d, settle } = window.__LP;
 
     // --- Hide all POMs ------------------------------------------------------
@@ -884,34 +880,19 @@ async function main() {
     await settle();
     const exportedAfterHideAll = d.getExportAnnIds();
 
-    // --- The LIVE TD-edit learning funnel -----------------------------------
-    d.learning.setEnabled(true);
-    const construction = d.learning.evaluateManualPomSample(9600, { allowAuto: true });
-    const measurement = d.learning.evaluateManualPomSample(9601, { allowAuto: true });
-    d.learning.setEnabled(false);
-
     return {
       hadHideAll,
       constructionStillDrawn: exportedAfterHideAll.includes(9600),
       measurementHidden: !exportedAfterHideAll.includes(9601),
-      constructionVerdict: construction && construction.status,
-      measurementVerdict: measurement && measurement.status,
     };
   })()`);
-  check(hideAndLearn.hadHideAll === true,
+  check(hideAllResult.hadHideAll === true,
     'precondition: the Hide-all control rendered, or the next two checks are vacuous');
-  check(hideAndLearn.measurementHidden === true,
+  check(hideAllResult.measurementHidden === true,
     '"Hide all POMs" does hide a real measurement line');
-  check(hideAndLearn.constructionStillDrawn === true,
+  check(hideAllResult.constructionStillDrawn === true,
     '"Hide all POMs" must NOT hide a construction line — it is not a POM, and hiding it '
     + 'would strand it with no spec row left to un-hide it from');
-  check(hideAndLearn.measurementVerdict !== 'skipped',
-    `control: the live TD-edit learning funnel does return a verdict for a measurement `
-    + `line (got ${JSON.stringify(hideAndLearn.measurementVerdict)}), so the next check is not vacuous`);
-  check(hideAndLearn.constructionVerdict === 'skipped',
-    `the live TD-edit learning funnel must refuse a construction line — otherwise dragging `
-    + `a restyled auto line writes the stitch path into that POM's anchor bucket, and the `
-    + `learning store outlives the project (got ${JSON.stringify(hideAndLearn.constructionVerdict)})`);
 
   // ---- 7d. A hidden line that becomes construction must not be stranded ----
   //
@@ -1303,10 +1284,10 @@ async function main() {
     `a refused DELETE must not be reported as a refused save — the message is worded per `
     + `action (got ${JSON.stringify(refusedWrite.deleteToast)})`);
 
-  // ---- 11. The two fixes nothing was watching ------------------------------
+  // ---- 11. The fix nothing was watching ------------------------------------
   //
-  // Both were flagged by the second audit as entirely uncovered, and both are
-  // ORDERING/GATING edits whose absence leaves every other assertion green.
+  // Flagged by the second audit as entirely uncovered: a GATING edit whose
+  // absence leaves every other assertion green.
   const uncovered = await s.eval(`(async () => {
     const d = window.__braAutoModeDebug;
     const settle = () => new Promise(r => setTimeout(r, 140));
@@ -1335,34 +1316,7 @@ async function main() {
       await settle();
     }
 
-    // --- Fix 3: deleting a construction line records no ABSENCE evidence ----
-    // The guard sits ABOVE markDeletedAutoAnnotationForEvidence. Moving it back
-    // below leaves deletedPomKeys protected (so section 3 stays green) while
-    // Save Evidence still learns "this style has no POM 16" from a line the TD
-    // declared to be construction.
     const img = d.getImages()[0];
-    const autoish = {
-      id: 9800, seq: 16, type: 'straight', style: 'zigzag', color: 'red',
-      arrowType: 'none', lineWidth: 2.5,
-      start: { x: img.x + 100, y: img.y + 300 }, end: { x: img.x + 240, y: img.y + 300 },
-      control1: null, control2: null, points: [],
-      label: { x: img.x + 170, y: img.y + 292 }, labelManual: false,
-      text: null, value: null, sourceImageId: img.id,
-      auto: true, sourceMode: 'auto-mode', autoRunId: 'suite-run',
-    };
-    d.styleEvidence.pushAnnotation(autoish);
-    await settle();
-    const beforeDeleted = (d.getState().deletedAutoCount !== undefined)
-      ? d.getState().deletedAutoCount : null;
-    document.getElementById('toolSelect').click();
-    await settle();
-    await click(img.x + 170, img.y + 300);
-    const selectedIt = d.getMeasurementAnnIds().indexOf(9800) === -1;
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
-    await settle();
-    const goneFromBoard = !d.getAnnotations().some(a => a.id === 9800);
-    const absenceCandidates = d.styleEvidence.collectCandidates()
-      .filter(c => c && c.pom === '16');
 
     // --- Fix 12: an unpainted callout keeps no grabbable hitbox -------------
     const mark = {
@@ -1373,7 +1327,7 @@ async function main() {
       label: { x: img.x + 170, y: img.y + 314 }, labelManual: false,
       text: null, value: null, sourceImageId: img.id,
     };
-    d.styleEvidence.pushAnnotation(mark);
+    d.pushAnnotation(mark);
     await settle();
     document.getElementById('boardCanvas').dispatchEvent(new MouseEvent('mousedown',
       { clientX: 4, clientY: 4, bubbles: true }));
@@ -1400,7 +1354,7 @@ async function main() {
       label: { x: img.x + 170, y: img.y + 344 }, labelManual: false,
       text: null, value: null, sourceImageId: img.id,
     };
-    d.styleEvidence.pushAnnotation(painted);
+    d.pushAnnotation(painted);
     document.getElementById('toolSelect').click();
     await settle();
     const cp = toClient(painted.label.x, painted.label.y);
@@ -1410,20 +1364,11 @@ async function main() {
     await settle();
 
     return {
-      selectedIt, goneFromBoard,
-      absenceCount: absenceCandidates.length,
-      absenceStatuses: absenceCandidates.map(c => c.tdStatus),
       phantomInteraction: grabbedPhantom ? String(grabbedPhantom.type || grabbedPhantom) : null,
       phantomSelectedId: selectionAfter && selectionAfter.kind === 'annotation' ? selectionAfter.id : null,
       paintedInteraction: grabbedPainted ? String(grabbedPainted.type || grabbedPainted) : null,
     };
   })()`);
-  check(uncovered.goneFromBoard === true,
-    'precondition: the auto-flagged construction line was selected and deleted');
-  check(uncovered.absenceCount === 0,
-    `deleting a construction line must teach learning NOTHING — an "absent-confirmed" record `
-    + `here says the style has no POM 16, from a line the TD had already declared to be `
-    + `construction (got ${uncovered.absenceCount} candidate(s): ${JSON.stringify(uncovered.absenceStatuses)})`);
   check(uncovered.paintedInteraction !== null,
     `control: pressing on a PAINTED callout does grab it (${JSON.stringify(uncovered.paintedInteraction)}) — `
     + `without this the next check passes whenever the press simply misses`);

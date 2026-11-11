@@ -43,14 +43,6 @@
     const input = td.querySelector('input');
     if (input) input.classList.add('is-suggested');
     if (field === 'sizeL') {
-      // Mode B: a fused sketch measurement is a distinct, estimated suggestion.
-      const m = measuredFor(key);
-      if (m) {
-        appendSuggestBadge(td, 'measured · ' + (m.confidence || 'low'), 'library',
-          'Sketch measurement (Mode B, estimated) — detected anchors × view-local scale, fused toward the library median'
-          + ' (k ' + m.k + ', residual ' + (Math.round((m.residual || 0) * 1000) / 10) + '%, library ' + m.library_in + ' in). Type to override.');
-        return;
-      }
       const conf = sug.confidence || 'very_low';
       const rangeIn = (sug.min != null && sug.max != null) ? ' · range ' + sug.min + '–' + sug.max + ' in' : '';
       appendSuggestBadge(td, 'library · ' + conf, 'library',

@@ -1,14 +1,13 @@
 #!/usr/bin/env node
-// Verifies the Tier-0 library-value suggestion layer end to end:
+// Verifies the Tier-0 library-value suggestion layer end to end. The JSON is a
+// shipped, versioned rule file; its generator and source corpus are gone
+// (removed 2026-11-10, ADR 0105), so there is no regeneration check here.
 //   A. auto_mode_rules/sizeL-suggestions.json has the expected shape (18 POMs;
 //      1..14 carry a corpus median, 15-18 are "no data").
-//   B. the committed JSON is up to date with the corpus generator — but only
-//      when the sibling "Measurements 2" corpus is present (skips cleanly
-//      otherwise, mirroring how accuracy-tests skips with no ground truth).
-//   C. in headless Chrome, the panel pre-fills each POM's Size L / TOL from its
+//   B. in headless Chrome, the panel pre-fills each POM's Size L / TOL from its
 //      suggestion (muted + "library" badge), a POM with no data shows blank +
 //      a "no data" badge, and a TD override wins and is reversible.
-import { spawnSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,15 +18,13 @@ import { getFreePort, startStaticServer } from './static-server.mjs';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(scriptDir, '..');
 const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const CORPUS_ROOT = path.resolve(appDir, '../Measurements 2');
-const CORPUS_FILE = path.join(CORPUS_ROOT, 'library/_raw_intake/measurements_size_l.csv');
 
 let failures = 0;
 const cleanupTasks = [];
 
 const REQUIRED_FIELDS = ['concept', 'median', 'min', 'max', 'tol', 'tolType', 'sketchReliable', 'n', 'confidence', 'source'];
 const CONF_SET = new Set(['very_low', 'low', 'medium', 'high']);
-// Mirror of formatSuggestion() in src/ui/spec-panel.js (inches, up to 3 dp).
+// Mirror of formatSuggestion() in src/measurements/spec-values.js (inches, up to 3 dp).
 const fmt = (inchValue) => (inchValue == null ? '' : String(Math.round(inchValue * 1000) / 1000));
 // US-048: mirror the app's inch-mode fraction display (1/16 grid, else decimal)
 // so the panel-input assertions expect what the TD now sees.
@@ -79,18 +76,7 @@ async function main() {
     }
   }
 
-  // ---- B. generator determinism (only when the corpus is present) ----
-  if (!existsSync(CORPUS_FILE)) {
-    console.log('  SKIP B: corpus not found at "Measurements 2" — cannot verify regeneration.');
-  } else {
-    const res = spawnSync(process.execPath, [path.join(scriptDir, 'generate-sizeL-suggestions.mjs'), '--check'],
-      { cwd: appDir, encoding: 'utf8' });
-    check(res.status === 0,
-      'B: committed JSON matches a fresh generation from the corpus',
-      (res.stderr || res.stdout || '').trim());
-  }
-
-  // ---- C. panel behavior in headless Chrome ----
+  // ---- B. panel behavior in headless Chrome ----
   await runBrowserChecks(data);
 
   if (failures > 0) {
@@ -103,7 +89,7 @@ async function main() {
 
 async function runBrowserChecks(data) {
   if (!existsSync(CHROME)) {
-    console.log('  SKIP C: Chrome not found — set CHROME_PATH to run the panel checks.');
+    console.log('  SKIP B: Chrome not found — set CHROME_PATH to run the panel checks.');
     return;
   }
   const started = await startStaticServer(appDir);
@@ -140,20 +126,20 @@ async function runBrowserChecks(data) {
     };
   })()`);
 
-  check(out && out.ok, 'C: debug hooks available');
+  check(out && out.ok, 'B: debug hooks available');
   if (!out || !out.ok) { await session.close(); return; }
 
   const expect5 = fmt(data.poms['5'].median);
   const expectTol5 = fmt(fracToNum(data.poms['5'].tol));
-  check(out.spec5.sizeL === expect5, `C: POM 5 pre-fills library median (${expect5})`, 'got: ' + out.spec5.sizeL);
-  check(out.spec5.tol === expectTol5, `C: POM 5 pre-fills default TOL (${expectTol5})`, 'got: ' + out.spec5.tol);
-  check(out.row5val === fracFmt(data.poms['5'].median), 'C: POM 5 Size L input shows the suggestion as a fraction', 'got: ' + out.row5val);
-  check(out.row5lib, 'C: POM 5 shows a "library" badge');
-  check(out.spec16.sizeL === '', 'C: POM 16 (no data) has an empty Size L', 'got: ' + out.spec16.sizeL);
-  check(out.row16val === '', 'C: POM 16 Size L input is blank');
-  check(out.row16nodata, 'C: POM 16 shows a "no data" badge');
-  check(out.over.sizeL === '9.9' && out.overVal === '9.9', 'C: a TD override wins over the suggestion');
-  check(out.reset.sizeL === expect5, 'C: clearing the override reverts to the suggestion', 'got: ' + out.reset.sizeL);
+  check(out.spec5.sizeL === expect5, `B: POM 5 pre-fills library median (${expect5})`, 'got: ' + out.spec5.sizeL);
+  check(out.spec5.tol === expectTol5, `B: POM 5 pre-fills default TOL (${expectTol5})`, 'got: ' + out.spec5.tol);
+  check(out.row5val === fracFmt(data.poms['5'].median), 'B: POM 5 Size L input shows the suggestion as a fraction', 'got: ' + out.row5val);
+  check(out.row5lib, 'B: POM 5 shows a "library" badge');
+  check(out.spec16.sizeL === '', 'B: POM 16 (no data) has an empty Size L', 'got: ' + out.spec16.sizeL);
+  check(out.row16val === '', 'B: POM 16 Size L input is blank');
+  check(out.row16nodata, 'B: POM 16 shows a "no data" badge');
+  check(out.over.sizeL === '9.9' && out.overVal === '9.9', 'B: a TD override wins over the suggestion');
+  check(out.reset.sizeL === expect5, 'B: clearing the override reverts to the suggestion', 'got: ' + out.reset.sizeL);
 
   await session.close();
 }

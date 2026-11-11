@@ -144,7 +144,7 @@ async function main() {
     const pom = { id: 9601, seq: 6, type: 'straight', style: 'solid', color: 'red', arrowType: 'double',
       lineWidth: 2.5, start: { x: 1200, y: 0 }, end: { x: 1300, y: 0 },
       control1: null, control2: null, points: [], label: { x: 1250, y: -20 }, labelManual: false };
-    d.styleEvidence.pushAnnotation(pom);
+    d.pushAnnotation(pom);
     const before = { shows: d.annotationShowsCallout(9601), geom: JSON.stringify(d.getAnnotations().find(a => a.id === 9601)) };
     document.getElementById('sketchFocusBtn').click();
     const during = { shows: d.annotationShowsCallout(9601), geom: JSON.stringify(d.getAnnotations().find(a => a.id === 9601)) };
@@ -225,7 +225,7 @@ async function main() {
     const pom = { id: 9602, seq: null, purpose: 'sketch-element', type: 'straight', style: 'solid', color: 'black',
       arrowType: 'none', lineWidth: 2, start: { x: 1400, y: 0 }, end: { x: 1500, y: 0 },
       control1: null, control2: null, points: [], label: { x: 1450, y: -20 }, labelManual: false };
-    d.styleEvidence.pushAnnotation(pom);
+    d.pushAnnotation(pom);
     document.getElementById('sketchFocusBtn').click(); // toggle off, into POM Focus
     document.getElementById('undoBtn').click();
     await new Promise(r => setTimeout(r, 80));
@@ -369,7 +369,7 @@ async function main() {
     const existing = { id: 9603, seq: null, purpose: 'sketch-element', type: 'straight', style: 'zigzag', color: 'black',
       arrowType: 'none', lineWidth: 2, start: { x: 1600, y: 0 }, end: { x: 1700, y: 0 },
       control1: null, control2: null, points: [], label: { x: 1650, y: -20 }, labelManual: false };
-    d.styleEvidence.pushAnnotation(existing);
+    d.pushAnnotation(existing);
     document.querySelector('[data-style="zigzag"]').click(); // sets the PENDING draw style
     const pendingBefore = d.getState().drawStyle;
     document.getElementById('sketchFocusBtn').click(); // toggle off, into POM Focus

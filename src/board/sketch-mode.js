@@ -13,7 +13,7 @@
 //     control, and the zigzag/cover/bartack stitch styles — surface only in
 //     Sketch Focus.
 //   - `.pom-mode-only` elements — the "More" toolbar menu (Grading, Set
-//     Scale, Size Run, Learning, ...) — surface only in POM Focus.
+//     Scale, Size Run, ...) — surface only in POM Focus.
 //   - Smart Align (computeSmartAlignment in smart-align.js) is a hard off in
 //     POM Focus regardless of its own on/off preference, and honors that
 //     preference again in Sketch Focus.
@@ -100,8 +100,7 @@
       // SAME cleanup a TD gets from pressing Escape or picking another tool
       // runs here too: it already clears activeStampId (US-097 code review),
       // drawSession, eraseSession, and the eraser body class.
-      if ((state.tool === 'stamp' || state.tool === 'break-treatment')
-          && typeof setTool === 'function') setTool('select');
+      if (state.tool === 'stamp' || state.tool === 'break-treatment') setTool('select');
       // Defensive: cancel an in-progress placement drag outright, in the
       // (practically unreachable via mouse, but keyboard/Command-Palette
       // dispatch makes it not impossible) case one was mid-gesture.

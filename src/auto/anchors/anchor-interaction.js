@@ -3,27 +3,13 @@
 // Source part for app.js. Run `npm run build` after editing.
 //
 // hitTestAnchors funnels into onMouseDown so anchor pins beat annotation
-// hits in Auto Mode. startAnchorDrag captures a learnOrigin so the
-// learning loop sees one (anchor pre-drag → anchor post-drag) sample per
-// commit, regardless of how the mouse moved in between. moveAnchorBy is
-// the single mutation path for every anchor move (drag, nudge, snap), so
-// the derived-pin / cascade / draft-sync side effects can't diverge.
+// hits in Auto Mode. moveAnchorBy is the single mutation path for every
+// anchor move (drag, nudge, snap), so the derived-pin / cascade / draft-sync
+// side effects can't diverge.
 //
 // getAnchorById and the US-038 hide/show/isolate state live in
 // anchor-visibility.js; this file consumes isAnchorHidden so hidden pins
 // stay ungrabbable.
-
-  // Learning origin = the UNBIASED predicted position when learning stashed one
-  // (predictedX/Y set by applyLearningBiasToAnchors), else the current position.
-  // Recording the TD's correction relative to the raw prediction — not the
-  // biased seed — is what lets the bucket median converge to the FULL offset
-  // instead of half of it (A2).
-  function learnOriginX(anchor) {
-    return Number.isFinite(anchor && anchor.predictedX) ? anchor.predictedX : anchor.x;
-  }
-  function learnOriginY(anchor) {
-    return Number.isFinite(anchor && anchor.predictedY) ? anchor.predictedY : anchor.y;
-  }
 
   function anchorWorldPos(anchor) {
     const image = getImageById(anchor.sourceImageId);
@@ -59,29 +45,20 @@
 
   function startAnchorDrag(anchorId, world) {
     // A pending keyboard-nudge session must commit before a new drag begins,
-    // or its learnOrigin would blend two separate corrections into one sample.
+    // so its history entry lands before this drag's before-fingerprint.
     flushAnchorNudgeSession();
     const before = snapshotFingerprint(makeSnapshot());
-    const anchor = getAnchorById(anchorId);
     state.interaction = {
       type: 'drag-anchor',
       id: anchorId,
       prevWorld: world,
       // US-086: arm like every other geometry drag. An anchor is the highest-
-      // stakes thing on the board — a stray pixel moves it, snapAnchorToInk
-      // then pulls it onto the nearest ink on mouseup, and recordAnchorResidual
-      // files that accident as a TD correction the learner trains on.
+      // stakes thing on the board — a stray pixel moves it, and snapAnchorToInk
+      // then pulls it onto the nearest ink on mouseup.
       startWorld: { x: world.x, y: world.y },
       armed: false,
       changed: false,
       beforeFingerprint: before,
-      // Snapshot the anchor's pre-drag normalized position so onMouseUp
-      // can compute the (detected → corrected) residual exactly once
-      // per commit, regardless of how the mouse moved in between. Use the
-      // UNBIASED prediction (predictedX/Y stashed by applyLearningBiasToAnchors)
-      // so the residual trains against the raw detector, not the biased seed
-      // (A2). Falls back to the current position when no bias was applied.
-      learnOrigin: anchor ? { kind: anchor.kind, x: learnOriginX(anchor), y: learnOriginY(anchor) } : null,
     };
     document.body.classList.add('grabbing');
   }
@@ -120,11 +97,11 @@
   // ---- U1: arrow-key nudge -------------------------------------------------
   // Arrow keys move the selected anchor by whole source-image pixels (the
   // space the ink mask and detectors work in). Rapid keystrokes form one
-  // "nudge session": the learning residual, telemetry event, and history
-  // push commit once, NUDGE_COMMIT_MS after the last keystroke — mirroring
-  // the one-commit-per-drag contract of the mouse path.
+  // "nudge session": the history push commits once, NUDGE_COMMIT_MS after
+  // the last keystroke — mirroring the one-commit-per-drag contract of the
+  // mouse path.
   const NUDGE_COMMIT_MS = 700;
-  let anchorNudgeSession = null; // { anchorId, learnOrigin, timer }
+  let anchorNudgeSession = null; // { anchorId, timer }
 
   function nudgeSelectedAnchor(dxPx, dyPx) {
     if (state.appMode !== 'auto' || state.autoMode.anchorsHidden) return false;
@@ -139,12 +116,7 @@
       flushAnchorNudgeSession();
     }
     if (!anchorNudgeSession) {
-      anchorNudgeSession = {
-        anchorId: anchor.id,
-        // Train against the unbiased prediction, not the biased seed (A2).
-        learnOrigin: { kind: anchor.kind, x: learnOriginX(anchor), y: learnOriginY(anchor) },
-        timer: null,
-      };
+      anchorNudgeSession = { anchorId: anchor.id, timer: null };
     }
     moveAnchorBy(anchor, dxPx / naturalW, dyPx / naturalH);
     if (anchorNudgeSession.timer) clearTimeout(anchorNudgeSession.timer);
@@ -157,17 +129,7 @@
     anchorNudgeSession = null;
     if (!session) return;
     if (session.timer) clearTimeout(session.timer);
-    const anchor = getAnchorById(session.anchorId);
-    if (!anchor || anchor.kind !== session.learnOrigin.kind) return;
-    const dx = anchor.x - session.learnOrigin.x;
-    const dy = anchor.y - session.learnOrigin.y;
-    if (!dx && !dy) return;
-    recordAnchorResidual(anchor.kind, dx, dy, anchor);
-    recordAutoTelemetryEvent('anchor_nudged', {
-      sourceImageId: anchor.sourceImageId,
-      anchor_id: anchor.id,
-      anchor_kind: anchor.kind,
-    });
+    if (!getAnchorById(session.anchorId)) return;
     pushHistoryIfChanged();
     // Same reason as the drag-anchor branch of onMouseUp: the nudge re-synced
     // the drafts, which can drop an approval and change a drawability tier, and

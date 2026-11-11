@@ -7,7 +7,7 @@
 // prompts the TD to apply, discard, or cancel before writing.
 
   function buildProjectSnapshot(options) {
-    if (typeof seamPathRefreshAllFingerprints === 'function') seamPathRefreshAllFingerprints();
+    seamPathRefreshAllFingerprints();
     const dxfSourceMode = options && options.dxfSourceMode === 'reference'
       ? 'reference' : 'inline';
     return {
@@ -65,31 +65,21 @@
         // key, and an absent key means "no embedded copy", never "empty
         // library". The local library stays the source of truth; project-load
         // offers these for import rather than overwriting it.
-        linePresets: (typeof serializeLinePresetsForProject === 'function')
-          ? serializeLinePresetsForProject()
-          : [],
+        linePresets: serializeLinePresetsForProject(),
         // US-097 / ADR 0056: the saved-shape library, same additive+offered
         // contract as linePresets above.
-        shapeStamps: (typeof serializeShapeStampsForProject === 'function')
-          ? serializeShapeStampsForProject()
-          : [],
+        shapeStamps: serializeShapeStampsForProject(),
         sizeSelection: state.sizeSelection ? clone(state.sizeSelection) : null,
         // US-068: MAIN PAGE sheet. Additive — files saved before US-068 have
         // no key and seed a default on open. US-080: the serializer injects
         // the version-sketch bytes, which live outside state.mainPage.
-        mainPage: (typeof mpSerializeForProject === 'function')
-          ? mpSerializeForProject()
-          : (state.mainPage ? clone(state.mainPage) : null),
+        mainPage: mpSerializeForProject(),
         // US-070: Construction annotation page. Additive — files saved
         // before US-070 have no key and seed a default on open.
-        construction: (typeof ccSerializeForProject === 'function')
-          ? ccSerializeForProject()
-          : (state.construction ? clone(state.construction) : null),
+        construction: ccSerializeForProject(),
         // US-072: BOM page. Additive — files saved before US-072 have no
         // key and seed a default (empty BOM) on open.
-        bom: (typeof bmSerializeForProject === 'function')
-          ? bmSerializeForProject()
-          : (state.bom ? clone(state.bom) : null),
+        bom: bmSerializeForProject(),
         // US-079: Preview & Export page-inclusion checkboxes. Additive —
         // files saved before US-079 have no key and default to all enabled.
         preview: state.preview ? clone(state.preview) : null,
@@ -101,7 +91,7 @@
   }
 
   function saveProject() {
-    if (typeof hasUnsavedWork === 'function' ? !hasUnsavedWork() : (!state.annotations.length && !state.images.length)) {
+    if (!hasUnsavedWork()) {
       showToast('Nothing to save yet. Add or edit Board/BOM work first.');
       return;
     }
@@ -112,36 +102,7 @@
       );
       if (!ok) return;
     }
-
-    // Phase 2: style-evidence capture. Offer to remember TD-edited Auto
-    // lines for the current style. The dialog only opens when there is
-    // something to remember; an empty candidate list saves immediately.
-    const styleForEvidence = currentStyleId();
-    const candidates = (typeof collectStyleEvidenceCandidates === 'function')
-      ? collectStyleEvidenceCandidates(styleForEvidence)
-      : [];
-
-    if (candidates.length === 0) {
-      writeProjectFile();
-      return;
-    }
-
-    openSaveEvidenceDialog({ styleId: styleForEvidence, candidates }).then(choice => {
-      if (!choice || choice.action === 'cancel') return;
-      if (choice.action === 'save-with-evidence') {
-        // Re-read currentStyleId so a style code typed inside the dialog
-        // (which already wrote state.styleId on accept) takes effect on
-        // the commit. Falls back to the original styleId for callers
-        // that don't expose the inline input.
-        const targetStyle = currentStyleId();
-        const written = commitStyleEvidenceCandidates(targetStyle, candidates);
-        if (written > 0) {
-          showToast('Saved ' + written + ' style evidence record'
-            + (written === 1 ? '' : 's') + ' for this style.');
-        }
-      }
-      writeProjectFile();
-    });
+    writeProjectFile();
   }
 
   function writeProjectFile() {
@@ -152,12 +113,11 @@
     // The user now holds a canonical copy of this work on disk, so the
     // in-browser autosave is no longer the safety net — clear it so the
     // next launch does not offer a stale restore.
-    if (typeof clearAutosave === 'function') clearAutosave();
+    clearAutosave();
     showToast('Project saved. Reopen it later with Open Project.');
   }
 
   function archiveProjectToLibrary(snapshot) {
-    if (typeof addLibraryEntry !== 'function') return;
     const styleId = (snapshot && snapshot.state && typeof snapshot.state.styleId === 'string')
       ? snapshot.state.styleId.trim()
       : '';

@@ -109,19 +109,12 @@
       }
       for (let ti = targets.length - 1; ti >= 0; ti -= 1) {
         const pin = bmWorldOf(im, targets[ti]);
-        if (bmDistanceToSegment(pt, label, pin) <= (6 / bmCanvasView.scale)) {
+        if (pointToSegmentDistance(pt, label, pin) <= (6 / bmCanvasView.scale)) {
           return { callout: c, part: 'line', anchorIndex: ti, imageRec: im };
         }
       }
     }
     return null;
-  }
-
-  function bmDistanceToSegment(pt, a, b) {
-    const dx = b.x - a.x, dy = b.y - a.y;
-    if (!dx && !dy) return Math.hypot(pt.x - a.x, pt.y - a.y);
-    const t = Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / (dx * dx + dy * dy)));
-    return Math.hypot(pt.x - (a.x + t * dx), pt.y - (a.y + t * dy));
   }
 
   function bmCreateCalloutAt(pt) {

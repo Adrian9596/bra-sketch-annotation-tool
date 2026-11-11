@@ -51,8 +51,7 @@
     let style = getLineStyle(ann);
     if (style === 'solid' && annotationCrossesViews(ann)) style = 'dashed';
 
-    const treatmentSegments = typeof seamPathTreatmentSegments === 'function'
-      ? seamPathTreatmentSegments(ann) : [];
+    const treatmentSegments = seamPathTreatmentSegments(ann);
     const treated = treatmentSegments.length
       ? treatmentSegments.every(item => drawLineTreatment(item.annotation, item.treatment))
       : hasLineTreatment(ann) && drawLineTreatment(ann, ann.lineTreatment);
@@ -176,12 +175,8 @@
       ? state.selection.part || null : null;
     ctx.save();
 
-    if (typeof drawSelectedTreatmentRunHighlight === 'function') {
-      drawSelectedTreatmentRunHighlight(ann);
-    }
-    if (typeof drawTreatmentBreakMarkers === 'function') {
-      drawTreatmentBreakMarkers(ann);
-    }
+    drawSelectedTreatmentRunHighlight(ann);
+    drawTreatmentBreakMarkers(ann);
 
     if (ann.type === 'curved') {
       // Single cubic: two control handles, each with a dashed guide line from

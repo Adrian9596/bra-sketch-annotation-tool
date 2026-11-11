@@ -25,10 +25,6 @@
     }
 
     state.autoMode.status = 'applying';
-    recordAutoTelemetryEvent('apply_started', {
-      sourceImageId: approved[0] && approved[0].sourceImageId,
-      approved_count: approved.length,
-    });
     updateUI();
 
     // Atomic validation: every approved draft must still be drawable and
@@ -126,15 +122,7 @@
     nudgeAutoLabelsToAvoidCollisions(sameImageAutoLines.concat(applied));
 
     // Commit.
-    for (const ann of applied) {
-      state.annotations.push(ann);
-      recordAutoTelemetryEvent('draft_applied', {
-        sourceImageId: ann.sourceImageId,
-        draft_id: ann.originDraftId,
-        pom_id: ann.seq != null ? String(ann.seq) : (ann.text != null ? String(ann.text) : null),
-      });
-    }
-    recordAutoAcceptanceStats(applied);
+    for (const ann of applied) state.annotations.push(ann);
     // Remove the applied drafts from the draft layer (matched by id).
     const appliedDraftIds = new Set(approved.map(d => d.id));
     state.autoMode.draftAnnotations = drafts.filter(d => !appliedDraftIds.has(d.id));
@@ -161,16 +149,6 @@
     state.autoMode.anchorsHidden = true;
     state.autoMode.anchorSelectedId = null;
     state.autoMode.lastError = null;
-    recordAutoTelemetryEvent('apply_finished', {
-      sourceImageId: applied[0] && applied[0].sourceImageId,
-      count: applied.length,
-      status: 'ok',
-    });
-    recordAutoTelemetryEvent('auto_session_done', {
-      sourceImageId: applied[0] && applied[0].sourceImageId,
-      count: applied.length,
-      status: 'applied',
-    });
 
     pushHistoryIfChanged();
     // Handoff: Apply means "review is done" — switch straight to Manual
@@ -213,28 +191,14 @@
       drawability: draft.drawability,
       confidence: draft.confidence,
       tdEdited: !!draft.tdEdited,
-      acceptedWithoutEdit: !draft.tdEdited,
-      acceptedTrackedAt: new Date().toISOString(),
       tdApproved: true,
       tdApprovalRequired: false,
-      endpointApproximate: false,
       approvedAt: draft.approvedAt || new Date().toISOString(),
       proposedStartLandmark: draft.proposedStartLandmark || null,
       proposedEndLandmark: draft.proposedEndLandmark || null,
       reason: draft.reason || null,
       uncertainty: draft.uncertainty || null,
       sharedAnchorFamily: draft.sharedAnchorFamily || null,
-      // Style-evidence provenance. A 'confirmed-prior' line was pulled 40% off
-      // the anchors toward the median of past TD confirmations, and an
-      // 'absent-confirmed' one was wiped because the style is known not to
-      // measure that POM. Dropping these on Apply left no record anywhere that
-      // the line is not where detection put it — while the contract suite reads
-      // the same flag to decide which rows its line-anchor assertions may skip.
-      // Exactly what the note at the top of this file warns about: a field added
-      // to buildDraftAnnotation and not here vanishes silently.
-      styleEvidenceId: draft.styleEvidenceId || null,
-      styleEvidenceStatus: draft.styleEvidenceStatus || null,
-      styleEvidenceSamples: draft.styleEvidenceSamples != null ? draft.styleEvidenceSamples : null,
       viewRole: draft.viewRole || effectivePomViewRole(draft.seq),
       originDraftId: draft.id,
     };

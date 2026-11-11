@@ -155,7 +155,6 @@
     letter-spacing:.06em;
     text-transform:uppercase;
   }
-  .toolbar-menu-meta{ padding:4px 8px 6px; display:flex; flex-wrap:wrap; gap:5px; }
   .board-drawing-group{ gap:5px; }
   .board-drawing-group::after, .board-context-actions::after{ display:none; }
   .board-context-actions{ padding:3px; border:1px solid var(--hairline); border-radius:10px; background:#fafafa; }
@@ -272,7 +271,7 @@
      a data-key attribute set in the markup; currentColor makes the badge adapt
      to the button's own text color (dark on light buttons, light on active/dark
      ones) with no per-state rules. Pseudo-element, so it survives dynamic label
-     text updates (Hide/Show Panel, Learning On/Off). */
+     text updates (Hide/Show Panel). */
   button[data-key]::after{
     content:attr(data-key);
     margin-left:6px;
@@ -423,7 +422,7 @@
   }
   .anchor-panel-btn:hover{ border-color:#94a3b8; }
   .anchor-panel-body{ overflow-y:auto; padding:2px 0 6px; }
-  /* Drag-to-reposition (src/ui/draggable-panel.js) — scoped to the two heads
+  /* Drag-to-reposition (src/core/ui/draggable-panel.js) — scoped to the two heads
      that actually wire up dragging (Pattern Pieces, Pattern Measurements),
      not the generic .anchor-panel-head class, so the Anchor Manager panel
      (not wired, not requested) never shows a "move" cursor it can't honor.
@@ -817,11 +816,6 @@
     text-transform:uppercase;
     letter-spacing:.04em;
   }
-  .auto-status-chip.acceptance{
-    background:#f8fafc;
-    border-color:#cbd5e1;
-    color:#334155;
-  }
   .auto-status-chip[data-status="reviewing"]{ background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
   .auto-status-chip[data-status="ready"]{ background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
   .auto-status-chip[data-status="loading"]{ background:#f5f3ff; border-color:#ddd6fe; color:#5b21b6; }
@@ -982,16 +976,6 @@
   .color-btn.active[data-color="blue"]{ box-shadow:0 0 0 3px rgba(37,99,235,.13); }
   .color-btn.active[data-color="black"]{ box-shadow:0 0 0 3px rgba(17,24,39,.12); }
   .color-btn.active[data-color="white"]{ box-shadow:0 0 0 3px rgba(17,24,39,.10); }
-  .export-btn{
-    background:#111827;
-    color:#fff;
-    border-color:#111827;
-  }
-  .export-btn:hover{
-    background:#0b1220;
-    border-color:#0b1220;
-  }
-
   /* Icon + label buttons */
   .has-ico{ display:inline-flex; align-items:center; gap:6px; }
   .ico{ width:16px; height:16px; display:block; flex:0 0 auto; }
@@ -1009,13 +993,6 @@
   .primary-btn:hover{ background:#c62f2f; border-color:#c62f2f; color:#fff; }
   .primary-btn:active{ background:#b71f1f; }
   .primary-btn .ico{ opacity:1; }
-
-  .learning-toolbar-btn.active{
-    background:#ecfdf5;
-    border-color:#86efac;
-    color:#065f46;
-    font-weight:700;
-  }
 
   /* Drawing tool cluster — reads as one connected unit */
   .toolset{
@@ -1056,18 +1033,8 @@
   .ghost-btn:hover{ background:#f7f7f9; }
 
   /* Stitch / line-style previews in the dropdown */
-  /* US-096: the Stitches menu now also carries the preset library, so it needs
-     the extra width a name plus four row controls takes, and a scroll cap so a
-     long library cannot run off the bottom of the screen. */
-  .style-menu-list:has(.preset-list){ min-width:296px; }
-  /* US-097: the Tools menu now carries the saved-shape library, whose rows need
-     the same width a name plus four controls takes. .toolbar-menu-list already
-     caps height and scrolls, so only the width needs widening — and only when
-     the library section is actually present. */
-  #toolsMenuList:has(.preset-list){ min-width:296px; max-width:min(340px, calc(100vw - 24px)); }
-  /* US-097: the shape library shares .preset-list's styling but not its noun —
-     an empty shape library reading "No presets yet." is simply wrong, and it
-     ships empty by design (ADR 0056 declines to invent house geometry). */
+  /* US-097: an empty shape library reading "No presets yet." is simply wrong,
+     and it ships empty by design (ADR 0056 declines to invent house geometry). */
   #shapeStampList:empty::after{ content:'No Templates yet — select one or more paths and save them for reuse.'; }
   .preset-divider{
     margin:6px 2px 3px; padding-top:6px;
@@ -1473,14 +1440,6 @@
     letter-spacing:.04em;
     border:1px solid transparent;
   }
-  .spec-conf.high{ background:#dcfce7; color:#166534; border-color:#bbf7d0; }
-  .spec-conf.medium{ background:#fef3c7; color:#92400e; border-color:#fde68a; }
-  .spec-conf.low{ background:#fee2e2; color:#991b1b; border-color:#fecaca; }
-  .spec-conf.edited{ background:#eef2ff; color:#3730a3; border-color:#c7d2fe; }
-  .spec-conf.drawable{ background:#e0f2fe; color:#075985; border-color:#bae6fd; }
-  .spec-conf.approximate{ background:#ffedd5; color:#9a3412; border-color:#fed7aa; }
-  .spec-conf.review_only{ background:#fee2e2; color:#991b1b; border-color:#fecaca; }
-  .spec-conf.accepted{ background:#f0fdf4; color:#166534; border-color:#bbf7d0; }
   .spec-conf.very_low{ background:#f3f4f6; color:#6b7280; border-color:#e5e7eb; }
   .spec-conf.library{ background:#eef3ff; color:#1d3a8a; border-color:#c8d4ff; }
   /* Size-L suggestion badge: sits under the input, non-uppercase so the
@@ -1776,310 +1735,6 @@
     .lm-rail-btn{ flex:0 0 auto; white-space:nowrap; }
   }
 
-  /* Learning data dialog (Transparent Learning) */
-  .dialog-panel.ld-wide{ width:min(820px, 100%); }
-  .dialog-body.learning-data-body{
-    padding:14px 20px 18px;
-    overflow:auto;
-    max-height:72vh;
-    display:flex;
-    flex-direction:column;
-    gap:14px;
-  }
-  .ld-section{ display:flex; flex-direction:column; gap:8px; }
-  .ld-section-note{ margin:0; font-size:12.5px; color:var(--muted); line-height:1.4; }
-  .ld-summary-grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));
-    gap:8px;
-  }
-  .ld-top-summary .ld-summary-grid-top{
-    grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));
-  }
-  .ld-card{
-    border:1px solid var(--border);
-    border-radius:8px;
-    padding:8px 10px;
-    background:#fff;
-  }
-  .ld-card-label{
-    font-size:11px;
-    text-transform:uppercase;
-    letter-spacing:.04em;
-    color:var(--muted);
-    font-weight:600;
-  }
-  .ld-card-value{
-    margin-top:3px;
-    font-size:14px;
-    color:var(--text);
-    font-weight:600;
-  }
-  .ld-card-value.ok{ color:#1c7a3a; }
-  .ld-card-value.muted{ color:var(--muted); }
-  .ld-card-value.warn{ color:#a8302e; }
-  .ld-card-value.attention{ color:#8a6612; }
-
-  /* Tab bar */
-  .ld-tab-shell{ display:flex; flex-direction:column; gap:10px; }
-  .ld-tabs{
-    display:flex; gap:4px;
-    border-bottom:1px solid var(--hairline);
-    padding-bottom:0;
-    flex-wrap:wrap;
-  }
-  .ld-tab{
-    appearance:none;
-    background:transparent;
-    border:1px solid transparent;
-    border-bottom:none;
-    border-radius:8px 8px 0 0;
-    padding:7px 12px 8px;
-    font-size:12.5px;
-    font-weight:600;
-    color:var(--muted);
-    cursor:pointer;
-    display:inline-flex;
-    align-items:center;
-    gap:6px;
-    margin-bottom:-1px;
-  }
-  .ld-tab:hover{ color:var(--text); background:#f5f6f9; }
-  .ld-tab.is-active{
-    color:var(--text);
-    background:#fff;
-    border-color:var(--hairline);
-    border-bottom-color:#fff;
-  }
-  .ld-tab-badge{
-    display:inline-block;
-    min-width:18px;
-    padding:1px 6px;
-    border-radius:999px;
-    background:#eef0f4;
-    color:var(--muted);
-    font-size:11px;
-    font-weight:600;
-    text-align:center;
-  }
-  .ld-tab.is-active .ld-tab-badge{ background:#eaf0fa; color:#1f4a86; }
-  .ld-tab-panels{ display:block; }
-  .ld-tab-panel{ display:none; }
-  .ld-tab-panel.is-active{ display:flex; flex-direction:column; gap:10px; }
-
-  /* Tables */
-  .ld-table{
-    width:100%;
-    border-collapse:collapse;
-    font-size:12.5px;
-  }
-  .ld-table th, .ld-table td{
-    padding:6px 8px;
-    text-align:left;
-    border-bottom:1px solid #f0f1f4;
-    vertical-align:top;
-  }
-  .ld-table th{
-    color:var(--muted);
-    font-weight:600;
-    font-size:11px;
-    text-transform:uppercase;
-    letter-spacing:.03em;
-    background:#fafbfc;
-  }
-  .ld-table .ld-num{ text-align:right; font-variant-numeric:tabular-nums; }
-
-  /* Status chips */
-  .ld-status{
-    display:inline-block;
-    padding:2px 8px;
-    border-radius:999px;
-    font-size:11px;
-    font-weight:600;
-    border:1px solid transparent;
-  }
-  .ld-status-active{ background:#e6f4ec; color:#1c7a3a; border-color:#c7e6d3; }
-  .ld-status-needs-more-samples{ background:#fef6e0; color:#8a6612; border-color:#f3e1a8; }
-  .ld-status-large-correction{ background:#fde9e9; color:#a8302e; border-color:#f4c2c1; }
-  .ld-status-conflicting{ background:#fff3e0; color:#a3550a; border-color:#f5c98a; }
-  .ld-status-empty{ background:#f1f2f5; color:var(--muted); border-color:#e2e3e8; }
-  .ld-status-fixed{ background:#eaf0fa; color:#1f4a86; border-color:#cfdcf3; }
-  .ld-status-confirmed{ background:#e6f4ec; color:#1c7a3a; border-color:#c7e6d3; }
-  .ld-status-absent{ background:#fde9e9; color:#a8302e; border-color:#f4c2c1; }
-
-  /* Evidence expand */
-  .ld-table-evidence .ld-expand-col{ width:26px; padding-left:6px; padding-right:0; }
-  .ld-expand-btn{
-    appearance:none;
-    background:transparent;
-    border:none;
-    color:var(--muted);
-    cursor:pointer;
-    padding:2px 4px;
-    font-size:12px;
-    line-height:1;
-    border-radius:4px;
-  }
-  .ld-expand-btn:hover:not(:disabled){ color:var(--text); background:#eef0f4; }
-  .ld-expand-btn:disabled{ opacity:.35; cursor:default; }
-  .ld-expand-btn.is-open{ color:var(--text); }
-  .ld-evidence-row-absent td{ background:#fff7f6; }
-  .ld-evidence-row-pom7-absent td{ background:#fde9e9; }
-  .ld-callout{
-    padding:8px 12px;
-    border-radius:8px;
-    font-size:12.5px;
-    line-height:1.4;
-    border:1px solid transparent;
-  }
-  .ld-callout-absent{
-    background:#fde9e9;
-    color:#7d2522;
-    border-color:#f4c2c1;
-  }
-
-  /* Expanded row detail */
-  .ld-detail-cell{ background:#fafbfc; padding:10px 14px; }
-  .ld-detail{ display:flex; flex-direction:column; gap:8px; }
-  .ld-detail-header{
-    font-size:12px; font-weight:600; color:var(--text);
-  }
-  .ld-detail-empty{
-    font-size:12px; color:var(--muted); font-style:italic;
-  }
-  .ld-detail-list{
-    list-style:none;
-    margin:0; padding:0;
-    display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
-    gap:8px;
-  }
-  .ld-detail-item{
-    background:#fff;
-    border:1px solid var(--hairline);
-    border-radius:6px;
-    padding:8px 10px;
-  }
-  .ld-detail-item-title{
-    font-size:12px; font-weight:600; color:var(--text);
-    margin-bottom:4px;
-  }
-  .ld-detail-item-title.is-absent{ color:#a8302e; }
-  .ld-detail-meta{
-    margin:0;
-    display:grid;
-    grid-template-columns:max-content 1fr;
-    gap:2px 8px;
-    font-size:11.5px;
-  }
-  .ld-detail-meta dt{ color:var(--muted); font-weight:600; }
-  .ld-detail-meta dd{ margin:0; color:var(--text); word-break:break-word; }
-
-  .ld-empty{
-    padding:14px;
-    text-align:center;
-    color:var(--muted);
-    font-size:12.5px;
-    border:1px dashed var(--hairline);
-    border-radius:8px;
-    background:#fafbfc;
-  }
-  .ld-style-list{
-    margin:0;
-    padding-left:18px;
-    color:var(--text);
-    font-size:12.5px;
-    line-height:1.5;
-  }
-  .learning-data-foot-note{
-    flex:1;
-    font-size:12px;
-    color:var(--muted);
-  }
-
-  /* Save-time style evidence prompt */
-  .dialog-body.save-evidence-body{
-    padding:16px 20px 18px;
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-    max-height:60vh;
-    overflow:auto;
-  }
-  .save-evidence-body .se-style{ margin:0; font-size:13px; color:var(--text); }
-  .save-evidence-body .se-heading{ margin:6px 0 0; font-size:13px; color:var(--text); }
-  .save-evidence-body .se-note{ margin:6px 0 0; font-size:12px; color:var(--muted); line-height:1.45; }
-  .save-evidence-body .se-hint{ margin:2px 0 0; font-size:11.5px; color:var(--muted); line-height:1.45; }
-  /* Style-code input: prominent enough to invite typing, neutral enough
-     to not compete with the candidate list below. */
-  .se-style-section{ display:flex; flex-direction:column; gap:4px; }
-  .se-style-label{ font-size:12px; font-weight:600; color:var(--muted); }
-  .se-style-input{
-    width:100%;
-    box-sizing:border-box;
-    padding:7px 10px;
-    border:1px solid var(--border);
-    border-radius:7px;
-    font-size:13px;
-    color:var(--text);
-    background:#fff;
-  }
-  .se-style-input:focus{ outline:2px solid #2f6ce5; outline-offset:-1px; border-color:#2f6ce5; }
-  .se-candidate-list{
-    margin:0;
-    padding:6px 10px;
-    list-style:none;
-    border:1px solid var(--border);
-    border-radius:8px;
-    background:#fafbfc;
-    display:flex;
-    flex-direction:column;
-    gap:4px;
-    font-size:12.5px;
-  }
-  .se-row{
-    display:flex;
-    align-items:center;
-    gap:8px;
-    padding:5px 4px;
-    border-radius:6px;
-    color:var(--text);
-  }
-  .se-row + .se-row{ border-top:1px dashed #e7e9ee; }
-  .se-row .se-pom{ font-weight:700; min-width:54px; color:var(--muted); }
-  .se-row .se-label{ flex:1; }
-  .se-row .se-meta{ color:var(--muted); font-size:11.5px; white-space:nowrap; }
-  .se-row.is-pending{ background:#fff8e6; }
-  .se-row.is-pending .se-label{ color:#8a6612; font-style:italic; }
-  .se-row.is-confirmed .se-label{ color:#1c7a3a; font-weight:600; }
-  .se-row.is-absent .se-label{ color:#a8302e; }
-  .se-row .se-check{ color:#1c7a3a; font-weight:700; margin-right:2px; }
-  /* Inline picker — a select + Confirm button, compact so several rows
-     can share the dialog without scrolling. */
-  .se-picker{ display:flex; gap:6px; align-items:center; }
-  .se-picker-select{
-    padding:4px 6px;
-    border:1px solid var(--border);
-    border-radius:6px;
-    font-size:12px;
-    background:#fff;
-    max-width:200px;
-  }
-  .se-confirm{ padding:4px 10px; font-size:12px; }
-  .se-undo{
-    margin-left:auto;
-    background:transparent;
-    border:1px solid var(--border);
-    border-radius:6px;
-    padding:3px 8px;
-    font-size:11.5px;
-    color:var(--muted);
-    cursor:pointer;
-  }
-  .se-undo:hover{ background:#f1f2f5; color:var(--text); }
-  .se-bulk-bar{ display:flex; justify-content:flex-end; }
-  .se-bulk-btn{ font-size:12px; padding:5px 10px; }
-
   @media (max-width: 980px){
     .workspace{ flex-direction:column; }
     .specPanel{ width:auto; flex:0 0 auto; margin-left:0; margin-top:12px; max-height:240px; }
@@ -2097,15 +1752,14 @@
      not a new page). .sketch-mode-only elements (Templates, the Treatment/
      Line-preset library, Smart Align, the zigzag/cover/bartack stitch
      styles) surface only while it is on; .pom-mode-only elements (the "More"
-     menu: Grading, Set Scale, Size Run, Learning, ...) surface only while it
+     menu: Grading, Set Scale, Size Run, ...) surface only while it
      is off. POM callout numbers are handled separately by labelsVisible()
-     in src/manual/style.js, not by these classes. Session-only — see
-     src/manual/sketch-mode.js. */
+     in src/board/annotations/style.js, not by these classes. Session-only — see
+     src/board/sketch-mode.js. */
   body:not(.sketch-mode-on) .sketch-mode-only{ display:none !important; }
   body.sketch-mode-on .pom-mode-only{ display:none !important; }
-  /* Green while Sketch Focus is on — same on/enabled palette as
-     .learning-toolbar-btn.active, so "green" reads consistently as "this
-     mode is active" across the toolbar. */
+  /* Green while Sketch Focus is on, so "green" reads as "this mode is
+     active" across the toolbar. */
   #sketchFocusBtn.active{
     background:#ecfdf5;
     border-color:#86efac;
@@ -2121,7 +1775,7 @@
      open; the rest of the app is marked `inert` so nothing behind the
      overlay is clickable or keyboard-reachable until the TD confirms
      leaving via the overlay's own Exit button. See
-     src/manual/mindmap-mode.js. */
+     src/mindmap/mindmap-mode.js. */
   .mindmap-overlay{
     position:fixed;
     inset:0;
@@ -2188,7 +1842,7 @@
   /* ===== MAIN PAGE sheet (US-068, ADR 0037; page-ified US-069, ADR 0038) =====
      A page of the tech pack, a peer of the Board — not a modal — so it gets a
      grid row of its own (see .toolbar's comment on row-3 occupants) and its
-     own print rules. Rebuilt on this tool's primitives — see src/ui/main-page.js. */
+     own print rules. Rebuilt on this tool's primitives — see src/techpack/main-page/main-page.js. */
   .mp-page{
     grid-row:3;
     min-height:0;
@@ -2554,7 +2208,7 @@
      A third peer page of the tech pack, alongside Board and MAIN PAGE — same
      row-3 grid slot as .mp-page (see .toolbar's comment on row-3 occupants).
      Rebuilt on this tool's primitives from the sibling "Bra construction"
-     project — see src/ui/construction.js. */
+     project — see src/techpack/construction/construction.js. */
   .cc-page{
     grid-row:3;
     min-height:0;
@@ -2664,7 +2318,6 @@
      .cc-page is already a column flexbox, so this sits below .cc-body as a
      bounded, independently-scrolling strip rather than competing with the
      canvas for height. */
-  #ccTableToggleBtn[aria-pressed="false"]{ opacity:.6; }
   .cc-table-wrap{
     flex:0 0 auto;
     max-height:34vh;
@@ -2924,7 +2577,7 @@
      .cc-toolbar/.cc-variant-tabs/.cc-hint/.cc-body/.cc-canvas/.cc-side/
      .cc-side-* classes verbatim (view-agnostic chrome) and adds bm-* classes
      only for what's actually new: the editable table and the material
-     suggestion panel. See src/ui/bom.js. */
+     suggestion panel. See src/techpack/bom/bom.js. */
   .bm-combined-view{
     flex:1;
     min-height:0;
@@ -3081,14 +2734,6 @@
     border-radius:6px;
     cursor:pointer;
     padding:2px 7px;
-  }
-  .bm-mat-side{
-    width:280px;
-    flex:none;
-    border-left:1px solid var(--hairline);
-    background:#fff;
-    padding:12px;
-    overflow:auto;
   }
   #bomMatSearch{
     width:100%;
@@ -3350,7 +2995,7 @@
             <button id="smartAlignToggleBtn" class="sketch-mode-only" type="button" role="menuitemcheckbox" aria-checked="true" title="Snap moving line and Template geometry to nearby path points and axes; hold Alt/Option to bypass for one drag">✓ Smart Align</button>
             <!-- US-107: browsing/picking/managing saved Templates moved to the
                  unified Library dialog (#libraryBtn, in the main toolbar) — see
-                 src/ui/dialogs/library-manager-dialog.js. Save selection as
+                 src/library/dialog/library-manager-dialog.js. Save selection as
                  Template… stays here because it reads the board's LIVE
                  selection, a board-context action rather than a
                  library-browsing one. Sketch-Mode-only, like the rest of the
@@ -3366,13 +3011,13 @@
                  redundant. See ADR 0087. -->
             <!-- ADR 0071: place a small alignment-notch tick on a piece's
                  outline. Stays armed after each click, like the drawing
-                 tools above — see src/manual/notches.js. -->
+                 tools above — see src/board/annotations/notches.js. -->
             <div class="preset-divider sketch-mode-only" role="separator">Mark</div>
             <div class="preset-menu-actions sketch-mode-only">
               <button id="notchToolBtn" type="button" role="menuitem" title="Click near a line to place a small perpendicular notch mark there">Notch</button>
             </div>
             <!-- US-104 round 8: "Set Scale" itself is unchanged (still the
-                 same #setScaleBtn/#clearScaleBtn handlers, src/ui/bindings.js)
+                 same #setScaleBtn/#clearScaleBtn handlers, src/app/bindings.js)
                  — the More menu that houses it is Sketch-Focus-hidden
                  wholesale (.pom-mode-only on #moreMenuWrap), and the Command
                  Palette route is easy to miss, so a TD who just imported a
@@ -3426,7 +3071,7 @@
           </button>
           <!-- US-107: browsing/picking/managing saved Line Treatments moved to
                the unified Library dialog (#libraryBtn, in the main toolbar) —
-               see src/ui/dialogs/library-manager-dialog.js. Customize
+               see src/library/dialog/library-manager-dialog.js. Customize
                selected… and Save as new treatment… stay here because they
                read the board's LIVE selection, a board-context action rather
                than a library-browsing one (linePresetSaveBtn is deliberately
@@ -3612,19 +3257,6 @@
           <button id="sizeRunBtn" role="menuitem" type="button" title="Grade the base spec into a full size run (S–5XL)">Size Run…</button>
           <button id="gradingBtn" data-key="G" role="menuitem" type="button" title="View and edit the per-size grading rule">Grading Rules…</button>
           <div class="toolbar-menu-separator"></div>
-          <div class="toolbar-menu-label">Learning</div>
-          <button id="autoLearnToggleBtn" class="auto-only" role="menuitem" type="button" title="Apply learned anchor calibration from past TD corrections">Learning</button>
-          <button id="learningToolbarBtn" class="learning-toolbar-btn manual-only" role="menuitem" type="button" title="Turn learning on, then correct Auto lines and save evidence for reuse">Learning Off</button>
-          <button id="viewLearningDataItem" class="auto-only" role="menuitem" type="button" title="See learned anchor calibration, POM meanings, and style buckets">View learning data…</button>
-          <button id="resetResidualsItem" class="auto-only" role="menuitem" type="button">Reset calibration residuals</button>
-          <button id="resetMeaningsCurrentItem" class="auto-only" role="menuitem" type="button">Forget POM meanings (current style)</button>
-          <button id="resetMeaningsAllItem" class="auto-only" role="menuitem" type="button">Forget POM meanings (all styles)</button>
-          <div class="toolbar-menu-meta">
-            <span id="autoLearnChip" class="auto-status-chip auto-only" title="Recorded TD corrections that feed calibration">0 samples</span>
-            <span id="autoAcceptanceChip" class="auto-status-chip acceptance auto-only" title="Auto-applied POM lines accepted without edit">0/0 accepted</span>
-            <span id="learningToolbarChip" class="auto-status-chip manual-only" title="Recorded learning samples">0 samples</span>
-          </div>
-          <div class="toolbar-menu-separator"></div>
           <div class="toolbar-menu-label">Board</div>
           <button id="autoResetAnchorsBtn" class="auto-only" role="menuitem" type="button" title="Re-seed anchors from the current detection">Reset Anchors</button>
           <button id="autoResetBoardBtn" class="auto-only menu-danger" role="menuitem" type="button" title="Delete all photos and lines and start a new sketch">Reset Board…</button>
@@ -3669,10 +3301,10 @@
              group) on the board — DXF grading-nest pieces, chiefly — so the
              TD can pick which sizes to keep. Floating, non-modal, opens
              docked opposite the anchor panel but is freely draggable by its
-             head (src/ui/draggable-panel.js) — the CSS right:12px below is
+             head (src/core/ui/draggable-panel.js) — the CSS right:12px below is
              only the OPENING position. Opened from the Tools menu
              (#patternPiecesBtn) or automatically after a multi-piece DXF
-             import; see src/ui/pattern-pieces-panel.js. -->
+             import; see src/dxf/pattern-pieces-panel.js. -->
         <div id="patternPiecesPanel" class="anchor-panel pattern-pieces-panel" hidden aria-label="Pattern pieces">
           <div id="patternPiecesHead" class="anchor-panel-head" title="Drag to move">
             <div class="anchor-panel-titles">
@@ -3701,7 +3333,7 @@
              Manager top-left, Pattern Pieces top-right, this bottom-right —
              three panels, three corners, non-overlapping at OPEN time only)
              but is freely draggable by its head afterward
-             (src/ui/draggable-panel.js); see src/ui/dxf-measurements-panel.js. -->
+             (src/core/ui/draggable-panel.js); see src/dxf/measure/dxf-measurements-panel.js. -->
         <div id="dxfMeasurementsPanel" class="anchor-panel dxf-measurements-panel" hidden aria-label="Pattern measurements">
           <div id="dxfMeasurementsHead" class="anchor-panel-head" title="Drag to move">
             <div class="anchor-panel-titles">
@@ -3754,7 +3386,7 @@
         <div class="spec-style">
           <label for="styleIdInput">Style code:</label>
           <input id="styleIdInput" type="text" placeholder="optional" autocomplete="off" spellcheck="false" maxlength="40" />
-          <span class="spec-style-hint">Remembers POM 6+ meanings per style. Leave blank to share across styles.</span>
+          <span class="spec-style-hint">Groups saved projects by style in the Library.</span>
         </div>
       </div>
       <div class="spec-table-wrap">
@@ -3928,7 +3560,7 @@
 <!-- US-079/ADR 0046: fifth tech-pack tab. The whole tech pack as A4 sheets
      in contract order, each with an include checkbox; Export Tech Pack
      writes the enabled sheets as one multi-sheet .xlsx. See
-     src/ui/preview-page.js. -->
+     src/techpack/preview/preview-page.js. -->
 <div id="previewPage" class="cc-page pv-page page-hidden" aria-label="Preview and Export page">
   <div class="cc-toolbar">
     <strong class="pv-title">Preview &amp; Export</strong>
@@ -3951,6 +3583,6 @@
 <script async src="vendor/opencv-4.x-20260603.js?v=opencv-4x-20260603-1"></script>
 <script src="vendor/opencv_real_api.js?v=real-opencv-20260708-1"></script>
 <script src="vendor/potrace.js?v=potrace-20260617-1"></script>
-<script src="app.js?v=0f87c66a7fe8"></script>
+<script src="app.js?v=652de5a27f31"></script>
 </body>
 </html>

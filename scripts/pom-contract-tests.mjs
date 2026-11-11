@@ -86,9 +86,6 @@ const has = (c, ...kinds) => kinds.every(k => a(c, k));
 //             POM 6 reads apart from POM 5); end.y from cf-bottom.
 //   POM 7/8 — end.x forced to start.x (strictly vertical by spec).
 //   POM 13  — back-panel anchors when seeded, else back-top/bottom + 0.04 x.
-// Rows whose endpoints were soft-pulled toward TD-confirmed style evidence
-// (styleEvidenceStatus === 'confirmed-prior') intentionally leave the anchors
-// and are skipped.
 const EPS_LINE_ANCHOR = 0.004;
 // The two ends of one horizontal-span pair read the SAME row variable in the
 // seeder, so they must be exactly equal — float noise only, not a tolerance.
@@ -224,9 +221,7 @@ const lineAnchorCoherenceAssertions = () => Object.keys(CLA_EXPECT).map(pom => (
   name: CLA_NAMES[pom],
   require: (c) => {
     const gm = g(c, pom);
-    return hasLine(gm)
-      && gm.styleEvidenceStatus !== 'confirmed-prior'
-      && !!CLA_EXPECT[pom](c);
+    return hasLine(gm) && !!CLA_EXPECT[pom](c);
   },
   test: (c) => {
     const gm = g(c, pom);
@@ -246,8 +241,7 @@ const lineAnchorCoherenceAssertions = () => Object.keys(CLA_EXPECT).map(pom => (
 // distance) are measured straight ACROSS, so the drafted line must be
 // horizontal (start.y === end.y) even when the two anchors sit at slightly
 // different heights. buildPOMFixtureFromAnchors forces end.y = start.y for
-// these — the mirror of POM 7 / 8's forced-vertical treatment. Skips
-// style-evidence-pulled rows (same carve-out as the CLA checks).
+// these — the mirror of POM 7 / 8's forced-vertical treatment.
 const HORIZONTAL_POMS = [
   { pom: '1',  label: 'POM 1 (1/2 bottom band) line is horizontal (start.y === end.y)' },
   { pom: '3',  label: 'POM 3 (1/2 chest) line is horizontal (start.y === end.y)' },
@@ -259,7 +253,7 @@ const horizontalAssertions = () => HORIZONTAL_POMS.map(({ pom, label }) => ({
   name: label,
   require: (c) => {
     const gm = g(c, pom);
-    return hasLine(gm) && gm.styleEvidenceStatus !== 'confirmed-prior';
+    return hasLine(gm);
   },
   test: (c) => {
     const gm = g(c, pom);
@@ -357,8 +351,7 @@ const apexAssertions = () => [{
   name: 'POM 16 line is levelled at the midpoint of both apex pins',
   require: (c) => {
     const gm = g(c, '16');
-    return hasLine(gm) && gm.styleEvidenceStatus !== 'confirmed-prior'
-      && has(c, 'apex-left', 'apex-right');
+    return hasLine(gm) && has(c, 'apex-left', 'apex-right');
   },
   test: (c) => {
     const gm = g(c, '16');
@@ -393,7 +386,7 @@ const touchesRequiredAnchorAssertions = () => TOUCH_POMS.map(({ pom, kinds }) =>
   name: `POM ${pom} line passes through both anchors (${kinds.join(' + ')})`,
   require: (c) => {
     const gm = g(c, pom);
-    return hasLine(gm) && gm.styleEvidenceStatus !== 'confirmed-prior' && has(c, ...kinds);
+    return hasLine(gm) && has(c, ...kinds);
   },
   test: (c) => {
     const gm = g(c, pom);
@@ -792,8 +785,7 @@ const ASSERTIONS = [
         if (anc.confidence !== q.confidence) bad.push(`${kind}: tier ${anc.confidence}!=${q.confidence}`);
         if (anc.source !== q.source) bad.push(`${kind}: source ${anc.source}!=${q.source}`);
         if (anc.reviewRequired !== q.reviewRequired) bad.push(`${kind}: rr ${anc.reviewRequired}!=${q.reviewRequired}`);
-        const expectedClass = anc.calibrated ? 'learned' : q.sourceClass;
-        if (anc.landmarkSourceClass !== expectedClass) bad.push(`${kind}: class ${anc.landmarkSourceClass}!=${expectedClass}`);
+        if (anc.landmarkSourceClass !== q.sourceClass) bad.push(`${kind}: class ${anc.landmarkSourceClass}!=${q.sourceClass}`);
       }
       return { ok: bad.length === 0, msg: bad.length ? bad.slice(0, 4).join('; ') : 'all seeded anchors agree with landmarkQa' };
     },
@@ -820,7 +812,7 @@ const ASSERTIONS = [
         .filter(q => !allowed.has(q.sourceClass))
         .map(q => `${q.kind}=${q.sourceClass}`);
       const badAnchor = Object.entries(c.anchors)
-        .filter(([, a]) => a.landmarkSourceClass && !allowed.has(a.landmarkSourceClass) && a.landmarkSourceClass !== 'learned')
+        .filter(([, a]) => a.landmarkSourceClass && !allowed.has(a.landmarkSourceClass))
         .map(([k, a]) => `${k}=${a.landmarkSourceClass}`);
       return { ok: bad.length === 0 && badAnchor.length === 0, msg: [...bad, ...badAnchor].join('; ') || 'all classes valid' };
     },
@@ -1071,7 +1063,6 @@ function captureExpr(imagePath) {
           reviewRequired: !!a.reviewRequired,
           cupModelId: a.cupModelId || null,
           landmarkSourceClass: a.landmarkSourceClass || null,
-          calibrated: !!a.calibrated,
         };
       }
       // Draft line geometry for every POM, mapped from board space back to
@@ -1089,7 +1080,6 @@ function captureExpr(imagePath) {
           style: d.style || null,
           type: d.type || null,
           drawability: d.drawability || null,
-          styleEvidenceStatus: d.styleEvidenceStatus || null,
           start: d.start ? toNorm(d.start) : null,
           end: d.end ? toNorm(d.end) : null,
         };
@@ -1117,9 +1107,7 @@ function captureExpr(imagePath) {
           try {
             const mutated = debug.getDetection();
             for (const field of rc.nulls) mutated[field] = null;
-            // skipLearning: a polluted calibration store must not bias the
-            // seeds under test (the residual buckets cover band anchors).
-            const seeded = pipe.seedAnchorsFromDetection(mutated, seedImage, { skipLearning: true });
+            const seeded = pipe.seedAnchorsFromDetection(mutated, seedImage);
             const byKind = {};
             for (const anchor of seeded) byKind[anchor.kind] = anchor;
             const pom = rc.pair === 'band' ? '1' : '3';

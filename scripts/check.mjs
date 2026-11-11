@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SOURCE_PARTS, DXF_WORKER_PARTS } from './source-parts.mjs';
+import { SOURCE_PARTS, DXF_PARSE_PARTS } from './source-parts.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(scriptDir, '..');
@@ -14,7 +14,6 @@ const jsFiles = [
   'vendor/potrace.js',
   'scripts/build-app.mjs',
   'scripts/auto-mode-smoke.mjs',
-  'scripts/learning-tests.mjs',
   'scripts/accuracy-tests.mjs',
   'scripts/pipeline-tests.mjs',
   'scripts/serve.mjs',
@@ -58,19 +57,31 @@ for (const file of jsFiles) {
 }
 
 // Membership gate: every src/**/*.js on disk must be registered in
-// source-parts.mjs — in SOURCE_PARTS (app.js) or DXF_WORKER_PARTS
-// (dxf-worker.js, US-124) — or it silently never ships (an unregistered
-// part has no compiler to complain — this is the only place that catches it).
-const allParts = [...new Set([...SOURCE_PARTS, ...DXF_WORKER_PARTS])];
-const registered = new Set(allParts);
+// SOURCE_PARTS or it silently never ships (an unregistered part has no
+// compiler to complain — this is the only place that catches it).
+const registered = new Set(SOURCE_PARTS);
 for (const file of listJsFiles(path.join(appDir, 'src'))) {
   const relative = path.relative(appDir, file).split(path.sep).join('/');
   if (!registered.has(relative)) {
-    failures.push(`Unregistered source part: ${relative} exists under src/ but is not listed in scripts/source-parts.mjs (it will never be bundled into app.js or dxf-worker.js).`);
+    failures.push(`Unregistered source part: ${relative} exists under src/ but is not listed in scripts/source-parts.mjs (it will never be bundled into app.js).`);
   }
 }
 
-for (const file of allParts) {
+// The DXF parse layer (DXF_PARSE_PARTS) is a subset of app.js that must stay
+// pure. Every listed part must actually ship, and every part under
+// src/dxf/parse/ must be listed, so a new parse file cannot slip past the
+// purity gate below.
+const parseParts = new Set(DXF_PARSE_PARTS);
+for (const rel of DXF_PARSE_PARTS) {
+  if (!registered.has(rel)) failures.push(`DXF parse layer: ${rel} is in DXF_PARSE_PARTS but not in SOURCE_PARTS, so it never ships in app.js.`);
+}
+for (const rel of SOURCE_PARTS) {
+  if (rel.startsWith('src/dxf/parse/') && !parseParts.has(rel)) {
+    failures.push(`DXF parse layer: ${rel} lives under src/dxf/parse/ but is not listed in DXF_PARSE_PARTS (scripts/source-parts.mjs), so its purity is never checked.`);
+  }
+}
+
+for (const file of SOURCE_PARTS) {
   const absolute = path.join(appDir, file);
   if (!existsSync(absolute)) {
     failures.push(`Missing source part: ${file}`);
@@ -91,42 +102,36 @@ for (const file of allParts) {
 // to catch a collision or an ordering mistake. These two gates cover the only
 // two ways that scope can bite silently — neither produces a syntax error, so
 // nothing else in this file would notice.
-// Each bundle is its own IIFE, so the gates run per bundle: a name may live in
-// both bundles (the DXF parse layer does, by design) but only once within each.
+//
+// The DXF parse layer is also run on its own (scripts/dxf-notch-assign-check.mjs
+// concatenates DXF_PARSE_PARTS into a node:vm bundle), so its parts must load
+// in that order too.
 failures.push(...validateSharedScope(appDir, SOURCE_PARTS, 'app.js'));
-failures.push(...validateSharedScope(appDir, DXF_WORKER_PARTS, 'dxf-worker.js'));
+failures.push(...validateSharedScope(appDir, DXF_PARSE_PARTS, 'DXF parse layer'));
 
-// US-124: a worker bundle must not carry Board code. The DXF parse layer was
-// split out of dxf-import.js for exactly this reason (Phase 5); this gate
-// keeps the worker-only entry honest too. `typeof document` feature checks
-// are allowed.
-const WORKER_BUNDLES = [
-  { name: 'dxf-worker.js', parts: DXF_WORKER_PARTS, hint: 'Keep the DXF parse layer (src/dxf/parse/: dxf-parse.js, dxf-pattern-classify.js, dxf-native-parser.js) pure; Board code belongs in src/dxf/dxf-import.js / dxf-worker-client.js.' },
-];
-for (const bundle of WORKER_BUNDLES) {
-  for (const rel of bundle.parts) {
-    const absolute = path.join(appDir, rel);
-    if (!existsSync(absolute)) continue;
-    const code = blankNonCode(readFileSync(absolute, 'utf8'));
-    const lines = code.split('\n');
-    for (let n = 0; n < lines.length; n += 1) {
-      const line = lines[n];
-      if (/\bstate\.[A-Za-z_$]/.test(line) || /\bshowToast\s*\(/.test(line) || /\bpushHistoryIfChanged\s*\(/.test(line)
-        || /\bwindow\.(?!location\b)/.test(line)) {
-        failures.push(`Worker bundle: ${rel}:${n + 1} touches Board/DOM state (\`${line.trim()}\`) but is part of ${bundle.name}, which has no Board, no DOM and no window. ${bundle.hint}`);
-      }
+// The DXF parse layer must not carry Board code: it was split out of
+// dxf-import.js (US-124 Phase 5) so a parse is a pure function of the text,
+// testable without a browser. `typeof document` feature checks are allowed.
+for (const rel of DXF_PARSE_PARTS) {
+  const absolute = path.join(appDir, rel);
+  if (!existsSync(absolute)) continue;
+  const code = blankNonCode(readFileSync(absolute, 'utf8'));
+  const lines = code.split('\n');
+  for (let n = 0; n < lines.length; n += 1) {
+    const line = lines[n];
+    if (/\bstate\.[A-Za-z_$]/.test(line) || /\bshowToast\s*\(/.test(line) || /\bpushHistoryIfChanged\s*\(/.test(line)
+      || /\bwindow\.(?!location\b)/.test(line)) {
+      failures.push(`DXF parse layer: ${rel}:${n + 1} touches Board/DOM state (\`${line.trim()}\`), but the parse layer has no Board, no DOM and no window. Keep src/dxf/parse/ pure; Board code belongs in src/dxf/dxf-import.js.`);
     }
   }
 }
 
-for (const generated of ['app.js', 'dxf-worker.js']) {
-  const generatedCheck = spawnSync(process.execPath, ['--check', path.join(appDir, generated)], {
-    cwd: appDir,
-    encoding: 'utf8',
-  });
-  if (generatedCheck.status !== 0) {
-    failures.push(`Generated ${generated} syntax failed:\n${generatedCheck.stderr || generatedCheck.stdout}`);
-  }
+const generatedCheck = spawnSync(process.execPath, ['--check', path.join(appDir, 'app.js')], {
+  cwd: appDir,
+  encoding: 'utf8',
+});
+if (generatedCheck.status !== 0) {
+  failures.push(`Generated app.js syntax failed:\n${generatedCheck.stderr || generatedCheck.stdout}`);
 }
 
 const htmlPath = path.join(appDir, 'index.html');

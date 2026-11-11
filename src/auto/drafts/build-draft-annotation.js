@@ -65,7 +65,6 @@
       tdEdited: false,
       tdApproved: false,
       tdApprovalRequired: true,
-      endpointApproximate: row.drawability === 'APPROXIMATE',
       proposedStartLandmark: row.proposedStartLandmark || null,
       proposedEndLandmark: row.proposedEndLandmark || null,
       reason: row.reason || null,

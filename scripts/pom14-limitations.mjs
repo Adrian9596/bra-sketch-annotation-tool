@@ -20,89 +20,13 @@ import {
   runPipeline,
   pomRow,
   runCases,
+  drawFront,
+  drawBack,
+  pack,
 } from './lib/synthetic-detection.mjs';
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pipeline = loadPipeline(appDir);
-
-// A symmetric front bra blob (cups, chest, band, CF axis, side seams) centered
-// in its own box. Mirrors scripts/viewrole-limitations.mjs drawFront.
-function drawFront(setDark, bx, top, boxW, boxH) {
-  const cx = bx;
-  const halfBox = Math.round(boxW / 2);
-  const cupR = Math.min(halfBox, boxH * 0.16) * 0.85;
-  const cupY = top + boxH * 0.40;
-  const bandY = Math.round(top + boxH * 0.82);
-  const bandThickness = Math.max(3, Math.round(boxH * 0.04));
-  const chestY = Math.round(top + boxH * 0.30);
-  const sideLX = Math.round(cx - halfBox);
-  const sideRX = Math.round(cx + halfBox);
-  for (let theta = 0; theta < Math.PI * 2; theta += 0.005) {
-    const xL = Math.round(cx - cupR * 0.8 + Math.cos(theta) * cupR * 0.55);
-    const yL = Math.round(cupY + Math.sin(theta) * cupR);
-    const xR = Math.round(cx + cupR * 0.8 + Math.cos(theta) * cupR * 0.55);
-    setDark(xL, yL); setDark(xL, yL + 1);
-    setDark(xR, yL); setDark(xR, yL + 1);
-  }
-  const chestSpanHalf = Math.round(halfBox * 0.92);
-  for (let x = cx - chestSpanHalf; x <= cx + chestSpanHalf; x += 1) setDark(Math.round(x), chestY);
-  for (let dy = 0; dy < bandThickness; dy += 1) {
-    for (let x = sideLX; x <= sideRX; x += 1) setDark(x, bandY + dy);
-  }
-  for (let y = Math.round(top + boxH * 0.06); y <= bandY; y += 1) setDark(Math.round(cx), y);
-  for (let y = chestY; y <= bandY + bandThickness; y += 1) {
-    for (let dx = 0; dx < 3; dx += 1) {
-      setDark(sideLX - dx, y);
-      setDark(sideRX + dx, y);
-    }
-  }
-}
-
-// An asymmetric back panel: rectangular outline, a strong vertical center-back
-// seam, and a single off-center back strap running up from the panel top. The
-// strap + panel edges give findBackPanelHeight (strap↔panel join → strap-bottom)
-// real ink to seed the back end of POM 14.
-// Mirrors scripts/viewrole-limitations.mjs drawBack.
-function drawBack(setDark, bx, top, boxW, boxH) {
-  const cx = bx;
-  const halfBox = Math.round(boxW / 2);
-  const bandY = Math.round(top + boxH * 0.85);
-  const chestY = Math.round(top + boxH * 0.25);
-  const sideLX = Math.round(cx - halfBox);
-  const sideRX = Math.round(cx + halfBox);
-  for (let y = chestY; y <= bandY; y += 1) {
-    for (let dx = 0; dx < 3; dx += 1) {
-      setDark(sideLX - dx, y);
-      setDark(sideRX + dx, y);
-    }
-  }
-  const thickness = Math.max(3, Math.round(boxH * 0.04));
-  for (let dy = 0; dy < thickness; dy += 1) {
-    for (let x = sideLX; x <= sideRX; x += 1) {
-      setDark(x, chestY + dy);
-      setDark(x, bandY + dy);
-    }
-  }
-  for (let y = chestY; y <= bandY; y += 1) {
-    for (let dx = -1; dx <= 1; dx += 1) setDark(Math.round(cx) + dx, y);
-  }
-  // Off-center back strap up from the panel top — POM 14's back-strap ink.
-  for (let y = top; y <= chestY; y += 1) setDark(Math.round(cx - halfBox * 0.5), y);
-}
-
-function pack(canvas, engine) {
-  return {
-    engine,
-    width: canvas.stats.colDark.length,
-    height: canvas.stats.rowDark.length,
-    total: canvas.stats.colDark.length * canvas.stats.rowDark.length,
-    mask: canvas.mask,
-    stats: canvas.stats,
-    threshold: 80,
-    luminanceThreshold: 160,
-    backgroundLum: 255,
-  };
-}
 
 // Front (left) + back (right, with strap) — a normal 2-view tech pack. POM 14
 // curves from the front strap upper join to the back strap end.

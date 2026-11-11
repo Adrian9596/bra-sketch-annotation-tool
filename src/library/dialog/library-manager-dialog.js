@@ -626,7 +626,7 @@
     // the no-selection branch told the TD one thing and did another. The
     // label now says which branch is about to run.
     function updateSaveButtonLabel() {
-      const hasSelection = typeof getSelectedAnnotation === 'function' && !!getSelectedAnnotation();
+      const hasSelection = !!getSelectedAnnotation();
       saveBtn.textContent = hasSelection ? 'Save selected path as Treatment…' : 'Save current Line Look…';
     }
 

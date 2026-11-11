@@ -54,9 +54,8 @@
   }
 
   // Geometry fingerprint used to decide whether a draft really moved. Taken
-  // before the rebuild and again after the post-passes below, never in between:
-  // the style-evidence blend rewrites the endpoints again, so a draft can be
-  // rewritten with raw fixture geometry and still end up exactly where it was.
+  // before the rebuild and again after it, so a draft rewritten with the same
+  // fixture geometry it already held does not count as moved.
   function draftGeometryKey(draft) {
     const p = (q) => q ? q.x.toFixed(6) + ',' + q.y.toFixed(6) : '-';
     return [draft.drawability, p(draft.start), p(draft.end),
@@ -67,13 +66,9 @@
   // derivation in buildDraftAnnotation (build-draft-annotation.js) — a field
   // added there and not here would silently stop tracking its anchors.
   //
-  // Writes unconditionally, even when the rebuilt geometry is identical. That
-  // looks wasteful and is load-bearing: the style-evidence pass below has to see
-  // every draft sitting on RAW fixture geometry. Skipping the unchanged ones
-  // would leave them holding their already-blended endpoints, and blending those
-  // again would compound the 40% pull on every mousemove. Resetting to raw first
-  // makes the whole re-sync idempotent. "Did it actually move" is answered later,
-  // by comparing geometry keys across the entire pass.
+  // Writes unconditionally, even when the rebuilt geometry is identical, which
+  // keeps the re-sync idempotent. "Did it actually move" is answered later, by
+  // comparing geometry keys across the entire pass.
   function applyFixtureRowToDraft(draft, row, image) {
     if (!draft || !row || !image || !image.width) return false;
     const reviewOnly = row.drawability === 'REVIEW_ONLY';
@@ -93,7 +88,6 @@
     draft.arrowType = reviewOnly ? 'double' : (row.arrowType || 'double');
     draft.drawability = row.drawability;
     draft.confidence = row.confidence || 'medium';
-    draft.endpointApproximate = row.drawability === 'APPROXIMATE';
     draft.desc = row.desc || null;
     draft.reason = row.reason || null;
     draft.uncertainty = row.uncertainty || null;
@@ -105,16 +99,6 @@
       ? row.missingAnchors.slice() : null;
     draft.reviewNotes = Array.isArray(row.reviewNotes) && row.reviewNotes.length
       ? row.reviewNotes.slice() : null;
-    // Clear the style-evidence marks along with the geometry they described.
-    // The two passes at the end of the re-sync re-apply them from the store, so
-    // after this the draft is in exactly the state a fresh Generate would build.
-    // Leaving them set would be worse than untidy: applyStyleConfirmedEvidence-
-    // ToDrafts skips anything still flagged 'absent-confirmed', so a draft whose
-    // absence evidence has since been forgotten would be rebuilt with real
-    // geometry and then never receive the confirmed prior again.
-    draft.styleEvidenceId = null;
-    draft.styleEvidenceStatus = null;
-    draft.styleEvidenceSamples = null;
     // A REVIEW_ONLY row has no line to caption. Otherwise re-derive the callout
     // position unless the TD placed it by hand; the collision pass below then
     // spreads the whole set, exactly as it does after Generate.
@@ -123,10 +107,8 @@
     } else if (!draft.labelManual) {
       draft.label = computeDefaultLabelPosition(draft);
     }
-    // Approval is NOT decided here — see the end of resyncDraftsFromAnchors.
-    // The style-evidence pass can move these endpoints again, so whether the
-    // line the TD approved actually changed is only knowable once every pass has
-    // run.
+    // Approval is NOT decided here — see the end of resyncDraftsFromAnchors,
+    // which compares geometry keys once every draft has been rebuilt.
     return true;
   }
 
@@ -196,28 +178,8 @@
     }
     if (!touched.length) return 0;
 
-    // Same post-passes Generate runs, in the same order (absence wipes, then
-    // the confirmed-style soft pull, then label de-collision), over the rebuilt
-    // rows only — a hand-edited draft is excluded above and must stay excluded
-    // here too. Each pass reads the freshly rebuilt geometry rather than its own
-    // previous output, so repeating this on every mousemove cannot compound.
-    //
-    // Evidence is scoped to drafts on the DETECTION SOURCE image, matching
-    // generate-drafts-action.js: it runs both passes before the inner-view pass
-    // replaces POM 9/10/17/18, so an inner-photo draft never gets blended — and
-    // the evidence medians are normalized against the source image anyway, so
-    // applying them to a draft on a different photo would place it by the wrong
-    // rectangle. It covers EVERY rebuilt front draft, not only the ones whose
-    // anchors moved: Generate blends the whole set, so blending a subset here
-    // would leave the board in a state Generate can never produce.
-    const frontTouched = touched.filter(d => String(d.sourceImageId) === String(sourceImage.id));
-    if (frontTouched.length && typeof applyStyleAbsenceEvidenceToDrafts === 'function') {
-      applyStyleAbsenceEvidenceToDrafts(frontTouched);
-    }
-    if (frontTouched.length && typeof applyStyleConfirmedEvidenceToDrafts === 'function') {
-      applyStyleConfirmedEvidenceToDrafts(frontTouched, sourceImage);
-    }
-    // Hand-edited drafts stay out of this too, not just out of the rebuild.
+    // Same label de-collision pass Generate runs. Hand-edited drafts stay out
+    // of this too, not just out of the rebuild.
     // The pass shifts any label with labelManual === false, and a tdEdited
     // draft's label was never reset to its default here — so where every other
     // callout starts each pass from a fresh default, that one would keep and
@@ -225,16 +187,10 @@
     // the TD deliberately placed. Excluding it can let a rebuilt callout overlap
     // it, which is cosmetic and already possible; the drift was neither, since
     // Apply copies the label position onto the applied annotation.
-    if (typeof nudgeAutoLabelsToAvoidCollisions === 'function') {
-      nudgeAutoLabelsToAvoidCollisions(drafts.filter(d => d && !d.tdEdited));
-    }
+    nudgeAutoLabelsToAvoidCollisions(drafts.filter(d => d && !d.tdEdited));
 
-    // Now that every pass has run, drop the approval on the drafts whose line
-    // actually ended up somewhere else. Deciding this before the blend would
-    // unapprove a draft on a style with stored evidence every single time any
-    // anchor moved, because the pre-blend rebuild always differs from the
-    // post-blend geometry the TD is looking at — even when the two passes
-    // together land it right back where it was.
+    // Now that every draft has been rebuilt, drop the approval on the drafts
+    // whose line actually ended up somewhere else.
     let moved = 0;
     for (const draft of touched) {
       if (geometryBefore.get(draft) === draftGeometryKey(draft)) continue;

@@ -184,7 +184,8 @@ async function main() {
   check(pasted.copy.seamPath.startNodeId !== pasted.source.seamPath.startNodeId
       && pasted.copy.seamPath.treatmentRuns.every((run, index) => run.id !== pasted.source.seamPath.treatmentRuns[index].id),
     'a pasted Seam Path must receive fresh node/run identity rather than aliasing the source');
-  check(pasted.copy.seamPath.detectionTrace === null && pasted.copy.seamPath.fidelityReceipt === null,
+  check(!['detectionTrace', 'endpointTopology', 'pathCompleteness', 'fidelityReceipt']
+      .some(key => key in pasted.copy.seamPath),
     'a pasted path must not claim detector evidence belonging to its source');
 
   const lifecycle = await s.eval(`(async () => {

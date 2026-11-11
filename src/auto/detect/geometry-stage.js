@@ -48,12 +48,6 @@
   function analyzeGeometry(seg, ctx) {
     const { detectionParams, stageTimingsMs } = ctx;
     const _stageMark = ctx.mark;
-    // Phase 4: the contour-evidence bundle (endpoints / curve candidates /
-    // stroke stats) is available here via ctx.contourEvidence so geometry can
-    // read shape evidence without re-deriving it. Geometry decisions do not
-    // consume it yet — wiring that in is Phase 5 — so output stays identical.
-    const contourEvidence = ctx.contourEvidence || null;
-    void contourEvidence;
     const {
       dark, rawDark, w, h, total, globalStats, filtered,
       threshold, luminanceThreshold,

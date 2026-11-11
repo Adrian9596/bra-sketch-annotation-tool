@@ -377,9 +377,9 @@
 
   // Enabled preview sheets → workbook bytes; null when nothing is ticked.
   async function buildTechPackXlsxBytes(now) {
-    if (typeof ensureMainPage === 'function') ensureMainPage();
-    if (typeof ensureConstruction === 'function') ensureConstruction();
-    if (typeof ensureBom === 'function') ensureBom();
+    ensureMainPage();
+    ensureConstruction();
+    ensureBom();
     const enabled = pvEnabledSheets();
     if (!enabled.length) return null;
     const parts = [];

@@ -12,17 +12,12 @@
 //   3. Undo restores a corrected anchor (and the drafts derived from it), and a
 //      band nudge carries the hem-seeded bottoms with it instead of flattening
 //      them onto the band chord;
-//   4. tdApproved is dropped only for a draft whose geometry actually moved, and
-//      that verdict is taken AFTER the style-evidence blend. Judged before it, a
-//      style with stored evidence would un-approve every blended draft on every
-//      anchor move, because the pre-blend rebuild always differs from the
-//      post-blend geometry the TD is looking at even when the two passes land it
-//      right back where it was. Guard 4 pins that round trip.
+//   4. tdApproved is dropped only for a draft whose geometry actually moved:
+//      re-approve everything, move an anchor that does not feed POM 1 twice, and
+//      POM 1 must keep its approval because the rewrite lands it exactly where
+//      it already was.
 //
 // Uses its own Chrome and its own board, so nothing here perturbs another suite.
-// Learning is OFF: every gesture below is a real TD correction as far as the app
-// is concerned and would otherwise pour synthetic samples into the calibration
-// store.
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -50,7 +45,6 @@ try {
   s = await openCdpSession(cdpPort);
   await s.waitFor('!!window.__braAutoModeDebug', 30000);
   await s.waitForSoft(`/ready/i.test(document.querySelector('#visionEngineChip')?.textContent||'')`, 120000);
-  await s.eval(`window.__braAutoModeDebug.learning.setEnabled(false); 'off'`);
   await s.eval(`(async () => { const d = window.__braAutoModeDebug;
     const b = await (await fetch('demo/demo1.jpg?p=' + Date.now(), {cache:'no-store'})).blob();
     const u = await new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
@@ -118,21 +112,10 @@ try {
     const approvedAfter2 = drafts().filter(x => x.tdApproved).map(x => String(x.seq));
     const geomMoved2 = Object.keys(before2).filter(p => (moved(before2[p], after2[p]) || 0) > 1e-9);
 
-    // --- guard 4: with style evidence stored, a settled blended draft must not
-    //     lose its approval every time some unrelated anchor moves. The resync
-    //     rewrites it to RAW fixture geometry and then re-blends, so a naive
-    //     "did the rewrite change anything" test says yes on every single move
-    //     even though the line the TD is looking at never budges.
-    const I2 = d.getImages()[0];
-    const nrm = (p) => ({ x: (p.x - I2.x)/I2.width, y: (p.y - I2.y)/I2.height });
-    const p1 = byPom(1);
-    d.styleEvidence.add(null, {
-      id: 'guard-ev-1', sourceImageId: I2.id, savedAt: new Date().toISOString(),
-      source: 'td-edited-auto-line', tdStatus: 'confirmed', pom: '1', viewRole: 'front_outer',
-      line: { type: 'straight', start: { x: nrm(p1.start).x + 0.02, y: nrm(p1.start).y + 0.01 },
-                                end:   { x: nrm(p1.end).x   + 0.02, y: nrm(p1.end).y   + 0.01 } },
-      quality: { sourceConfidence: 'high', editedFromAuto: true, drawability: 'DRAWABLE' },
-    });
+    // --- guard 4: a draft that does not depend on the moved anchor must not
+    //     lose its approval. The resync rewrites every non-edited draft from
+    //     the fixture on each move, so a naive "did the rewrite run" test would
+    //     un-approve all of them; only a real geometry change may.
     const dragKind = (kind, dy) => {
       const an = d.getAnchors().find(x => x.kind === kind);
       const IM = d.getImages().find(i => i.id === an.sourceImageId) || d.getImages()[0];
@@ -142,9 +125,7 @@ try {
       for (let i=1;i<=6;i+=1) ev('mousemove', qx, qy + dy*i/6);
       ev('mouseup', qx, qy + dy, { altKey: true });
     };
-    // First move lets the blend land on POM 1 (its geometry legitimately shifts).
     dragKind('back-top', -20);
-    const pom1Blended = !!byPom(1).styleEvidenceStatus;
     // Re-approve everything, then move the SAME unrelated anchor again.
     d.approveDrawableDrafts();
     const approvedBefore3 = drafts().filter(x => x.tdApproved).map(x => String(x.seq));
@@ -159,7 +140,6 @@ try {
 
     return {
       opened,
-      pom1Blended,
       approvedBefore3, approvedAfter3, geomMoved3,
       tdEdited11: !!post11.tdEdited,
       editedGeom, post11Geom: geom(post11),
@@ -201,14 +181,13 @@ try {
   check(out.geomMoved2.every(p => !out.approvedBefore2.includes(p) || lost.includes(p)),
     'every approved draft that moved lost its approval');
 
-  console.log('\n=== guard 4: a settled blended draft keeps its approval when an unrelated anchor moves ===');
-  check(out.pom1Blended, 'POM 1 actually picked up the stored style evidence (else guard 4 tests nothing)');
+  console.log('\n=== guard 4: a draft keeps its approval when an unrelated anchor moves ===');
   const lost3 = out.approvedBefore3.filter(p => !out.approvedAfter3.includes(p));
   console.log(`   geometry moved: ${JSON.stringify(out.geomMoved3)} | lost approval: ${JSON.stringify(lost3)}`);
   check(!out.geomMoved3.includes('1'),
-    'POM 1 did not move when back-top did — the raw-rewrite-then-reblend round trip is a no-op');
+    'POM 1 did not move when back-top did — the rewrite from the fixture is a no-op for it');
   check(!lost3.includes('1'),
-    'POM 1 kept its approval through an unrelated anchor move despite being re-blended each time');
+    'POM 1 kept its approval through an unrelated anchor move despite being rewritten each time');
   check(lost3.every(p => out.geomMoved3.includes(p)),
     `only drafts that really moved lost approval (lost ${JSON.stringify(lost3)}, moved ${JSON.stringify(out.geomMoved3)})`);
   check(out.geomMoved3.length > 0, 'the second back-top drag did move something (non-vacuous)');

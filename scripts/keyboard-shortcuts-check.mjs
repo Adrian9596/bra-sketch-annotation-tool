@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // US-094: browser-level contract for the command registry, Command Palette,
 // scoped shortcuts, and keyboard-only access across all five tech-pack pages.
+// Section 9 pins the keys whose duplicate legacy-router branch was deleted:
+// they must act, and refuse, through the registry alone (incl. the N fix).
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -239,6 +241,79 @@ async function main() {
   })`);
   check(hints.addKey === 'A' && hints.addAria === 'a', `Add Image hint metadata wrong: ${JSON.stringify(hints)}`);
   check(/Shortcut:/.test(hints.saveTitle), `Save tooltip needs its registry shortcut: ${hints.saveTitle}`);
+
+  // 9. The legacy router's duplicate branches for S, H, G, 0, B/C, T, X, E,
+  //    P, I, N, R, D and 1/2/3 were deleted (2026-11-11 dead-code pass): these
+  //    keys now run ONLY through their registry command. Prove a sample still
+  //    acts on a Manual Board and still refuses where the registry refuses.
+  await s.waitFor(`!document.querySelector('.picker-overlay')`, 2000);
+  const viaRegistry = await s.eval(`(() => {
+    const d = window.__braAutoModeDebug;
+    const press = key => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles:true }));
+    const out = { mode: d.getState().appMode };
+    press('s'); out.s = d.getState().tool;
+    press('0'); out.zero = d.getState().tool;
+    press('b'); out.b = d.getState().tool;
+    press('t'); out.t = d.getState().tool;
+    press('s');
+    const workspace = document.querySelector('.workspace');
+    const hiddenBefore = workspace.classList.contains('panel-hidden');
+    press('h'); out.hToggled = workspace.classList.contains('panel-hidden') !== hiddenBefore;
+    press('h'); out.hRestored = workspace.classList.contains('panel-hidden') === hiddenBefore;
+    press('g');
+    const title = document.querySelector('.dialog-panel h2');
+    out.grading = !!title && /Grading/i.test(title.textContent);
+    return out;
+  })()`);
+  check(viaRegistry.mode === 'manual', `registry key checks expect Manual Mode, got ${viaRegistry.mode}`);
+  check(viaRegistry.s === 'select' && viaRegistry.zero === 'straight' && viaRegistry.b === 'curved' && viaRegistry.t === 'text',
+    `S / 0 / B / T must pick their tools through the registry: ${JSON.stringify(viaRegistry)}`);
+  check(viaRegistry.hToggled && viaRegistry.hRestored, `H must toggle the Measurements panel: ${JSON.stringify(viaRegistry)}`);
+  check(viaRegistry.grading, 'G must open the Grading dialog through the registry');
+  await s.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }))`);
+  await s.waitFor(`!document.querySelector('.dialog-panel')`, 2000);
+
+  // A refused command stays refused: with no image, X (Eraser) cannot arm,
+  // and in Auto Mode the Manual-only 0 / T tools never steal Select.
+  const refused = await s.eval(`(() => {
+    const d = window.__braAutoModeDebug;
+    const press = key => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles:true }));
+    const out = { images: d.getState().imageCount };
+    press('x'); out.eraser = d.getState().tool;
+    document.getElementById('modeAutoBtn').click();
+    out.mode = d.getState().appMode;
+    press('0'); press('t'); out.autoTool = d.getState().tool;
+    document.getElementById('modeManualBtn').click();
+    return out;
+  })()`);
+  check(refused.images === 0 && refused.eraser === 'select', `X must not arm the Eraser on an image-less board: ${JSON.stringify(refused)}`);
+  check(refused.mode === 'auto' && refused.autoTool === 'select', `0 / T must stay inert in Auto Mode: ${JSON.stringify(refused)}`);
+
+  // N fix: in Stitch mode #toggleLabelsBtn is disabled, so N must NOT flip the
+  // hidden showLabels flag (the deleted legacy branch did, and the numbers
+  // came back inverted on leaving Stitch mode). In POM mode N still toggles.
+  const labels = await s.eval(`(() => {
+    const d = window.__braAutoModeDebug;
+    const btn = document.getElementById('toggleLabelsBtn');
+    const press = () => document.dispatchEvent(new KeyboardEvent('keydown', { key:'n', bubbles:true }));
+    const out = { stitchRan: d.commands.run('board.style.zigzag') };
+    out.stitchDisabled = btn.disabled;
+    const before = btn.textContent;
+    press();
+    out.stitchUnchanged = btn.textContent === before;
+    out.pomRan = d.commands.run('board.style.solid');
+    out.pomEnabled = !btn.disabled;
+    const pomBefore = btn.textContent;
+    press();
+    out.pomToggled = btn.textContent !== pomBefore;
+    press();
+    out.pomRestored = btn.textContent === pomBefore;
+    return out;
+  })()`);
+  check(labels.stitchRan && labels.stitchDisabled, `Stitch mode must disable Hide/Show Numbers: ${JSON.stringify(labels)}`);
+  check(labels.stitchUnchanged, `N in Stitch mode must not toggle the hidden numbers flag: ${JSON.stringify(labels)}`);
+  check(labels.pomRan && labels.pomEnabled && labels.pomToggled && labels.pomRestored,
+    `N in POM mode must still toggle numbers: ${JSON.stringify(labels)}`);
 
   await s.close();
   console.log(`PASS  keyboard-shortcuts-check   ${passed}/${passed} assertions ok`);

@@ -36,15 +36,3 @@
     return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
       + '  ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
-
-  function buildBadge(text, bg, fg) {
-    const el = document.createElement('span');
-    el.textContent = text;
-    el.style.fontSize = '11px';
-    el.style.fontWeight = '600';
-    el.style.padding = '2px 8px';
-    el.style.borderRadius = '999px';
-    el.style.background = bg;
-    el.style.color = fg;
-    return el;
-  }

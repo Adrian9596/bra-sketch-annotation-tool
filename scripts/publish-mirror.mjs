@@ -49,13 +49,20 @@ const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 //                private, scripts/bin/ is the clone's own local binary.
 //   files        copied as-is. One missing from the source commit stops the
 //                run instead of being deleted: the site cannot run without it.
+//   retired      former `files` the site no longer needs. Mirrored exactly,
+//                like a tree: copied while the source commit still has one,
+//                deleted from the mirror once it does not. Without this the
+//                mirror would keep a stale copy forever, because nothing
+//                outside the scope is ever touched.
 //   renamed      source path -> mirror path. The mirror has its own README.
 // Everything else in the mirror (.gitignore, .claude/, …) is the mirror's own
 // and is never touched.
 const PUBLISH_SCOPE = {
   trees: ['src', 'vendor', 'auto_mode_rules', 'scripts/lib', 'scripts/schema'],
   scriptFiles: /^scripts\/(?:[^/]+\.(?:mjs|json)|README\.md)$/,
-  files: ['app.js', 'dxf-worker.js', 'index.html', 'package.json', 'package-lock.json'],
+  files: ['app.js', 'index.html', 'package.json', 'package-lock.json'],
+  // dxf-worker.js: the DXF Web Worker bundle, removed 2026-11-10 (ADR 0105).
+  retired: ['dxf-worker.js'],
   renamed: { 'README.public.md': 'README.md' },
 };
 
@@ -94,7 +101,7 @@ const MIRROR_SUITES = {
     'autosave-check', 'mainpage-check', 'construction-check', 'bom-check', 'preview-check',
     'notes-check', 'library-manager-check', 'personal-library-check', 'shape-stamps-check',
     'line-presets-check', 'export-xlsx', 'export-hidden', 'pipeline-tests', 'junction-tests',
-    'suggestions-tests', 'dxf-worker-check', 'dxf-measurement-check', 'dxf-import-check', 'dxf-notch-assign-check',
+    'suggestions-tests', 'dxf-measurement-check', 'dxf-import-check', 'dxf-notch-assign-check',
   ],
   quick: ['check', 'group-deps-check', 'keyboard-shortcuts-check'],
   none: [],
@@ -168,6 +175,7 @@ function inScope(p) {
   return PUBLISH_SCOPE.trees.some(tree => p.startsWith(tree + '/'))
     || PUBLISH_SCOPE.scriptFiles.test(p)
     || PUBLISH_SCOPE.files.includes(p)
+    || PUBLISH_SCOPE.retired.includes(p)
     || Object.values(PUBLISH_SCOPE.renamed).includes(p);
 }
 
@@ -183,6 +191,9 @@ function publishSet(sourceDir) {
     if (!existsSync(path.join(sourceDir, f))) throw new PublishError(`the source commit has no ${f}; the site cannot run without it`);
     set.push({ from: f, to: f });
   }
+  // Absent from the source commit = left out of the set, so syncInto deletes
+  // the mirror's copy (it is in scope and tracked, but not wanted).
+  for (const f of PUBLISH_SCOPE.retired) if (existsSync(path.join(sourceDir, f))) set.push({ from: f, to: f });
   for (const [from, to] of Object.entries(PUBLISH_SCOPE.renamed)) {
     if (!existsSync(path.join(sourceDir, from))) throw new PublishError(`the source commit has no ${from} (it becomes the mirror's ${to})`);
     set.push({ from, to });
@@ -434,11 +445,9 @@ async function compareLive(site, dir, extraPaths) {
   const stamp = Date.now();
   const local = p => readFileSync(path.join(dir, p));
   const appUrl = (/src="(app\.js\?v=[^"]+)"/.exec(local('index.html').toString('utf8')) || [])[1] || `app.js?publish-check=${stamp}`;
-  const workerUrl = (/(dxf-worker\.js\?v=[0-9a-f]+)/.exec(local('app.js').toString('utf8')) || [])[1] || `dxf-worker.js?publish-check=${stamp}`;
   const targets = [
     { path: 'index.html', url: `index.html?publish-check=${stamp}` },
     { path: 'app.js', url: appUrl },
-    { path: 'dxf-worker.js', url: workerUrl },
     ...extraPaths.map(p => ({ path: p, url: `${encodeURI(p)}?publish-check=${stamp}` })),
   ];
   const results = [];
@@ -522,7 +531,7 @@ async function publish(opts) {
   }
   const ahead = run('git', [...source.argv, 'rev-list', '--count', 'origin/main..HEAD'], { allowFail: true }).stdout.trim();
   if (ahead && ahead !== '0') say('WARN', `${ahead} private commit(s) on HEAD are not on origin/main and are not published`);
-  const scopeSpecs = [...PUBLISH_SCOPE.trees, 'scripts', ...PUBLISH_SCOPE.files, ...Object.keys(PUBLISH_SCOPE.renamed)];
+  const scopeSpecs = [...PUBLISH_SCOPE.trees, 'scripts', ...PUBLISH_SCOPE.files, ...PUBLISH_SCOPE.retired, ...Object.keys(PUBLISH_SCOPE.renamed)];
   const dirtyScope = run('git', [...source.argv, 'status', '--porcelain', '--', ...scopeSpecs], { allowFail: true }).stdout
     .split('\n').map(l => l.slice(3)).filter(p => p && (inScope(p) || PUBLISH_SCOPE.renamed[p]));
   if (dirtyScope.length) {
@@ -560,7 +569,7 @@ async function publish(opts) {
     if (!existsSync(path.join(sourceDir, 'scripts', 'build-app.mjs'))) throw new PublishError('the source commit has no scripts/build-app.mjs');
     const fresh = run(process.execPath, ['scripts/build-app.mjs', '--verify'], { cwd: sourceDir, allowFail: true });
     if (fresh.status !== 0) {
-      throw new PublishError(`bundle freshness failed on ${short(sourceSha)}: app.js/dxf-worker.js do not match src/ in that commit. Rebuild, commit and push in the private repo first.\n${(fresh.stderr || fresh.stdout).trim().split('\n').slice(-4).join('\n')}`);
+      throw new PublishError(`bundle freshness failed on ${short(sourceSha)}: app.js does not match src/ in that commit. Rebuild, commit and push in the private repo first.\n${(fresh.stderr || fresh.stdout).trim().split('\n').slice(-4).join('\n')}`);
     }
     say('PASS', `bundle fresh     build-app --verify on ${short(sourceSha)}`);
 
@@ -774,7 +783,7 @@ async function selftest() {
     sh(tmp, ['clone', '-q', mirOrigin, clone]);
 
     const P2 = commit(privWork, {
-      'src/a.js': 'a2\n', 'src/new.js': 'new\n', 'src/old.js': null, 'scripts/new.mjs': 'n\n',
+      'src/a.js': 'a2\n', 'src/new.js': 'new\n', 'src/old.js': null, 'scripts/new.mjs': 'n\n', 'dxf-worker.js': null,
       'scripts/old.mjs': null, 'scripts/schema/s.sql': 'create table t(x);\n',
       'scripts/tool.mjs': { data: '#!/usr/bin/env node\n', mode: 0o755 },
       'README.public.md': 'public readme v2\n', 'README.md': 'private readme v2\n',
@@ -790,13 +799,19 @@ async function selftest() {
     const show = p => run('git', ['-C', mirOrigin, 'show', `main:${p}`], { allowFail: true });
     const worktreeCount = () => sh(clone, ['worktree', 'list', '--porcelain']).split('\n').filter(l => l.startsWith('worktree ')).length;
 
-    // A. Dry run.
+    // A0. A retired file the source commit still has keeps shipping: P1 still
+    // holds dxf-worker.js, so republishing it changes nothing.
     const tip0 = tipOf();
+    const stillHas = await publish({ ...base, from: P1 });
+    check(stillHas.nothingToPublish === true && show('dxf-worker.js').stdout === 'worker1\n', 'retired file still in the source: kept in the mirror');
+
+    // A. Dry run.
     const dry = await publish({ ...base });
     const changed = Object.fromEntries(dry.changes.map(c => [c.path, c.status]));
     check(changed['src/a.js'] === 'M' && changed['src/new.js'] === 'A' && changed['src/old.js'] === 'D', 'dry run: src/ mirrored exactly (M/A/D)');
     check(changed['scripts/new.mjs'] === 'A' && changed['scripts/old.mjs'] === 'D' && changed['scripts/schema/s.sql'] === 'A', 'dry run: scripts/ top level and schema/ mirrored');
     check(changed['README.md'] === 'M', 'dry run: README.public.md becomes README.md');
+    check(changed['dxf-worker.js'] === 'D', 'dry run: a retired file the source dropped is deleted from the mirror');
     check(Object.keys(changed).every(p => inScope(p) && !neverPublishHits([p]).length), 'dry run: only in-scope paths change');
     check(tipOf() === tip0, 'dry run: nothing pushed');
     check(sh(clone, ['status', '--porcelain']) === '' && worktreeCount() === 1, 'dry run: clone untouched, temp worktree removed');
@@ -807,6 +822,7 @@ async function selftest() {
     check(pushed.pushedSha === tip1 && tip1 !== tip0, 'push: mirror main advanced to the new commit');
     check(show('src/a.js').stdout === 'a2\n' && show('src/new.js').status === 0 && show('src/old.js').status !== 0, 'push: the published tree matches the source commit');
     check(show('README.md').stdout === 'public readme v2\n', 'push: the mirror README comes from README.public.md');
+    check(show('dxf-worker.js').status !== 0 && show('app.js').status === 0, 'push: the retired file is gone from the mirror, required files stay');
     check(['CLAUDE.md', 'docs/plan.md', 'docs/more.md', 'demo/sketch.txt', 'scripts/groundtruth/gt.json', 'scripts/groundtruth/gt2.json', 'scripts/golden/g.json', 'library/styles.json', 'README.public.md']
       .every(p => show(p).status !== 0), 'push: private-only files never reach the mirror');
     check(show('.claude/launch.json').status === 0 && show('.gitignore').stdout === MIRROR_ONLY['.gitignore'], 'push: mirror-only files are kept');

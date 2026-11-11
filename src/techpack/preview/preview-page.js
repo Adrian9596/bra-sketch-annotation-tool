@@ -211,9 +211,9 @@
     const host = document.getElementById('pvSheets');
     if (!host) return;
     const pv = ensurePreviewPage();
-    if (typeof ensureMainPage === 'function') ensureMainPage();
-    if (typeof ensureConstruction === 'function') ensureConstruction();
-    if (typeof ensureBom === 'function') ensureBom();
+    ensureMainPage();
+    ensureConstruction();
+    ensureBom();
     host.innerHTML = PV_SHEETS.map(sheet => {
       const on = !!pv.enabledPages[sheet.key];
       return '<section class="pv-sheet' + (on ? '' : ' pv-off') + '" data-pv-sheet="' + sheet.key + '">'

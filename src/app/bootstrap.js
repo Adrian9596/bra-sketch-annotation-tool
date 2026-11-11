@@ -28,10 +28,10 @@
     // don't autosave it or offer to restore a prior label session, which would
     // pop a "Recovered work" modal over the board on every reload.
     const labeling = new URLSearchParams(window.location.search).get('label') === '1';
-    if (!labeling) armAutosave();
-    void loadProjectFromUrl()
-      .then(() => (labeling ? null : maybeOfferAutosaveRestore()))
-      .then(() => maybeAutoDraftFromUrl());
+    if (!labeling) {
+      armAutosave();
+      maybeOfferAutosaveRestore();
+    }
   }
 
   // S1: watch the real OpenCV backend's readiness and mirror it into

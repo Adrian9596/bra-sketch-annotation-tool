@@ -60,7 +60,7 @@
   // zooming in absurdly tight.
   function focusDxfMeasurementOnBoard(session, measurement) {
     const pts = dxfMeasureRouteWorldPoints(session, measurement, 8);
-    if (!pts.length || typeof fitBoundsToViewport !== 'function') return;
+    if (!pts.length) return;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of pts) {
       if (p.x < minX) minX = p.x;

@@ -27,7 +27,7 @@
           am.detection.auxViews = am.detection.auxViews.filter(v => v.sourceImageId !== deletedId);
         }
       }
-      if (typeof ensureAutoModeStatus === 'function') ensureAutoModeStatus();
+      ensureAutoModeStatus();
     }
     return true;
   }
@@ -54,15 +54,14 @@
       const anchorAnn = anchor ? getAnnotationById(state.selection.id) : null;
       if (anchor && anchorAnn && anchorAnn.type === 'curved'
           && Array.isArray(anchorAnn.points) && anchorAnn.points[anchor.index]) {
-        if (typeof seamPathNodeOwnsTreatmentBreak === 'function'
-            && seamPathNodeOwnsTreatmentBreak(anchorAnn, anchor.index)) {
+        if (seamPathNodeOwnsTreatmentBreak(anchorAnn, anchor.index)) {
           showToast('This point owns a Treatment Break. Use Remove Treatment Break first; the path point will be kept.');
           return;
         }
         deleteCurveAnchorAt(anchorAnn, anchor.index);
         state.selection.part = null;
         if (!anchorAnn.labelManual) anchorAnn.label = computeDefaultLabelPosition(anchorAnn);
-        if (isTDReviewDraft(anchorAnn)) markDraftTouchedByTD(anchorAnn);
+        markDraftTouchedByTD(anchorAnn);
         pushHistoryIfChanged();
         updateUI();
         requestRender();
@@ -85,20 +84,11 @@
       if (!Array.isArray(state.deletedPomKeys)) state.deletedPomKeys = [];
       for (const ann of targets) {
         // US-096 / ADR 0055 code review, 2026-08-23: a construction line owns no
-        // POM identity, so deleting one must say NOTHING about a POM — neither
-        // in the exported spec nor to learning.
-        //
-        // This `continue` sits above markDeletedAutoAnnotationForEvidence on
-        // purpose. It was originally placed below it, which left the ABSENCE
-        // half of learning capture open: erasing a restyled auto line still
-        // pushed a snapshot into state.deletedAutoAnnotations, and Save
-        // Evidence turned that into an "absent-confirmed" record teaching the
-        // style that it has no such POM — from a line the TD had already
-        // declared to be construction, not measurement.
+        // POM identity, so deleting one must say NOTHING about a POM in the
+        // exported spec.
         if (!isMeasurementAnnotation(ann)) continue;
         // POM numbers are measurement identities, not list positions. Deleting
         // POM 7 must leave a gap instead of turning POM 8 into POM 7.
-        if (typeof markDeletedAutoAnnotationForEvidence === 'function') markDeletedAutoAnnotationForEvidence(ann);
         // US-047: deleting a POM line excludes that POM from the exported spec,
         // exactly like the review × Hide toggle (TD: "delete = hide"). The id is
         // gone after this, so remember the POM label; the export drops the row
@@ -108,7 +98,7 @@
       }
     } else if (state.selection.kind === 'note') {
       // US-092: a note is drawing content, not a measurement. Nothing to record
-      // in deletedPomKeys, no evidence entry, no exported row to keep in sync —
+      // in deletedPomKeys, no exported row to keep in sync —
       // the whole point of keeping notes out of state.annotations.
       const before = (state.notes || []).length;
       state.notes = (state.notes || []).filter(note => note.id !== state.selection.id);
@@ -116,7 +106,7 @@
     } else if (state.selection.kind === 'notch') {
       // ADR-0071: same reasoning as the note branch above — a notch is a
       // pattern-construction mark, not a measurement, so it needs no
-      // deletedPomKeys/evidence bookkeeping either.
+      // deletedPomKeys bookkeeping either.
       const before = (state.notches || []).length;
       state.notches = (state.notches || []).filter(notch => notch.id !== state.selection.id);
       if (state.notches.length === before) return;
@@ -172,7 +162,6 @@
     // A line's notches go with it (ADR 0071 amendment).
     removeNotchesOwnedBy(new Set(state.annotations.map(a => a.id)));
     state.annotations = [];
-    state.deletedAutoAnnotations = [];
     state.deletedPomKeys = [];
     state.nextSequence = 1;
     if (state.selection.kind === 'annotation') {

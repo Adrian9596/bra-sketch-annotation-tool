@@ -1,7 +1,7 @@
 // Auto Mode "Generate Drafts" action: the UI-action orchestration around the
 // fixture engine — mode/image/anchor guards, the destructive-replace confirm,
-// the front-outer / front-inner two-pass build (US-049), learning-evidence
-// hooks, telemetry, and the history/UI/render side effects.
+// the front-outer / front-inner two-pass build (US-049), and the
+// history/UI/render side effects.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // The geometry itself lives in pom-fixture-builder.js
@@ -62,16 +62,6 @@
     }
 
     const drafts = fixture.annotations.map(row => buildDraftAnnotation(row, sourceImage, fixture, runId));
-    if (typeof applyStyleAbsenceEvidenceToDrafts === 'function') {
-      applyStyleAbsenceEvidenceToDrafts(drafts);
-    }
-    // Soft-pull endpoints toward the median of recent TD-confirmed lines
-    // for this style. Runs after the absence pass so REVIEW_ONLY drafts
-    // stay wiped, and before label collision avoidance so labels follow
-    // the nudged endpoints.
-    if (typeof applyStyleConfirmedEvidenceToDrafts === 'function') {
-      applyStyleConfirmedEvidenceToDrafts(drafts, sourceImage);
-    }
 
     // US-049: second pass — measure POM 9/10/17/18 on the front-inner view when
     // one is present. The inner photo carries its OWN detection + anchor set
@@ -117,11 +107,6 @@
     state.autoMode.status = 'reviewing';
     state.autoMode.lastError = null;
     state.selection = { kind: null, id: null };
-    recordAutoTelemetryEvent('drafts_generated', {
-      sourceImageId: sourceImage.id,
-      run_id: runId,
-      draft_count: finalDrafts.length,
-    });
 
     pushHistoryIfChanged();
     updateUI();

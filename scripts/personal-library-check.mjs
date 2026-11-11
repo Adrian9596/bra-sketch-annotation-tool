@@ -52,11 +52,11 @@ async function main() {
 
     const treatment = await session.eval(`(() => {
       const d=window.__braAutoModeDebug;
-      d.meaning.setAppMode('manual');
+      d.setAppMode('manual');
       d.resetLinePresets(); d.resetShapeStamps();
       const straight={id:9101,seq:1,type:'straight',style:'solid',color:'red',arrowType:'double',lineWidth:2.5,start:{x:160,y:230},end:{x:410,y:230},control1:null,control2:null,points:[],label:{x:285,y:210},labelManual:false,text:null,value:null};
       const curve={id:9102,seq:2,type:'curved',style:'solid',color:'red',arrowType:'double',lineWidth:2.5,start:{x:170,y:330},end:{x:410,y:330},control1:{x:230,y:260},control2:{x:350,y:400},points:[],label:{x:290,y:300},labelManual:false,text:null,value:null};
-      d.styleEvidence.pushAnnotation(straight); d.styleEvidence.pushAnnotation(curve);
+      d.pushAnnotation(straight); d.pushAnnotation(curve);
       const before=d.getAnnotations().map(a=>({id:a.id,start:a.start,end:a.end,control1:a.control1,control2:a.control2}));
       const binding=d.getLinePresets().find(x=>x.id==='builtin-binding');
       const count=d.applyLineTreatmentToIds([9101,9102],binding.treatment);
@@ -210,7 +210,7 @@ async function main() {
       const d=window.__braAutoModeDebug;
       const a={id:9501,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:900,y:900},end:{x:1000,y:900},control1:null,control2:null,points:[],label:{x:950,y:880},labelManual:false};
       const b={id:9502,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:1000,y:900},end:{x:1000,y:1000},control1:null,control2:null,points:[],label:{x:1020,y:950},labelManual:false};
-      d.styleEvidence.pushAnnotation(a); d.styleEvidence.pushAnnotation(b);
+      d.pushAnnotation(a); d.pushAnnotation(b);
       d.setSmartAlignEnabled(true);
       return { sketchMode: d.getState().sketchMode, result: d.previewSmartAlignment([9501], 0, 0.5, false) };
     })()`);
@@ -225,7 +225,7 @@ async function main() {
       const d=window.__braAutoModeDebug, canvas=document.getElementById('boardCanvas');
       const moving={id:9201,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:90,y:610},end:{x:190,y:610},control1:null,control2:null,points:[],label:{x:140,y:590},labelManual:false,text:null,value:null};
       const reference={id:9202,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:350,y:630},end:{x:450,y:630},control1:null,control2:null,points:[],label:{x:400,y:610},labelManual:false,text:null,value:null};
-      d.styleEvidence.pushAnnotation(moving); d.styleEvidence.pushAnnotation(reference);
+      d.pushAnnotation(moving); d.pushAnnotation(reference);
       d.setSmartAlignEnabled(true); d.selectAnnotation(9201);
       const view=d.getView(), rect=canvas.getBoundingClientRect();
       const client=p=>({x:p.x*view.zoom+view.panX+rect.left,y:p.y*view.zoom+view.panY+rect.top});
@@ -262,7 +262,7 @@ async function main() {
       const d=window.__braAutoModeDebug;
       const a={id:9401,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:0,y:0},end:{x:100,y:100},control1:null,control2:null,points:[],label:{x:50,y:40},labelManual:false};
       const b={id:9402,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:200,y:208},end:{x:300,y:308},control1:null,control2:null,points:[],label:{x:250,y:248},labelManual:false};
-      d.styleEvidence.pushAnnotation(a); d.styleEvidence.pushAnnotation(b);
+      d.pushAnnotation(a); d.pushAnnotation(b);
       d.setSmartAlignEnabled(true);
       const axis=d.previewSmartAlignment([9201],0,-5,false);
       const collinear=d.previewSmartAlignment([9401],80,80,false);
@@ -285,7 +285,7 @@ async function main() {
       const refA={id:9403,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:500,y:0},end:{x:500,y:200},control1:null,control2:null,points:[],label:{x:520,y:100},labelManual:false};
       const refB={id:9404,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:400,y:100},end:{x:600,y:100},control1:null,control2:null,points:[],label:{x:500,y:120},labelManual:false};
       const moving={id:9405,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:500,y:-100},end:{x:500,y:50},control1:null,control2:null,points:[],label:{x:520,y:-25},labelManual:false};
-      d.styleEvidence.pushAnnotation(refA); d.styleEvidence.pushAnnotation(refB); d.styleEvidence.pushAnnotation(moving);
+      d.pushAnnotation(refA); d.pushAnnotation(refB); d.pushAnnotation(moving);
       d.setSmartAlignEnabled(true);
       const snapped=d.previewSmartAlignment([9405],0,45,false);
       const bypass=d.previewSmartAlignment([9405],0,45,true);
@@ -304,7 +304,7 @@ async function main() {
       const refA={id:9406,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:800,y:0},end:{x:800,y:200},control1:null,control2:null,points:[],label:{x:820,y:100},labelManual:false};
       const refB={id:9407,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:700,y:100},end:{x:900,y:100},control1:null,control2:null,points:[],label:{x:800,y:120},labelManual:false};
       const draggable={id:9408,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:950,y:300},end:{x:1050,y:300},control1:null,control2:null,points:[],label:{x:1000,y:280},labelManual:false};
-      d.styleEvidence.pushAnnotation(refA); d.styleEvidence.pushAnnotation(refB); d.styleEvidence.pushAnnotation(draggable);
+      d.pushAnnotation(refA); d.pushAnnotation(refB); d.pushAnnotation(draggable);
       d.setSmartAlignEnabled(true); d.selectAnnotation(9408);
       const view=d.getView(), rect=canvas.getBoundingClientRect();
       const client=p=>({x:p.x*view.zoom+view.panX+rect.left,y:p.y*view.zoom+view.panY+rect.top});
@@ -337,12 +337,12 @@ async function main() {
       const d=window.__braAutoModeDebug;
       for (let i = 0; i < 6000; i += 1) {
         const bx = (i * 37) % 20000, by = (i * 53) % 20000;
-        d.styleEvidence.pushAnnotation({id:30000+i,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:bx,y:by},end:{x:bx+40,y:by+10},control1:null,control2:null,points:[],label:{x:bx+20,y:by-10},labelManual:false});
+        d.pushAnnotation({id:30000+i,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:bx,y:by},end:{x:bx+40,y:by+10},control1:null,control2:null,points:[],label:{x:bx+20,y:by-10},labelManual:false});
       }
       const refA={id:39001,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:10000,y:9900},end:{x:10000,y:10100},control1:null,control2:null,points:[],label:{x:10020,y:10000},labelManual:false};
       const refB={id:39002,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:9900,y:10000},end:{x:10100,y:10000},control1:null,control2:null,points:[],label:{x:10000,y:10020},labelManual:false};
       const hot={id:39003,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:10000,y:9800},end:{x:10000,y:9950},control1:null,control2:null,points:[],label:{x:10020,y:9875},labelManual:false};
-      d.styleEvidence.pushAnnotation(refA); d.styleEvidence.pushAnnotation(refB); d.styleEvidence.pushAnnotation(hot);
+      d.pushAnnotation(refA); d.pushAnnotation(refB); d.pushAnnotation(hot);
       // Filler moving lines: parallel to each other (never cross among
       // themselves) and off in their own corner of the board (x 50000+, no
       // x-overlap with any noise/ref/hot line), so they cannot produce a
@@ -351,7 +351,7 @@ async function main() {
       const movingIds = [39003];
       for (let i = 0; i < 100; i += 1) {
         const id = 40000 + i;
-        d.styleEvidence.pushAnnotation({id,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:50000,y:50000+i*20},end:{x:50100,y:50000+i*20},control1:null,control2:null,points:[],label:{x:50050,y:49990+i*20},labelManual:false});
+        d.pushAnnotation({id,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:50000,y:50000+i*20},end:{x:50100,y:50000+i*20},control1:null,control2:null,points:[],label:{x:50050,y:49990+i*20},labelManual:false});
         movingIds.push(id);
       }
       d.setSmartAlignEnabled(true);
@@ -413,7 +413,7 @@ async function main() {
       const d=window.__braAutoModeDebug;
       const a={id:9301,seq:null,purpose:'sketch-element',type:'straight',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:-420,y:-260},end:{x:-220,y:-260},control1:null,control2:null,points:[],label:{x:-320,y:-280},labelManual:false};
       const b={id:9302,seq:null,purpose:'sketch-element',type:'curved',style:'solid',color:'black',arrowType:'none',lineWidth:2,start:{x:-420,y:-220},end:{x:-220,y:-220},control1:{x:-360,y:-300},control2:{x:-280,y:-140},points:[],label:{x:-320,y:-240},labelManual:false};
-      d.styleEvidence.pushAnnotation(a); d.styleEvidence.pushAnnotation(b);
+      d.pushAnnotation(a); d.pushAnnotation(b);
       const asset=d.addTemplateFromAnnotationIds('Scratch wing',[9301,9302]);
       const source=d.getAnnotations().filter(x=>x.id===9301||x.id===9302);
       const coords=asset.members.flatMap(m=>[m.start,m.end,m.control1,m.control2].filter(Boolean));

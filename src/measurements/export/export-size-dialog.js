@@ -111,7 +111,7 @@
           alpha: chosen.filter(c => c.tier === 1).map(c => c.label),
           depth: chosen.filter(c => c.tier === 2).map(c => c.label),
         };
-      if (typeof scheduleAutosave === 'function') scheduleAutosave();
+      scheduleAutosave();
       dlg.close();
       onConfirm();
     });

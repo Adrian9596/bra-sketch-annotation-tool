@@ -3,27 +3,22 @@
 // current detection.
 // Source part for app.js. Run `npm run build` after editing.
 //
-// These mutate one draft's tdApproved / drawability / telemetry fields. The
+// These mutate one draft's tdApproved / drawability fields. The
 // atomic commit-to-board pipeline lives in apply-drafts.js, and the
 // whole-board discard / reset operations in board-reset.js.
 
   // -------- TD review actions on drafts --------
 
+  // A draft the TD is expected to review before it counts as their own
+  // geometry. Auto Mode POM drafts are the only producer since Auto Detect
+  // Seam was removed (ADR 0101), so this is a no-op on anything else and every
+  // edit path may call it unconditionally.
   function markDraftTouchedByTD(ann) {
-    if (!isTDReviewDraft(ann)) return;
-    const wasEdited = !!ann.tdEdited;
+    if (!isAutoDraft(ann)) return;
     ann.tdEdited = true;
     ann.tdApprovalRequired = true;
-    ann.endpointApproximate = true;
     ann.tdApproved = false;
     ann.approvedAt = null;
-    if (!wasEdited) {
-      recordAutoTelemetryEvent('draft_edited', {
-        sourceImageId: ann.sourceImageId,
-        draft_id: ann.id,
-        pom_id: ann.seq != null ? String(ann.seq) : (ann.text != null ? String(ann.text) : null),
-      });
-    }
   }
 
   function approveDraftAnnotation(ann) {
@@ -38,13 +33,7 @@
     }
     ann.tdApproved = true;
     ann.tdApprovalRequired = false;
-    ann.endpointApproximate = false;
     ann.approvedAt = new Date().toISOString();
-    recordAutoTelemetryEvent('draft_approved', {
-      sourceImageId: ann.sourceImageId,
-      draft_id: ann.id,
-      pom_id: ann.seq != null ? String(ann.seq) : (ann.text != null ? String(ann.text) : null),
-    });
   }
 
   function markDraftReviewOnly(ann) {
@@ -59,14 +48,8 @@
     ann.tdEdited = true;
     ann.tdApproved = false;
     ann.tdApprovalRequired = true;
-    ann.endpointApproximate = false;
     ann.approvedAt = null;
     if (!ann.uncertainty) ann.uncertainty = 'Marked REVIEW_ONLY by TD.';
-    recordAutoTelemetryEvent('draft_review_only', {
-      sourceImageId: ann.sourceImageId,
-      draft_id: ann.id,
-      pom_id: ann.seq != null ? String(ann.seq) : (ann.text != null ? String(ann.text) : null),
-    });
   }
 
   // Toolbar action: throw away every TD anchor correction and re-seed the

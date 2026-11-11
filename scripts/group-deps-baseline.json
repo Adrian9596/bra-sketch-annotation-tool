@@ -17,10 +17,8 @@
       "getLineWidth",
       "getViewportRect",
       "isAutoDraft",
-      "isMeasurementAnnotation",
       "isPointNearAnnotation",
       "isReviewOnlyDraft",
-      "isTDReviewDraft",
       "labelsVisible",
       "normalizeLineWidth",
       "nudgeAutoLabelsToAvoidCollisions",
@@ -45,10 +43,8 @@
       "clone",
       "clonePoint",
       "ctx",
-      "downloadBlob",
       "el",
       "ensureCurveControls",
-      "escapeHtml",
       "isFinitePoint",
       "makeInitialAutoModeState",
       "showToast",
@@ -75,32 +71,22 @@
       "setTool"
     ],
     "board->auto": [
-      "currentStyleId",
       "drawAnchorLoupe",
       "drawAnchors",
       "drawAutoDraftAnnotation",
       "drawAutoDraftLabel",
       "drawDetectionOverlay",
       "ensureAutoModeStatus",
-      "evaluateManualPomSample",
       "getAnchorById",
-      "getAutoAcceptanceStats",
-      "getLearningSampleCount",
       "getSelectedDraft",
       "hitTestAnchors",
       "hitTestAutoDraftAnnotations",
       "isAnchorManagerOpen",
-      "isLearningEnabled",
       "isWorkingBoardEmpty",
-      "listConfirmedMeanings",
-      "listKnownStyleIds",
-      "markDeletedAutoAnnotationForEvidence",
       "markDraftTouchedByTD",
       "maybeToastSnapHint",
       "moveAnchorBy",
       "pickAutoSourceImage",
-      "recordAnchorResidual",
-      "recordAutoTelemetryEvent",
       "renderAnchorManagerPanel",
       "snapAnchorToInk",
       "startAnchorDrag"
@@ -291,14 +277,9 @@
     "commands->auto": [
       "clearAllLinesKeepImage",
       "hideAllAnchors",
-      "isLearningEnabled",
       "nudgeSelectedAnchor",
-      "openLearningDataDialog",
       "renderAnchorManagerPanel",
-      "resetLearning",
-      "resetPomMeanings",
       "resetWorkingBoard",
-      "setLearningEnabled",
       "showAllAnchors"
     ],
     "commands->board": [
@@ -421,7 +402,6 @@
       "DEFAULT_LINE_WIDTH",
       "HISTORY_LIMIT",
       "bezierPoint",
-      "buildDialog",
       "clamp",
       "clone",
       "clonePoint",
@@ -485,9 +465,7 @@
     "library->auto": [
       "applyApprovedDraftsAtomically",
       "discardAutoDrafts",
-      "listConfirmedMeanings",
-      "openAutoModeExitDialog",
-      "summarizeStyleEvidence"
+      "openAutoModeExitDialog"
     ],
     "library->board": [
       "closeBoardToolbarMenus",
@@ -537,8 +515,7 @@
     ],
     "measurements->auto": [
       "approveDraftAnnotation",
-      "markDraftReviewOnly",
-      "td"
+      "markDraftReviewOnly"
     ],
     "measurements->board": [
       "formatMeasure",
@@ -630,13 +607,9 @@
     ],
     "project->auto": [
       "applyApprovedDraftsAtomically",
-      "collectStyleEvidenceCandidates",
-      "commitStyleEvidenceCandidates",
-      "currentStyleId",
       "discardAutoDrafts",
       "ensureAutoModeStatus",
       "openAutoModeExitDialog",
-      "openSaveEvidenceDialog",
       "setAppMode"
     ],
     "project->board": [
@@ -704,9 +677,6 @@
       "bmSerializeForProject",
       "ccLoadProjectState",
       "ccSerializeForProject",
-      "ensureBom",
-      "ensureConstruction",
-      "ensureMainPage",
       "ensurePreviewPage",
       "hasMeaningfulBomWork",
       "hasMeaningfulConstructionWork",
@@ -746,6 +716,7 @@
       "formatSpecDate",
       "imageDataById",
       "loadImageFromDataURL",
+      "pointToSegmentDistance",
       "showToast",
       "specBlankCell",
       "specColLetter",
@@ -786,7 +757,6 @@
       "featureZoom",
       "getLineWidth",
       "hasManualPomLabel",
-      "isTDReviewDraft",
       "normalizeColorKey",
       "normalizeLineStyle",
       "normalizeLineWidth",

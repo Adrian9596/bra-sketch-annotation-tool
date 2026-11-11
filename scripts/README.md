@@ -15,8 +15,7 @@ step is the important one — `app.js` is generated, never hand-edited.
 - `check.mjs` — rebuild + parse/wiring validation.
 - Test suites: `auto-mode-smoke.mjs`, `golden-tests.mjs`, `accuracy-tests.mjs`,
   `invariant-tests.mjs`, `pom-contract-tests.mjs`, `pipeline-tests.mjs`,
-  `junction-tests.mjs`, `learning-tests.mjs`,
-  `evidence-tests.mjs`, `autosave-check.mjs`, `pom7-limitations.mjs`. See
+  `junction-tests.mjs`, `autosave-check.mjs`, `pom7-limitations.mjs`. See
   [`../TESTING.md`](../TESTING.md).
 - `groundtruth/` — TD-labelled ground truth for `accuracy`.
 - `golden/` — committed per-image baselines for `golden`.

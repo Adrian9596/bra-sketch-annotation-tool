@@ -1,8 +1,8 @@
 // Value model behind the Measurements panel's Size L / Size L2 / TOL / 中文 /
 // English columns: built-in POM name fallbacks, the Tier-0 library-suggestion
-// lookup, the ADR 0033 Mode-B measured-fusion gate, the imperial
-// fraction <-> decimal math, the state.pomSpecs read/write layer, and the
-// tolerance evaluation shared with the on-canvas readout. buildSpecInputCell
+// lookup, the imperial fraction <-> decimal math, the state.pomSpecs
+// read/write layer, and the tolerance evaluation shared with the on-canvas
+// readout. buildSpecInputCell
 // lives here too because its ArrowUp/Down stepping is bound to
 // scheduleSpecStepCommit's module-private timer.
 // Extracted from src/measurements/spec-panel.js; the row/cell DOM that consumes these
@@ -43,41 +43,6 @@
   function hasSuggestedValue(pomKey) {
     const s = getPomSuggestion(pomKey);
     return !!(s && s.median != null && s.n > 0);
-  }
-
-  // ---- Mode B measured suggestions (ADR 0033, flagged OFF by default) ----
-  // When Mode B is on, a sketch-reliable POM's Size-L suggestion becomes the
-  // library×sketch FUSED value derived from the detected anchors (fusion.js) —
-  // still a suggestion, never assigned or persisted. Memoized by a cheap anchor
-  // signature so getPomSpec stays cheap across a full panel rebuild.
-  let _measuredCache = { sig: null, map: null };
-  function measuredSuggestionsMap() {
-    if (typeof modeBAnyEnabled !== 'function' || !modeBAnyEnabled()) return null;
-    const am = (state && state.autoMode) || {};
-    const anchors = Array.isArray(am.anchors) ? am.anchors : [];
-    const det = am.detection || null;
-    if (!anchors.length || !det) return null;
-    const first = anchors[0] || {};
-    const sig = anchors.length + ':' + (det.naturalWidth || 0) + 'x' + (det.naturalHeight || 0) + ':' + (first.kind || '') + first.x;
-    if (_measuredCache.sig === sig) return _measuredCache.map;
-    let map = null;
-    try { map = mbComputeMeasuredSuggestions(anchors, POM_SUGGESTIONS, { width: det.naturalWidth, height: det.naturalHeight }); }
-    catch (_e) { map = null; }
-    _measuredCache = { sig, map };
-    return map;
-  }
-  // Gated measured entry for a POM: only a coherent, positive numeric proposal
-  // surfaces; a conflicted (review/outlier) POM returns null so the panel falls
-  // back to the library value rather than showing a wrong number.
-  function measuredFor(pomKey) {
-    const key = String(pomKey == null ? '' : pomKey).trim();
-    // Per-POM roll-out gate (US-041): only a globally-flagged or promoted POM
-    // surfaces a measured value.
-    if (typeof modeBEnabledForPom === 'function' && !modeBEnabledForPom(key)) return null;
-    const map = measuredSuggestionsMap();
-    if (!map) return null;
-    const m = map[key];
-    return (m && m.decision === 'ESTIMATED_SUGGESTION' && Number.isFinite(Number(m.value_in)) && Number(m.value_in) > 0) ? m : null;
   }
 
   // Corpus inches -> active display unit (no-op for the default 'in').
@@ -142,12 +107,9 @@
     return Number.isFinite(n) ? n : null;
   }
 
-  // Formatted Size L suggestion ('' when the POM has no library data). With
-  // Mode B on, a gated measured (library×sketch fused) value takes precedence
-  // over the raw library median; both remain TD-owned suggestions.
+  // Formatted Size L suggestion ('' when the POM has no library data): the
+  // library median, a TD-owned suggestion.
   function suggestedSizeL(pomKey) {
-    const m = measuredFor(pomKey);
-    if (m) return formatSuggestion(m.value_in);
     const s = getPomSuggestion(pomKey);
     if (!s || s.median == null || !(s.n > 0)) return '';
     return formatSuggestion(s.median);

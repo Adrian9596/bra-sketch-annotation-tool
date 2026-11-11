@@ -17,16 +17,14 @@
 
   // Ring order: the main points first (the common Tab targets), then the
   // bend handles (US-030) in geometric order start-side → end-side. Only
-  // parts the annotation actually has are included, so single-segment
-  // curves and straight lines get shorter rings automatically.
+  // parts the annotation actually has are included, so straight lines get a
+  // shorter ring automatically. (A legacy two-segment curve's midPoint never
+  // reaches the board — ensureCurveControls collapses it on every entry path.)
   function lineNudgeParts(ann) {
     const parts = [null, 'start'];
     if (ann.type === 'curved') {
-      if (ann.midPoint) parts.push('midPoint');
       parts.push('end');
       if (ann.control1) parts.push('control1');
-      if (ann.midHandleIn) parts.push('midHandleIn');
-      if (ann.midHandleOut) parts.push('midHandleOut');
       if (ann.control2) parts.push('control2');
       // US-093: interior anchors the TD added, appended after the fixed
       // fields so a curve with none cycles exactly as it always has.
@@ -41,12 +39,9 @@
 
   function nudgePartLabel(part) {
     if (part === 'start') return 'start point';
-    if (part === 'midPoint') return 'mid point';
     if (part === 'end') return 'end point';
     if (part === 'control1') return 'start bend handle';
     if (part === 'control2') return 'end bend handle';
-    if (part === 'midHandleIn') return 'mid bend handle (start side)';
-    if (part === 'midHandleOut') return 'mid bend handle (end side)';
     const anchor = parseCurveAnchorPart(part);
     if (anchor) {
       const n = anchor.index + 1;
@@ -97,15 +92,15 @@
     const point = part ? getAnnPartPoint(ann, part) : null;
     if (part && point) {
       // Route through dragHandle so curve semantics (endpoint carrying its
-      // control, mid point carrying both mid handles, an interior anchor's
-      // handles mirroring per US-093) match a mouse drag. Keyboard nudging
+      // control, an interior anchor's handles mirroring per US-093) match a
+      // mouse drag. Keyboard nudging
       // has no Alt-modifier gesture defined, so a handle always mirrors.
       const prev = clonePoint(point);
       dragHandle(ann, part, { x: prev.x + dx, y: prev.y + dy }, prev, false);
     } else {
       moveAnnotation(ann, dx, dy);
     }
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     if (lineNudgeSession.timer) clearTimeout(lineNudgeSession.timer);
     lineNudgeSession.timer = setTimeout(flushLineNudgeSession, LINE_NUDGE_COMMIT_MS);
     refreshMeasuredValueForAnnotation(ann.id); // US-028: live Value cell
@@ -124,15 +119,6 @@
     lineNudgeSession = null;
     if (!session) return;
     if (session.timer) clearTimeout(session.timer);
-    const ann = getAnnotationById(session.annId);
     pushHistoryIfChanged();
     requestRender(); // drop the on-canvas readout now that the burst committed
-    // Same learning capture as a committed mouse drag on an applied draft.
-    if (state.appMode === 'manual' && ann && isAutoDraft(ann)) {
-      const evalResult = evaluateManualPomSample(ann, { allowAuto: true });
-      if (evalResult.status === 'recorded') {
-        showToast('POM ' + evalResult.pom + ' learning sample saved from TD edit.');
-        updateUI();
-      }
-    }
   }

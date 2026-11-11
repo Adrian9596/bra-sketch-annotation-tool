@@ -189,7 +189,7 @@
         }
         pushHistoryIfChanged();
         renderTable();
-        if (typeof renderSpecPanel === 'function') renderSpecPanel();
+        renderSpecPanel();
         return;
       }
       const parsed = gradeDeltaToNumber(trimmed);
@@ -215,7 +215,7 @@
       }
       pushHistoryIfChanged();
       renderTable();
-      if (typeof renderSpecPanel === 'function') renderSpecPanel();
+      renderSpecPanel();
     };
 
     table.addEventListener('change', (ev) => {

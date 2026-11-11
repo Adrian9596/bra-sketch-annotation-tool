@@ -2119,8 +2119,7 @@ async function section1PureKernel(s) {
   check(near(circleLen, 2 * Math.PI * 5), 'full circle circumference, got ' + circleLen);
 
   // ARC wraparound: a 350deg -> 10deg entity is a 20deg (not -340deg) sweep,
-  // via the real native parser path (same convention US-104's own
-  // convertDxfArcEntity uses, verified equal here for the additive adapter).
+  // via the real native parser path (the one converter both views share).
   const wrap = await s.eval(`window.__braAutoModeDebug.dxf.measure.parseNative(${JSON.stringify(doc([dxfArc(0, 0, 10, 350, 10)]))})`);
   check(wrap.ok && wrap.pieces.length === 1, 'wraparound ARC should parse to one piece');
   const wrapSeg = wrap.pieces[0].segments[0];

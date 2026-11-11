@@ -22,73 +22,13 @@ import {
   makeInkCanvas,
   runPipeline,
   runCases,
+  drawFront,
+  drawBack,
+  pack,
 } from './lib/synthetic-detection.mjs';
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pipeline = loadPipeline(appDir);
-
-// A symmetric front bra blob: cups, chest line, band, CF axis, side seams,
-// centered in its own box. High symmetry, moderate aspect — reads front_outer.
-function drawFront(setDark, bx, top, boxW, boxH) {
-  const cx = bx;
-  const halfBox = Math.round(boxW / 2);
-  const cupR = Math.min(halfBox, boxH * 0.16) * 0.85;
-  const cupY = top + boxH * 0.40;
-  const bandY = Math.round(top + boxH * 0.82);
-  const bandThickness = Math.max(3, Math.round(boxH * 0.04));
-  const chestY = Math.round(top + boxH * 0.30);
-  const sideLX = Math.round(cx - halfBox);
-  const sideRX = Math.round(cx + halfBox);
-  for (let theta = 0; theta < Math.PI * 2; theta += 0.005) {
-    const xL = Math.round(cx - cupR * 0.8 + Math.cos(theta) * cupR * 0.55);
-    const yL = Math.round(cupY + Math.sin(theta) * cupR);
-    const xR = Math.round(cx + cupR * 0.8 + Math.cos(theta) * cupR * 0.55);
-    setDark(xL, yL); setDark(xL, yL + 1);
-    setDark(xR, yL); setDark(xR, yL + 1);
-  }
-  const chestSpanHalf = Math.round(halfBox * 0.92);
-  for (let x = cx - chestSpanHalf; x <= cx + chestSpanHalf; x += 1) setDark(Math.round(x), chestY);
-  for (let dy = 0; dy < bandThickness; dy += 1) {
-    for (let x = sideLX; x <= sideRX; x += 1) setDark(x, bandY + dy);
-  }
-  for (let y = Math.round(top + boxH * 0.06); y <= bandY; y += 1) setDark(Math.round(cx), y);
-  for (let y = chestY; y <= bandY + bandThickness; y += 1) {
-    for (let dx = 0; dx < 3; dx += 1) {
-      setDark(sideLX - dx, y);
-      setDark(sideRX + dx, y);
-    }
-  }
-}
-
-// An asymmetric back panel: rectangular outline, a strong vertical center-back
-// seam, and a single off-center back strap. Tall aspect, heavy edges, low
-// symmetry — the signals scoreViewLayout rewards for the 'back' role.
-function drawBack(setDark, bx, top, boxW, boxH) {
-  const cx = bx;
-  const halfBox = Math.round(boxW / 2);
-  const bandY = Math.round(top + boxH * 0.85);
-  const chestY = Math.round(top + boxH * 0.25);
-  const sideLX = Math.round(cx - halfBox);
-  const sideRX = Math.round(cx + halfBox);
-  for (let y = chestY; y <= bandY; y += 1) {
-    for (let dx = 0; dx < 3; dx += 1) {
-      setDark(sideLX - dx, y);
-      setDark(sideRX + dx, y);
-    }
-  }
-  const thickness = Math.max(3, Math.round(boxH * 0.04));
-  for (let dy = 0; dy < thickness; dy += 1) {
-    for (let x = sideLX; x <= sideRX; x += 1) {
-      setDark(x, chestY + dy);
-      setDark(x, bandY + dy);
-    }
-  }
-  for (let y = chestY; y <= bandY; y += 1) {
-    for (let dx = -1; dx <= 1; dx += 1) setDark(Math.round(cx) + dx, y);
-  }
-  // Single off-center back strap to break left/right symmetry.
-  for (let y = top; y <= chestY; y += 1) setDark(Math.round(cx - halfBox * 0.5), y);
-}
 
 // A front-inner cutaway: two cup lobes + inner bust line + center closure, with
 // minimal outer frame (high interior ink, low edge ink) — the front_inner signal.
@@ -105,20 +45,6 @@ function drawInner(setDark, bx, top, boxW, boxH) {
   }
   for (let x = cx - halfBox * 0.7; x <= cx + halfBox * 0.7; x += 1) setDark(Math.round(x), Math.round(top + boxH * 0.62));
   for (let y = cupY - cupR; y <= cupY + cupR; y += 1) setDark(Math.round(cx), y);
-}
-
-function pack(canvas, engine) {
-  return {
-    engine,
-    width: canvas.stats.colDark.length,
-    height: canvas.stats.rowDark.length,
-    total: canvas.stats.colDark.length * canvas.stats.rowDark.length,
-    mask: canvas.mask,
-    stats: canvas.stats,
-    threshold: 80,
-    luminanceThreshold: 160,
-    backgroundLum: 255,
-  };
 }
 
 // Single centered symmetric front blob only.

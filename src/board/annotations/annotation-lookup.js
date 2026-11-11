@@ -82,8 +82,8 @@
   }
 
   // Is this line part of the MEASUREMENT set — the collection the spec panel,
-  // both Excel exports, the Preview page, grading and learning evidence all
-  // derive their rows from?
+  // both Excel exports, the Preview page and grading all derive their rows
+  // from?
   //
   // Plain and Dashed always are. Zigzag / Cover / Bartack are construction
   // marks: they say how a seam is sewn, not how long it is, so they are drawn
@@ -231,15 +231,6 @@
 
   function isAutoDraft(ann) {
     return !!(ann && ann.auto === true && ann.sourceMode === 'auto-mode' && ann.autoRunId);
-  }
-
-  // A draft the TD is expected to review before it counts as their own
-  // geometry — editing one stamps `tdEdited` (markDraftTouchedByTD). Auto Mode
-  // POM drafts are the only producer since Auto Detect Seam was removed
-  // (ADR 0101); kept as its own predicate because every call site means "a
-  // draft under review", not "an Auto Mode draft".
-  function isTDReviewDraft(ann) {
-    return isAutoDraft(ann);
   }
 
   function isReviewOnlyDraft(ann) {

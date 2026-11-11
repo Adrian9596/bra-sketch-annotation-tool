@@ -15,8 +15,6 @@
   function discardAutoDrafts(silent) {
     if (state.autoMode.draftAnnotations.length === 0) return;
     if (!silent && !window.confirm('Discard all current Auto Mode drafts? Project annotations are not affected.')) return;
-    const discardedCount = state.autoMode.draftAnnotations.length;
-    const sourceImageId = state.autoMode.draftAnnotations[0] && state.autoMode.draftAnnotations[0].sourceImageId;
     state.autoMode.draftAnnotations = [];
     state.autoMode.validation = null;
     // Drafts are gone — any hide toggles that targeted them are stale.
@@ -26,15 +24,6 @@
     }
     ensureAutoModeStatus();
     pushHistoryIfChanged();
-    recordAutoTelemetryEvent('draft_discarded', {
-      sourceImageId,
-      count: discardedCount,
-    });
-    recordAutoTelemetryEvent('auto_session_done', {
-      sourceImageId,
-      count: discardedCount,
-      status: 'discarded',
-    });
     updateUI();
     requestRender();
     if (!silent) showToast('Drafts discarded. Project unchanged.');
@@ -66,7 +55,6 @@
     if (state.dxfPatternSource || state.dxfMeasureSession) clearDxfPatternSource();
     state.annotations = [];
     state.graphics = [];
-    state.deletedAutoAnnotations = [];
     state.images = [];
     state.eraseStrokes = [];
     // US-092: notes are board content, so a whole-board reset takes them too.
@@ -89,9 +77,6 @@
     state.hiddenAnnIds = [];
     state.hiddenDraftIds = [];
     el.labelEditor.style.display = 'none';
-
-    // Images going away invalidates every cached shadow detection.
-    clearManualLearnCache();
 
     ensureAutoModeStatus();
     pushHistoryIfChanged();
@@ -118,7 +103,6 @@
     // A line's notches go with it (ADR 0071 amendment).
     removeNotchesOwnedBy(new Set(state.annotations.map(a => a.id)));
     state.annotations = [];
-    state.deletedAutoAnnotations = [];
     state.autoMode.draftAnnotations = [];
     state.autoMode.validation = null;
     state.hiddenAnnIds = [];

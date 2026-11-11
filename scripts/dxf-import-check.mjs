@@ -709,12 +709,12 @@ window.__DXF = (() => {
 
   const pieces120 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfScatteredPieces(120)]))})`);
   const pieces121 = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([dxfScatteredPieces(121)]))})`);
-  check(pieces120.ok === true && pieces120.pieces.length === 120 && pieces120.stats.overBatchThreshold === false,
-    `exactly 120 pieces must import on the synchronous path, got ${JSON.stringify(pieces120.ok)} ${pieces120.pieces?.length} ${JSON.stringify(pieces120.stats)}`);
+  check(pieces120.ok === true && pieces120.pieces.length === 120,
+    `exactly 120 pieces must import, got ${JSON.stringify(pieces120.ok)} ${pieces120.pieces?.length} ${JSON.stringify(pieces120.stats)}`);
   // ADR 0091 / US-124 Phase 4 (owner decision 3): pattern count alone never
-  // rejects a file any more — 121 imports, flagged for the batched path.
-  check(pieces121.ok === true && pieces121.pieces.length === 121 && pieces121.stats.overBatchThreshold === true && pieces121.stats.batchThreshold === 120,
-    `121 pieces must import (flagged overBatchThreshold), never be a piece-cap rejection, got ${JSON.stringify({ ok: pieces121.ok, n: pieces121.pieces?.length, stats: pieces121.stats })}`);
+  // rejects a file any more — 121 (the old 120-piece cap + 1) imports too.
+  check(pieces121.ok === true && pieces121.pieces.length === 121,
+    `121 pieces must import, never be a piece-cap rejection, got ${JSON.stringify({ ok: pieces121.ok, n: pieces121.pieces?.length, stats: pieces121.stats })}`);
 
   // Nine 2400-segment chains, spaced far apart (9*2400=21600 > 20000
   // total, each piece under the 2500 per-piece cap, 9 pieces well under the
@@ -727,11 +727,10 @@ window.__DXF = (() => {
   const totalCap = await s.eval(`window.__braAutoModeDebug.dxf.parse(${JSON.stringify(doc([nineChains]))})`);
   check(totalCap.ok === false && totalCap.reason === 'total-cap',
     `9 pieces of 2400 segments (21600 total, each under the 2500 per-piece cap) must be stopped by the 20000 combined-output cap, got ${JSON.stringify(totalCap)}`);
-  // Phase 4: the stop comes with a per-instance report. Direct entities are
-  // ONE instance (0), so this file cannot be split — the report says so.
-  check(totalCap.overCap && totalCap.overCap.total === 21600 && totalCap.overCap.cap === 20000
-    && totalCap.overCap.instances.length === 1 && totalCap.overCap.instances[0].instance === 0 && totalCap.overCap.instances[0].patterns === 9,
-    `the total-cap stop must carry a per-instance report (one instance-0 row holding all 9 pieces), got ${JSON.stringify(totalCap.overCap)}`);
+  // ADR 0105: the stop is a plain rejection that names both numbers (the
+  // per-instance report for the retired pre-placement picker is gone).
+  check(/21,600 lines, over the 20,000-line combined limit/.test(totalCap.message || '') && !('overCap' in totalCap),
+    `the total-cap stop must say how many lines and what the limit is, with no picker report, got ${JSON.stringify({ message: totalCap.message, keys: Object.keys(totalCap) })}`);
 
   // ===========================================================================
   // 5. Integration: the REAL Tools-menu button + hidden file input + real
@@ -2557,67 +2556,40 @@ window.__DXF = (() => {
 
   // ---- Phase 4: the pre-placement picker + panel row metadata
 
-  // (O) Nine INSERT-placed blocks of 2,400 lines each = 21,600 > 20,000: the
-  // REAL import opens the picker instead of refusing; unticking one block
-  // brings it to 19,200 and "Import selected" places the other eight — on
-  // the board AND in the native measure session — remembering the exclusion
-  // on the source. Cancel leaves the board byte-for-byte empty.
+  // (O) ADR 0105: nine INSERT-placed blocks of 2,400 lines each = 21,600 >
+  // 20,000. Picked through the REAL input the import is refused whole (the
+  // pre-placement picker that used to open here is retired): the toast names
+  // both numbers, no dialog opens, and the board, the native measure session
+  // and the saved pattern source stay empty.
   const nineBlocksDoc = docWithBlocks(
     Array.from({ length: 9 }, (_, i) => dxfBlock('CH' + i, dxfChain(2400))),
     Array.from({ length: 9 }, (_, i) => dxfInsert('CH' + i, 0, i * 50)),
   );
   const nineBlocksParse = await s.eval(`(() => {
     const r = window.__braAutoModeDebug.dxf.parse(${JSON.stringify(nineBlocksDoc)});
-    return { ok: r.ok, reason: r.reason, overCap: r.overCap };
+    return { ok: r.ok, reason: r.reason, message: r.message, keys: Object.keys(r) };
   })()`);
-  check(nineBlocksParse.ok === false && nineBlocksParse.reason === 'total-cap' && nineBlocksParse.overCap.instances.length === 9
-    && nineBlocksParse.overCap.instances.every(r => r.patterns === 1 && r.lines === 2400 && /^CH\d$/.test(r.blockName)),
-    `nine INSERT-placed 2,400-line blocks must report nine 2,400-line instance rows, got ${JSON.stringify(nineBlocksParse.overCap)}`);
-  const picker = await s.eval(`(async () => {
+  check(nineBlocksParse.ok === false && nineBlocksParse.reason === 'total-cap'
+    && /21,600 lines, over the 20,000-line combined limit/.test(nineBlocksParse.message) && !nineBlocksParse.keys.includes('overCap'),
+    `nine INSERT-placed 2,400-line blocks must be a plain total-cap rejection naming both numbers, got ${JSON.stringify(nineBlocksParse)}`);
+  const overCapImport = await s.eval(`(async () => {
     const d = window.__braAutoModeDebug, h = window.__DXF;
-    const reset = async () => { const p = d.exportProject(); p.state.annotations = []; p.state.images = []; p.state.graphics = []; p.state.notes = []; await d.loadProject(p);
-      document.getElementById('modeManualBtn').click(); if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click(); };
-    const settle = async (n) => { for (let i = 0; i < n; i += 1) await new Promise(r => setTimeout(r, 40)); };
-    await reset();
+    const p = d.exportProject(); p.state.annotations = []; p.state.images = []; p.state.graphics = []; p.state.notes = []; p.state.dxfPatternSource = null;
+    await d.loadProject(p);
+    document.getElementById('modeManualBtn').click(); if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click();
     const before = JSON.stringify(d.getAnnotations());
+    const seen = [];
+    const el = document.getElementById('toast');
+    const obs = new MutationObserver(() => { if (el.textContent && seen[seen.length - 1] !== el.textContent) seen.push(el.textContent); });
+    obs.observe(el, { childList: true, characterData: true, subtree: true });
     await h.importViaRealInput(${JSON.stringify(nineBlocksDoc)});
-    await settle(10);
-    const overlay = document.querySelector('.picker-overlay.dxf-pattern-picker');
-    if (!overlay) return { noDialog: true, anns: d.getAnnotations().length };
-    const ok = overlay.querySelector('.dxf-pattern-picker-ok');
-    const summaryBefore = overlay.querySelector('.dxf-pattern-picker-summary').textContent;
-    const okDisabledBefore = ok.disabled;
-    const boxes = Array.from(overlay.querySelectorAll('input[type=checkbox]'));
-    boxes[0].checked = false; boxes[0].dispatchEvent(new Event('change', { bubbles: true }));
-    const summaryAfter = overlay.querySelector('.dxf-pattern-picker-summary').textContent;
-    const okDisabledAfter = ok.disabled;
-    ok.click();
-    await settle(40);
-    const dialogGone = !document.querySelector('.picker-overlay.dxf-pattern-picker');
-    const anns = d.getAnnotations().length;
-    const groups = d.dxf.patternPieces.groups().length;
-    const session = d.dxf.measure.getSession();
-    const src = d.dxf.source();
-    // Cancel path.
-    await reset();
-    await h.importViaRealInput(${JSON.stringify(nineBlocksDoc)});
-    await settle(10);
-    const overlay2 = document.querySelector('.picker-overlay.dxf-pattern-picker');
-    const cancel = overlay2 && Array.from(overlay2.querySelectorAll('button')).find(b => b.textContent === 'Cancel');
-    if (cancel) cancel.click();
-    await settle(10);
-    return { rows: boxes.length, summaryBefore, okDisabledBefore, summaryAfter, okDisabledAfter, dialogGone, anns, groups,
-      sessionPieces: session && session.pieceCount, excluded: src && src.importOptions && src.importOptions.excludeInstances,
-      cancelledAnns: d.getAnnotations().length, cancelledDialogGone: !document.querySelector('.picker-overlay.dxf-pattern-picker'), boardUnchangedAfterCancel: JSON.stringify(d.getAnnotations()) === before };
+    obs.disconnect();
+    return { toasts: seen, anns: d.getAnnotations().length, unchanged: JSON.stringify(d.getAnnotations()) === before,
+      dialog: !!document.querySelector('.picker-overlay'), session: !!d.dxf.measure.getSession(), source: !!d.dxf.source() };
   })()`);
-  check(!picker.noDialog && picker.rows === 9 && picker.okDisabledBefore === true && /21,600 of 20,000/.test(picker.summaryBefore),
-    `a total-cap import must open the picker with 9 rows, Import disabled and the over-limit summary, got ${JSON.stringify(picker)}`);
-  check(picker.okDisabledAfter === false && /19,200 of 20,000/.test(picker.summaryAfter) && picker.dialogGone
-    && picker.anns === 19200 && picker.groups === 8 && picker.sessionPieces === 8
-    && Array.isArray(picker.excluded) && picker.excluded.length === 1 && picker.excluded[0] === 1,
-    `unticking one block must enable Import and place the other 8 (19,200 lines) on the board and in the native session, remembering the exclusion, got ${JSON.stringify(picker)}`);
-  check(picker.cancelledAnns === 0 && picker.cancelledDialogGone && picker.boardUnchangedAfterCancel,
-    `Cancel must leave the board untouched, got ${JSON.stringify(picker)}`);
+  check(overCapImport.anns === 0 && overCapImport.unchanged && !overCapImport.dialog && !overCapImport.session && !overCapImport.source
+    && overCapImport.toasts.some(t => /21,600 lines, over the 20,000-line combined limit/.test(t)),
+    `an over-cap file picked through the real input must be refused with the total-cap toast, no dialog, and an untouched board/session/source, got ${JSON.stringify(overCapImport)}`);
 
   // (P) Pattern Pieces rows show the annotation + classification subtitle
   // through the REAL panel DOM.
@@ -2643,6 +2615,8 @@ window.__DXF = (() => {
   //     files, today's legacy count for the three files with no layer 1 —
   //     with ZERO orphans on every layered file. Fed the SAME bytes the real
   //     picker would see (decodeBytes), not fetch().text()'s lossy UTF-8.
+  //     Also: every file's board pieces hold exactly the native model's
+  //     lines, piece by piece, with keepQualityCurves off AND on.
   // ===========================================================================
 
   const oraclePath = path.join(appDir, 'scripts', 'dxf-corpus-oracle.json');
@@ -2653,21 +2627,46 @@ window.__DXF = (() => {
     const oracle = JSON.parse(readFileSync(oraclePath, 'utf8'));
     const corpus = await s.eval(`(async () => {
       const d = window.__braAutoModeDebug.dxf;
+      // ADR 0105 follow-up: the board and Pattern Measure must hold the SAME
+      // lines, piece by piece — the board draws an exact native arc as
+      // ceil(|sweep| / 90deg) Bézier curves, every other native segment as
+      // one line. Checked in both modes: keepQualityCurves is where two
+      // separate parses used to disagree (SE0583-LACE x2, SN1252).
+      const boardLines = seg => (seg.kind === 'arc' ? Math.max(1, Math.ceil(Math.abs(seg.sweep) / (Math.PI / 2) - 1e-9)) : 1);
+      const pairing = (board, native) => {
+        if (!board.ok || !native.ok) return board.ok === native.ok && board.reason === native.reason ? [] : ['board ' + (board.reason || 'ok') + ' vs native ' + (native.reason || 'ok')];
+        if (board.pieces.length !== native.pieces.length) return [board.pieces.length + ' board pieces vs ' + native.pieces.length + ' native'];
+        const bad = [];
+        board.pieces.forEach((piece, i) => {
+          const lines = native.pieces[i].segments.reduce((sum, seg) => sum + boardLines(seg), 0);
+          if (piece.length !== lines) bad.push('piece ' + i + ': board ' + piece.length + ' lines, native ' + lines);
+        });
+        return bad;
+      };
       const out = [];
       for (const row of ${JSON.stringify(oracle.files)}) {
         const res = await fetch('/' + encodeURI(row.path));
         if (!res.ok) { out.push({ path: row.path, missing: true }); continue; }
         const decoded = d.decodeBytes(await res.arrayBuffer());
         const r = d.parse(decoded.text);
+        const kqc = { keepQualityCurves: true };
+        const mismatch = r.ok ? [
+          ...pairing(r, d.parseNative(decoded.text)).map(m => 'default ' + m),
+          ...pairing(d.parseWith(decoded.text, kqc), d.parseNative(decoded.text, kqc)).map(m => 'keepQualityCurves ' + m),
+        ] : [];
         out.push({ path: row.path, ok: r.ok, reason: r.reason || null, n: r.ok ? r.pieces.length : null,
           orphans: r.stats ? r.stats.orphans : null, legacy: r.stats ? r.stats.legacyPieces : null, encoding: decoded.encoding,
           lines: r.ok ? r.pieces.reduce((s, p) => s + p.length, 0) : null,
           droppedExact: r.stats && r.stats.dropped ? r.stats.dropped.exact : null,
           droppedQv: r.stats && r.stats.dropped ? r.stats.dropped.qvTwin : null,
-          degenerate: r.buckets ? r.buckets.degenerate : null });
+          degenerate: r.buckets ? r.buckets.degenerate : null, mismatch });
       }
       return out;
     })()`);
+    const unpaired = corpus.filter(c => c.mismatch && c.mismatch.length);
+    check(corpus.filter(c => c.ok).length > 0 && unpaired.length === 0,
+      `board and native pieces must hold the same lines on every corpus file, in both modes; ${unpaired.length} file(s) differ: `
+      + unpaired.map(c => `${c.path} [${c.mismatch.slice(0, 3).join('; ')}]`).join(' | '));
     for (const row of oracle.files) {
       const got = corpus.find(c => c.path === row.path);
       if (!got || got.missing) { console.log(`SKIP  dxf-import-check   ${row.path} not present — oracle row skipped`); continue; }
@@ -2689,91 +2688,93 @@ window.__DXF = (() => {
   }
 
   // ===========================================================================
-  // 13. US-124 Phase 6 — pipelineVersion: a project saved by the pre-ADR-0091
-  //     build reopens with its native measurement model grouped the OLD way
-  //     (global legacy grouping, same-named BLOCK definitions concatenated),
-  //     so the saved board pieces and the rebuilt native pieces still pair
-  //     by index and pieceAnchors stay live. Nothing is migrated.
+  // 13. ADR 0105 (retires ADR 0091 decision 13, the pipelineVersion-1 reopen):
+  //     a saved pattern source whose pipelineVersion is 1 or missing, or which
+  //     carries a non-empty excludeInstances from the retired pre-placement
+  //     picker, is INCOMPATIBLE — the project reopens with its board geometry
+  //     untouched, Pattern Measure cleared, and a toast telling the TD to
+  //     reopen the DXF. A current source still reopens with a live session,
+  //     and so does one carrying the empty excludeInstances every non-picker
+  //     import used to write. Synthetic, so it runs in the public mirror too.
   // ===========================================================================
 
-  // (a) The v1 mode reproduces the pre-change numbers this story's own
-  // Phase-0 audit recorded with the pre-change parser, on the LOSSY text a
-  // pre-change import would have stored (fetch().text() == readAsText).
-  const v1Corpus = await s.eval(`(async () => {
-    const d = window.__braAutoModeDebug.dxf;
-    const out = {};
-    for (const [key, p] of [['b2844', 'demo/DXF file/dxf/2844.dxf'], ['bianca', 'demo/DXF file/BiancaBra v.A 1.0_Pattern.dxf'], ['f3380', 'demo/DXF file/3380.dxf']]) {
-      const res = await fetch('/' + encodeURI(p));
-      if (!res.ok) { out[key] = { missing: true }; continue; }
-      const lossy = await res.text();
-      const v1 = d.parseNative(lossy, { pipelineVersion: 1 });
-      const v2 = d.parseNative(lossy, {});
-      out[key] = { v1: v1.ok ? v1.pieces.length : v1.reason, v2: v2.ok ? v2.pieces.length : v2.reason, v1Stats: v1.stats && v1.stats.pipelineVersion, v2Stats: v2.stats && v2.stats.pipelineVersion,
-        sameSegments: v1.ok && v2.ok && JSON.stringify(v1.pieces) === JSON.stringify(v2.pieces) };
-    }
-    return out;
-  })()`);
-  if (v1Corpus.b2844.missing) {
-    console.log('SKIP  dxf-import-check   corpus absent — section 13(a) skipped');
-  } else {
-    check(v1Corpus.b2844.v1 === 10 && v1Corpus.b2844.v2 === 6 && v1Corpus.b2844.v1Stats === 1 && v1Corpus.b2844.v2Stats === 2,
-      `2844 (lossy text): pipelineVersion 1 must reproduce the pre-change 10 pieces (concatenated same-named blocks), v2 the real 6, got ${JSON.stringify(v1Corpus.b2844)}`);
-    check(v1Corpus.bianca.v1 === 108 && v1Corpus.bianca.v2 === 41,
-      `BiancaBra: pipelineVersion 1 must reproduce the pre-change 108 pieces, v2 the real 41, got ${JSON.stringify(v1Corpus.bianca)}`);
-    check(v1Corpus.f3380.v1 === 6 && v1Corpus.f3380.v2 === 6 && v1Corpus.f3380.sameSegments,
-      `3380 (no layer 1): both pipelines must give the same 6 pieces, segment for segment, got ${JSON.stringify(v1Corpus.f3380)}`);
-  }
-
-  // (b) A genuine v1 project (built through the test-only pipelineVersion:1
-  // door, saved, reopened) keeps 10 board pieces paired with 10 native pieces
-  // and live pieceAnchors; the same file imported with v2 round-trips as 6.
-  // (c) Deleting the field from the saved source (a project written before
-  // the field existed) must read as v1.
-  const roundTrip = await s.eval(`(async () => {
+  const threeSquaresDoc = docWithBlocks(
+    [0, 1, 2].map(i => dxfBlock('SQ_' + i, astmSquare(0, 0, 100, '1'))),
+    [0, 1, 2].map(i => dxfInsert('SQ_' + i, i * 300, 0)),
+  );
+  const reopenRun = await s.eval(`(async () => {
     const d = window.__braAutoModeDebug, h = window.__DXF;
+    const settle = (ms) => new Promise(r => setTimeout(r, ms));
+    const reset = async () => { const p = d.exportProject(); p.state.annotations = []; p.state.images = []; p.state.graphics = []; p.state.notes = []; p.state.dxfPatternSource = null;
+      await d.loadProject(p); document.getElementById('modeManualBtn').click(); if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click(); };
+    const snapshot = () => { const ss = d.dxf.measure.getSession(); const src = d.dxf.source(); return { groups: d.dxf.patternPieces.groups().length, anns: d.getAnnotations().length,
+      geometry: JSON.stringify(d.getAnnotations().map(a => [a.id, a.start, a.end])), sessionPieces: ss ? ss.pieceCount : null, anchors: ss ? ss.pieceAnchorsNonNull : null,
+      sourceVersion: src ? src.pipelineVersion : null, sourceOptionKeys: src && src.importOptions ? Object.keys(src.importOptions) : null }; };
+    await reset();
+    await h.importViaRealInput(${JSON.stringify(threeSquaresDoc)});
+    const imported = snapshot();
+    const project = d.exportProject();
+    const reopen = async (mutate) => {
+      const p = JSON.parse(JSON.stringify(project));
+      mutate(p.state.dxfPatternSource);
+      await reset();
+      await settle(1500); // let reset's own toasts drain out of the queue
+      const seen = [];
+      const el = document.getElementById('toast');
+      const obs = new MutationObserver(() => { if (el.textContent && seen[seen.length - 1] !== el.textContent) seen.push(el.textContent); });
+      obs.observe(el, { childList: true, characterData: true, subtree: true });
+      await d.loadProject(p);
+      await settle(2500);
+      obs.disconnect();
+      return Object.assign(snapshot(), { toasts: seen });
+    };
+    return {
+      imported,
+      current: await reopen(() => {}),
+      v1: await reopen(src => { src.pipelineVersion = 1; }),
+      missing: await reopen(src => { delete src.pipelineVersion; }),
+      excluded: await reopen(src => { src.importOptions.excludeInstances = [2]; }),
+      emptyExcluded: await reopen(src => { src.importOptions.excludeInstances = []; }),
+    };
+  })()`);
+  check(reopenRun.imported.groups === 3 && reopenRun.imported.sessionPieces === 3 && reopenRun.imported.anchors === 3 && reopenRun.imported.sourceVersion === 2
+    && JSON.stringify(reopenRun.imported.sourceOptionKeys) === '["keepQualityCurves"]',
+    `a fresh import must record pipelineVersion 2 and no excludeInstances on its source, with 3 live anchors, got ${JSON.stringify(reopenRun.imported)}`);
+  const live = (r) => r.groups === 3 && r.geometry === reopenRun.imported.geometry && r.sessionPieces === 3 && r.anchors === 3 && r.sourceVersion === 2
+    && !r.toasts.some(t => /Reopen the DXF/.test(t));
+  const cleared = (r) => r.groups === 3 && r.anns === reopenRun.imported.anns && r.geometry === reopenRun.imported.geometry
+    && r.sessionPieces === null && r.sourceVersion === null && r.toasts.some(t => /Reopen the DXF to measure again/.test(t));
+  check(live(reopenRun.current), `a current (v2) source must reopen with 3 live anchors and no warning, got ${JSON.stringify(reopenRun.current)}`);
+  check(cleared(reopenRun.v1), `a pipelineVersion-1 source must reopen as geometry only, Pattern Measure cleared with the "Reopen the DXF" toast, got ${JSON.stringify(reopenRun.v1)}`);
+  check(cleared(reopenRun.missing), `a source with no pipelineVersion must be treated like v1 (geometry only, "Reopen the DXF"), got ${JSON.stringify(reopenRun.missing)}`);
+  check(cleared(reopenRun.excluded), `a source carrying the retired picker's excludeInstances must reopen as geometry only, got ${JSON.stringify(reopenRun.excluded)}`);
+  check(live(reopenRun.emptyExcluded), `an EMPTY excludeInstances (what every pre-ADR-0105 import wrote) must still reopen live, got ${JSON.stringify(reopenRun.emptyExcluded)}`);
+
+  // A real factory file with duplicate same-named BLOCKs (2844, private repo
+  // only) still round-trips as 6 patterns with 6 live anchors.
+  const roundTrip = await s.eval(`(async () => {
+    const d = window.__braAutoModeDebug;
     const res = await fetch('/' + encodeURI('demo/DXF file/dxf/2844.dxf'));
     if (!res.ok) return { missing: true };
     const lossy = await res.text();
     const reset = async () => { const p = d.exportProject(); p.state.annotations = []; p.state.images = []; p.state.graphics = []; p.state.notes = []; await d.loadProject(p);
       document.getElementById('modeManualBtn').click(); if (!d.getState().sketchMode) document.getElementById('sketchFocusBtn').click(); };
-    const snapshot = () => { const s = d.dxf.measure.getSession(); const src = d.dxf.source(); return { groups: d.dxf.patternPieces.groups().length, anns: d.getAnnotations().length,
-      sessionPieces: s && s.pieceCount, anchors: s && s.pieceAnchorsNonNull, sourceVersion: src && src.pipelineVersion }; };
-    const rect = { left: 0, top: 0, width: 1000, height: 800 };
-    // v1 board
+    const snapshot = () => { const ss = d.dxf.measure.getSession(); const src = d.dxf.source(); return { groups: d.dxf.patternPieces.groups().length,
+      sessionPieces: ss && ss.pieceCount, anchors: ss && ss.pieceAnchorsNonNull, sourceVersion: src && src.pipelineVersion }; };
     await reset();
-    d.dxf.importText(lossy, rect, '2844-v1.dxf', { pipelineVersion: 1 });
-    const v1Before = snapshot();
-    const v1Project = d.exportProject();
+    d.dxf.importText(lossy, { left: 0, top: 0, width: 1000, height: 800 }, '2844.dxf');
+    const before = snapshot();
+    const project = d.exportProject();
     await reset();
-    await d.loadProject(JSON.parse(JSON.stringify(v1Project)));
-    const v1After = snapshot();
-    // old project: no pipelineVersion field at all
-    const legacyProject = JSON.parse(JSON.stringify(v1Project));
-    delete legacyProject.state.dxfPatternSource.pipelineVersion;
-    await reset();
-    await d.loadProject(legacyProject);
-    const legacyAfter = snapshot();
-    // v2 board
-    await reset();
-    d.dxf.importText(lossy, rect, '2844-v2.dxf');
-    const v2Before = snapshot();
-    const v2Project = d.exportProject();
-    await reset();
-    await d.loadProject(JSON.parse(JSON.stringify(v2Project)));
-    const v2After = snapshot();
-    return { v1Before, v1After, legacyAfter, v2Before, v2After };
+    await d.loadProject(JSON.parse(JSON.stringify(project)));
+    return { before, after: snapshot() };
   })()`);
   if (roundTrip.missing) {
-    console.log('SKIP  dxf-import-check   corpus absent — section 13(b/c) skipped');
+    console.log('SKIP  dxf-import-check   corpus absent — section 13 2844 round trip skipped');
   } else {
-    check(roundTrip.v1Before.groups === 10 && roundTrip.v1Before.sessionPieces === 10 && roundTrip.v1Before.anchors === 10 && roundTrip.v1Before.sourceVersion === 1,
-      `a v1-built board must have 10 groups, 10 native pieces, 10 live anchors and record pipelineVersion 1, got ${JSON.stringify(roundTrip.v1Before)}`);
-    check(roundTrip.v1After.groups === 10 && roundTrip.v1After.sessionPieces === 10 && roundTrip.v1After.anchors === 10 && roundTrip.v1After.sourceVersion === 1,
-      `reopening the v1 project must rebuild 10 native pieces with 10 live anchors (not the v2 grouping's 6), got ${JSON.stringify(roundTrip.v1After)}`);
-    check(roundTrip.legacyAfter.groups === 10 && roundTrip.legacyAfter.sessionPieces === 10 && roundTrip.legacyAfter.anchors === 10,
-      `a saved source with NO pipelineVersion field must be read as v1 and keep its 10 anchors, got ${JSON.stringify(roundTrip.legacyAfter)}`);
-    check(roundTrip.v2Before.groups === 6 && roundTrip.v2Before.sourceVersion === 2 && roundTrip.v2After.groups === 6 && roundTrip.v2After.sessionPieces === 6 && roundTrip.v2After.anchors === 6 && roundTrip.v2After.sourceVersion === 2,
-      `a v2 project must round-trip as 6 patterns with 6 live anchors and pipelineVersion 2, got ${JSON.stringify({ before: roundTrip.v2Before, after: roundTrip.v2After })}`);
+    check(roundTrip.before.groups === 6 && roundTrip.before.sourceVersion === 2 && roundTrip.after.groups === 6 && roundTrip.after.sessionPieces === 6
+      && roundTrip.after.anchors === 6 && roundTrip.after.sourceVersion === 2,
+      `2844 must round-trip as 6 patterns with 6 live anchors and pipelineVersion 2, got ${JSON.stringify(roundTrip)}`);
   }
 
   const errors = await s.eval('window.__dxfErrors || []');

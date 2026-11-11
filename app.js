@@ -4,9 +4,6 @@
 
   const BUILTIN_AUTO_MODE_RULE_JSON = {"version":{"pom_unit":"in","template_version":"core18-2026-07-18b","rule_version":"offline-vision-rules-v3","anchor_version":"anchors-2026-08-24-hem-offset-preserved","suggestions_version":"sizeL-suggestions-v1"},"pomTemplate":{"rows":[{"id":"1","name":"1/2 Bottom band (2nd hook from tightest) - Relax","zh":"下围半宽（扣最紧起第2排）- 放松量","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"primary","partner":"2","groupName":"1/2 Bottom band (2nd hook from tightest)","primaryLabel":"Relax","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"2","name":"1/2 Bottom band (2nd hook from tightest) - Extend","zh":"下围半宽（扣最紧起第2排）- 拉伸量","view":"front_outer","refL":null,"requiredAnchors":["band-left","band-right"],"derivation":null,"pairing":{"role":"secondary","primary":"1"},"expected_confidence_tier":"high"},{"id":"3","name":"1/2 chest (2nd hook from tightest) - Measure straight","zh":"胸围半宽（扣最紧起第2排）- 直量","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"primary","partner":"4","groupName":"1/2 Chest (2nd hook from tightest)","primaryLabel":"Measure straight","secondaryLabel":"Extend"},"expected_confidence_tier":"high"},{"id":"4","name":"1/2 chest (2nd hook from tightest) - Extend","zh":"胸围半宽（扣最紧起第2排）- 拉伸量","view":"front_outer","refL":null,"requiredAnchors":["chest-left","chest-right"],"derivation":null,"pairing":{"role":"secondary","primary":"3"},"expected_confidence_tier":"high"},{"id":"5","name":"Center front height","zh":"前中高度","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"6","name":"Cradle height at center front","zh":"托架前中高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cf-top","cf-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"7","name":"Cradle height at bottom cup","zh":"托架底杯高度","view":"front_outer","refL":null,"requiredAnchors":["cradle-cup-top","cradle-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"8","name":"Cup height at center front","zh":"前中杯高","view":"front_outer","refL":null,"requiredAnchors":["cf-top","cradle-cf-top"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"9","name":"Cup height","zh":"杯高","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-top","inner-cup-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"10","name":"Cup width","zh":"杯宽","view":"front_outer","refL":null,"requiredAnchors":["inner-cup-left","inner-cup-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"11","name":"Side seam length","zh":"侧缝长度","view":"back","refL":null,"requiredAnchors":["side-top","side-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"12","name":"Back center length","zh":"后中高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"13","name":"Back panel height","zh":"后背片高度","view":"back","refL":null,"requiredAnchors":["back-top","back-bottom"],"optionalAnchors":["back-panel-top","back-panel-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"14","name":"Shoulder strap length","zh":"肩带长度","view":"front_to_back","placementViewRole":"back","refL":null,"requiredAnchors":["strap-top","strap-bottom"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"},{"id":"15","name":"Back strap distances","zh":"后肩带间距","view":"back","refL":null,"requiredAnchors":["back-strap-left","back-strap-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"16","name":"Front apex distance","zh":"乳点间距","view":"front_outer","refL":null,"requiredAnchors":["apex-left","apex-right"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"17","name":"Neckline length","zh":"领口长","view":"front_outer","refL":null,"requiredAnchors":["171","172"],"derivation":null,"pairing":null,"expected_confidence_tier":"medium"},{"id":"18","name":"Armhole curve length","zh":"袖窿弧长","view":"front_outer","refL":null,"requiredAnchors":["181","182"],"derivation":null,"pairing":null,"expected_confidence_tier":"low"}]},"anchorSchema":{"anchors":[{"kind":"cf-top","name":"CF top","group":"axis","hint":"Top of the center-front, where the cradle meets the chest line."},{"kind":"cf-bottom","name":"CF bottom","group":"axis","hint":"Bottom of the center front, on the underbust band.","derivation":{"method":"drop_to_line","args":["cf-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"cradle-cf-top","name":"Cradle CF","group":"axis","hint":"Where the cradle / cup-bottom seam approaches the center front. POM 6 top."},{"kind":"cradle-cup-top","name":"Cradle cup top","group":"axis","hint":"Cradle / cup-bottom seam at the bottom-cup position (POM 7 top)."},{"kind":"cradle-cup-bottom","name":"Cradle cup btm","group":"axis","hint":"Band baseline directly below the bottom-cup cradle point (POM 7 bottom).","derivation":{"method":"drop_to_line","args":["cradle-cup-top","band-left","band-right"],"axis":"vertical","preserveOffset":true}},{"kind":"band-left","name":"Band L","group":"band","hint":"Leftmost end of the underbust band line."},{"kind":"band-right","name":"Band R","group":"band","hint":"Rightmost end of the underbust band line."},{"kind":"chest-left","name":"Chest L","group":"chest","hint":"Left end of the chest / overbust horizontal line."},{"kind":"chest-right","name":"Chest R","group":"chest","hint":"Right end of the chest / overbust horizontal line."},{"kind":"inner-cup-top","name":"IC top","group":"inner-cup","hint":"Top of the cup (apex) on the front (outer) view — POM 9 start."},{"kind":"inner-cup-bottom","name":"IC btm","group":"inner-cup","hint":"Bottom of the cup on the cup-bottom seam, front (outer) view — POM 9 end."},{"kind":"inner-cup-left","name":"IC L","group":"inner-cup","hint":"Cup width, gore-side edge — the cup's gore contact through its mid-section, front (outer) view. Sits at its own height (typically lower than IC R); the two endpoints do not share a row. POM 10 start."},{"kind":"inner-cup-right","name":"IC R","group":"inner-cup","hint":"Cup width, armhole-side edge — the cup's wire/side-seam end through its mid-section, front (outer) view. Sits at its own height (typically higher than IC L); the two endpoints do not share a row. POM 10 end."},{"kind":"side-top","name":"Side top","group":"side","hint":"Top of the side seam at the underarm."},{"kind":"side-bottom","name":"Side btm","group":"side","hint":"Bottom of the side seam at the band."},{"kind":"apex-left","name":"Apex L","group":"apex","hint":"Left shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"apex-right","name":"Apex R","group":"apex","hint":"Right shoulder-strap/cup joining seam, the highest point of the cup when present."},{"kind":"strap-top","name":"Front strap join","group":"strap","hint":"Strap join of the right shoulder strap (the strap adjacent to the back view) on the front view: the top seam of the stitched strap section, or where a plain strap attaches to the cup/neckline. Never the strap’s top cut edge — POM 14 start."},{"kind":"strap-bottom","name":"Back strap join","group":"strap","hint":"End of the shoulder strap at the back / back-panel join — POM 14 end."},{"kind":"back-top","name":"Back top","group":"back","hint":"Top edge of the back panel."},{"kind":"back-bottom","name":"Back btm","group":"back","hint":"Bottom edge of the back panel."},{"kind":"back-panel-top","name":"Panel top","group":"back","hint":"Upper point for back panel height."},{"kind":"back-panel-bottom","name":"Panel btm","group":"back","hint":"Lower point for back panel height."},{"kind":"back-strap-left","name":"Back strap L","group":"back","hint":"Left point of the back strap distance."},{"kind":"back-strap-right","name":"Back strap R","group":"back","hint":"Right point of the back strap distance."},{"kind":"171","name":"171","group":"neckline","hint":"Left upper neckline corner, where the cup/gore top edge meets the strap base."},{"kind":"172","name":"172","group":"neckline","hint":"Right upper neckline corner (mirror of Neckline L)."},{"kind":"181","name":"181","group":"armhole","hint":"Underarm side point at the bottom of the arm opening."},{"kind":"182","name":"182","group":"armhole","hint":"Strap/shoulder junction at the top of the arm opening."}]},"sizeLSuggestions":{"suggestions_version":"sizeL-suggestions-v1","unit":"in","provenance":{"corpus":"Measurements 2/library/_raw_intake/measurements_size_l.csv","conceptMap":"Measurements 2/library/pom_concepts.csv","tolDefaults":"Measurements 2/library/pom_tol_defaults.csv","sketchRatios":"Measurements 2/library/sketch_ratios.csv","generatedBy":"scripts/generate-sizeL-suggestions.mjs","corpusRows":2950,"styleVersions":225,"droppedRows":26,"note":"Derived from the approved Size-L corpus. Regenerate with the generator; never hand-edit. droppedRows = corpus rows whose concept is not yet canonicalized (raw_* intake phrases)."},"poms":{"1":{"concept":"band_relax","median":14,"min":12.74,"max":14.38,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"2":{"concept":"band_extended","median":19,"min":18,"max":19.25,"tol":"1/2","tolType":"min","sketchReliable":false,"n":225,"confidence":"medium","source":"library"},"3":{"concept":"chest_relax","median":17,"min":15.5,"max":17.5,"tol":"3/8","tolType":"symmetric","sketchReliable":false,"n":198,"confidence":"medium","source":"library"},"4":{"concept":"chest_extended","median":22,"min":20,"max":22.77,"tol":"1/2","tolType":"min","sketchReliable":false,"n":197,"confidence":"medium","source":"library"},"5":{"concept":"cf_height","median":5.5,"min":1.32,"max":6.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":217,"confidence":"medium","source":"library"},"6":{"concept":"cradle_cf","median":2.25,"min":1.31,"max":3,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":163,"confidence":"medium","source":"library"},"7":{"concept":"cradle_under_cup","median":1.75,"min":1.11,"max":2.64,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":173,"confidence":"medium","source":"library"},"8":{"concept":"cup_height_cf","median":3,"min":1.75,"max":4,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":113,"confidence":"low","source":"library"},"9":{"concept":"cup_height","median":8,"min":5.805,"max":9.5,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":237,"confidence":"medium","source":"library"},"10":{"concept":"cup_width","median":8,"min":6.6,"max":9,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":221,"confidence":"medium","source":"library"},"11":{"concept":"sideseam_length","median":5.5,"min":4.5,"max":6,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":211,"confidence":"medium","source":"library"},"12":{"concept":"cb_height","median":3.75,"min":2,"max":7.24,"tol":"1/8","tolType":"symmetric","sketchReliable":true,"n":239,"confidence":"medium","source":"library"},"13":{"concept":"back_panel_height","median":7.25,"min":3,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":181,"confidence":"medium","source":"library"},"14":{"concept":"strap_length","median":8,"min":4,"max":12,"tol":"1/4","tolType":"symmetric","sketchReliable":true,"n":155,"confidence":"low","source":"library"},"15":{"concept":"back_straps_distance","median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"16":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"17":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"},"18":{"concept":null,"median":null,"min":null,"max":null,"tol":null,"tolType":null,"sketchReliable":null,"n":0,"confidence":"very_low","source":"none"}}}};
 
-  // US-124: URL of the DXF Worker bundle, content-hashed like app.js?v=.
-  const DXF_WORKER_URL = "dxf-worker.js?v=0cd238a50d5c";
-
   // ---- src/auto/rules/load-rules.js ----
 // Loads TD-editable Auto Mode rules from auto_mode_rules/*.json.
 // This runs before state.js so POM_TEMPLATE/ANCHOR_SCHEMA stay synchronous.
@@ -210,8 +207,8 @@
   // ---- src/core/state.js ----
 // Core app state shape: shared constants, the RULES-derived POM/anchor
 // aliases, and the `state` object itself. DOM handles live in dom-refs.js,
-// boot sequencing in bootstrap.js, URL-driven test/demo bootstrap in
-// app/url-bootstrap.js.
+// boot sequencing in bootstrap.js, the URL-driven ground-truth labeling
+// boot path (?label=1) in app/url-bootstrap.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   const LINE_COLORS = {
@@ -305,7 +302,6 @@
     // US-095: visual vector construction shapes. Deliberately separate from
     // annotations, which are the measurement/POM collection.
     graphics: [],
-    deletedAutoAnnotations: [],
     // US-047: POM labels whose drawn line the TD deleted. Excluded from the
     // exported spec exactly like a hidden line (TD: "delete = hide"), until a
     // line with that label is redrawn. Persisted with the project + history.
@@ -427,9 +423,8 @@
     // Session-only UI state: never serialized with projects or history.
     visionEngine: 'warming',
 
-    // Phase 3.5: per-project style code. Drives meaning store scoping
-    // (POM 6+ meanings are keyed by this). Empty string falls back to
-    // a shared '__default__' bucket. Saved with the project.
+    // Per-project style code. Groups saves by style in the project Library.
+    // Saved with the project.
     styleId: '',
 
     // Per-POM spec sheet targets (Size L nominal + tolerance) shown in
@@ -574,11 +569,10 @@
       // .setEnabled(true) or ?cvDebug=1), runOfflineDetection asks the pure
       // pipeline to attach an intermediate-state object to the returned
       // detection. The last capture is mirrored here so it can be exported
-      // / downloaded independently of the live detection object.
+      // independently of the live detection object.
       cvDebug: {
         enabled: false,
         lastDebug: null,
-        lastExport: null,
       },
     };
   }
@@ -667,7 +661,6 @@
     fontSizeInput: document.getElementById('fontSizeInput'),
     noteStyleMenuWrap: document.getElementById('noteStyleMenuWrap'),
     noteStyleMenuBtn: document.getElementById('noteStyleMenuBtn'),
-    noteStyleMenuList: document.getElementById('noteStyleMenuList'),
     noteAppearanceTextOnlyBtn: document.getElementById('noteAppearanceTextOnlyBtn'),
     noteAppearanceBoxBtn: document.getElementById('noteAppearanceBoxBtn'),
     noteTextColorBtns: Array.from(document.querySelectorAll('.note-text-color-btn')),
@@ -748,15 +741,6 @@
     autoApplyBtn: document.getElementById('autoApplyBtn'),
     autoDiscardBtn: document.getElementById('autoDiscardBtn'),
     autoResetBoardBtn: document.getElementById('autoResetBoardBtn'),
-    autoLearnToggleBtn: document.getElementById('autoLearnToggleBtn'),
-    autoLearnChip: document.getElementById('autoLearnChip'),
-    autoAcceptanceChip: document.getElementById('autoAcceptanceChip'),
-    viewLearningDataItem: document.getElementById('viewLearningDataItem'),
-    resetResidualsItem: document.getElementById('resetResidualsItem'),
-    resetMeaningsCurrentItem: document.getElementById('resetMeaningsCurrentItem'),
-    resetMeaningsAllItem: document.getElementById('resetMeaningsAllItem'),
-    learningToolbarBtn: document.getElementById('learningToolbarBtn'),
-    learningToolbarChip: document.getElementById('learningToolbarChip'),
     autoStatusChip: document.getElementById('autoStatusChip'),
     autoStepIndicator: document.getElementById('autoStepIndicator'),
     visionEngineChip: document.getElementById('visionEngineChip'),
@@ -890,249 +874,6 @@
       if (Number.isFinite(n) && n > max) max = n;
     }
     return max + 1;
-  }
-
-  // ---- src/auto/telemetry/session-stats.js ----
-// Pure telemetry summarizer for Detect-to-POM speed sessions.
-// Source part for app.js. Run `npm run build` after editing.
-
-  function summarizeAutoTelemetryEvents(events) {
-    const rows = Array.isArray(events)
-      ? events.slice().filter(e => e && typeof e.event === 'string')
-      : [];
-    rows.sort((a, b) => eventTime(a) - eventTime(b));
-
-    const first = (name) => rows.find(e => e.event === name) || null;
-    const last = (name) => {
-      for (let i = rows.length - 1; i >= 0; i -= 1) {
-        if (rows[i].event === name) return rows[i];
-      }
-      return null;
-    };
-
-    const imageLoaded = first('image_loaded');
-    const detectClicked = first('detect_clicked');
-    const detectFinished = last('detect_finished');
-    const applyStarted = first('apply_started');
-    const sessionDone = last('auto_session_done') || last('apply_finished') || last('draft_applied');
-
-    const draggedAnchors = new Set();
-    const editedDrafts = new Set();
-    let discardedDrafts = 0;
-    let appliedDrafts = 0;
-    let approvedDrafts = 0;
-
-    for (const row of rows) {
-      if (row.event === 'anchor_dragged') {
-        draggedAnchors.add(row.anchor_id || row.anchor_kind || String(eventTime(row)));
-      } else if (row.event === 'draft_edited') {
-        editedDrafts.add(row.draft_id || row.pom_id || String(eventTime(row)));
-      } else if (row.event === 'draft_review_only') {
-        editedDrafts.add(row.draft_id || row.pom_id || String(eventTime(row)));
-        discardedDrafts += 1;
-      } else if (row.event === 'draft_discarded') {
-        discardedDrafts += Math.max(1, Number(row.count) || 0);
-      } else if (row.event === 'draft_applied') {
-        appliedDrafts += Math.max(1, Number(row.count) || 1);
-      } else if (row.event === 'draft_approved') {
-        approvedDrafts += 1;
-      }
-    }
-
-    const detectMs = durationBetween(detectClicked, detectFinished);
-    const loadToDetectMs = durationBetween(imageLoaded, detectFinished);
-    const editMs = durationBetween(detectFinished, sessionDone);
-    const applyMs = durationBetween(applyStarted, sessionDone);
-    const anchorsDragged = draggedAnchors.size;
-    const draftsEdited = editedDrafts.size;
-    const touchless = !!sessionDone
-      && anchorsDragged === 0
-      && draftsEdited === 0
-      && discardedDrafts === 0;
-
-    return {
-      detect_ms: detectMs,
-      load_to_detect_ms: loadToDetectMs,
-      edit_ms: editMs,
-      apply_ms: applyMs,
-      anchors_dragged: anchorsDragged,
-      drafts_edited: draftsEdited,
-      drafts_discarded: discardedDrafts,
-      drafts_approved: approvedDrafts,
-      drafts_applied: appliedDrafts,
-      touchless,
-      completed: !!sessionDone,
-    };
-  }
-
-  function summarizeAutoTelemetrySessions(sessions) {
-    const rows = Array.isArray(sessions)
-      ? sessions.slice().filter(Boolean)
-      : [];
-    const normalized = rows.map(session => {
-      const summary = session.summary || summarizeAutoTelemetryEvents(session.events || []);
-      return Object.assign({}, session, { summary });
-    });
-    const summaries = normalized.map(s => s.summary || {});
-    return {
-      sessions: normalized,
-      count: normalized.length,
-      medians: {
-        detect_ms: telemetryMedian(summaries.map(s => s.detect_ms)),
-        edit_ms: telemetryMedian(summaries.map(s => s.edit_ms)),
-        apply_ms: telemetryMedian(summaries.map(s => s.apply_ms)),
-        anchors_dragged: telemetryMedian(summaries.map(s => s.anchors_dragged)),
-        drafts_edited: telemetryMedian(summaries.map(s => s.drafts_edited)),
-        drafts_discarded: telemetryMedian(summaries.map(s => s.drafts_discarded)),
-      },
-      touchlessCount: summaries.filter(s => s.touchless).length,
-    };
-  }
-
-  function eventTime(event) {
-    const t = Number(event && event.timestamp);
-    return Number.isFinite(t) ? t : 0;
-  }
-
-  function durationBetween(startEvent, endEvent) {
-    if (!startEvent || !endEvent) return null;
-    const start = eventTime(startEvent);
-    const end = eventTime(endEvent);
-    if (!start || !end || end < start) return null;
-    return Math.round(end - start);
-  }
-
-  function telemetryMedian(values) {
-    const nums = values
-      .map(v => Number(v))
-      .filter(v => Number.isFinite(v));
-    if (!nums.length) return null;
-    nums.sort((a, b) => a - b);
-    const mid = Math.floor(nums.length / 2);
-    return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
-  }
-
-  // ---- src/auto/telemetry/session-timer.js ----
-// Detect-to-POM session telemetry. Stores the active event stream in
-// sessionStorage and completed sessions in localStorage["auto_telemetry_log"].
-// Source part for app.js. Run `npm run build` after editing.
-
-  const AUTO_TELEMETRY_LOG_KEY = 'auto_telemetry_log';
-  const AUTO_TELEMETRY_SESSION_KEY = 'auto_telemetry_current';
-  const AUTO_TELEMETRY_CAP = 200;
-
-  function recordAutoTelemetryEvent(event, details = {}) {
-    if (!event) return null;
-    const timestamp = Date.now();
-    const entry = makeAutoTelemetryEvent(event, details, timestamp);
-    let session = readCurrentAutoTelemetrySession();
-
-    if (!session && event !== 'image_loaded') return null;
-
-    if (event === 'image_loaded') {
-      session = {
-        id: makeAutoTelemetrySessionId(timestamp),
-        sketch_id: entry.sketch_id || null,
-        started_at: new Date(timestamp).toISOString(),
-        completed_at: null,
-        events: [],
-      };
-    }
-
-    if (!session.sketch_id && entry.sketch_id) session.sketch_id = entry.sketch_id;
-    session.events.push(entry);
-
-    if (event === 'auto_session_done') {
-      session.completed_at = new Date(timestamp).toISOString();
-      session.summary = summarizeAutoTelemetryEvents(session.events);
-      appendAutoTelemetrySession(session);
-      clearCurrentAutoTelemetrySession();
-    } else {
-      writeCurrentAutoTelemetrySession(session);
-    }
-    return entry;
-  }
-
-  function makeAutoTelemetryEvent(event, details, timestamp) {
-    const sourceImage = details && details.sourceImageId != null
-      ? getImageById(details.sourceImageId)
-      : (typeof pickAutoSourceImage === 'function' ? pickAutoSourceImage() : null);
-    const styleId = (typeof currentStyleId === 'function') ? currentStyleId() : (state.styleId || '');
-    const entry = {
-      event: String(event),
-      timestamp,
-      at: new Date(timestamp).toISOString(),
-      sketch_id: details.sketch_id || details.sourceImageId || (sourceImage && sourceImage.id) || null,
-      style_id: styleId || '',
-    };
-
-    const copyFields = [
-      'anchor_id', 'anchor_kind', 'pom_id', 'draft_id', 'run_id',
-      'count', 'duration_ms', 'status', 'reason', 'image_width',
-      'image_height', 'draft_count', 'approved_count',
-    ];
-    for (const key of copyFields) {
-      if (details && details[key] != null) entry[key] = details[key];
-    }
-    return entry;
-  }
-
-  function readCurrentAutoTelemetrySession() {
-    try {
-      const raw = sessionStorage.getItem(AUTO_TELEMETRY_SESSION_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function writeCurrentAutoTelemetrySession(session) {
-    try {
-      sessionStorage.setItem(AUTO_TELEMETRY_SESSION_KEY, JSON.stringify(session));
-    } catch (_) {
-      // Telemetry is diagnostic only; quota/private-mode failures should not
-      // affect drawing or detection.
-    }
-  }
-
-  function clearCurrentAutoTelemetrySession() {
-    try { sessionStorage.removeItem(AUTO_TELEMETRY_SESSION_KEY); } catch (_) { /* ignore */ }
-  }
-
-  function appendAutoTelemetrySession(session) {
-    const log = getAutoTelemetryLog();
-    log.push(session);
-    const trimmed = log.slice(-AUTO_TELEMETRY_CAP);
-    try {
-      localStorage.setItem(AUTO_TELEMETRY_LOG_KEY, JSON.stringify(trimmed));
-    } catch (_) {
-      // Keep the UI fast even if localStorage is full.
-    }
-  }
-
-  function getAutoTelemetryLog() {
-    try {
-      const raw = localStorage.getItem(AUTO_TELEMETRY_LOG_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (_) {
-      return [];
-    }
-  }
-
-  function clearAutoTelemetryLog() {
-    try { localStorage.removeItem(AUTO_TELEMETRY_LOG_KEY); } catch (_) { /* ignore */ }
-    clearCurrentAutoTelemetrySession();
-  }
-
-  function getAutoTelemetryReport(limit = 10) {
-    const log = getAutoTelemetryLog();
-    const latest = log.slice().reverse().slice(0, limit);
-    return summarizeAutoTelemetrySessions(latest);
-  }
-
-  function makeAutoTelemetrySessionId(timestamp) {
-    return 'auto-session-' + timestamp.toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   }
 
   // ---- src/core/curves.js ----
@@ -1824,16 +1565,14 @@
   // geometry helpers: the board parser's `{p0,c1,c2,p3}` and this kernel's
   // `{p0,p1,p2,p3}`. They differ ONLY in the names of the two interior
   // control points. Every walker of a curve segment that can come from either
-  // parser must read them through here — reading `seg.c1` off a native curve
-  // yields undefined, and that took down the whole pattern-classify pass the
-  // first time a SPLINE produced native curves.
-  // The two single-field readers are the hot form: dxfPatternCubicPoint runs
-  // them per sampled point per segment while classifying a pattern. An
-  // array-building variant (`[p0, c1, c2, p3]`) cost a measured 50.5ms against
-  // a 50ms responsiveness budget on 3380.dxf, lost its last caller, and was
-  // removed — do not reintroduce it on a hot path.
-  function dxfCubicC1(seg) { return seg.c1 || seg.p1; }
-  function dxfCubicC2(seg) { return seg.c2 || seg.p2; }
+  // parser must accept both — reading `seg.c1` off a native curve yields
+  // undefined, and that took down the whole pattern-classify pass the first
+  // time a SPLINE produced native curves. The walkers inline the read
+  // (`seg.c1 !== undefined ? seg.c1 : seg.p1`) rather than calling a helper:
+  // dxfPatternCubicPoint runs it per sampled point per segment while
+  // classifying a pattern, and an array-building helper cost a measured
+  // 50.5ms against a 50ms responsiveness budget on 3380.dxf — do not
+  // reintroduce a per-sample call on that hot path.
 
   function dxfPointOnSegment(seg, t) {
     if (!seg) return null;
@@ -2732,11 +2471,15 @@
   // ---- src/dxf/parse/dxf-pattern-classify.js ----
 // US-124 / ADR 0091: DXF pattern identity is a classified closed outline.
 //
-// Pure, DOM-free grouping shared by BOTH DXF parsers (src/dxf/dxf-import.js
-// for the board, src/dxf/parse/dxf-native-parser.js for Pattern Measure) so the
-// two can never disagree about what a pattern is — makeDxfMeasureSession pairs
-// board pieces with native pieces BY INDEX, so a grouping difference between
-// the two would silently null every pieceAnchor.
+// Pure, DOM-free grouping, run ONCE per parse by dxfParseDocumentAndModel
+// (src/dxf/parse/dxf-parse.js). The board's pieces and Pattern Measure's
+// native pieces are two views of its one result, which is what lets
+// makeDxfMeasureSession pair them BY INDEX.
+//
+// Every count it reports (classCounts, segCount, outlineSegCount, dropped,
+// stats.totalSegments/keptSegments…) is in board LINES — dxfBoardLineCount:
+// an exact arc counts as the Bézier curves the board draws it as. Its
+// decisions are made on the exact segments.
 //
 // Why this exists: the pre-ADR-0091 grouping (now dxfBuildPiecesLegacy in
 // dxf-import.js — endpoint connectivity + bounding-box containment, never
@@ -2777,8 +2520,8 @@
 // Cross-part symbols used (all `function` declarations, hoisted bundle-wide
 // per CLAUDE.md): distance, pointToSegmentDistance (src/core/math.js);
 // dxfSegmentEndpoints, dxfPointOnArcSegment, dxfBoundsOfSegments,
-// dxfBoundsOfPoints, dxfUnionFind, dxfBuildPiecesLegacy
-// (src/dxf/dxf-import.js).
+// dxfBoundsOfPoints, dxfUnionFind, dxfBuildPiecesLegacy, dxfBoardLineCount
+// (src/dxf/parse/dxf-parse.js).
 // Source part for app.js. Run `npm run build` after editing.
 
   // ASTM D6673-10 / AAMA-292 layer table, verified against the corpus
@@ -2853,9 +2596,10 @@
     const mt = 1 - t;
     const a = mt * mt * mt, b = 3 * mt * mt * t, c = 3 * mt * t * t, d = t * t * t;
     // Hot path: sampled per point per segment while classifying, so this
-    // deliberately inlines what dxfCubicC1/dxfCubicC2 (dxf-path-kernel.js)
-    // define rather than calling them — dxf-measurement-check asserts a 50ms
-    // parse budget for 3380.dxf that a per-sample call was measured against.
+    // deliberately inlines the c1/p1 + c2/p2 read (see the cubic-shape note in
+    // dxf-path-kernel.js) rather than calling a helper — dxf-measurement-check
+    // asserts a 50ms parse budget for 3380.dxf that a per-sample call was
+    // measured against.
     // The two names are the board's `c1/c2` and the native model's `p1/p2`;
     // a board curve therefore costs exactly one extra `undefined` test here
     // versus before SPLINE support existed.
@@ -3133,6 +2877,13 @@
     counts[key] = (counts[key] || 0) + n;
   }
 
+  // Board lines drawn for the segments at `idxs` (see the header).
+  function dxfPatternLineCount(segments, idxs) {
+    let n = 0;
+    for (const i of idxs) n += dxfBoardLineCount(segments[i]);
+    return n;
+  }
+
   // Flatten a segment to straight chords (curves sampled) for point-to-
   // geometry distance queries.
   function dxfPatternSegmentChords(seg) {
@@ -3253,19 +3004,22 @@
     const poolIdxs = idxs.filter(i => !inOutline.has(i));
     const poolChains = dxfPatternChains(segments, poolIdxs, tol);
 
-    const patterns = outlines.map((o, oi) => ({
-      kind: 'classified',
-      instance,
-      boundaryLayer,
-      orphan: false,
-      outlineIndex: oi,
-      outlineSegCount: o.segIdxs.length,
-      segIdxs: o.segIdxs.slice(),
-      classCounts: { boundary: o.segIdxs.length },
-      notchChains: 0,
-      // Every assigned chain with its class, for the dedupe pass below.
-      entries: o.segIdxs.map(i => ({ segIdx: i, cls: 'boundary', chainKey: 'outline' })),
-    }));
+    const patterns = outlines.map((o, oi) => {
+      const outlineLines = dxfPatternLineCount(segments, o.segIdxs);
+      return {
+        kind: 'classified',
+        instance,
+        boundaryLayer,
+        orphan: false,
+        outlineIndex: oi,
+        outlineSegCount: outlineLines,
+        segIdxs: o.segIdxs.slice(),
+        classCounts: { boundary: outlineLines },
+        notchChains: 0,
+        // Every assigned chain with its class, for the dedupe pass below.
+        entries: o.segIdxs.map(i => ({ segIdx: i, cls: 'boundary', chainKey: 'outline' })),
+      };
+    });
     const orphans = [];
 
     let chainSerial = 0;
@@ -3337,7 +3091,7 @@
         const pat = patterns[target];
         pat.segIdxs.push(...chain.segIdxs);
         const effectiveCls = isNotch ? 'notch' : cls;
-        dxfPatternBump(pat.classCounts, effectiveCls, chain.segIdxs.length);
+        dxfPatternBump(pat.classCounts, effectiveCls, dxfPatternLineCount(segments, chain.segIdxs));
         if (isNotch) pat.notchChains += 1;
         // Dedupe ranks and reports by each SEGMENT's own layer class, not the
         // chain's majority: CLO's layer-8 internal line and its layer-85 twin
@@ -3350,7 +3104,7 @@
         }
       } else {
         const classCounts = {};
-        dxfPatternBump(classCounts, cls, chain.segIdxs.length);
+        dxfPatternBump(classCounts, cls, dxfPatternLineCount(segments, chain.segIdxs));
         orphans.push({
           kind: 'orphan', instance, boundaryLayer, orphan: true,
           outlineSegCount: 0, segIdxs: chain.segIdxs.slice(), classCounts, notchChains: 0,
@@ -3370,8 +3124,9 @@
       for (const e of pat.entries) {
         const reason = droppedMap.get(e.segIdx);
         if (!reason) continue;
-        pat.dropped[reason] += 1;
-        dxfPatternBump(pat.droppedByClass, e.cls, 1);
+        const lines = dxfBoardLineCount(segments[e.segIdx]);
+        pat.dropped[reason] += lines;
+        dxfPatternBump(pat.droppedByClass, e.cls, lines);
       }
       pat.keptSegIdxs = pat.segIdxs.filter(i => !droppedMap.has(i));
       delete pat.entries;
@@ -3389,9 +3144,9 @@
 
   // segments -> { pieces, patterns, stats }. `pieces` has the exact shape
   // dxfBuildPieces always returned (array of arrays of the caller's own
-  // segment objects) so parseDxfDocument / parseDxfNativeModel keep every
-  // downstream cap and placement step unchanged; `patterns[i]` describes
-  // `pieces[i]` (same index, same order).
+  // segment objects) so dxfParseDocumentAndModel keeps every downstream cap
+  // and placement step unchanged; `patterns[i]` describes `pieces[i]` (same
+  // index, same order).
   // `options.diagnostics` adds `stats.instances` (one dxfClassifyInstance
   // `diag` per instance) — off by default so a normal parse result stays
   // small; the debug hook turns it on for suites and corpus audits.
@@ -3427,37 +3182,11 @@
       patternCount: 0, classifiedInstances: 0, legacyInstances: 0,
       classifiedPatterns: 0, legacyPieces: 0, orphans: 0,
       byClass: {}, boundaryLayers: {},
-      totalSegments: segments ? segments.length : 0, keptSegments: 0,
+      totalSegments: segments ? dxfPatternLineCount(segments, segments.keys()) : 0, keptSegments: 0,
       dropped: { exact: 0, qvTwin: 0 }, droppedByClass: {},
       keepQualityCurves: !!(options && options.keepQualityCurves),
     };
     if (wantDiag) stats.instances = [];
-    stats.pipelineVersion = (options && options.pipelineVersion === 1) ? 1 : 2;
-    // Phase 6 (owner decision 5): a saved pre-ADR-0091 source re-groups the
-    // way its board was built — ONE global legacy pass over every segment
-    // (instance-guarded connectivity + containment, root order), no dedupe,
-    // no exclusions, no classification. This is the exact pre-change
-    // dxfBuildPieces body, so the saved pieceFirstAnnotationIds keep pairing
-    // by index with the rebuilt native pieces.
-    if (stats.pipelineVersion === 1) {
-      const legacyPieces = (segments && segments.length) ? dxfBuildPiecesLegacy(segments) : [];
-      const patterns = legacyPieces.map(piece => ({
-        kind: 'legacy', instance: piece.length ? (piece[0].instance == null ? 0 : piece[0].instance) : 0,
-        boundaryLayer: null, orphan: false, outlineSegCount: 0, segCount: piece.length, totalSegCount: piece.length,
-        classCounts: { unknown: piece.length }, notchChains: 0, dropped: { exact: 0, qvTwin: 0 }, droppedByClass: {},
-      }));
-      stats.patternCount = legacyPieces.length;
-      stats.legacyPieces = legacyPieces.length;
-      stats.legacyInstances = new Set(patterns.map(p => p.instance)).size;
-      stats.keptSegments = legacyPieces.reduce((s, p) => s + p.length, 0);
-      return { pieces: legacyPieces, patterns, stats };
-    }
-    // Phase 4 (ADR 0091, owner decision 3): the pre-placement pick. A TD who
-    // hits DXF_TOTAL_OUTPUT_CAP deselects whole placement instances (a graded
-    // size, a piece); both parsers receive the same list, so the pieces they
-    // produce stay index-aligned. Instance 0 (direct ENTITIES) is one unit.
-    const excluded = new Set(Array.isArray(options && options.excludeInstances) ? options.excludeInstances : []);
-    stats.excludedInstances = 0;
     if (!segments || !segments.length) return { pieces: [], patterns: [], stats };
 
     const byInstance = new Map();
@@ -3470,15 +3199,7 @@
 
     const pieces = [];
     const patterns = [];
-    // Phase 5: per-instance progress for the worker (one call per instance,
-    // including excluded ones, so `done` reaches `total`). Pure — a callback
-    // the caller owns; the synchronous path passes none.
-    const onProgress = (options && typeof options.onProgress === 'function') ? options.onProgress : null;
-    let progressDone = 0;
     for (const instance of instanceKeys) {
-      progressDone += 1;
-      if (onProgress) onProgress(progressDone, instanceKeys.length);
-      if (excluded.has(instance)) { stats.excludedInstances += 1; continue; }
       const idxs = byInstance.get(instance);
       const tol = dxfPatternInstanceTolerance(segments, idxs);
       const result = dxfClassifyInstance(segments, idxs, tol, instance, options);
@@ -3487,29 +3208,31 @@
         stats.legacyInstances += 1;
         const legacyPieces = dxfBuildPiecesLegacy(idxs.map(i => segments[i]), tol);
         for (const piece of legacyPieces) {
+          const lines = dxfPatternLineCount(piece, piece.keys());
           pieces.push(piece);
           patterns.push({
             kind: 'legacy', instance, boundaryLayer: null, orphan: false,
-            outlineSegCount: 0, segCount: piece.length, totalSegCount: piece.length,
-            classCounts: { unknown: piece.length }, notchChains: 0,
+            outlineSegCount: 0, segCount: lines, totalSegCount: lines,
+            classCounts: { unknown: lines }, notchChains: 0,
             dropped: { exact: 0, qvTwin: 0 }, droppedByClass: {},
           });
           stats.legacyPieces += 1;
-          stats.keptSegments += piece.length;
+          stats.keptSegments += lines;
         }
         continue;
       }
       stats.classifiedInstances += 1;
       for (const pat of result.patterns) {
         const kept = pat.keptSegIdxs || pat.segIdxs;
+        const keptLines = dxfPatternLineCount(segments, kept);
         pieces.push(kept.map(i => segments[i]));
-        stats.keptSegments += kept.length;
+        stats.keptSegments += keptLines;
         stats.dropped.exact += pat.dropped.exact;
         stats.dropped.qvTwin += pat.dropped.qvTwin;
         for (const key of Object.keys(pat.droppedByClass)) dxfPatternBump(stats.droppedByClass, key, pat.droppedByClass[key]);
         const record = {
           kind: pat.kind, instance, boundaryLayer: pat.boundaryLayer, orphan: pat.orphan,
-          outlineSegCount: pat.outlineSegCount, segCount: kept.length, totalSegCount: pat.segIdxs.length,
+          outlineSegCount: pat.outlineSegCount, segCount: keptLines, totalSegCount: dxfPatternLineCount(segments, pat.segIdxs),
           classCounts: pat.classCounts, notchChains: pat.notchChains,
           dropped: pat.dropped, droppedByClass: pat.droppedByClass,
         };
@@ -3525,19 +3248,28 @@
 
   // ---- src/dxf/parse/dxf-parse.js ----
 // US-124 Phase 5 (ADR 0091): the PURE DXF parse layer, split out of
-// src/dxf/dxf-import.js so it can be bundled into dxf-worker.js as well as
-// app.js. Nothing in this part touches Board state, the DOM or window — the
-// worker purity gate in scripts/check.mjs enforces that — and every function
+// src/dxf/dxf-import.js. Nothing in this part touches Board state, the DOM or
+// window — the DXF parse-layer purity gate in scripts/check.mjs enforces that
+// (DXF_PARSE_PARTS in scripts/source-parts.mjs) — and every function
 // here is a hoisted declaration, so the board layer (dxf-import.js, later in
-// SOURCE_PARTS) and the native measurement parser (dxf-native-parser.js) call
-// them unchanged. A pure move: the corpus oracle (scripts/dxf-corpus-oracle.json)
-// is byte-identical before and after the split.
+// SOURCE_PARTS) calls them unchanged.
 //
-// Contents: text normalization + group-code tokenizing, section scan,
-// per-entity converters, INSERT->BLOCK resolution (k-th definition), byte
-// decoding, marks/annotation collection, Y-flip, the legacy grouping
-// (dxfBuildPiecesLegacy), placement transform, parseDxfDocument and the
-// over-cap report. The original file header follows for its history.
+// Contents: text normalization + group-code tokenizing, section scan, byte
+// decoding, arc/bulge/SPLINE geometry, marks/annotation collection, INSERT
+// parameters, the board view (Y-flip, arcs -> Béziers), the legacy grouping
+// (dxfBuildPiecesLegacy), placement transform, and the ONE parse:
+// dxfParseDocumentAndModel. The per-entity converters and INSERT->BLOCK
+// resolution live in dxf-native-parser.js — there is one set, and it emits
+// exact native geometry.
+//
+// A file is parsed ONCE (ADR 0105 follow-up). dxfParseDocumentAndModel
+// tokenizes, converts and classifies, then returns two views of the same
+// pieces: the board document (parseDxfDocument's shape — Y flipped, arcs as
+// cubic Béziers) and the native measurement model (parseDxfNativeModel's
+// shape — authored coordinates, exact arcs). Until then each view was its own
+// full parse of the text, paired by index, and they drifted (see
+// dxf-native-parser.js's header). The original file header follows for its
+// history.
 //
 // US-104: "Open DXF file" import in Sketch Focus.
 //
@@ -3551,29 +3283,21 @@
 // authority for HOW those rules are implemented, not a restatement of WHY.
 //
 // Split deliberately into three layers so each is independently testable:
-//   1. parseDxfDocument(text)              — pure text -> pieces (local
-//      drawing space: DXF's own units, Y already flipped to screen-down).
+//   1. dxfParseDocumentAndModel(text)      — pure text -> pieces (board view:
+//      local drawing space, DXF's own units, Y already flipped to screen-down;
+//      plus the native model). parseDxfDocument(text) is its board view.
 //   2. computeDxfPlacementTransform(...)    — pure bounds+viewport+zoom -> one
 //      shared scale/offset, DXF's own DXF_FIT_RATIO (round 11 — no longer
 //      createImageRecord's numbers; see the function's own comment).
 //   3. importDxfText(text, rect)            — orchestrates 1 + 2, builds real
-//      annotation objects, and performs the one board mutation.
+//      annotation objects, performs the one board mutation, and hands the
+//      native model it already has to the Pattern Measure session.
 // A .dxf reaches importDxfText through File > Open project… (the dedicated
 // DXF import panel was retired by ADR 0087).
 // Source part for app.js. Run `npm run build` after editing.
 
-  // US-124 Phase 6 (ADR 0091, owner decision 5): the grouping pipeline a
-  // saved dxfPatternSource was built with. 1 = pre-ADR-0091 (global
-  // connectivity+containment grouping, same-named BLOCK definitions
-  // concatenated, no dedupe, no exclusions); 2 = classified outlines. A
-  // project saved before this field existed carries none and means 1. The
-  // native measurement model rebuilt on reopen MUST use the source's own
-  // version — its pieces pair with the saved board pieces by index — so a
-  // pre-change project keeps live pieceAnchors without any migration.
-  const DXF_PIPELINE_VERSION = 2;
-
   // Shared number formatting for the parse-layer messages and the board
-  // toasts (Phase 5: lives here so dxf-worker.js has it too).
+  // toasts.
   function dxfFormatCount(n) {
     return Number(n || 0).toLocaleString('en-US');
   }
@@ -3606,22 +3330,19 @@
   // normalizeShapeStamp's own 80 — that pre-existing, unrelated limit is
   // unchanged; see the Acceptance Criteria note below.
   const DXF_PER_PIECE_CAP = 2500;
-  // Revised 40 -> 120 (ADR 0068 Follow-Up): the real file above needed only
-  // 6, but two other real files now resolvable via INSERT->BLOCK need more:
-  // `1290. Flexcamo .dxf` legitimately decomposes into 75 pieces (many tiny
-  // — notches/grainline marks that never touch the outline) and
-  // `SofyLift v.A 1.0_Pattern.dxf` into 96. 120 clears both with headroom.
+  // There is no piece-COUNT cap. History: it was revised 40 -> 120 (ADR 0068
+  // Follow-Up): the real file above needed only 6, but two other real files
+  // now resolvable via INSERT->BLOCK need more: `1290. Flexcamo .dxf`
+  // legitimately decomposes into 75 pieces (many tiny — notches/grainline
+  // marks that never touch the outline) and `SofyLift v.A 1.0_Pattern.dxf`
+  // into 96. 120 cleared both with headroom.
   //
-  // ADR 0091 / US-124 Phase 4 (owner decision 3): NO LONGER A REJECTION.
-  // Pattern count alone never refuses a file — the numbers above were
-  // over-counts (Flexcamo is 30 patterns, SofyLift 48; VeraLifting read 133
-  // for 57 and was refused). 120 is now the threshold above which the import
-  // is routed to the batched Web-Worker path (Phase 5); below it the
-  // synchronous path runs exactly as before. DXF_TOTAL_OUTPUT_CAP (board
-  // performance) is the only remaining hard stop, and it is reported per
-  // placement instance so the TD can deselect sizes/pieces before placement
-  // (openDxfPatternPickerDialog) instead of being turned away.
-  const DXF_PATTERN_BATCH_THRESHOLD = 120;
+  // ADR 0091 / US-124 Phase 4 (owner decision 3): NO LONGER A REJECTION, and
+  // since ADR 0105 no longer a constant at all. Pattern count alone never
+  // refuses a file — the numbers above were over-counts (Flexcamo is 30
+  // patterns, SofyLift 48; VeraLifting read 133 for 57 and was refused).
+  // DXF_TOTAL_OUTPUT_CAP (board performance) is the only hard stop.
+
   // Board-performance backstop. Revised 3000 -> 16000 (ADR 0068 Follow-Up):
   // `2892XL-new.dxf` (24 real pieces, no blocks) totals 13894 segments with
   // both caps above cleared; verified in a real headless-Chrome import that
@@ -3765,8 +3486,8 @@
   // terminated by ENDBLK instead of ENDSEC. Real garment-CAD DXF exports
   // (Gerber/Lectra/Rich-style) put every pattern piece's actual geometry
   // here, one block per piece, and merely reference it once via INSERT in
-  // ENTITIES — see dxfConvertInsertEntity below for why that reference must
-  // be resolved rather than treated as an unsupported entity type.
+  // ENTITIES — see the INSERT -> BLOCK section below for why that reference
+  // must be resolved rather than treated as an unsupported entity type.
   function dxfCollectBlocksBody(pairs, startIdx) {
     const blocks = new Map();
     let idx = startIdx;
@@ -3864,20 +3585,11 @@
   // definition rather than fail: a block genuinely placed N times has ONE
   // definition and ordinal 0..N-1, and must keep resolving. Nested INSERTs
   // (inside a block body) pass no ordinal and take the first definition.
-  // `ordinal === 'all'` (Phase 6, pipelineVersion 1) reproduces the
-  // pre-ADR-0091 behaviour exactly — every definition of the name
-  // concatenated — so a saved v1 source re-parses to the piece list its
-  // board was built from.
   function dxfBlockRecordsFor(blocks, name, ordinal) {
     const definitions = blocks.get(name);
     if (!definitions || !definitions.length) return null;
-    if (ordinal === 'all') return definitions.flat();
     const k = Number.isInteger(ordinal) && ordinal > 0 ? Math.min(ordinal, definitions.length - 1) : 0;
     return definitions[k];
-  }
-
-  function dxfPipelineVersionOf(options) {
-    return options && options.pipelineVersion === 1 ? 1 : DXF_PIPELINE_VERSION;
   }
 
   // ---- Byte-level decoding (ADR 0091 follow-up) -------------------------------
@@ -3932,25 +3644,45 @@
   function dxfNonPlanar(reason) { return dxfSkip('nonPlanar', reason); }
   function dxfUnsupportedType(reason) { return dxfSkip('unsupportedType', reason); }
   function dxfUnsupportedFit(reason) { return dxfSkip('unsupportedFit', reason); }
-  // US-127 / ADR 0102: geometry with no length. The NATIVE parser has
-  // rejected these since RB-4 (dxf-native-parser.js); this brings the board
-  // parser to parity, because the two parses are paired BY INDEX and a
-  // segment only one of them holds is a line the TD can see but never
-  // measure — 838 of them across the 40 parseable corpus files, each drawn
-  // as a round dot by the renderer's `lineCap:'round'`.
-  function dxfDegenerate(reason) { return dxfSkip('degenerate', reason); }
+  // US-127 / ADR 0102: an entity with no length at all. The board's toast
+  // names these 'zero-length lines'; the native model has filed them under
+  // 'malformed' since RB-4, and its tally is pinned by suites, so a skip can
+  // carry a different native bucket.
+  function dxfDegenerate(reason) { return { ok: false, bucket: 'degenerate', nativeBucket: 'malformed', reason }; }
+
+  // The rejection tallies of one parse. The board document and the native
+  // model report the same rejections under their own historic keys: the
+  // board's `degenerate` = the native `malformed` share above + every dropped
+  // zero-length polyline hop, which the native model counts separately as
+  // `rejectedDegenerateSegments`.
+  function dxfNewBuckets() {
+    return {
+      board: { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, nonGeometry: 0, degenerate: 0 },
+      native: { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, nonGeometry: 0, rejectedDegenerateSegments: 0 },
+    };
+  }
+
+  function dxfCountRejected(buckets, result) {
+    buckets.board[result.bucket] += 1;
+    buckets.native[result.nativeBucket || result.bucket] += 1;
+  }
+
+  function dxfCountDegenerateHops(buckets, count) {
+    buckets.board.degenerate += count;
+    buckets.native.rejectedDegenerateSegments += count;
+  }
 
   // ---- Arc / bulge -> cubic Bézier geometry ----------------------------------
   //
   // One shared chunker for ARC, CIRCLE and a polyline bulge alike: given a
   // center, radius, start angle and a SIGNED sweep (radians, CCW positive,
-  // magnitude < 2*PI), split into pieces no wider than 90 degrees and convert
-  // each with the standard tangent-based cubic approximation. All of this
-  // runs in native DXF (Y-up) coordinates; the caller flips Y on the
-  // resulting points afterward, uniformly, for every segment in the drawing.
-  // Bézier curves are affine-covariant, so negating Y on the four control
-  // points of an already-correct curve reproduces the curve's mirrored image
-  // exactly — there is no separate "flip the sweep sign" step to get wrong.
+  // magnitude <= 2*PI), split into pieces no wider than 90 degrees and convert
+  // each with the standard tangent-based cubic approximation. The board view
+  // calls it on an arc that is already Y-flipped (dxfBoardOrientedSegment
+  // negates the center's y, the start angle and the sweep). That is the exact
+  // mirror image of chunking in native Y-up space and flipping the control
+  // points afterward, bit for bit: sin and tan are odd and cos is even in
+  // IEEE arithmetic, and every sum below only changes sign.
   function dxfArcChunkToBezier(cx, cy, r, a0, a1) {
     const theta = a1 - a0;
     const alpha = (4 / 3) * Math.tan(theta / 4);
@@ -3961,9 +3693,22 @@
     return { kind: 'curve', p0, c1, c2, p3 };
   }
 
+  // A CIRCLE (|sweep| = 2*PI) is exactly four 90-degree quarters, per the
+  // product contract.
+  function dxfArcChunkCount(sweep) {
+    return Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 2) - 1e-9));
+  }
+
+  // How many board LINES a segment is drawn as: an exact arc becomes
+  // dxfArcChunkCount Bézier curves, anything else one line. The classifier
+  // counts in these units (dxfPatternLineCount) because the toast, the
+  // Pattern Pieces panel and the line caps all count what is drawn.
+  function dxfBoardLineCount(seg) {
+    return seg.kind === 'arc' ? dxfArcChunkCount(seg.sweep) : 1;
+  }
+
   function dxfArcToBezierChunks(cx, cy, r, startAngle, sweep) {
-    const maxChunk = Math.PI / 2;
-    const count = Math.max(1, Math.ceil(Math.abs(sweep) / maxChunk - 1e-9));
+    const count = dxfArcChunkCount(sweep);
     const chunkSweep = sweep / count;
     const chunks = [];
     let a = startAngle;
@@ -3985,13 +3730,10 @@
   // solved by hand (center reproduces both P1 and P2 exactly under a CCW
   // sweep of theta from the recovered start angle).
   //
-  // US-105: split out of dxfBulgeToBezierChunks so the native-coordinate
-  // measurement kernel (src/dxf/parse/dxf-native-parser.js) can get the exact
-  // {center, radius, startAngle, sweep} an ARC entity would carry, without
-  // going through a Bézier-chunked approximation it does not need — arcs and
-  // bulges are already exactly circular, so the measurement kernel's arc
-  // length can stay analytic. Returns null for the same degenerate case
-  // dxfBulgeToBezierChunks used to return [] for.
+  // US-105: returns the exact {center, radius, startAngle, sweep} an ARC
+  // entity would carry, so a bulge stays exactly circular in the native model
+  // (the board view chunks it like any other arc). Null for a zero-length
+  // chord.
   function dxfBulgeToArcParams(p1, p2, bulge) {
     const d = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     if (!(d > 1e-9)) return null;
@@ -4006,13 +3748,6 @@
     const a0 = Math.atan2(p1.y - cy, p1.x - cx);
     return { cx, cy, r, a0, sweep: theta };
   }
-
-  function dxfBulgeToBezierChunks(p1, p2, bulge) {
-    const params = dxfBulgeToArcParams(p1, p2, bulge);
-    if (!params) return [];
-    return dxfArcToBezierChunks(params.cx, params.cy, params.r, params.a0, params.sweep);
-  }
-
 
   // ---- SPLINE -> exact cubic Bezier parts -------------------------------------
   //
@@ -4032,17 +3767,11 @@
   // loop does nothing at all and the conversion is a regrouping, not a
   // computation.
   //
-  // The output is the SAME `{kind:'curve'}` cubic the ARC/bulge path already
-  // produces, which is why src/dxf/parse/dxf-path-kernel.js needed no change:
-  // its header has always documented a cubic-Bezier segment shape that "no
-  // parser currently produces" — point-at-t, length, projection and endpoint
-  // handling for it were already written and already tested.
-  //
-  // This lives in the pure layer, above BOTH converters, on purpose. The
-  // board parser and the native measurement parser are paired BY INDEX, and
-  // findings-dxf.md Finding 15 is what happens when one of them applies a
-  // rule the other does not: a line the TD can see but can never measure.
-  // One rule, one place, two thin wrappers.
+  // The output is a `{kind:'curve'}` cubic, which is why
+  // src/dxf/parse/dxf-path-kernel.js needed no change: its header has always
+  // documented a cubic-Bezier segment shape that "no parser currently
+  // produces" — point-at-t, length, projection and endpoint handling for it
+  // were already written and already tested.
   const DXF_SPLINE_MAX_DEGREE = 3;
   const DXF_SPLINE_INSERT_GUARD = 4096;
 
@@ -4141,7 +3870,7 @@
     return spans.length ? spans : null;
   }
 
-  // Neutral parts both converters map onto their own segment shape:
+  // Neutral parts the SPLINE converter maps onto its segment shape:
   //   { type: 'line', a, b }              (degree 1 — exact, no elevation)
   //   { type: 'cubic', p0, p1, p2, p3 }   (degree 2 elevated exactly, degree 3 as-is)
   function dxfSplineSpanToPart(span, degree) {
@@ -4232,68 +3961,7 @@
     return { ok: true, parts, degenerate };
   }
 
-  // ---- Per-entity converters --------------------------------------------------
-
-  function convertDxfLineEntity(rec) {
-    const x1 = dxfNum(rec.pairs, 10), y1 = dxfNum(rec.pairs, 20);
-    const x2 = dxfNum(rec.pairs, 11), y2 = dxfNum(rec.pairs, 21);
-    if ([x1, y1, x2, y2].some(v => v === undefined)) return dxfMalformed('LINE missing 10/20 or 11/21');
-    if (![x1, y1, x2, y2].every(Number.isFinite)) return dxfMalformed('LINE has a non-finite coordinate');
-    const z1 = dxfOptNum(rec.pairs, 30, 0), z2 = dxfOptNum(rec.pairs, 31, 0);
-    const thickness = dxfOptNum(rec.pairs, 39, 0);
-    const ext = dxfExtrusion(rec.pairs);
-    if (!Number.isFinite(z1) || !Number.isFinite(z2) || !Number.isFinite(thickness) || !ext.finite) {
-      return dxfMalformed('LINE has a non-finite planarity field');
-    }
-    if (!dxfPlanarOk([z1, z2], thickness, ext)) return dxfNonPlanar('LINE is not flat');
-    // US-127: same test, same wording as dxfNativeConvertLineEntity's RB-4 gate.
-    if (x1 === x2 && y1 === y2) return dxfDegenerate('LINE has zero length (coincident endpoints)');
-    return dxfOk([{ kind: 'straight', a: { x: x1, y: y1 }, b: { x: x2, y: y2 } }]);
-  }
-
-  function convertDxfArcEntity(rec) {
-    const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
-    const r = dxfNum(rec.pairs, 40);
-    const a0Deg = dxfNum(rec.pairs, 50), a1Deg = dxfNum(rec.pairs, 51);
-    if ([cx, cy, r, a0Deg, a1Deg].some(v => v === undefined)) return dxfMalformed('ARC missing 10/20/40/50/51');
-    if (![cx, cy, r, a0Deg, a1Deg].every(Number.isFinite)) return dxfMalformed('ARC has a non-finite value');
-    if (!(r > 0)) return dxfMalformed('ARC radius <= 0');
-    const z = dxfOptNum(rec.pairs, 30, 0);
-    const thickness = dxfOptNum(rec.pairs, 39, 0);
-    const ext = dxfExtrusion(rec.pairs);
-    if (!Number.isFinite(z) || !Number.isFinite(thickness) || !ext.finite) {
-      return dxfMalformed('ARC has a non-finite planarity field');
-    }
-    if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('ARC is not flat');
-    // Always CCW from start to end per the DXF spec — this handles a
-    // 350deg -> 10deg wraparound as a 20deg sweep, not a naive -340deg.
-    const sweepDeg = ((a1Deg - a0Deg) % 360 + 360) % 360;
-    if (!(sweepDeg > 1e-9)) return dxfMalformed('ARC has zero sweep');
-    const sweepRad = sweepDeg * Math.PI / 180;
-    const startRad = a0Deg * Math.PI / 180;
-    return dxfOk(dxfArcToBezierChunks(cx, cy, r, startRad, sweepRad));
-  }
-
-  function convertDxfCircleEntity(rec) {
-    const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
-    const r = dxfNum(rec.pairs, 40);
-    if ([cx, cy, r].some(v => v === undefined)) return dxfMalformed('CIRCLE missing 10/20/40');
-    if (![cx, cy, r].every(Number.isFinite)) return dxfMalformed('CIRCLE has a non-finite value');
-    if (!(r > 0)) return dxfMalformed('CIRCLE radius <= 0');
-    const z = dxfOptNum(rec.pairs, 30, 0);
-    const thickness = dxfOptNum(rec.pairs, 39, 0);
-    const ext = dxfExtrusion(rec.pairs);
-    if (!Number.isFinite(z) || !Number.isFinite(thickness) || !ext.finite) {
-      return dxfMalformed('CIRCLE has a non-finite planarity field');
-    }
-    if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('CIRCLE is not flat');
-    // Always exactly four 90-degree quadrants, per the product contract —
-    // not "chunked to <=90", a fixed four, so every CIRCLE outputs the same
-    // shape regardless of an arbitrary starting angle.
-    const chunks = [];
-    for (let i = 0; i < 4; i += 1) chunks.push(dxfArcChunkToBezier(cx, cy, r, i * (Math.PI / 2), (i + 1) * (Math.PI / 2)));
-    return dxfOk(chunks);
-  }
+  // ---- LWPOLYLINE vertex read (shared with the native converters) -------------
 
   function dxfParseLwpolylineVertices(pairs) {
     const vertices = [];
@@ -4311,126 +3979,15 @@
     return vertices;
   }
 
-  // US-127 / ADR 0102: mirrors dxfNativeVerticesToSegments — a repeated
-  // vertex (the closing vertex of a polyline that already ends where it
-  // started, or a duplicated authoring click) produces a hop of length zero.
-  // It is not a line: it draws as a dot, it can never be measured, and it is
-  // a non-topological member that keeps a boundary chain from reading as
-  // closed. Returns the count so the import toast can say what it dropped.
-  function dxfPolylineVerticesToSegments(vertices, closed) {
-    const segs = [];
-    let degenerate = 0;
-    const n = vertices.length;
-    const last = closed ? n : n - 1;
-    for (let i = 0; i < last; i += 1) {
-      const a = vertices[i];
-      const b = vertices[(i + 1) % n];
-      if (a.bulge) {
-        const chunks = dxfBulgeToBezierChunks(a, b, a.bulge);
-        if (chunks.length) segs.push(...chunks);
-        else degenerate += 1;
-      } else if (a.x !== b.x || a.y !== b.y) {
-        segs.push({ kind: 'straight', a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } });
-      } else {
-        degenerate += 1;
-      }
-    }
-    return { segments: segs, degenerate };
-  }
-
-  function convertDxfLwpolylineEntity(rec) {
-    const declaredRaw = dxfFirst(rec.pairs, 90);
-    if (declaredRaw === undefined) return dxfMalformed('LWPOLYLINE missing group 90 vertex count');
-    const declared = Number(String(declaredRaw).trim());
-    if (!Number.isFinite(declared)) return dxfMalformed('LWPOLYLINE group 90 is not a finite number');
-    const flags = dxfOptNum(rec.pairs, 70, 0);
-    if (!Number.isFinite(flags)) return dxfMalformed('LWPOLYLINE has a non-finite flag value');
-    const vertices = dxfParseLwpolylineVertices(rec.pairs);
-    if (declared !== vertices.length) return dxfMalformed('LWPOLYLINE group-90 count does not match its vertex pairs');
-    if (vertices.length < 2) return dxfMalformed('LWPOLYLINE has fewer than 2 vertices');
-    for (const v of vertices) {
-      if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.bulge)) {
-        return dxfMalformed('LWPOLYLINE has a non-finite vertex or bulge value');
-      }
-    }
-    const elevation = dxfOptNum(rec.pairs, 38, 0);
-    const thickness = dxfOptNum(rec.pairs, 39, 0);
-    const ext = dxfExtrusion(rec.pairs);
-    if (!Number.isFinite(elevation) || !Number.isFinite(thickness) || !ext.finite) {
-      return dxfMalformed('LWPOLYLINE has a non-finite planarity field');
-    }
-    if (!dxfPlanarOk([elevation], thickness, ext)) return dxfNonPlanar('LWPOLYLINE is not flat');
-    const closed = (Math.trunc(flags) & 1) === 1;
-    const converted = dxfPolylineVerticesToSegments(vertices, closed);
-    if (!converted.segments.length) return dxfDegenerate('LWPOLYLINE has no non-degenerate segment');
-    return { ok: true, segments: converted.segments, degenerate: converted.degenerate };
-  }
-
-  function convertDxfPolylineEntity(rec) {
-    const flagsRaw = dxfOptNum(rec.pairs, 70, 0);
-    if (!Number.isFinite(flagsRaw)) return dxfMalformed('POLYLINE has a non-finite flag value');
-    const flags = Math.trunc(flagsRaw);
-    if ((flags & 2) || (flags & 4)) return dxfUnsupportedFit('POLYLINE has the curve-fit or spline-fit flag set');
-    if ((flags & 8) || (flags & 16) || (flags & 64)) return dxfNonPlanar('POLYLINE is 3D/mesh (flag bit 3, 4, or 6)');
-    const closed = (flags & 1) === 1;
-    const headerZ = dxfOptNum(rec.pairs, 30, 0);
-    const thickness = dxfOptNum(rec.pairs, 39, 0);
-    const ext = dxfExtrusion(rec.pairs);
-    if (!Number.isFinite(headerZ) || !Number.isFinite(thickness) || !ext.finite) {
-      return dxfMalformed('POLYLINE has a non-finite planarity field');
-    }
-    const rawVertices = Array.isArray(rec.vertices) ? rec.vertices : [];
-    if (rawVertices.length < 2) return dxfMalformed('POLYLINE has fewer than 2 vertices');
-    const vertices = [];
-    for (const vPairs of rawVertices) {
-      const x = dxfNum(vPairs, 10), y = dxfNum(vPairs, 20);
-      if (x === undefined || y === undefined) return dxfMalformed('POLYLINE VERTEX missing 10/20');
-      const z = dxfOptNum(vPairs, 30, 0);
-      const bulge = dxfOptNum(vPairs, 42, 0);
-      if (![x, y, z, bulge].every(Number.isFinite)) return dxfMalformed('POLYLINE VERTEX has a non-finite value');
-      vertices.push({ x, y, z, bulge });
-    }
-    if (!dxfPlanarOk([headerZ, ...vertices.map(v => v.z)], thickness, ext)) return dxfNonPlanar('POLYLINE is not flat');
-    const converted = dxfPolylineVerticesToSegments(vertices, closed);
-    if (!converted.segments.length) return dxfDegenerate('POLYLINE has no non-degenerate segment');
-    return { ok: true, segments: converted.segments, degenerate: converted.degenerate };
-  }
-
-  function convertDxfSplineEntity(rec) {
-    const read = dxfSplineParts(rec);
-    if (!read.ok) return read;
-    if (!read.parts.length) return dxfDegenerate('SPLINE has no non-degenerate span');
-    const segments = read.parts.map(part => (part.type === 'line'
-      ? { kind: 'straight', a: part.a, b: part.b }
-      : { kind: 'curve', p0: part.p0, c1: part.p1, c2: part.p2, p3: part.p3 }));
-    return { ok: true, segments, degenerate: read.degenerate };
-  }
-
-  function convertDxfEntity(rec) {
-    switch (rec.type) {
-      case 'LINE': return convertDxfLineEntity(rec);
-      case 'ARC': return convertDxfArcEntity(rec);
-      case 'CIRCLE': return convertDxfCircleEntity(rec);
-      case 'LWPOLYLINE': return convertDxfLwpolylineEntity(rec);
-      case 'POLYLINE': return convertDxfPolylineEntity(rec);
-      case 'SPLINE': return convertDxfSplineEntity(rec);
-      // Phase 3 (ADR 0091): ASTM turn/curve points, notches, drill holes and
-      // annotation text are standard non-geometry, not "unsupported" — they
-      // are counted by dxfCollectMarks and reported as what they are.
-      case 'POINT': case 'TEXT': case 'MTEXT':
-        return dxfSkip('nonGeometry', rec.type + ' is a mark/annotation, not drawn geometry');
-      default: return dxfUnsupportedType('entity type "' + rec.type + '" is not supported');
-    }
-  }
-
   // ---- Marks and annotation text (Phase 3) ------------------------------------
   //
   // A second, cheap pass over the scanned records — independent of geometry
-  // conversion so neither parser's converter signatures change — that counts
+  // conversion so the converter signatures stay small — that counts
   // POINT/TEXT per instance and pulls the ASTM piece annotation
   // (`PIECE NAME:` / `SIZE:` / `QUANTITY:`, the CLO convention) out of the
   // TEXT that shares a block with the piece. Same instance/ordinal scheme as
-  // parseDxfDocument so `labelsByInstance` lines up with `instanceBlockNames`.
+  // dxfParseDocumentAndModel so `labelsByInstance` lines up with
+  // `instanceBlockNames`.
   const DXF_POINT_LAYER_CLASS = { '2': 'turn', '3': 'curve', '4': 'notch', '13': 'drill' };
 
   function dxfMarkText(rec) {
@@ -4510,7 +4067,9 @@
   // (translate + uniform scale + rotation, bounded recursive nesting): a
   // non-uniform scale or MINSERT array is rejected with a stated reason
   // rather than silently producing distorted or duplicated geometry, since
-  // no real sample file needs either.
+  // no real sample file needs either. The parameters and the point transform
+  // live here; the resolution itself is dxfNativeConvertInsertEntity in
+  // dxf-native-parser.js.
   const DXF_INSERT_MAX_DEPTH = 8; // generous bound against a circular BLOCK/INSERT reference; no real file needs more than 1-2 levels
 
   function dxfInsertParams(rec) {
@@ -4537,115 +4096,58 @@
     return { x: ins.ix + sx * cos - sy * sin, y: ins.iy + sx * sin + sy * cos };
   }
 
-  // Object.assign over the source segment (ADR 0091): `layer`/`entityType`
-  // provenance stamped by dxfConvertEntityResolvingBlocks on the child entity
-  // must survive the placement transform, or every block-resolved segment
-  // reaches the classifier layer-less and the whole file silently falls back
-  // to the legacy grouping — the same shape of bug ADR 0069 hit with
-  // `instance` in dxfFlipSegmentY.
-  function dxfApplyInsertTransformToSegment(seg, ins) {
-    return seg.kind === 'straight'
-      ? Object.assign({}, seg, { a: dxfInsertTransformPoint(seg.a, ins), b: dxfInsertTransformPoint(seg.b, ins) })
-      : Object.assign({}, seg, {
-        p0: dxfInsertTransformPoint(seg.p0, ins), c1: dxfInsertTransformPoint(seg.c1, ins),
-        c2: dxfInsertTransformPoint(seg.c2, ins), p3: dxfInsertTransformPoint(seg.p3, ins),
-      });
-  }
-
-  // `buckets` is shared mutable state the caller also increments into — a
-  // block's own unsupported/malformed children (e.g. TEXT alongside LINE)
-  // are counted here as they're found, so one bucket total covers both
-  // directly-placed and block-resolved entities uniformly. `instance`
-  // (ADR 0069) is opaque here — always the SAME value this call's own
-  // caller was given, propagated unchanged to every child so a piece
-  // assembled from nested INSERTs still shares one instance boundary; see
-  // dxfConnectedComponents/dxfMergeContainedComponents for what it's for.
-  function dxfConvertInsertEntity(rec, blocks, depth, buckets, instance, ordinal) {
-    const p = dxfInsertParams(rec);
-    if (p.blockName == null) return dxfMalformed('INSERT missing block name (group 2)');
-    if (![p.ix, p.iy, p.sx, p.sy, p.angleRad].every(Number.isFinite)) return dxfMalformed('INSERT has a non-finite placement field');
-    if (Math.abs(p.sx) < 1e-9 || Math.abs(p.sy) < 1e-9) return dxfMalformed('INSERT has a zero scale factor');
-    if (Math.abs(Math.abs(p.sx) - Math.abs(p.sy)) > 1e-6) {
-      return dxfUnsupportedType('INSERT has non-uniform scale (X and Y scale differ), not supported');
-    }
-    if ((p.colCount && p.colCount !== 1) || (p.rowCount && p.rowCount !== 1)) {
-      return dxfUnsupportedType('INSERT is a rectangular array (MINSERT), not supported');
-    }
-    const blockRecords = dxfBlockRecordsFor(blocks, p.blockName, ordinal);
-    if (!blockRecords) return dxfMalformed('INSERT references an undefined block "' + p.blockName + '"');
-    if (depth >= DXF_INSERT_MAX_DEPTH) return dxfMalformed('INSERT nesting is too deep (possible circular BLOCK reference)');
-    const segments = [];
-    // US-127: a block child's own dropped zero-length hops ride up with the
-    // geometry so one instance's count reaches the import toast (the child's
-    // whole-entity rejections already increment `buckets` directly).
-    let degenerate = 0;
-    for (const childRec of blockRecords) {
-      const result = dxfConvertEntityResolvingBlocks(childRec, blocks, depth + 1, buckets, instance);
-      if (!result.ok) { buckets[result.bucket] += 1; continue; }
-      degenerate += result.degenerate || 0;
-      segments.push(...result.segments);
-    }
-    if (!segments.length) return dxfMalformed('INSERT\'s block "' + p.blockName + '" has no supported geometry');
-    return { ok: true, segments: segments.map(seg => dxfApplyInsertTransformToSegment(seg, p)), degenerate };
-  }
-
-  // Stamps every accepted segment with its placement `instance` (ADR 0069)
-  // regardless of which branch produced it — the one place this needs to
-  // happen, since dxfConvertInsertEntity's own return (after
-  // dxfApplyInsertTransformToSegment rebuilds fresh segment objects) would
-  // otherwise lose it.
-  function dxfConvertEntityResolvingBlocks(rec, blocks, depth, buckets, instance, ordinal) {
-    const result = rec.type === 'INSERT'
-      ? dxfConvertInsertEntity(rec, blocks, depth, buckets, instance, ordinal)
-      : convertDxfEntity(rec);
-    if (!result.ok) return result;
-    if (rec.type === 'INSERT') {
-      // Children were already stamped with their own layer/entityType on the
-      // way up; only the instance is (re)applied here.
-      return { ok: true, segments: result.segments.map(seg => Object.assign({}, seg, { instance })), degenerate: result.degenerate || 0 };
-    }
-    // ADR 0091: layer provenance (group 8) and the source entity type ride on
-    // every segment so dxfClassifyPatterns can tell a piece boundary (ASTM
-    // layer 1) from a grain line, sew line or internal mark. The native
-    // parser has stamped `layer` since US-105; this brings the board parser
-    // to parity so both feed the classifier the same facts.
-    const layerRaw = dxfFirst(rec.pairs, 8);
-    const layer = layerRaw == null ? null : String(layerRaw).trim();
-    return {
-      ok: true,
-      segments: result.segments.map(seg => Object.assign({}, seg, { instance, layer, entityType: rec.type })),
-      degenerate: result.degenerate || 0,
-    };
-  }
-
-  // ---- Y-flip (DXF Y-up -> board Y-down) -------------------------------------
+  // ---- The board view: Y-flip (DXF Y-up -> board Y-down), arcs -> Béziers ----
 
   function dxfFlipPointY(p) { return { x: p.x, y: -p.y }; }
 
-  // ADR 0069: preserves `instance` (set by dxfConvertEntityResolvingBlocks,
-  // read by dxfConnectedComponents/dxfMergeContainedComponents) — dropping
-  // it here would silently turn every segment's instance to `undefined`
-  // before piece detection ever runs, making the whole instance-boundary
-  // rule a no-op. Caught by this exact regression during development: the
-  // fix initially had zero effect on any real file until this was found.
+  // A native segment as the BOARD sees it: Y flipped, carrying exactly the
+  // board's own fields — `instance` (ADR 0069, read by piece detection),
+  // `layer` (ADR 0091, read by the classifier) and `entityType`. A straight
+  // line or a SPLINE curve (renamed to the board's c1/c2) is already the board
+  // segment the import draws; an arc stays an exact arc, mirrored, until
+  // dxfBoardPiece chunks it after classification.
   //
-  // ADR 0091 generalizes the lesson: copy EVERY non-geometry field
-  // (`instance`, `layer`, `entityType`) via Object.assign rather than
-  // re-listing them, so the next provenance field cannot be dropped here.
-  function dxfFlipSegmentY(seg) {
-    return seg.kind === 'straight'
-      ? Object.assign({}, seg, { a: dxfFlipPointY(seg.a), b: dxfFlipPointY(seg.b) })
-      : Object.assign({}, seg, { p0: dxfFlipPointY(seg.p0), c1: dxfFlipPointY(seg.c1), c2: dxfFlipPointY(seg.c2), p3: dxfFlipPointY(seg.p3) });
+  // dxfParseDocumentAndModel classifies THESE, not the native segments. The
+  // classifier clusters points on a grid, so its decisions — which of two
+  // near-coincident copies it keeps, even whether a chain closes — can depend
+  // on the sign of y: run in native orientation it kept different copies on
+  // SE0583-LACE (both files) and SN1252, and read the refused 2999 nest as 25
+  // patterns instead of 2. Classifying the board orientation keeps every
+  // board the import has ever drawn, and every corpus oracle row, unchanged;
+  // the native model takes the same pieces back in authored coordinates.
+  function dxfBoardOrientedSegment(seg) {
+    const instance = seg.instance, layer = seg.layer, entityType = seg.entityType;
+    if (seg.kind === 'straight') {
+      return { kind: 'straight', a: dxfFlipPointY(seg.a), b: dxfFlipPointY(seg.b), instance, layer, entityType };
+    }
+    if (seg.kind === 'curve') {
+      return {
+        kind: 'curve', p0: dxfFlipPointY(seg.p0), c1: dxfFlipPointY(seg.p1), c2: dxfFlipPointY(seg.p2), p3: dxfFlipPointY(seg.p3),
+        instance, layer, entityType,
+      };
+    }
+    return {
+      kind: 'arc', center: dxfFlipPointY(seg.center), radius: seg.radius, startAngle: -seg.startAngle, sweep: -seg.sweep,
+      instance, layer, entityType,
+    };
+  }
+
+  // A classified board-oriented piece -> the board's own segments: each arc
+  // becomes dxfArcChunkCount cubic Béziers (a circle exactly four quarters),
+  // stamped with the arc's provenance. A piece with no arc is returned as is.
+  function dxfBoardPiece(piece) {
+    if (!piece.some(seg => seg.kind === 'arc')) return piece;
+    return piece.flatMap(seg => (seg.kind !== 'arc' ? [seg]
+      : dxfArcToBezierChunks(seg.center.x, seg.center.y, seg.radius, seg.startAngle, seg.sweep)
+        .map(chunk => Object.assign(chunk, { instance: seg.instance, layer: seg.layer, entityType: seg.entityType }))));
   }
 
   // US-105: a point at native arc parameter t in [0,1] — center + radius at
   // (startAngle + sweep*t). Shared by the native measurement kernel and, here,
   // by dxfSegmentEndpoints/dxfSegmentPoints below so an 'arc'-kind segment
-  // (the native, non-Bézier representation the measurement parser emits) can
-  // reuse the existing piece-detection primitives (dxfConnectedComponents,
-  // dxfMergeContainedComponents, dxfBoundsOfSegments) unchanged. Never called
-  // by parseDxfDocument's own pipeline, which only ever produces 'straight'/
-  // 'curve' segments — this is purely additive.
+  // (the exact representation the converters emit, and the classifier sees)
+  // can reuse the piece-detection primitives (dxfConnectedComponents,
+  // dxfMergeContainedComponents, dxfBoundsOfSegments) unchanged.
   function dxfPointOnArcSegment(seg, t) {
     const a = seg.startAngle + seg.sweep * t;
     return { x: seg.center.x + seg.radius * Math.cos(a), y: seg.center.y + seg.radius * Math.sin(a) };
@@ -4684,9 +4186,9 @@
     // first SPLINE run did.
     // Inlined for the same reason as dxfPatternCubicPoint: this runs per
     // segment inside the per-instance bounds passes. `c1/c2` is the board
-    // curve shape, `p1/p2` the native measurement one (dxfCubicC1/C2 in
-    // dxf-path-kernel.js define the pair); a board curve costs one extra
-    // `undefined` test here versus before SPLINE support existed.
+    // curve shape, `p1/p2` the native measurement one (dxf-path-kernel.js
+    // documents the pair); a board curve costs one extra `undefined` test
+    // here versus before SPLINE support existed.
     const c1 = seg.c1 !== undefined ? seg.c1 : seg.p1;
     const c2 = seg.c2 !== undefined ? seg.c2 : seg.p2;
     return (c1 !== undefined && c2 !== undefined) ? [seg.p0, c1, c2, seg.p3] : [seg.p0, seg.p3];
@@ -4735,10 +4237,7 @@
   // LINE/POLYLINE entities that must still freely connect) and a distinct
   // id per top-level INSERT (nested INSERTs inherit their parent's id, so
   // a piece assembled from nested reusable sub-blocks still connects as
-  // one). Segments the native measurement parser (dxf-native-parser.js)
-  // produces never set `instance` at all (`undefined`), so this guard is a
-  // no-op there — untouched per ADR 0068's decision to scope block
-  // resolution to board import only.
+  // one).
   //
   // `tolOverride` (ADR 0091): dxfClassifyPatterns runs the legacy grouping
   // per instance and must pass in the WHOLE-drawing tolerance it computed, or
@@ -4991,32 +4490,41 @@
     };
   }
 
-  // ---- Document-level parse (pure; no state/DOM) -----------------------------
+  // ---- The one parse (pure; no state/DOM) --------------------------------------
 
-  // text -> { ok, pieces, buckets, ... } | { ok:false, atomic:true, reason,
-  // message, buckets }. `pieces` (when ok) is an array of per-piece segment
-  // arrays in LOCAL drawing space (already Y-flipped), each already under
-  // the per-piece cap and the whole set already under the piece-count and
-  // total-output caps — the only work left for the caller is the viewport
-  // transform and building real annotation objects.
-  function parseDxfDocument(text, options) {
+  // text -> { board, native }: one tokenize, one conversion, one
+  // classification, two views of the same pieces in the same order.
+  //   board  — parseDxfDocument's shape: { ok, pieces, buckets,
+  //            skippedOversizedPieces, instanceBlockNames, patterns, stats,
+  //            marks }. `pieces` is an array of per-piece segment arrays in
+  //            LOCAL drawing space (Y flipped, arcs as Béziers), already under
+  //            the per-piece and total-output caps — the only work left for
+  //            the caller is the viewport transform and real annotations.
+  //   native — parseDxfNativeModel's shape (dxfNativeModelView): the same
+  //            pieces as [{segments}] in authored coordinates, arcs exact.
+  // A refusal is { ok:false, atomic:true, reason, message, buckets? } in both
+  // views; they differ only in each view's own bucket keys and wording.
+  function dxfParseDocumentAndModel(text, options) {
     const normalized = dxfNormalizeText(text);
     if (normalized.slice(0, DXF_BINARY_SENTINEL.length) === DXF_BINARY_SENTINEL) {
-      return {
+      const refused = {
         ok: false, atomic: true, reason: 'binary',
         message: 'This looks like a binary DXF file. Re-export as ASCII DXF and try again.',
       };
+      return { board: refused, native: refused };
     }
     const pairs = dxfTokenizePairs(normalized);
     if (!pairs) {
-      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file.' };
+      const refused = { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file.' };
+      return { board: refused, native: refused };
     }
     const scan = dxfScanSections(pairs);
     if (scan.error) {
-      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file (' + scan.error + ').' };
+      const refused = { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file (' + scan.error + ').' };
+      return { board: refused, native: refused };
     }
-    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, nonGeometry: 0, degenerate: 0 };
-    const acceptedSegments = [];
+    const buckets = dxfNewBuckets();
+    const segments = [];
     // ADR 0069: instance 0 is the single shared "placed directly in
     // ENTITIES" group (matches this loop's pre-INSERT-support behavior —
     // every direct entity could always freely connect/contain against any
@@ -5030,14 +4538,13 @@
     // here, keyed by instance, purely so the Pattern Pieces panel can label a
     // piece for the TD instead of an anonymous "Piece 3"; never read by parsing
     // or piece-detection itself. Instance 0 (direct entities, no INSERT) never
-    // gets an entry — dxfBuildPieces callers fall back to a positional label.
+    // gets an entry — the panel falls back to a positional label.
     const instanceBlockNames = new Map();
     let nextDxfInstanceId = 1;
     // k-th top-level INSERT of a name -> k-th BLOCK definition of that name
     // (see dxfBlockRecordsFor).
     const insertOrdinals = new Map();
-    const pipelineVersion = dxfPipelineVersionOf(options);
-    for (const rec of scan.entityRecords) {
+    scan.entityRecords.forEach((rec, order) => {
       const instance = rec.type === 'INSERT' ? nextDxfInstanceId++ : 0;
       let ordinal = 0;
       if (rec.type === 'INSERT') {
@@ -5045,38 +4552,35 @@
         instanceBlockNames.set(instance, blockName);
         ordinal = insertOrdinals.get(blockName) || 0;
         insertOrdinals.set(blockName, ordinal + 1);
-        if (pipelineVersion === 1) ordinal = 'all';
       }
-      const result = dxfConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, ordinal);
-      if (!result.ok) { buckets[result.bucket] += 1; continue; }
-      buckets.degenerate += result.degenerate || 0;
-      acceptedSegments.push(...result.segments);
+      const result = dxfNativeConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, order, ordinal);
+      if (!result.ok) { dxfCountRejected(buckets, result); return; }
+      dxfCountDegenerateHops(buckets, result.rejectedDegenerateSegments || 0);
+      segments.push(...result.segments);
+    });
+    if (!segments.length) {
+      const message = 'No supported entities were found in this DXF file.';
+      return {
+        board: { ok: false, atomic: true, reason: 'empty', message, buckets: buckets.board },
+        native: { ok: false, atomic: true, reason: 'empty', message, buckets: buckets.native },
+      };
     }
-    if (!acceptedSegments.length) {
-      return { ok: false, atomic: true, reason: 'empty', message: 'No supported entities were found in this DXF file.', buckets };
-    }
-    const flipped = acceptedSegments.map(dxfFlipSegmentY);
     // ADR 0091: classified grouping (closed boundary outline + assigned marks
-    // per pattern), with the legacy grouping as a per-instance fallback.
-    // `classified.patterns[i]` describes `classified.pieces[i]`.
-    const classified = dxfClassifyPatterns(flipped, {
+    // per pattern), with the legacy grouping as a per-instance fallback —
+    // ONCE, in board orientation (see dxfBoardOrientedSegment for why).
+    // `classified.patterns[i]` describes `classified.pieces[i]`; both count
+    // board lines.
+    const oriented = segments.map(dxfBoardOrientedSegment);
+    const classified = dxfClassifyPatterns(oriented, {
       diagnostics: !!(options && options.diagnostics),
       keepQualityCurves: !!(options && options.keepQualityCurves),
-      excludeInstances: (options && Array.isArray(options.excludeInstances)) ? options.excludeInstances : [],
-      onProgress: (options && typeof options.onProgress === 'function') ? options.onProgress : null,
-      pipelineVersion,
     });
-    const marks = dxfCollectMarks(scan);
-    const allPieces = classified.pieces;
-    // Phase 4: count alone never rejects; the flag routes >120 to the worker
-    // path once Phase 5 lands (until then both run synchronously).
-    classified.stats.overBatchThreshold = allPieces.length > DXF_PATTERN_BATCH_THRESHOLD;
-    classified.stats.batchThreshold = DXF_PATTERN_BATCH_THRESHOLD;
+    // Phase 4: pattern count alone never rejects a file.
     const keptPieces = [];
     const keptPatterns = [];
     let skippedOversizedPieces = 0;
-    for (let i = 0; i < allPieces.length; i += 1) {
-      const piece = allPieces[i];
+    for (let i = 0; i < classified.pieces.length; i += 1) {
+      const pattern = classified.patterns[i];
       // ADR 0091: the per-piece cap was sized against FUSED grading-nest
       // blobs (ADR 0069 — 3835..17182-segment "pieces" that were several
       // real pieces wrongly merged). A classified pattern cannot be such a
@@ -5085,71 +4589,64 @@
       // like everything else. Dropping a whole real pattern here would be
       // silent data loss (VeraLifting's 11_64_M is a legitimate 3,529-
       // segment pattern once its sew/QV twins are counted). Legacy pieces
-      // and orphan chains keep the cap exactly as before.
-      if (piece.length > DXF_PER_PIECE_CAP && classified.patterns[i].kind !== 'classified') { skippedOversizedPieces += 1; continue; }
-      keptPieces.push(piece);
-      keptPatterns.push(classified.patterns[i]);
+      // and orphan chains keep the cap exactly as before. `segCount` is the
+      // piece's board line count.
+      if (pattern.segCount > DXF_PER_PIECE_CAP && pattern.kind !== 'classified') { skippedOversizedPieces += 1; continue; }
+      keptPieces.push(classified.pieces[i]);
+      keptPatterns.push(pattern);
     }
     if (!keptPieces.length) {
+      const message = 'Every piece in this DXF exceeded the ' + DXF_PER_PIECE_CAP + '-line per-piece limit. Import rejected.';
       return {
-        ok: false, atomic: true, reason: 'empty-after-piece-cap', buckets,
-        message: 'Every piece in this DXF exceeded the ' + DXF_PER_PIECE_CAP + '-line per-piece limit. Import rejected.',
+        board: { ok: false, atomic: true, reason: 'empty-after-piece-cap', buckets: buckets.board, message },
+        native: { ok: false, atomic: true, reason: 'empty-after-piece-cap', buckets: buckets.native, message },
       };
     }
-    const totalOutputCount = keptPieces.reduce((sum, piece) => sum + piece.length, 0);
+    const totalOutputCount = keptPatterns.reduce((sum, pattern) => sum + pattern.segCount, 0);
     if (totalOutputCount > DXF_TOTAL_OUTPUT_CAP) {
       return {
-        ok: false, atomic: true, reason: 'total-cap', buckets, stats: classified.stats,
-        message: 'This DXF would place ' + dxfFormatCount(totalOutputCount) + ' lines, over the ' + dxfFormatCount(DXF_TOTAL_OUTPUT_CAP) + '-line combined limit.',
-        // Phase 4: per-instance report for the pre-placement picker.
-        overCap: dxfOverCapReport(keptPieces, keptPatterns, instanceBlockNames, marks, totalOutputCount),
+        board: {
+          ok: false, atomic: true, reason: 'total-cap', buckets: buckets.board, stats: classified.stats,
+          message: 'This DXF would place ' + dxfFormatCount(totalOutputCount) + ' lines, over the ' + dxfFormatCount(DXF_TOTAL_OUTPUT_CAP) + '-line combined limit.',
+        },
+        native: {
+          ok: false, atomic: true, reason: 'total-cap', buckets: buckets.native,
+          message: 'This DXF would place ' + totalOutputCount + ' lines, over the ' + DXF_TOTAL_OUTPUT_CAP + '-line combined limit. Import rejected.',
+        },
       };
     }
+    const nativeOf = new Map();
+    oriented.forEach((seg, i) => nativeOf.set(seg, segments[i]));
     return {
-      ok: true, pieces: keptPieces, buckets, skippedOversizedPieces, instanceBlockNames,
-      // ADR 0091: per-piece classification (same index as `pieces`) and the
-      // file-level tally the toast / Pattern Pieces panel / suites read.
-      patterns: keptPatterns, stats: classified.stats,
-      // Phase 3: POINT/TEXT counts and the per-instance piece annotation.
-      marks,
+      board: {
+        ok: true, pieces: keptPieces.map(dxfBoardPiece), buckets: buckets.board, skippedOversizedPieces, instanceBlockNames,
+        // ADR 0091: per-piece classification (same index as `pieces`) and the
+        // file-level tally the toast / Pattern Pieces panel / suites read.
+        patterns: keptPatterns, stats: classified.stats,
+        // Phase 3: POINT/TEXT counts and the per-instance piece annotation.
+        marks: dxfCollectMarks(scan),
+      },
+      native: dxfNativeModelView({
+        insunits: dxfReadInsunits(pairs),
+        pieces: keptPieces.map(piece => ({ segments: piece.map(seg => nativeOf.get(seg)) })),
+        patterns: keptPatterns,
+        stats: classified.stats,
+        buckets: buckets.native,
+        skippedOversizedPieces,
+      }),
     };
   }
 
-  // Phase 4: what the TD sees when DXF_TOTAL_OUTPUT_CAP is exceeded — one row
-  // per placement instance (the unit a deselection removes, in BOTH parsers),
-  // with its block name, ASTM annotation, size token (ADR 0084's rule), the
-  // patterns it holds and the lines it would place. Instance 0 (direct
-  // ENTITIES) is a single all-or-nothing row.
-  function dxfOverCapReport(pieces, patterns, instanceBlockNames, marks, total) {
-    const rows = new Map();
-    for (let i = 0; i < pieces.length; i += 1) {
-      const instance = pieces[i].length ? (pieces[i][0].instance == null ? 0 : pieces[i][0].instance) : 0;
-      if (!rows.has(instance)) {
-        const blockName = instanceBlockNames && instanceBlockNames.get(instance);
-        const annotation = (instance !== 0 && marks && marks.labelsByInstance) ? marks.labelsByInstance[instance] : null;
-        rows.set(instance, {
-          instance,
-          blockName: blockName || null,
-          sizeToken: (blockName && typeof dxfMeasureSizeToken === 'function') ? dxfMeasureSizeToken(blockName) : null,
-          pieceName: annotation ? annotation.pieceName : null,
-          size: annotation ? annotation.size : null,
-          quantity: annotation ? annotation.quantity : null,
-          patterns: 0, lines: 0, kinds: {},
-        });
-      }
-      const row = rows.get(instance);
-      row.patterns += 1;
-      row.lines += pieces[i].length;
-      const kind = patterns[i] ? patterns[i].kind : 'legacy';
-      row.kinds[kind] = (row.kinds[kind] || 0) + 1;
-    }
-    return { total, cap: DXF_TOTAL_OUTPUT_CAP, instances: Array.from(rows.values()) };
+  // The board view alone: what the debug hooks' `parse`/`parseWith` and the
+  // suites read.
+  function parseDxfDocument(text, options) {
+    return dxfParseDocumentAndModel(text, options).board;
   }
 
   // ---- src/graphics/board-graphics.js ----
 // US-095 / ADR 0054: non-measurement Board Graphics and path topology.
 // Board Graphics deliberately live outside state.annotations: nothing in the
-// POM/spec/grading/learning/Excel path reads this collection.
+// POM/spec/grading/Excel path reads this collection.
 
   const BG_MIN_CREATE_SCREEN_PX = 8;
   const BG_KAPPA = 0.5522847498307936;
@@ -6284,1311 +5781,6 @@
     });
   }
 
-  // ---- src/auto/learning/ui/save-evidence-dialog.js ----
-// Save-time style-evidence prompt shown when saveProject() sees TD-edited
-// auto-applied lines (or other evidence candidates).
-// Source part for app.js. Run `npm run build` after editing.
-//
-// The dialog has two inline editing surfaces so the TD can teach the
-// store without leaving the save flow:
-//   - A Style code input that updates state.styleId on accept, so
-//     evidence lands in the right bucket instead of __default__.
-//   - A per-row meaning picker pre-filled with the top-3 ranked
-//     suggestions for that POM's geometry plus a "Show all meanings"
-//     escape hatch. Confirming a row stamps the candidate with the
-//     chosen meaningId and writes it into the style's meaning catalog
-//     so future Auto runs on this style resolve POM N silently.
-// A bulk "Confirm all suggested" button applies the top suggestion to
-// every unconfirmed row at once when the TD trusts the ranking.
-
-  // Save-time evidence prompt. Triggered by saveProject() when the
-  // project contains TD-edited Auto-applied lines that are eligible to
-  // become style evidence. Resolves with one of:
-  //   { action: 'cancel' }                        — close save flow
-  //   { action: 'project-only' }                  — save without evidence
-  //   { action: 'save-with-evidence', commit: true } — save + commit candidates
-  // The caller (project-io.js) owns the actual file write so the dialog
-  // stays pure UI.
-  function openSaveEvidenceDialog({ styleId, candidates }) {
-    const dialog = buildDialog({
-      title: 'Save style evidence?',
-      sub: 'TD corrections can teach this style next time.',
-    });
-
-    const initialStyleId = (styleId && styleId !== '__default__') ? String(styleId) : '';
-    // Local dialog state. Style code + meaning confirmations stay
-    // un-committed until the user clicks one of the Save buttons; Cancel
-    // throws everything away so the rest of the app sees no side effect.
-    let pendingStyleId = initialStyleId;
-    const pendingMeanings = new Map(); // pom -> { meaningId, label }
-
-    const body = document.createElement('div');
-    body.className = 'dialog-body save-evidence-body';
-
-    // --- Style code input ---------------------------------------------
-    const styleSection = document.createElement('div');
-    styleSection.className = 'se-style-section';
-    const styleLabel = document.createElement('label');
-    styleLabel.className = 'se-style-label';
-    styleLabel.textContent = 'Style code';
-    const styleInput = document.createElement('input');
-    styleInput.type = 'text';
-    styleInput.className = 'se-style-input';
-    styleInput.placeholder = 'e.g. AF-123 — leave empty to use the default bucket';
-    styleInput.autocomplete = 'off';
-    styleInput.spellcheck = false;
-    styleInput.maxLength = 40;
-    styleInput.value = pendingStyleId;
-    styleSection.appendChild(styleLabel);
-    styleSection.appendChild(styleInput);
-    body.appendChild(styleSection);
-
-    const styleHint = document.createElement('p');
-    styleHint.className = 'se-hint';
-    styleSection.appendChild(styleHint);
-
-    // --- Candidate rows ----------------------------------------------
-    const heading = document.createElement('p');
-    heading.className = 'se-heading';
-    body.appendChild(heading);
-
-    const list = document.createElement('div');
-    list.className = 'se-candidate-list';
-    body.appendChild(list);
-
-    const bulkBar = document.createElement('div');
-    bulkBar.className = 'se-bulk-bar';
-    const bulkBtn = document.createElement('button');
-    bulkBtn.type = 'button';
-    bulkBtn.className = 'picker-btn se-bulk-btn';
-    bulkBtn.textContent = 'Confirm all suggested';
-    bulkBar.appendChild(bulkBtn);
-    body.appendChild(bulkBar);
-
-    const note = document.createElement('p');
-    note.className = 'se-note';
-    body.appendChild(note);
-
-    dialog.panel.appendChild(body);
-
-    // --- Footer -------------------------------------------------------
-    const footer = document.createElement('div');
-    footer.className = 'picker-footer';
-    const spacer = document.createElement('span');
-    spacer.style.flex = '1';
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'picker-btn';
-    cancelBtn.textContent = 'Cancel';
-    const onlyBtn = document.createElement('button');
-    onlyBtn.type = 'button';
-    onlyBtn.className = 'picker-btn';
-    onlyBtn.textContent = 'Save project only';
-    const bothBtn = document.createElement('button');
-    bothBtn.type = 'button';
-    bothBtn.className = 'picker-btn primary';
-    footer.appendChild(spacer);
-    footer.appendChild(cancelBtn);
-    footer.appendChild(onlyBtn);
-    footer.appendChild(bothBtn);
-    dialog.panel.appendChild(footer);
-
-    // --- Per-row rendering -------------------------------------------
-    const rowControllers = []; // each: { candidate, refresh(), confirmTop() }
-    for (const c of candidates) {
-      const ctrl = buildCandidateRow(c, pendingMeanings, list, updateAll);
-      rowControllers.push(ctrl);
-    }
-
-    function buildCandidateRow(candidate, pendingMap, parent, onChange) {
-      const row = document.createElement('div');
-      row.className = 'se-row';
-      const pomEl = document.createElement('span');
-      pomEl.className = 'se-pom';
-      pomEl.textContent = 'POM ' + (candidate.pom || '?');
-      const labelEl = document.createElement('span');
-      labelEl.className = 'se-label';
-      const metaEl = document.createElement('span');
-      metaEl.className = 'se-meta';
-      metaEl.textContent = candidate.viewRole ? '· ' + candidate.viewRole : '';
-      row.appendChild(pomEl);
-      row.appendChild(labelEl);
-      row.appendChild(metaEl);
-      parent.appendChild(row);
-
-      const isAbsent = candidate.tdStatus === 'absent-confirmed';
-      const initialMeaningId = candidate.meaningId || null;
-
-      let suggestionIds = [];
-      if (!isAbsent && !initialMeaningId) {
-        suggestionIds = computeMeaningSuggestionIds(candidate);
-      }
-
-      // Renders the row in the right state — already-confirmed (catalog
-      // hit), TD-confirmed-in-dialog, absent, or picker. Called once at
-      // build time and again when pendingMeanings flips.
-      function render() {
-        // Reset row to a known state.
-        row.classList.remove('is-confirmed', 'is-absent', 'is-pending');
-        const dialogConfirmed = pendingMap.get(String(candidate.pom));
-        if (isAbsent) {
-          row.classList.add('is-absent');
-          labelEl.textContent = (candidate.meaningLabel || candidate.meaningId || 'Measurement')
-            + ' is absent in this style';
-          // Wipe any prior picker controls.
-          stripExtras();
-          return;
-        }
-        if (initialMeaningId) {
-          row.classList.add('is-confirmed');
-          labelEl.textContent = candidate.meaningLabel || candidate.meaningId;
-          stripExtras();
-          return;
-        }
-        if (dialogConfirmed) {
-          row.classList.add('is-confirmed');
-          labelEl.innerHTML = '<span class="se-check">✓</span> '
-            + escapeHtml(dialogConfirmed.label);
-          stripExtras();
-          // Offer an undo so a mis-click can be reversed before save.
-          const undoBtn = document.createElement('button');
-          undoBtn.type = 'button';
-          undoBtn.className = 'se-undo';
-          undoBtn.textContent = 'Change';
-          undoBtn.addEventListener('click', () => {
-            pendingMap.delete(String(candidate.pom));
-            render();
-            onChange();
-          });
-          row.appendChild(undoBtn);
-          return;
-        }
-        // Unconfirmed → show picker.
-        row.classList.add('is-pending');
-        labelEl.textContent = '(meaning not confirmed)';
-        stripExtras();
-        const picker = buildPicker();
-        row.appendChild(picker);
-      }
-
-      function stripExtras() {
-        const extras = row.querySelectorAll('.se-picker, .se-undo');
-        extras.forEach(el => el.remove());
-      }
-
-      function buildPicker() {
-        const wrap = document.createElement('div');
-        wrap.className = 'se-picker';
-        const select = document.createElement('select');
-        select.className = 'se-picker-select';
-        const seen = new Set();
-        for (const id of suggestionIds) {
-          const entry = (typeof getCatalogEntry === 'function') ? getCatalogEntry(id) : null;
-          if (!entry || seen.has(entry.id)) continue;
-          seen.add(entry.id);
-          const opt = document.createElement('option');
-          opt.value = entry.id;
-          opt.textContent = entry.label;
-          select.appendChild(opt);
-        }
-        // Always include an "Other…" option that swaps the dropdown for
-        // the full catalog, so a missed suggestion is still reachable
-        // without leaving the dialog.
-        const otherOpt = document.createElement('option');
-        otherOpt.value = '__other__';
-        otherOpt.textContent = seen.size ? '— Show all meanings —' : 'Pick a meaning…';
-        select.appendChild(otherOpt);
-        if (!seen.size) select.value = '__other__';
-
-        select.addEventListener('change', () => {
-          if (select.value === '__other__') swapToFullCatalog(select, seen);
-        });
-        // If no suggestions came back, open the full catalog immediately.
-        if (!seen.size) swapToFullCatalog(select, seen);
-
-        const confirmBtn = document.createElement('button');
-        confirmBtn.type = 'button';
-        confirmBtn.className = 'picker-btn primary se-confirm';
-        confirmBtn.textContent = 'Confirm';
-        confirmBtn.addEventListener('click', () => {
-          const id = select.value;
-          if (!id || id === '__other__') return;
-          const entry = (typeof getCatalogEntry === 'function') ? getCatalogEntry(id) : null;
-          if (!entry) return;
-          pendingMap.set(String(candidate.pom), { meaningId: entry.id, label: entry.label });
-          render();
-          onChange();
-        });
-        wrap.appendChild(select);
-        wrap.appendChild(confirmBtn);
-        return wrap;
-      }
-
-      // First render.
-      render();
-
-      return {
-        candidate,
-        hasSuggestion: () => suggestionIds.length > 0 || initialMeaningId != null,
-        isUnconfirmed: () => {
-          if (isAbsent || initialMeaningId) return false;
-          return !pendingMap.has(String(candidate.pom));
-        },
-        confirmTop() {
-          if (isAbsent || initialMeaningId) return false;
-          if (pendingMap.has(String(candidate.pom))) return false;
-          const id = suggestionIds[0];
-          if (!id) return false;
-          const entry = (typeof getCatalogEntry === 'function') ? getCatalogEntry(id) : null;
-          if (!entry) return false;
-          pendingMap.set(String(candidate.pom), { meaningId: entry.id, label: entry.label });
-          render();
-          return true;
-        },
-        refresh: render,
-      };
-    }
-
-    function swapToFullCatalog(select, seen) {
-      const all = (typeof getAllCatalogMeanings === 'function') ? getAllCatalogMeanings() : [];
-      // Preserve the already-seen suggestion entries at the top so the
-      // ranking signal isn't lost when the TD wants to browse further.
-      const top = Array.from(seen);
-      select.innerHTML = '';
-      const placeholder = document.createElement('option');
-      placeholder.value = '';
-      placeholder.textContent = 'Pick a meaning…';
-      placeholder.disabled = true;
-      placeholder.selected = true;
-      select.appendChild(placeholder);
-      for (const id of top) {
-        const entry = (typeof getCatalogEntry === 'function') ? getCatalogEntry(id) : null;
-        if (!entry) continue;
-        const opt = document.createElement('option');
-        opt.value = entry.id;
-        opt.textContent = '★ ' + entry.label;
-        select.appendChild(opt);
-      }
-      for (const m of all) {
-        if (seen.has(m.id)) continue;
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = m.label;
-        select.appendChild(opt);
-      }
-    }
-
-    // Rank suggestions for a candidate by handing the live annotation back
-    // to rankCatalogForLine — same engine that drives the meaning popover.
-    function computeMeaningSuggestionIds(candidate) {
-      if (typeof rankCatalogForLine !== 'function') return [];
-      if (!state || !Array.isArray(state.annotations)) return [];
-      const ann = state.annotations.find(a => a && a.id === candidate.annotationId);
-      if (!ann) return [];
-      const image = (typeof pickImageForAnnotation === 'function') ? pickImageForAnnotation(ann) : null;
-      if (!image) return [];
-      const ranked = rankCatalogForLine(image, ann, 3);
-      return ranked.map(m => m.id).filter(Boolean);
-    }
-
-    // ---- Reactive bits ----------------------------------------------
-    function effectiveStyleId() {
-      return pendingStyleId || '__default__';
-    }
-
-    function isDefaultBucket() {
-      return !pendingStyleId;
-    }
-
-    function unconfirmedRowsWithSuggestion() {
-      return rowControllers.filter(c => c.isUnconfirmed() && c.hasSuggestion());
-    }
-
-    function updateAll() {
-      const styleIsDefault = isDefaultBucket();
-      const unconfirmed = unconfirmedRowsWithSuggestion();
-
-      styleHint.textContent = styleIsDefault
-        ? 'Evidence will land in the default bucket. Type a code (e.g. style number on the spec) to keep this style separate from others.'
-        : 'Evidence will be saved under style code "' + pendingStyleId + '".';
-
-      heading.textContent = candidates.length === 1
-        ? 'The project has 1 TD correction ready to remember:'
-        : 'The project has ' + candidates.length + ' TD corrections ready to remember:';
-
-      const noteParts = [
-        styleIsDefault
-          ? 'You can still save the project. Evidence will only attach to a real style code once one is set.'
-          : 'Saving evidence stores confirmed lines and confirmed missing POMs in the browser so Detect can compare next time.',
-      ];
-      const confirmedInDialog = pendingMeanings.size;
-      if (confirmedInDialog > 0) {
-        noteParts.push(confirmedInDialog === 1
-          ? '1 meaning will be remembered for this style.'
-          : confirmedInDialog + ' meanings will be remembered for this style.');
-      }
-      note.textContent = noteParts.join(' ');
-
-      bulkBar.style.display = unconfirmed.length >= 2 ? '' : 'none';
-      bulkBtn.textContent = 'Confirm top suggestion for '
-        + unconfirmed.length + ' POM' + (unconfirmed.length === 1 ? '' : 's');
-
-      bothBtn.textContent = styleIsDefault
-        ? 'Save project + evidence (default bucket)'
-        : 'Save project + evidence';
-    }
-
-    styleInput.addEventListener('input', () => {
-      pendingStyleId = styleInput.value.trim();
-      updateAll();
-    });
-    bulkBtn.addEventListener('click', () => {
-      let confirmed = 0;
-      for (const ctrl of rowControllers) {
-        if (ctrl.confirmTop()) confirmed += 1;
-      }
-      if (confirmed > 0) updateAll();
-    });
-
-    updateAll();
-
-    return new Promise(resolve => {
-      let settled = false;
-      function settle(value) {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      }
-
-      function applyPendingStyleId() {
-        const next = pendingStyleId.trim();
-        if (next === (state.styleId || '').trim()) return;
-        state.styleId = next;
-        if (typeof updateUI === 'function') updateUI();
-      }
-
-      function applyPendingMeanings() {
-        if (typeof confirmPomMeaning !== 'function') return;
-        for (const [pom, value] of pendingMeanings.entries()) {
-          confirmPomMeaning(pom, value.meaningId);
-          // Stamp the candidate so the evidence record carries the
-          // newly-confirmed meaning into addStyleEvidence.
-          const candidate = candidates.find(c => String(c.pom) === String(pom));
-          if (candidate) {
-            candidate.meaningId = value.meaningId;
-            candidate.meaningLabel = value.label;
-          }
-        }
-      }
-
-      const observer = new MutationObserver(() => {
-        if (!document.body.contains(dialog.overlay)) {
-          observer.disconnect();
-          settle({ action: 'cancel' });
-        }
-      });
-      observer.observe(document.body, { childList: true });
-
-      cancelBtn.addEventListener('click', () => {
-        dialog.close();
-        settle({ action: 'cancel' });
-      });
-      onlyBtn.addEventListener('click', () => {
-        // Project-only still applies the typed style code — it's a
-        // project-level field the TD just edited explicitly. Pending
-        // meaning confirmations stay un-committed, matching the user's
-        // intent to skip the learning step this round.
-        applyPendingStyleId();
-        dialog.close();
-        settle({ action: 'project-only' });
-      });
-      bothBtn.addEventListener('click', () => {
-        applyPendingStyleId();
-        applyPendingMeanings();
-        dialog.close();
-        settle({ action: 'save-with-evidence', commit: true });
-      });
-      dialog.open();
-      // Focus the style input first when none is set so the TD can type
-      // a code immediately; otherwise jump to the primary Save button.
-      if (!pendingStyleId) styleInput.focus();
-      else bothBtn.focus();
-    });
-  }
-
-  // ---- src/auto/learning/ui/learning-data-shared.js ----
-// Transparent Learning panel: pure formatting helpers reused across the
-// telemetry, corrections, meanings and evidence tabs.
-// Source part for app.js. Run `npm run build` after editing.
-
-  function td(text, className) {
-    const cell = document.createElement('td');
-    if (className) cell.className = className;
-    cell.textContent = text == null ? '' : String(text);
-    return cell;
-  }
-
-  // ---- Formatters -----------------------------------------------------
-  function formatEvidenceTimestamp(iso, withTime) {
-    if (!iso) return '';
-    const t = Date.parse(iso);
-    if (!Number.isFinite(t)) return '';
-    const d = new Date(t);
-    const pad = (n) => String(n).padStart(2, '0');
-    const date = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-    if (!withTime) return date;
-    return date + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-  }
-
-  function buildSummaryCard({ label, value, tone }) {
-    const card = document.createElement('div');
-    card.className = 'ld-card';
-    const labelEl = document.createElement('div');
-    labelEl.className = 'ld-card-label';
-    labelEl.textContent = label;
-    const valueEl = document.createElement('div');
-    valueEl.className = 'ld-card-value' + (tone ? ' ' + tone : '');
-    valueEl.textContent = value;
-    card.appendChild(labelEl);
-    card.appendChild(valueEl);
-    return card;
-  }
-
-  function statusLabelForRow(status) {
-    switch (status) {
-      case 'active': return 'Active';
-      case 'needs-more-samples': return 'Needs more samples';
-      case 'large-correction': return 'Large correction';
-      case 'conflicting': return 'Conflicting';
-      case 'empty': return 'Empty';
-      default: return status;
-    }
-  }
-
-  // Spread/MAD as a percentage of image dimension — mirrors how the
-  // median dx/dy column is displayed so the TD can compare magnitudes
-  // at a glance.
-  function formatLearningSpread(value) {
-    const num = Math.abs(Number(value) || 0);
-    const pct = num * 100;
-    return '±' + pct.toFixed(1) + '%';
-  }
-
-  function formatLearningDelta(value) {
-    const num = Number(value) || 0;
-    const pct = num * 100;
-    const sign = pct > 0 ? '+' : (pct < 0 ? '' : ' ');
-    return sign + pct.toFixed(1) + '%';
-  }
-
-  function formatViewRole(viewRole) {
-    if (!viewRole) return '—';
-    const map = {
-      front: 'Front',
-      back: 'Back',
-      side: 'Side',
-      inside: 'Inside',
-      detail: 'Detail',
-    };
-    return map[String(viewRole).toLowerCase()] || String(viewRole);
-  }
-
-  function formatEvidenceSourceKind(kind) {
-    if (!kind) return null;
-    switch (kind) {
-      case 'td-edited-auto-line': return 'Auto + TD edit';
-      case 'manual-confirmed-line': return 'Manual confirm';
-      case 'td-deleted-auto-line': return 'Auto removed';
-      default: return kind;
-    }
-  }
-
-  function formatTelemetryDuration(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return '—';
-    if (n < 1000) return Math.round(n) + 'ms';
-    return (n / 1000).toFixed(n < 10000 ? 1 : 0) + 's';
-  }
-
-  function formatTelemetryNumber(value) {
-    const n = Number(value);
-    return Number.isFinite(n) ? String(Math.round(n * 10) / 10) : '—';
-  }
-
-  // ---- src/auto/learning/ui/learning-data-tabs.js ----
-// Transparent Learning panel: generic reusable tab-shell widget — not
-// learning-specific at all, it just takes {id,label,count,build} defs.
-// Source part for app.js. Run `npm run build` after editing.
-
-  // ---- Tab shell ------------------------------------------------------
-  // Tabs are built lazily — each panel's content is constructed once on
-  // first activation so revisiting a tab doesn't lose the expanded-row
-  // state from the previous visit.
-  function buildLearningTabs(defs) {
-    const wrap = document.createElement('div');
-    wrap.className = 'ld-tab-shell';
-
-    const bar = document.createElement('div');
-    bar.className = 'ld-tabs';
-    bar.setAttribute('role', 'tablist');
-
-    const panels = document.createElement('div');
-    panels.className = 'ld-tab-panels';
-
-    const built = new Map();
-    const buttons = [];
-    const panelEls = [];
-
-    defs.forEach((def, idx) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'ld-tab';
-      btn.setAttribute('role', 'tab');
-      btn.setAttribute('aria-controls', 'ld-tab-panel-' + def.id);
-      btn.id = 'ld-tab-' + def.id;
-      btn.dataset.tab = def.id;
-
-      const labelEl = document.createElement('span');
-      labelEl.textContent = def.label;
-      btn.appendChild(labelEl);
-      if (Number.isFinite(def.count)) {
-        const badge = document.createElement('span');
-        badge.className = 'ld-tab-badge';
-        badge.textContent = String(def.count);
-        btn.appendChild(badge);
-      }
-      bar.appendChild(btn);
-      buttons.push(btn);
-
-      const panel = document.createElement('div');
-      panel.className = 'ld-tab-panel';
-      panel.setAttribute('role', 'tabpanel');
-      panel.id = 'ld-tab-panel-' + def.id;
-      panel.setAttribute('aria-labelledby', 'ld-tab-' + def.id);
-      panels.appendChild(panel);
-      panelEls.push(panel);
-
-      btn.addEventListener('click', () => activate(idx));
-    });
-
-    function activate(activeIdx) {
-      for (let i = 0; i < buttons.length; i++) {
-        const isActive = i === activeIdx;
-        buttons[i].classList.toggle('is-active', isActive);
-        buttons[i].setAttribute('aria-selected', isActive ? 'true' : 'false');
-        buttons[i].tabIndex = isActive ? 0 : -1;
-        panelEls[i].classList.toggle('is-active', isActive);
-        if (isActive && !built.has(i)) {
-          const content = defs[i].build();
-          if (content) panelEls[i].appendChild(content);
-          built.set(i, true);
-        }
-      }
-    }
-
-    wrap.appendChild(bar);
-    wrap.appendChild(panels);
-    activate(0);
-    return wrap;
-  }
-
-  // ---- src/auto/learning/ui/learning-data-telemetry.js ----
-// Transparent Learning panel: Telemetry tab — reaches into
-// getAutoTelemetryReport/getAutoTelemetryLog from src/auto/telemetry/*
-// rather than the learning/meaning/evidence stores the other tabs use.
-// Source part for app.js. Run `npm run build` after editing.
-
-  // ---- Telemetry ------------------------------------------------------
-  function buildLearningTelemetrySection(telemetry) {
-    const section = document.createElement('div');
-    section.className = 'ld-section';
-
-    if (!telemetry || telemetry.count === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'ld-empty';
-      empty.textContent = 'No completed Auto Mode telemetry sessions yet. Run Detect, generate drafts, and apply or discard them to record one.';
-      section.appendChild(empty);
-      return section;
-    }
-
-    const intro = document.createElement('p');
-    intro.className = 'ld-section-note';
-    intro.textContent = 'Last ' + telemetry.count + ' completed Auto Mode session'
-      + (telemetry.count === 1 ? '' : 's')
-      + '. Medians show the current speed baseline for Detect-to-POM work.';
-    section.appendChild(intro);
-
-    const summaryGrid = document.createElement('div');
-    summaryGrid.className = 'ld-summary-grid';
-    summaryGrid.appendChild(buildSummaryCard({
-      label: 'Median detect',
-      value: formatTelemetryDuration(telemetry.medians.detect_ms),
-      tone: telemetry.medians.detect_ms == null ? 'muted' : null,
-    }));
-    summaryGrid.appendChild(buildSummaryCard({
-      label: 'Median edit',
-      value: formatTelemetryDuration(telemetry.medians.edit_ms),
-      tone: telemetry.medians.edit_ms == null ? 'muted' : null,
-    }));
-    summaryGrid.appendChild(buildSummaryCard({
-      label: 'Median apply',
-      value: formatTelemetryDuration(telemetry.medians.apply_ms),
-      tone: telemetry.medians.apply_ms == null ? 'muted' : null,
-    }));
-    summaryGrid.appendChild(buildSummaryCard({
-      label: 'Median anchors dragged',
-      value: formatTelemetryNumber(telemetry.medians.anchors_dragged),
-      tone: telemetry.medians.anchors_dragged === 0 ? 'ok' : null,
-    }));
-    summaryGrid.appendChild(buildSummaryCard({
-      label: 'Touchless sessions',
-      value: telemetry.touchlessCount + '/' + telemetry.count,
-      tone: telemetry.touchlessCount > 0 ? 'ok' : 'muted',
-    }));
-    section.appendChild(summaryGrid);
-
-    const exportRow = document.createElement('div');
-    exportRow.className = 'picker-footer';
-    const spacer = document.createElement('span');
-    spacer.style.flex = '1';
-    const exportBtn = document.createElement('button');
-    exportBtn.type = 'button';
-    exportBtn.className = 'picker-btn';
-    exportBtn.textContent = 'Export telemetry JSON';
-    exportBtn.addEventListener('click', () => exportAutoTelemetryJson());
-    exportRow.appendChild(spacer);
-    exportRow.appendChild(exportBtn);
-    section.appendChild(exportRow);
-
-    const table = document.createElement('table');
-    table.className = 'ld-table';
-    table.innerHTML =
-      '<thead><tr>' +
-        '<th>Completed</th>' +
-        '<th>Sketch</th>' +
-        '<th class="ld-num">Detect</th>' +
-        '<th class="ld-num">Edit</th>' +
-        '<th class="ld-num">Apply</th>' +
-        '<th class="ld-num">Anchors dragged</th>' +
-        '<th class="ld-num">Drafts edited</th>' +
-        '<th>Status</th>' +
-      '</tr></thead>';
-    const tbody = document.createElement('tbody');
-    for (const session of telemetry.sessions) {
-      const summary = session.summary || {};
-      const tr = document.createElement('tr');
-      tr.appendChild(td(session.completed_at ? formatEvidenceTimestamp(session.completed_at, true) : '—'));
-      tr.appendChild(td(session.sketch_id || '—'));
-      tr.appendChild(td(formatTelemetryDuration(summary.detect_ms), 'ld-num'));
-      tr.appendChild(td(formatTelemetryDuration(summary.edit_ms), 'ld-num'));
-      tr.appendChild(td(formatTelemetryDuration(summary.apply_ms), 'ld-num'));
-      tr.appendChild(td(formatTelemetryNumber(summary.anchors_dragged), 'ld-num'));
-      tr.appendChild(td(formatTelemetryNumber(summary.drafts_edited), 'ld-num'));
-      const statusCell = td('');
-      const chip = document.createElement('span');
-      chip.className = 'ld-status ' + (summary.touchless ? 'ld-status-active' : 'ld-status-empty');
-      chip.textContent = summary.touchless ? 'Touchless' : 'Touched';
-      statusCell.appendChild(chip);
-      tr.appendChild(statusCell);
-      tbody.appendChild(tr);
-    }
-    table.appendChild(tbody);
-    section.appendChild(table);
-    return section;
-  }
-
-  function exportAutoTelemetryJson() {
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      sessions: (typeof getAutoTelemetryLog === 'function') ? getAutoTelemetryLog() : [],
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2) + '\n'], { type: 'application/json' });
-    downloadBlob(blob, 'auto-telemetry-log.json');
-  }
-
-  // ---- src/auto/learning/ui/learning-data-summary.js ----
-// Transparent Learning panel: always-visible top summary strip above the
-// tabs.
-// Source part for app.js. Run `npm run build` after editing.
-
-  // ---- Top summary ----------------------------------------------------
-  // Five focused fields TDs use to gauge style readiness at a glance.
-  // confirmedLinePomCount counts POMs with at least one confirmed line
-  // (not raw record count) so the same POM saved over many sessions
-  // doesn't inflate the headline.
-  function buildLearningTopSummary(learning, meanings, evidence) {
-    const section = document.createElement('div');
-    section.className = 'ld-section ld-top-summary';
-
-    const styleLabel = meanings
-      ? (meanings.currentStyleIsDefault
-          ? 'Default (no style code)'
-          : meanings.currentStyleId)
-      : '—';
-
-    let confirmedLinePomCount = 0;
-    let absentPomCount = 0;
-    let needsReviewPomCount = 0;
-    if (evidence && Array.isArray(evidence.rows)) {
-      for (const row of evidence.rows) {
-        if (row.status === 'confirmed') confirmedLinePomCount += 1;
-        else if (row.status === 'absent-confirmed') absentPomCount += 1;
-        else needsReviewPomCount += 1;
-      }
-    }
-
-    const lastLearned = pickLatestLearningTimestamp(learning, evidence);
-
-    const items = [
-      {
-        label: 'Current style',
-        value: styleLabel,
-        tone: meanings && meanings.currentStyleIsDefault ? 'muted' : null,
-      },
-      {
-        label: 'Confirmed lines',
-        value: String(confirmedLinePomCount) + ' POM' + (confirmedLinePomCount === 1 ? '' : 's'),
-        tone: confirmedLinePomCount > 0 ? 'ok' : 'muted',
-      },
-      {
-        label: 'Absent POMs',
-        value: absentPomCount > 0 ? String(absentPomCount) : '0',
-        tone: absentPomCount > 0 ? 'warn' : 'muted',
-      },
-      {
-        label: 'Needs review',
-        value: needsReviewPomCount > 0 ? String(needsReviewPomCount) : '0',
-        tone: needsReviewPomCount > 0 ? 'attention' : 'muted',
-      },
-      {
-        label: 'Last learned',
-        value: lastLearned ? formatEvidenceTimestamp(lastLearned, true) : '—',
-        tone: lastLearned ? null : 'muted',
-      },
-    ];
-
-    const grid = document.createElement('div');
-    grid.className = 'ld-summary-grid ld-summary-grid-top';
-    for (const it of items) grid.appendChild(buildSummaryCard(it));
-    section.appendChild(grid);
-    return section;
-  }
-
-  function pickLatestLearningTimestamp(learning, evidence) {
-    let best = 0;
-    if (evidence && evidence.lastUpdated) {
-      const t = Date.parse(evidence.lastUpdated);
-      if (Number.isFinite(t) && t > best) best = t;
-    }
-    if (learning && Array.isArray(learning.rows)) {
-      for (const row of learning.rows) {
-        const t = Number(row.lastTs) || 0;
-        if (t > best) best = t;
-      }
-    }
-    return best > 0 ? new Date(best).toISOString() : null;
-  }
-
-  // ---- src/auto/learning/ui/learning-data-corrections.js ----
-// Transparent Learning panel: Learning Corrections (anchor calibration) tab.
-// Source part for app.js. Run `npm run build` after editing.
-
-  // ---- Learning Corrections (anchor calibration) ----------------------
-  function buildLearningAnchorSection(learning) {
-    const section = document.createElement('div');
-    section.className = 'ld-section';
-
-    if (!learning || learning.rows.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'ld-empty';
-      empty.textContent = 'No anchor corrections recorded yet. Drag an Auto Mode anchor or label a manual POM line to start.';
-      section.appendChild(empty);
-      return section;
-    }
-
-    const conflictingCount = Number(learning.conflictingCount) || 0;
-    const intro = document.createElement('p');
-    intro.className = 'ld-section-note';
-    const introParts = [
-      'A bucket goes Active after ' + learning.minSamples + ' samples.',
-      'Median offsets are clamped to ±' + Math.round(learning.clampLimit * 100) + '% of the image size.',
-      'Anchor samples total: ' + learning.totalSamples + '.',
-      'Parameter samples: ' + learning.totalParamSamples + '.',
-    ];
-    if (conflictingCount > 0) {
-      introParts.push(conflictingCount === 1
-        ? '1 bucket is Conflicting — its spread dwarfs its median, so bias is halved when applied.'
-        : conflictingCount + ' buckets are Conflicting — spread dwarfs median, so bias is halved when applied.');
-    }
-    // Phase 8: corrections by suspected pipeline stage — tells the TD (and
-    // engineers) WHERE the engine loses accuracy, not just how often.
-    const stageCounts = learning.stageCounts || {};
-    const stageLabels = {
-      'anchor-nudge': 'small nudges',
-      'landmark-wrong': 'landmark wrong',
-      'contour-missing': 'contour/seam evidence missing',
-      'geometry-wrong': 'geometry frame weak',
-      'segmentation-weak': 'segmentation weak',
-      unknown: 'no detection context',
-      unattributed: 'recorded before stage tracking',
-    };
-    const stageBits = Object.keys(stageCounts)
-      .filter(k => stageCounts[k] > 0)
-      .sort((x, y) => stageCounts[y] - stageCounts[x])
-      .map(k => (stageLabels[k] || k) + ': ' + stageCounts[k]);
-    if (stageBits.length) {
-      introParts.push('Suspected cause of corrections — ' + stageBits.join(' · ') + '.');
-    }
-    intro.textContent = introParts.join(' ');
-    section.appendChild(intro);
-
-    const table = document.createElement('table');
-    table.className = 'ld-table';
-    table.innerHTML =
-      '<thead><tr>' +
-        '<th>Anchor</th>' +
-        '<th>View role</th>' +
-        '<th class="ld-num">Samples</th>' +
-        '<th class="ld-num">Median dx</th>' +
-        '<th class="ld-num">Median dy</th>' +
-        '<th class="ld-num">Spread dx</th>' +
-        '<th class="ld-num">Spread dy</th>' +
-        '<th>Status</th>' +
-      '</tr></thead>';
-    const tbody = document.createElement('tbody');
-    for (const row of learning.rows) {
-      const tr = document.createElement('tr');
-      tr.appendChild(td(row.kind));
-      tr.appendChild(td(row.viewRole || '—'));
-      tr.appendChild(td(String(row.samples), 'ld-num'));
-      tr.appendChild(td(formatLearningDelta(row.medianDx), 'ld-num'));
-      tr.appendChild(td(formatLearningDelta(row.medianDy), 'ld-num'));
-      tr.appendChild(td(formatLearningSpread(row.madDx), 'ld-num'));
-      tr.appendChild(td(formatLearningSpread(row.madDy), 'ld-num'));
-      const statusCell = td('');
-      const chip = document.createElement('span');
-      chip.className = 'ld-status ld-status-' + row.status;
-      chip.textContent = statusLabelForRow(row.status);
-      statusCell.appendChild(chip);
-      tr.appendChild(statusCell);
-      tbody.appendChild(tr);
-    }
-    table.appendChild(tbody);
-    section.appendChild(table);
-    return section;
-  }
-
-  // ---- src/auto/learning/ui/learning-data-meanings.js ----
-// Transparent Learning panel: POM Meanings tab.
-// Source part for app.js. Run `npm run build` after editing.
-
-  // ---- POM Meanings ---------------------------------------------------
-  function buildLearningMeaningsSection(meanings) {
-    const section = document.createElement('div');
-    section.className = 'ld-section';
-
-    if (!meanings) {
-      const empty = document.createElement('div');
-      empty.className = 'ld-empty';
-      empty.textContent = 'Meaning store not available.';
-      section.appendChild(empty);
-      return section;
-    }
-
-    const intro = document.createElement('p');
-    intro.className = 'ld-section-note';
-    intro.textContent = meanings.currentStyleIsDefault
-      ? 'Showing the default bucket (no Style code set). Set a Style code to keep per-style meanings separate.'
-      : 'Showing meanings confirmed for style "' + meanings.currentStyleId + '". ' +
-        meanings.fixedPomCount + ' fixed · ' + meanings.confirmedForCurrent + ' confirmed · ' +
-        meanings.customCount + ' custom across all styles.';
-    section.appendChild(intro);
-
-    if (meanings.currentRows.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'ld-empty';
-      empty.textContent = 'No POM meanings resolved for this style yet. Label a manual POM 6+ line to confirm one.';
-      section.appendChild(empty);
-    } else {
-      const table = document.createElement('table');
-      table.className = 'ld-table';
-      table.innerHTML =
-        '<thead><tr>' +
-          '<th class="ld-num">POM</th>' +
-          '<th>Meaning</th>' +
-          '<th>Start anchor</th>' +
-          '<th>End anchor</th>' +
-          '<th>Source</th>' +
-        '</tr></thead>';
-      const tbody = document.createElement('tbody');
-      for (const row of meanings.currentRows) {
-        const m = row.meaning;
-        const tr = document.createElement('tr');
-        tr.appendChild(td(row.pom, 'ld-num'));
-        tr.appendChild(td(m && m.label || '—'));
-        tr.appendChild(td(m && m.start || '—'));
-        tr.appendChild(td(m && m.end || '—'));
-        const sourceCell = td('');
-        const chip = document.createElement('span');
-        chip.className = 'ld-status ld-status-' + (row.source === 'fixed' ? 'fixed' : 'confirmed');
-        chip.textContent = row.source === 'fixed' ? 'Fixed' : 'Confirmed';
-        sourceCell.appendChild(chip);
-        tr.appendChild(sourceCell);
-        tbody.appendChild(tr);
-      }
-      table.appendChild(tbody);
-      section.appendChild(table);
-    }
-
-    if (meanings.knownStyles.length > 1
-        || (meanings.knownStyles.length === 1
-            && meanings.knownStyles[0].styleId !== meanings.currentStyleId)) {
-      const styleHead = document.createElement('p');
-      styleHead.className = 'ld-section-note';
-      styleHead.textContent = 'Confirmed POMs per known style:';
-      section.appendChild(styleHead);
-      const ul = document.createElement('ul');
-      ul.className = 'ld-style-list';
-      for (const s of meanings.knownStyles) {
-        const li = document.createElement('li');
-        const name = (s.styleId === meanings.defaultStyleId)
-          ? 'default bucket'
-          : 'style "' + s.styleId + '"';
-        const tag = (s.styleId === meanings.currentStyleId) ? ' (current)' : '';
-        li.textContent = name + tag + ' — ' + s.confirmedCount + ' confirmed';
-        ul.appendChild(li);
-      }
-      section.appendChild(ul);
-    }
-    return section;
-  }
-
-  // ---- src/auto/learning/ui/learning-data-evidence.js ----
-// Transparent Learning panel: Style Evidence tab, incl. expandable
-// per-record detail rows.
-// Improved columns: POM, Status, Meaning, View, Evidence Source, Records,
-// Last Saved. Each POM row is expandable to show the individual records
-// (id, timestamp, source, view) — TDs can audit exactly what was saved
-// without diving into localStorage.
-// Source part for app.js. Run `npm run build` after editing.
-
-  function buildLearningEvidenceSection(evidence, records, meanings) {
-    const section = document.createElement('div');
-    section.className = 'ld-section';
-
-    if (!evidence) {
-      const empty = document.createElement('div');
-      empty.className = 'ld-empty';
-      empty.textContent = 'Style evidence store not available.';
-      section.appendChild(empty);
-      return section;
-    }
-
-    const styleLabel = meanings && meanings.currentStyleIsDefault
-      ? 'the default bucket (no Style code)'
-      : 'style "' + evidence.styleId + '"';
-    const intro = document.createElement('p');
-    intro.className = 'ld-section-note';
-    intro.textContent = 'TD-confirmed POM lines remembered for ' + styleLabel
-      + (evidence.lastUpdated ? ' · last updated ' + formatEvidenceTimestamp(evidence.lastUpdated) : '')
-      + '. Evidence stays separate from calibration residuals and POM meanings.';
-    section.appendChild(intro);
-
-    if (evidence.rows.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'ld-empty';
-      empty.textContent = 'No style evidence yet. Future Save flows will offer to store corrected POM lines here.';
-      section.appendChild(empty);
-      return section;
-    }
-
-    const pom7Absent = evidence.rows.find(r =>
-      String(r.pom) === '7' && r.status === 'absent-confirmed');
-    if (pom7Absent) {
-      const banner = document.createElement('div');
-      banner.className = 'ld-callout ld-callout-absent';
-      banner.textContent = 'POM 7 is confirmed absent for this style. Auto Mode will skip drawing POM 7.';
-      section.appendChild(banner);
-    }
-
-    const recordsByPom = groupRecordsByPom(records);
-
-    const table = document.createElement('table');
-    table.className = 'ld-table ld-table-evidence';
-    table.innerHTML =
-      '<thead><tr>' +
-        '<th class="ld-expand-col"></th>' +
-        '<th class="ld-num">POM</th>' +
-        '<th>Status</th>' +
-        '<th>Meaning</th>' +
-        '<th>View</th>' +
-        '<th>Evidence Source</th>' +
-        '<th class="ld-num">Records</th>' +
-        '<th>Last Saved</th>' +
-      '</tr></thead>';
-    const tbody = document.createElement('tbody');
-    for (const row of evidence.rows) {
-      const pomRecords = recordsByPom.get(String(row.pom)) || [];
-      const isAbsent = row.status === 'absent-confirmed';
-      const isPom7 = String(row.pom) === '7';
-
-      const tr = document.createElement('tr');
-      tr.className = 'ld-evidence-row';
-      if (isAbsent) tr.classList.add('ld-evidence-row-absent');
-      if (isAbsent && isPom7) tr.classList.add('ld-evidence-row-pom7-absent');
-
-      const expandCell = td('', 'ld-expand-col');
-      const expandBtn = document.createElement('button');
-      expandBtn.type = 'button';
-      expandBtn.className = 'ld-expand-btn';
-      expandBtn.setAttribute('aria-label', 'Show records for POM ' + row.pom);
-      expandBtn.textContent = '▸';
-      expandBtn.disabled = pomRecords.length === 0;
-      expandCell.appendChild(expandBtn);
-      tr.appendChild(expandCell);
-
-      tr.appendChild(td(row.pom, 'ld-num'));
-
-      const statusCell = td('');
-      statusCell.appendChild(buildEvidenceStatusChip(row.status));
-      tr.appendChild(statusCell);
-
-      tr.appendChild(td(row.meaningLabel || row.meaningId || '—'));
-      tr.appendChild(td(formatViewRole(row.viewRole)));
-      tr.appendChild(td(formatEvidenceSource(row.source, pomRecords)));
-      tr.appendChild(td(String(row.count), 'ld-num'));
-      tr.appendChild(td(row.lastSavedAt ? formatEvidenceTimestamp(row.lastSavedAt, true) : '—'));
-
-      tbody.appendChild(tr);
-
-      const detailRow = document.createElement('tr');
-      detailRow.className = 'ld-detail-row';
-      detailRow.hidden = true;
-      const detailCell = document.createElement('td');
-      detailCell.colSpan = 8;
-      detailCell.className = 'ld-detail-cell';
-      detailCell.appendChild(buildEvidenceDetail(row, pomRecords));
-      detailRow.appendChild(detailCell);
-      tbody.appendChild(detailRow);
-
-      expandBtn.addEventListener('click', () => {
-        if (expandBtn.disabled) return;
-        const open = !detailRow.hidden;
-        detailRow.hidden = open;
-        expandBtn.classList.toggle('is-open', !open);
-        expandBtn.textContent = open ? '▸' : '▾';
-        expandBtn.setAttribute(
-          'aria-label',
-          (open ? 'Show' : 'Hide') + ' records for POM ' + row.pom,
-        );
-      });
-    }
-    table.appendChild(tbody);
-    section.appendChild(table);
-    return section;
-  }
-
-  function groupRecordsByPom(records) {
-    const out = new Map();
-    if (!Array.isArray(records)) return out;
-    for (const rec of records) {
-      const key = rec.pom != null ? String(rec.pom) : '?';
-      let arr = out.get(key);
-      if (!arr) { arr = []; out.set(key, arr); }
-      arr.push(rec);
-    }
-    return out;
-  }
-
-  function buildEvidenceStatusChip(status) {
-    const s = status || 'unknown';
-    const chip = document.createElement('span');
-    if (s === 'confirmed') {
-      chip.className = 'ld-status ld-status-confirmed';
-      chip.textContent = 'Confirmed';
-    } else if (s === 'absent-confirmed') {
-      chip.className = 'ld-status ld-status-absent';
-      chip.textContent = 'Absent';
-    } else if (s === 'pending') {
-      chip.className = 'ld-status ld-status-needs-more-samples';
-      chip.textContent = 'Needs review';
-    } else {
-      chip.className = 'ld-status ld-status-empty';
-      chip.textContent = s === 'unknown' ? 'Unknown' : s;
-    }
-    return chip;
-  }
-
-  function formatEvidenceSource(primarySource, records) {
-    const kinds = new Set();
-    if (primarySource) kinds.add(primarySource);
-    if (Array.isArray(records)) {
-      for (const r of records) if (r && r.source) kinds.add(r.source);
-    }
-    if (kinds.size === 0) return '—';
-    return Array.from(kinds).map(formatEvidenceSourceKind).join(', ');
-  }
-
-  // ---- Expanded row detail --------------------------------------------
-  // Shows every persisted record under this POM. We stick to metadata
-  // the TD can verify (when, where, what shape) — coordinate dumps would
-  // overwhelm without helping audit decisions.
-  function buildEvidenceDetail(row, records) {
-    const wrap = document.createElement('div');
-    wrap.className = 'ld-detail';
-
-    const header = document.createElement('div');
-    header.className = 'ld-detail-header';
-    header.textContent = 'POM ' + row.pom + ' · ' + (row.meaningLabel || row.meaningId || 'no meaning')
-      + ' · ' + records.length + ' record' + (records.length === 1 ? '' : 's');
-    wrap.appendChild(header);
-
-    if (!records || records.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'ld-detail-empty';
-      empty.textContent = 'No individual records recorded for this POM.';
-      wrap.appendChild(empty);
-      return wrap;
-    }
-
-    const list = document.createElement('ul');
-    list.className = 'ld-detail-list';
-    const sorted = records.slice().sort((a, b) => {
-      const ta = a.savedAt ? Date.parse(a.savedAt) : 0;
-      const tb = b.savedAt ? Date.parse(b.savedAt) : 0;
-      return tb - ta;
-    });
-    for (const rec of sorted) {
-      list.appendChild(buildEvidenceDetailItem(rec));
-    }
-    wrap.appendChild(list);
-    return wrap;
-  }
-
-  function buildEvidenceDetailItem(rec) {
-    const li = document.createElement('li');
-    li.className = 'ld-detail-item';
-
-    const title = document.createElement('div');
-    title.className = 'ld-detail-item-title';
-    const sourceLabel = formatEvidenceSourceKind(rec.source) || '—';
-    title.textContent = sourceLabel + (rec.tdStatus === 'absent-confirmed' ? ' · Absent' : '');
-    if (rec.tdStatus === 'absent-confirmed') title.classList.add('is-absent');
-    li.appendChild(title);
-
-    const meta = document.createElement('dl');
-    meta.className = 'ld-detail-meta';
-    appendMetaPair(meta, 'Saved', rec.savedAt ? formatEvidenceTimestamp(rec.savedAt, true) : '—');
-    appendMetaPair(meta, 'View', formatViewRole(rec.viewRole));
-    appendMetaPair(meta, 'Line type', rec.line ? rec.line.type : (rec.tdStatus === 'absent-confirmed' ? 'none (absent)' : '—'));
-    if (rec.sourceImageId) appendMetaPair(meta, 'Image', String(rec.sourceImageId));
-    if (rec.appRuleVersion) appendMetaPair(meta, 'Rule version', String(rec.appRuleVersion));
-    if (rec.templateVersion) appendMetaPair(meta, 'Template', String(rec.templateVersion));
-    if (rec.absentReason) appendMetaPair(meta, 'Absent reason', String(rec.absentReason));
-    li.appendChild(meta);
-
-    return li;
-  }
-
-  function appendMetaPair(dl, label, value) {
-    const dt = document.createElement('dt');
-    dt.textContent = label;
-    const dd = document.createElement('dd');
-    dd.textContent = value;
-    dl.appendChild(dt);
-    dl.appendChild(dd);
-  }
-
-  // ---- src/auto/learning/ui/learning-data-dialog.js ----
-// Transparent Learning panel (read-only TD review).
-// Reads from summarizeLearningStore + summarizeMeaningStore +
-// summarizeStyleEvidence + listStyleEvidence. Renders a top summary plus
-// a tabbed body: Style Evidence, Learning Corrections, POM Meanings.
-// No mutations — Reset and Manage Meanings live in the Auto Mode Manage
-// menu and stay there. Opens regardless of mode so the TD can audit prior
-// calibration before switching into Auto Mode.
-// Source part for app.js. Run `npm run build` after editing.
-//
-// This is the orchestrator only — it wires the 4 tab defs to their build()
-// functions. The shared formatters live in learning-data-shared.js; the
-// generic tab-shell widget lives in learning-data-tabs.js; each tab's body
-// lives in its own file: learning-data-telemetry.js, learning-data-summary.js,
-// learning-data-corrections.js, learning-data-meanings.js,
-// learning-data-evidence.js.
-
-  function openLearningDataDialog() {
-    const learning = (typeof summarizeLearningStore === 'function') ? summarizeLearningStore() : null;
-    const meanings = (typeof summarizeMeaningStore === 'function') ? summarizeMeaningStore() : null;
-    const styleId = (typeof currentStyleId === 'function') ? currentStyleId() : null;
-    const evidence = (typeof summarizeStyleEvidence === 'function' && styleId != null)
-      ? summarizeStyleEvidence(styleId)
-      : null;
-    const evidenceRecords = (typeof listStyleEvidence === 'function' && styleId != null)
-      ? listStyleEvidence(styleId)
-      : [];
-    const telemetry = (typeof getAutoTelemetryReport === 'function')
-      ? getAutoTelemetryReport(10)
-      : null;
-
-    const dialog = buildDialog({
-      title: 'Learning data',
-      sub: 'What the tool has learned from your corrections.',
-    });
-    dialog.panel.classList.add('ld-wide');
-
-    const body = document.createElement('div');
-    body.className = 'dialog-body learning-data-body';
-
-    body.appendChild(buildLearningTopSummary(learning, meanings, evidence));
-
-    const tabs = buildLearningTabs([
-      {
-        id: 'evidence',
-        label: 'Style Evidence',
-        count: evidence ? evidence.pomRowCount : 0,
-        build: () => buildLearningEvidenceSection(evidence, evidenceRecords, meanings),
-      },
-      {
-        id: 'corrections',
-        label: 'Learning Corrections',
-        count: learning ? learning.rows.length : 0,
-        build: () => buildLearningAnchorSection(learning),
-      },
-      {
-        id: 'meanings',
-        label: 'POM Meanings',
-        count: meanings ? meanings.currentRows.length : 0,
-        build: () => buildLearningMeaningsSection(meanings),
-      },
-      {
-        id: 'telemetry',
-        label: 'Telemetry',
-        count: telemetry ? telemetry.count : 0,
-        build: () => buildLearningTelemetrySection(telemetry),
-      },
-    ]);
-    body.appendChild(tabs);
-
-    dialog.panel.appendChild(body);
-
-    const footer = document.createElement('div');
-    footer.className = 'picker-footer';
-    const note = document.createElement('span');
-    note.className = 'learning-data-foot-note';
-    note.textContent = 'Use the Manage menu to reset calibration or edit POM meanings.';
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'picker-btn primary';
-    closeBtn.textContent = 'Close';
-    closeBtn.addEventListener('click', dialog.close);
-    footer.appendChild(note);
-    footer.appendChild(closeBtn);
-    dialog.panel.appendChild(footer);
-
-    dialog.open();
-    closeBtn.focus();
-  }
-
   // ---- src/library/dialog/library-shared.js ----
 // Library dialog: cross-view grouping/formatting helpers used by BOTH the
 // "By Style" card grid and the "By Save" flat list.
@@ -7627,18 +5819,6 @@
     const pad = (n) => String(n).padStart(2, '0');
     return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
       + '  ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-  }
-
-  function buildBadge(text, bg, fg) {
-    const el = document.createElement('span');
-    el.textContent = text;
-    el.style.fontSize = '11px';
-    el.style.fontWeight = '600';
-    el.style.padding = '2px 8px';
-    el.style.borderRadius = '999px';
-    el.style.background = bg;
-    el.style.color = fg;
-    return el;
   }
 
   // ---- src/library/dialog/library-list-view.js ----
@@ -7778,7 +5958,7 @@
 
   // ---- src/library/dialog/library-grid-view.js ----
 // Library dialog: "By Style" card-grid rendering — one card per styleId,
-// aggregated counts + evidence/meaning badges.
+// aggregated counts.
 // Source part for app.js. Run `npm run build` after editing.
 
   function renderStyleGridView(container, entries, handlers) {
@@ -7799,23 +5979,6 @@
     });
   }
 
-  function styleMemoryBadges(styleId) {
-    let evidenceCount = 0;
-    let meaningCount = 0;
-    if (styleId && typeof summarizeStyleEvidence === 'function') {
-      try {
-        const s = summarizeStyleEvidence(styleId);
-        evidenceCount = (s && s.totalRecords) || 0;
-      } catch (err) { /* memory store may be uninitialized in test contexts */ }
-    }
-    if (styleId && typeof listConfirmedMeanings === 'function') {
-      try {
-        meaningCount = (listConfirmedMeanings(styleId) || []).length;
-      } catch (err) { /* same as above */ }
-    }
-    return { evidenceCount, meaningCount };
-  }
-
   function buildStyleCard(group, handlers) {
     const styleId = group.styleId;
     const latest = group.entries[0] || null;
@@ -7823,7 +5986,6 @@
     const totalLines = group.entries.reduce((sum, e) => sum + (e.annotationCount || 0), 0);
     const totalImages = group.entries.reduce((sum, e) => sum + (e.imageCount || 0), 0);
     const totalConfirmedPoms = group.entries.reduce((sum, e) => sum + (e.confirmedPomCount || 0), 0);
-    const { evidenceCount, meaningCount } = styleMemoryBadges(styleId);
 
     const row = document.createElement('div');
     row.className = 'library-style-card';
@@ -7886,17 +6048,6 @@
     if (totalConfirmedPoms) countParts.push(totalConfirmedPoms + ' confirmed POM' + (totalConfirmedPoms === 1 ? '' : 's'));
     counts.textContent = countParts.join('  ·  ');
     info.appendChild(counts);
-
-    if (styleId && (evidenceCount > 0 || meaningCount > 0)) {
-      const badges = document.createElement('div');
-      badges.style.display = 'flex';
-      badges.style.gap = '6px';
-      badges.style.marginTop = '4px';
-      badges.style.flexWrap = 'wrap';
-      if (meaningCount > 0) badges.appendChild(buildBadge(meaningCount + ' meaning' + (meaningCount === 1 ? '' : 's'), '#dbeafe', '#1e40af'));
-      if (evidenceCount > 0) badges.appendChild(buildBadge(evidenceCount + ' evidence', '#dcfce7', '#166534'));
-      info.appendChild(badges);
-    }
     row.appendChild(info);
 
     const actions = document.createElement('div');
@@ -7938,8 +6089,8 @@
 //
 // Every writeProjectFile() appends an entry to the IndexedDB-backed library
 // in src/library/project-library.js. This pane has two internal sub-tabs:
-//   - "By Style" (default): one card per styleId, aggregated counts +
-//     evidence/meaning badges, "Open latest" or drill into saves.
+//   - "By Style" (default): one card per styleId, aggregated counts,
+//     "Open latest" or drill into saves.
 //   - "By Save": flat list, every snapshot is its own row.
 // Opening a snapshot reuses the existing loadProject() flow, so a re-save
 // creates a new entry (append history), matching the user's chosen
@@ -8134,9 +6285,7 @@
         } else {
           return;
         }
-      } else if (typeof hasUnsavedWork === 'function'
-        ? hasUnsavedWork()
-        : (state.annotations.length || state.images.length)) {
+      } else if (hasUnsavedWork()) {
         // US-092: ask hasUnsavedWork() rather than re-deriving "is there work
         // here" from two collections. This gate had drifted behind the one in
         // onProjectFileChosen (project-load.js) and silently replaced a board
@@ -8846,7 +6995,7 @@
     // the no-selection branch told the TD one thing and did another. The
     // label now says which branch is about to run.
     function updateSaveButtonLabel() {
-      const hasSelection = typeof getSelectedAnnotation === 'function' && !!getSelectedAnnotation();
+      const hasSelection = !!getSelectedAnnotation();
       saveBtn.textContent = hasSelection ? 'Save selected path as Treatment…' : 'Save current Line Look…';
     }
 
@@ -9556,7 +7705,7 @@
           alpha: chosen.filter(c => c.tier === 1).map(c => c.label),
           depth: chosen.filter(c => c.tier === 2).map(c => c.label),
         };
-      if (typeof scheduleAutosave === 'function') scheduleAutosave();
+      scheduleAutosave();
       dlg.close();
       onConfirm();
     });
@@ -9574,157 +7723,6 @@
     dlg.panel.appendChild(body);
     dlg.panel.appendChild(footer);
     dlg.open();
-  }
-
-  // ---- src/dxf/dxf-pattern-picker-dialog.js ----
-// US-124 Phase 4 (ADR 0091, owner decision 3): the pre-placement pattern
-// picker. Opens from importDxfText when a DXF would place more lines than
-// DXF_TOTAL_OUTPUT_CAP (board performance, the one remaining hard stop).
-// Instead of "Import rejected", the TD sees one row per PLACEMENT INSTANCE —
-// a graded size, a piece — with its block name, ASTM annotation and line
-// count, unchecks rows until the total fits, and imports the rest. The
-// unit is the instance (not the pattern) because that is what both parsers
-// can skip identically (dxfClassifyPatterns `excludeInstances`), keeping the
-// board↔native piece pairing intact; instance 0 (direct ENTITIES) is one
-// all-or-nothing row, so a file with no INSERTs cannot be split here — the
-// dialog says so rather than pretending.
-//
-// Modelled on export-size-dialog.js (same buildDialog shell, same presets
-// shape: one button per size token, ADR 0084's after-the-last-underscore
-// rule). Source part for app.js. Run `npm run build` after editing.
-
-  function dxfPickerFormat(n) {
-    return Number(n || 0).toLocaleString('en-US');
-  }
-
-  function openDxfPatternPickerDialog(overCap, handlers) {
-    // The report may come from dxf-worker.js, which has no dxfMeasureSizeToken
-    // (Board code) — derive the ADR 0084 size token here when it is missing.
-    const rows = ((overCap && Array.isArray(overCap.instances)) ? overCap.instances : []).map(r => Object.assign({}, r, {
-      sizeToken: r.sizeToken || (r.blockName && typeof dxfMeasureSizeToken === 'function' ? dxfMeasureSizeToken(r.blockName) : null),
-    }));
-    const cap = overCap && overCap.cap ? overCap.cap : DXF_TOTAL_OUTPUT_CAP;
-    const already = new Set((handlers && handlers.alreadyExcluded) || []);
-    const dlg = buildDialog({
-      title: 'Too many lines to place at once',
-      sub: (handlers && handlers.fileName ? handlers.fileName + ' — ' : '')
-        + 'this DXF would place ' + dxfPickerFormat(overCap.total) + ' lines; the board holds ' + dxfPickerFormat(cap)
-        + '. Untick sizes or pieces until it fits, then import the rest.',
-    });
-    dlg.overlay.classList.add('dxf-pattern-picker');
-
-    const body = document.createElement('div');
-    body.className = 'dialog-body';
-    body.style.cssText = 'display:flex;flex-direction:column;gap:10px;min-width:520px;max-width:720px;';
-
-    const tokens = Array.from(new Set(rows.map(r => r.sizeToken).filter(Boolean)));
-    const boxByInstance = new Map();
-
-    if (tokens.length >= 2) {
-      const presets = document.createElement('div');
-      presets.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;align-items:center;';
-      const lab = document.createElement('span');
-      lab.style.cssText = 'font-size:12px;color:#444;margin-right:4px;';
-      lab.textContent = 'Keep only size:';
-      presets.appendChild(lab);
-      for (const token of tokens) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'picker-btn';
-        btn.textContent = token;
-        btn.addEventListener('click', () => {
-          for (const r of rows) boxByInstance.get(r.instance).checked = r.sizeToken === token;
-          updateFooter();
-        });
-        presets.appendChild(btn);
-      }
-      const all = document.createElement('button');
-      all.type = 'button';
-      all.className = 'picker-btn';
-      all.textContent = 'All';
-      all.addEventListener('click', () => { for (const r of rows) boxByInstance.get(r.instance).checked = true; updateFooter(); });
-      presets.appendChild(all);
-      body.appendChild(presets);
-    }
-
-    const list = document.createElement('div');
-    list.className = 'dxf-pattern-picker-list';
-    list.style.cssText = 'max-height:52vh;overflow:auto;border:1px solid #e2e8f0;border-radius:6px;';
-    for (const r of rows) {
-      const row = document.createElement('label');
-      row.className = 'dxf-pattern-picker-row';
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 10px;border-top:1px solid #f1f5f9;font-size:12px;cursor:pointer;';
-      const box = document.createElement('input');
-      box.type = 'checkbox';
-      box.checked = !already.has(r.instance);
-      box.dataset.instance = String(r.instance);
-      box.addEventListener('change', updateFooter);
-      boxByInstance.set(r.instance, box);
-      row.appendChild(box);
-      const name = document.createElement('span');
-      name.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-      const title = r.blockName || (r.instance === 0 ? 'Direct entities (no block)' : 'Instance ' + r.instance);
-      const meta = [r.pieceName, r.size, r.quantity != null ? 'qty ' + r.quantity : null].filter(Boolean).join(' · ');
-      name.textContent = title + (meta ? '  —  ' + meta : '');
-      name.title = name.textContent;
-      row.appendChild(name);
-      const count = document.createElement('span');
-      count.style.cssText = 'flex:0 0 auto;color:#64748b;font-size:11px;';
-      count.textContent = r.patterns + (r.patterns === 1 ? ' pattern · ' : ' patterns · ') + dxfPickerFormat(r.lines) + ' lines';
-      row.appendChild(count);
-      list.appendChild(row);
-    }
-    body.appendChild(list);
-
-    if (rows.length === 1) {
-      const note = document.createElement('div');
-      note.style.cssText = 'font-size:11px;color:#b45309;';
-      note.textContent = rows[0].instance === 0
-        ? 'This file places all its geometry directly (no INSERT blocks), so it cannot be split by piece or size here. Reduce it in the CAD tool and re-export.'
-        : 'This file has a single placement instance that is itself over the limit. Reduce it in the CAD tool and re-export.';
-      body.appendChild(note);
-    }
-
-    const footer = document.createElement('div');
-    footer.className = 'picker-footer';
-    footer.style.cssText = 'display:flex;gap:8px;align-items:center;';
-    const summary = document.createElement('span');
-    summary.className = 'dxf-pattern-picker-summary';
-    summary.style.cssText = 'font-size:12px;flex:1;';
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'picker-btn';
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.addEventListener('click', () => { dlg.close(); if (handlers && handlers.onCancel) handlers.onCancel(); });
-    const okBtn = document.createElement('button');
-    okBtn.type = 'button';
-    okBtn.className = 'picker-btn picker-btn-primary dxf-pattern-picker-ok';
-    okBtn.textContent = 'Import selected';
-    okBtn.addEventListener('click', () => {
-      const excludeInstances = rows.filter(r => !boxByInstance.get(r.instance).checked).map(r => r.instance);
-      if (excludeInstances.length === rows.length) return;
-      dlg.close();
-      if (handlers && handlers.onConfirm) handlers.onConfirm(excludeInstances);
-    });
-    footer.appendChild(summary);
-    footer.appendChild(cancelBtn);
-    footer.appendChild(okBtn);
-
-    function updateFooter() {
-      let lines = 0, n = 0;
-      for (const r of rows) if (boxByInstance.get(r.instance).checked) { lines += r.lines; n += 1; }
-      const over = lines > cap;
-      summary.textContent = n + ' of ' + rows.length + ' selected · ' + dxfPickerFormat(lines) + ' of ' + dxfPickerFormat(cap) + ' lines'
-        + (over ? ' — still over the limit' : '');
-      summary.style.color = over ? '#dc2626' : '#166534';
-      okBtn.disabled = over || n === 0;
-    }
-    updateFooter();
-
-    dlg.panel.appendChild(body);
-    dlg.panel.appendChild(footer);
-    dlg.open();
-    return dlg;
   }
 
   // ---- src/measurements/grading/grading-dialog.js ----
@@ -9919,7 +7917,7 @@
         }
         pushHistoryIfChanged();
         renderTable();
-        if (typeof renderSpecPanel === 'function') renderSpecPanel();
+        renderSpecPanel();
         return;
       }
       const parsed = gradeDeltaToNumber(trimmed);
@@ -9945,7 +7943,7 @@
       }
       pushHistoryIfChanged();
       renderTable();
-      if (typeof renderSpecPanel === 'function') renderSpecPanel();
+      renderSpecPanel();
     };
 
     table.addEventListener('change', (ev) => {
@@ -10195,185 +8193,6 @@
     });
   }
 
-  // ---- src/measurements/fusion.js ----
-// Mode B measurement: library × sketch fusion (ADR 0033), ported to production
-// from the validated lab engine (test/engine.js) via US-039 Stage 1.
-//
-// Pure + side-effect-free: this part only DEFINES functions and one flag const.
-// It is FLAGGED OFF by default — getPomSpec only consults it when Mode B is on
-// (compile-time MODE_B_DEFAULT or the ?modeB=1 URL pin) — so with the flag off
-// production behaviour is bit-identical to Tier-0 (docs/decisions/0009).
-//
-// The value for each sketch-reliable POM is a precision-weighted SHRINKAGE of
-// the sketch measurement (detected anchor pixel distance × a view-local scale)
-// toward the library median — never a blind average, and never assigned: it is a
-// suggestion the TD accepts or overrides (ADR 0009), and a conflicted POM falls
-// back to the library value rather than showing a wrong number.
-
-// Off by default. Turn on for a build by flipping this, or per-session with
-// ?modeB=1 (mirrors the ?freeCv=1 / ?label=1 harness pins).
-const MODE_B_DEFAULT = false;
-
-function modeBEnabled() {
-  if (MODE_B_DEFAULT) return true;
-  try {
-    if (typeof window !== 'undefined' && window.location) {
-      return new URLSearchParams(window.location.search || '').get('modeB') === '1';
-    }
-  } catch (_e) { /* non-browser / restricted context */ }
-  return false;
-}
-
-// Per-POM roll-out set (US-041). Empty by default — with the global flag off and
-// this list empty, Mode B is fully inert. A POM id is added here ONLY after
-// `npm run measurement-accuracy --promote` shows its fused value beats
-// library-only on TD-confirmed ground truth; editing this list is the reviewed
-// promotion step (mirrors golden/accuracy --update). Governance, not learning:
-// it never mutates the versioned contract JSON.
-const MODE_B_ENABLED_POMS = [];
-
-// Mode B is live for a POM when the global flag is on OR the POM is promoted.
-function modeBEnabledForPom(pom) {
-  if (modeBEnabled()) return true;
-  return MODE_B_ENABLED_POMS.indexOf(String(pom == null ? '' : pom).trim()) !== -1;
-}
-// True when ANY Mode B path is live (global flag or a promoted POM) — used to
-// skip the whole measured-suggestion computation when nothing is enabled.
-function modeBAnyEnabled() {
-  return modeBEnabled() || MODE_B_ENABLED_POMS.length > 0;
-}
-
-// POM -> [startAnchor, endAnchor], from auto_mode_rules/pom-template.json
-// requiredAnchors. Only the corpus sketchReliable POMs (5-13) are fusable; POM
-// 1-4 are schematic, 14 is front-to-back (unmeasurable from 2D views, ADR 0026),
-// 15/16/17/18 have no corpus median.
-const MODE_B_POM_ANCHORS = {
-  '5': ['cf-top', 'cf-bottom'],
-  '6': ['cradle-cf-top', 'cf-bottom'],
-  '7': ['cradle-cup-top', 'cradle-cup-bottom'],
-  '8': ['cf-top', 'cradle-cf-top'],
-  '9': ['inner-cup-top', 'inner-cup-bottom'],
-  '10': ['inner-cup-left', 'inner-cup-right'],
-  '11': ['side-top', 'side-bottom'],
-  '12': ['back-top', 'back-bottom'],
-  '13': ['back-top', 'back-bottom'],
-};
-const MODE_B_POM_VIEW = {
-  '5': 'front_outer', '6': 'front_outer', '7': 'front_outer', '8': 'front_outer',
-  '9': 'front_outer', '10': 'front_outer', '11': 'back', '12': 'back', '13': 'back',
-};
-
-function mbClamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-function mbRound(v, p) { const m = Math.pow(10, p == null ? 3 : p); return Math.round(v * m) / m; }
-function mbMedian(xs) {
-  const s = xs.slice().sort((a, b) => a - b);
-  if (!s.length) return 0;
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-}
-
-// Coherent, view-wide style offset (kept, not shrunk): robust median of
-// (sketch/median - 1). MAD is the in-distribution / scale-trust signal.
-function mbStyleOffset(pairs) {
-  const ratios = (pairs || []).filter(p => p && p.median > 0 && p.sketch > 0).map(p => p.sketch / p.median - 1);
-  if (ratios.length < 2) return { offset: 0, dispersion: null, n: ratios.length };
-  const offset = mbMedian(ratios);
-  const dispersion = mbMedian(ratios.map(r => Math.abs(r - offset)));
-  return { offset: mbRound(mbClamp(offset, -0.25, 0.25), 4), dispersion: mbRound(dispersion, 4), n: ratios.length };
-}
-
-// Precision-weighted shrinkage toward the style-adjusted median.
-//   styleExpected = median · (1 + styleOffset)
-//   fused         = styleExpected + k · (sketch − styleExpected),  k = σL²/(σL²+σs²)
-function mbFuseValue(args) {
-  const sketch = Number(args.sketch), median = Number(args.median);
-  const styleOffset = Number(args.styleOffset) || 0;
-  const sL = Math.max(1e-6, Number(args.priorSpreadFrac) || 0.08);
-  const sS = Math.max(1e-6, Number(args.sketchSigmaFrac) || 0.08);
-  const k = (sL * sL) / (sL * sL + sS * sS);
-  const styleExpected = median * (1 + styleOffset);
-  const fused = styleExpected + k * (sketch - styleExpected);
-  const residual = median > 0 ? (sketch / median - 1 - styleOffset) : 0;
-  return { fused: mbRound(fused, 3), k: mbRound(k, 3), residual: mbRound(residual, 4) };
-}
-
-function mbDiagnose(residual, dispersion) {
-  const r = Math.abs(Number(residual) || 0);
-  const d = Number(dispersion);
-  if (Number.isFinite(d) && d > 0.12) return 'scale_suspect';
-  if (r > 0.15) return 'anchor_outlier';
-  return 'coherent';
-}
-
-// Sketch noise fraction: lower (more trust) for ink-confirmed anchors and
-// independent (TD/construction) scale; higher for short POMs and inferred scale.
-function mbSketchSigmaFrac(scaleIndependent, anchorConfirmed, shortPom) {
-  return (scaleIndependent ? 0.03 : 0.08) * (anchorConfirmed ? 1.0 : 1.8) * (shortPom ? 1.5 : 1.0);
-}
-
-// Build { pom: { value_in, sketch_in, library_in, k, residual, diagnosis,
-// confidence, decision, scaleSource } } from detected anchors + library medians.
-// anchors: array of { kind, x, y (normalized 0..1), viewRole, confidence, source, reviewRequired }
-// suggestions: POM_SUGGESTIONS ({ median, sketchReliable } per POM id)
-// dims: { width, height } source-image px (aspect matters for pixel-length ratios)
-function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
-  const out = {};
-  if (!Array.isArray(anchors) || !anchors.length || !suggestions) return out;
-  const W = Number(dims && dims.width) || 1;
-  const H = Number(dims && dims.height) || 1;
-  const byKind = {};
-  for (const a of anchors) if (a && a.kind) byKind[a.kind] = a;
-
-  const rank = { high: 3, medium: 2, low: 1, very_low: 0 };
-  const inkSourced = s => /ink|silhouette|opencv/i.test(String(s || ''));
-
-  // Per-POM sketch geometry (source-px pixel distance) + library median.
-  const rows = {};
-  for (const pom of Object.keys(MODE_B_POM_ANCHORS)) {
-    const sug = suggestions[pom];
-    if (!sug || !(Number(sug.median) > 0) || sug.sketchReliable === false) continue;
-    const [kA, kB] = MODE_B_POM_ANCHORS[pom];
-    const a = byKind[kA], b = byKind[kB];
-    if (!a || !b || !Number.isFinite(Number(a.x)) || !Number.isFinite(Number(b.x))) continue;
-    const dx = (Number(a.x) - Number(b.x)) * W, dy = (Number(a.y) - Number(b.y)) * H;
-    const px = Math.hypot(dx, dy);
-    if (!(px > 0)) continue;
-    const confirmed = !a.reviewRequired && !b.reviewRequired && inkSourced(a.source) && inkSourced(b.source);
-    const conf = rank[a.confidence] <= rank[b.confidence] ? (a.confidence || 'low') : (b.confidence || 'low');
-    rows[pom] = { pom, view: MODE_B_POM_VIEW[pom], px, median: Number(sug.median), confirmed, confidence: conf };
-  }
-
-  // One robust view-local scale from all that view's sketch-reliable POMs
-  // (candidate scale = median/px). Dispersion = trust; front never shares back.
-  const views = {};
-  for (const pom of Object.keys(rows)) {
-    const r = rows[pom];
-    (views[r.view] = views[r.view] || []).push(r);
-  }
-  for (const view of Object.keys(views)) {
-    const vr = views[view];
-    const candidates = vr.map(r => r.median / r.px);
-    if (candidates.length < 2) continue;                 // need >=2 POMs to fit a scale
-    const scale = mbMedian(candidates);
-    const styleOffset = mbStyleOffset(vr.map(r => ({ sketch: r.px * scale, median: r.median })));
-    for (const r of vr) {
-      const sketch = r.px * scale;
-      const spreadFrac = 0.06;                            // corpus between-style spread (provisional; tuned by the accuracy gate)
-      const sigmaFrac = mbSketchSigmaFrac(false, r.confirmed, r.pom === '7' || r.pom === '8');
-      const f = mbFuseValue({ sketch, median: r.median, priorSpreadFrac: spreadFrac, sketchSigmaFrac: sigmaFrac, styleOffset: styleOffset.offset });
-      const diagnosis = mbDiagnose(f.residual, styleOffset.dispersion);
-      out[r.pom] = {
-        value_in: f.fused, sketch_in: mbRound(sketch, 3), library_in: r.median,
-        k: f.k, residual: f.residual, styleOffset: styleOffset.offset, dispersion: styleOffset.dispersion,
-        diagnosis, confidence: diagnosis === 'coherent' ? (r.confidence === 'high' ? 'medium' : 'low') : 'low',
-        decision: diagnosis === 'coherent' ? 'ESTIMATED_SUGGESTION' : 'REVIEW_REQUIRED',
-        scaleSource: 'library_multi_anchor_inference',
-      };
-    }
-  }
-  return out;
-}
-
   // ---- src/measurements/spec-visibility.js ----
 // Per-POM line visibility on the canvas: the state helpers plus the DOM
 // controls (the per-row × / + toggle and the sticky "Hide all / Show all"
@@ -10594,9 +8413,9 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   // ---- src/measurements/spec-values.js ----
 // Value model behind the Measurements panel's Size L / Size L2 / TOL / 中文 /
 // English columns: built-in POM name fallbacks, the Tier-0 library-suggestion
-// lookup, the ADR 0033 Mode-B measured-fusion gate, the imperial
-// fraction <-> decimal math, the state.pomSpecs read/write layer, and the
-// tolerance evaluation shared with the on-canvas readout. buildSpecInputCell
+// lookup, the imperial fraction <-> decimal math, the state.pomSpecs
+// read/write layer, and the tolerance evaluation shared with the on-canvas
+// readout. buildSpecInputCell
 // lives here too because its ArrowUp/Down stepping is bound to
 // scheduleSpecStepCommit's module-private timer.
 // Extracted from src/measurements/spec-panel.js; the row/cell DOM that consumes these
@@ -10637,41 +8456,6 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
   function hasSuggestedValue(pomKey) {
     const s = getPomSuggestion(pomKey);
     return !!(s && s.median != null && s.n > 0);
-  }
-
-  // ---- Mode B measured suggestions (ADR 0033, flagged OFF by default) ----
-  // When Mode B is on, a sketch-reliable POM's Size-L suggestion becomes the
-  // library×sketch FUSED value derived from the detected anchors (fusion.js) —
-  // still a suggestion, never assigned or persisted. Memoized by a cheap anchor
-  // signature so getPomSpec stays cheap across a full panel rebuild.
-  let _measuredCache = { sig: null, map: null };
-  function measuredSuggestionsMap() {
-    if (typeof modeBAnyEnabled !== 'function' || !modeBAnyEnabled()) return null;
-    const am = (state && state.autoMode) || {};
-    const anchors = Array.isArray(am.anchors) ? am.anchors : [];
-    const det = am.detection || null;
-    if (!anchors.length || !det) return null;
-    const first = anchors[0] || {};
-    const sig = anchors.length + ':' + (det.naturalWidth || 0) + 'x' + (det.naturalHeight || 0) + ':' + (first.kind || '') + first.x;
-    if (_measuredCache.sig === sig) return _measuredCache.map;
-    let map = null;
-    try { map = mbComputeMeasuredSuggestions(anchors, POM_SUGGESTIONS, { width: det.naturalWidth, height: det.naturalHeight }); }
-    catch (_e) { map = null; }
-    _measuredCache = { sig, map };
-    return map;
-  }
-  // Gated measured entry for a POM: only a coherent, positive numeric proposal
-  // surfaces; a conflicted (review/outlier) POM returns null so the panel falls
-  // back to the library value rather than showing a wrong number.
-  function measuredFor(pomKey) {
-    const key = String(pomKey == null ? '' : pomKey).trim();
-    // Per-POM roll-out gate (US-041): only a globally-flagged or promoted POM
-    // surfaces a measured value.
-    if (typeof modeBEnabledForPom === 'function' && !modeBEnabledForPom(key)) return null;
-    const map = measuredSuggestionsMap();
-    if (!map) return null;
-    const m = map[key];
-    return (m && m.decision === 'ESTIMATED_SUGGESTION' && Number.isFinite(Number(m.value_in)) && Number(m.value_in) > 0) ? m : null;
   }
 
   // Corpus inches -> active display unit (no-op for the default 'in').
@@ -10736,12 +8520,9 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     return Number.isFinite(n) ? n : null;
   }
 
-  // Formatted Size L suggestion ('' when the POM has no library data). With
-  // Mode B on, a gated measured (library×sketch fused) value takes precedence
-  // over the raw library median; both remain TD-owned suggestions.
+  // Formatted Size L suggestion ('' when the POM has no library data): the
+  // library median, a TD-owned suggestion.
   function suggestedSizeL(pomKey) {
-    const m = measuredFor(pomKey);
-    if (m) return formatSuggestion(m.value_in);
     const s = getPomSuggestion(pomKey);
     if (!s || s.median == null || !(s.n > 0)) return '';
     return formatSuggestion(s.median);
@@ -11004,14 +8785,6 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     const input = td.querySelector('input');
     if (input) input.classList.add('is-suggested');
     if (field === 'sizeL') {
-      // Mode B: a fused sketch measurement is a distinct, estimated suggestion.
-      const m = measuredFor(key);
-      if (m) {
-        appendSuggestBadge(td, 'measured · ' + (m.confidence || 'low'), 'library',
-          'Sketch measurement (Mode B, estimated) — detected anchors × view-local scale, fused toward the library median'
-          + ' (k ' + m.k + ', residual ' + (Math.round((m.residual || 0) * 1000) / 10) + '%, library ' + m.library_in + ' in). Type to override.');
-        return;
-      }
       const conf = sug.confidence || 'very_low';
       const rangeIn = (sug.min != null && sug.max != null) ? ' · range ' + sug.min + '–' + sug.max + ' in' : '';
       appendSuggestBadge(td, 'library · ' + conf, 'library',
@@ -12512,7 +10285,7 @@ function mbComputeMeasuredSuggestions(anchors, suggestions, dims) {
     mpRenderSketches();
     // The Preview & Export sheet shows the same slots; repaint it if that is
     // the page in view (same rule restoreSnapshot follows).
-    if (state.activePage === 'preview' && typeof renderPreviewPage === 'function') renderPreviewPage();
+    if (state.activePage === 'preview') renderPreviewPage();
     pushHistoryIfChanged();
   }
 
@@ -16835,13 +14608,6 @@ const CONSTRUCTION_GENERATED_PHRASES = [
       && point.y >= layout.y && point.y <= layout.y + layout.height) || null;
   }
 
-  function ccDistanceToSegment(point, a, b) {
-    const dx = b.x - a.x, dy = b.y - a.y;
-    if (!dx && !dy) return Math.hypot(point.x - a.x, point.y - a.y);
-    const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)));
-    return Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy));
-  }
-
   function ccHitTest(point) {
     const callouts = ccVisibleCallouts();
     for (let i = callouts.length - 1; i >= 0; i -= 1) {
@@ -16862,7 +14628,7 @@ const CONSTRUCTION_GENERATED_PHRASES = [
       const label = ccWorldToCanvas(layout, ccWorldOf(image, callout.textPos));
       for (let ti = callout.targets.length - 1; ti >= 0; ti -= 1) {
         const pin = ccWorldToCanvas(layout, ccWorldOf(image, callout.targets[ti]));
-        if (ccDistanceToSegment(point, label, pin) <= 6) {
+        if (pointToSegmentDistance(point, label, pin) <= 6) {
           return { callout, image, layout, part: 'line', anchorIndex: ti };
         }
       }
@@ -18972,19 +16738,12 @@ const BOM_MATERIAL_LIBRARY = [
       }
       for (let ti = targets.length - 1; ti >= 0; ti -= 1) {
         const pin = bmWorldOf(im, targets[ti]);
-        if (bmDistanceToSegment(pt, label, pin) <= (6 / bmCanvasView.scale)) {
+        if (pointToSegmentDistance(pt, label, pin) <= (6 / bmCanvasView.scale)) {
           return { callout: c, part: 'line', anchorIndex: ti, imageRec: im };
         }
       }
     }
     return null;
-  }
-
-  function bmDistanceToSegment(pt, a, b) {
-    const dx = b.x - a.x, dy = b.y - a.y;
-    if (!dx && !dy) return Math.hypot(pt.x - a.x, pt.y - a.y);
-    const t = Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / (dx * dx + dy * dy)));
-    return Math.hypot(pt.x - (a.x + t * dx), pt.y - (a.y + t * dy));
   }
 
   function bmCreateCalloutAt(pt) {
@@ -20258,9 +18017,9 @@ const BOM_MATERIAL_LIBRARY = [
     const host = document.getElementById('pvSheets');
     if (!host) return;
     const pv = ensurePreviewPage();
-    if (typeof ensureMainPage === 'function') ensureMainPage();
-    if (typeof ensureConstruction === 'function') ensureConstruction();
-    if (typeof ensureBom === 'function') ensureBom();
+    ensureMainPage();
+    ensureConstruction();
+    ensureBom();
     host.innerHTML = PV_SHEETS.map(sheet => {
       const on = !!pv.enabledPages[sheet.key];
       return '<section class="pv-sheet' + (on ? '' : ' pv-off') + '" data-pv-sheet="' + sheet.key + '">'
@@ -20720,7 +18479,7 @@ const BOM_MATERIAL_LIBRARY = [
     // per user-created stamp.
     appCommand({ id: 'board.shapes.save', label: 'Save Selection as Template', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#shapeStampSaveBtn',
-      when: () => (typeof canSaveShapeStampReason === 'function' ? canSaveShapeStampReason() : true),
+      when: () => canSaveShapeStampReason(),
       action: () => saveSelectedLineAsShape() }),
     // ADR 0070: same Sketch-Focus gate the retired DXF-import command used —
     // panel only has anything to list once a sketch-element piece exists.
@@ -20823,16 +18582,6 @@ const BOM_MATERIAL_LIBRARY = [
       page: 'board', mode: 'manual', target: '#sizeRunBtn', action: () => openSizeRunDialog() }),
     appCommand({ id: 'board.grading', label: 'Grading Rules…', category: 'Board · Measurements',
       page: 'board', shortcut: { key: 'g' }, target: '#gradingBtn', action: () => openGradingDialog() }),
-    appCommand({ id: 'board.learning.toggle', label: 'Toggle Learning', category: 'Board · Learning',
-      page: 'board', action: () => setLearningEnabled(!isLearningEnabled()) }),
-    appCommand({ id: 'board.learning.view', label: 'View Learning Data…', category: 'Board · Learning',
-      page: 'board', action: () => openLearningDataDialog() }),
-    appCommand({ id: 'board.learning.reset', label: 'Reset Calibration Residuals…', category: 'Board · Learning',
-      page: 'board', action: () => resetLearning() }),
-    appCommand({ id: 'board.learning.forget-style', label: 'Forget POM Meanings for Current Style…', category: 'Board · Learning',
-      page: 'board', action: () => resetPomMeanings('current') }),
-    appCommand({ id: 'board.learning.forget-all', label: 'Forget POM Meanings for All Styles…', category: 'Board · Learning',
-      page: 'board', action: () => resetPomMeanings('all') }),
     appCommand({ id: 'board.export.copy-image', label: 'Copy Board Image', category: 'Board · Export',
       page: 'board', mode: 'manual', shortcut: { key: 'c', meta: true, shift: true }, target: '#copyImageBtn',
       action: () => { void copyBoardImageToClipboard(); } }),
@@ -21338,7 +19087,7 @@ const BOM_MATERIAL_LIBRARY = [
       // armed shape, so the one control still on screen says what a press will
       // do. Truncated: a TD can name a shape anything.
       let label = TOOL_MENU_LABELS[state.tool];
-      if (state.tool === 'stamp' && typeof getActiveShapeStamp === 'function') {
+      if (state.tool === 'stamp') {
         const stamp = getActiveShapeStamp();
         label = stamp
           ? (stamp.name.length > 18 ? stamp.name.slice(0, 17) + '…' : stamp.name)
@@ -21369,8 +19118,8 @@ const BOM_MATERIAL_LIBRARY = [
 
   // ---- src/board/annotations/label-editor.js ----
 // Editable callout labels: positions a floating textarea (el.labelEditor)
-// over a canvas-space point, then commits or cancels the edit — firing the
-// Phase 2/3 learning-sample hook on commit. worldToScreen, the canvas ->
+// over a canvas-space point, then commits or cancels the edit. worldToScreen,
+// the canvas ->
 // screen coordinate helper it needs, lives here and is shared with the
 // renderers. The two el.labelEditor listeners are wired in bindUI()
 // (src/app/bindings.js).
@@ -21436,14 +19185,6 @@ const BOM_MATERIAL_LIBRARY = [
       if (ann.text !== next) {
         ann.text = next;
         pushHistoryIfChanged();
-      }
-      // Phase 2/3 learning hook. POM 1–5 record silently. POM 6+ with
-      // no confirmed meaning surface a one-click picker. Unknown labels
-      // and re-commits without endpoint changes return 'skipped'.
-      const evalResult = evaluateManualPomSample(ann);
-      if (evalResult.status === 'recorded') {
-        showToast('POM ' + ann.learnSamplePom + ' learning sample saved');
-        updateUI();
       }
     }
     updateUI();
@@ -22424,7 +20165,7 @@ const BOM_MATERIAL_LIBRARY = [
     // Placed here (not the caller) so any future caller of this mutator —
     // debug hook included — gets the same guarantee removePatternPieceGroups
     // already has.
-    if (typeof dxfMeasureInvalidateOnPieceEdit === 'function') dxfMeasureInvalidateOnPieceEdit();
+    dxfMeasureInvalidateOnPieceEdit();
     return { chains: runs.length, removed };
   }
 
@@ -22609,8 +20350,8 @@ const BOM_MATERIAL_LIBRARY = [
     if (!ids || !ids.length) return;
     state.selection = { kind: 'annotation', id: ids[0] };
     state.selectedAnnotationIds = ids.slice();
-    if (typeof updateUI === 'function') updateUI();
-    if (typeof requestRender === 'function') requestRender();
+    updateUI();
+    requestRender();
   }
 
   // Deletes every annotation belonging to the given groups. Sketch-element
@@ -22644,10 +20385,10 @@ const BOM_MATERIAL_LIBRARY = [
     if (kill.has(state.templateGroupEditId)) state.templateGroupEditId = null;
     // findings-dxf.md Finding 7: a removed piece must not stay measurable at
     // its old, now-invisible position.
-    if (typeof dxfMeasureInvalidateOnPieceEdit === 'function') dxfMeasureInvalidateOnPieceEdit();
+    dxfMeasureInvalidateOnPieceEdit();
     pushHistoryIfChanged();
-    if (typeof updateUI === 'function') updateUI();
-    if (typeof requestRender === 'function') requestRender();
+    updateUI();
+    requestRender();
   }
 
   function patternPieceMiniBtn(label, title, onClick) {
@@ -22767,8 +20508,8 @@ const BOM_MATERIAL_LIBRARY = [
           const result = simplifyPieceGroup(g.groupId);
           if (!result.chains) { showToast('Nothing to simplify — no redundant collinear points found.'); return; }
           pushHistoryIfChanged();
-          if (typeof updateUI === 'function') updateUI();
-          if (typeof requestRender === 'function') requestRender();
+          updateUI();
+          requestRender();
           showToast('Simplified ' + result.chains + (result.chains === 1 ? ' run' : ' runs')
             + ', removed ' + result.removed + (result.removed === 1 ? ' point.' : ' points.'));
           // pushHistoryIfChanged above already re-synced the rows (keeping
@@ -22796,7 +20537,7 @@ const BOM_MATERIAL_LIBRARY = [
     if (el.patternPiecesBtn) {
       el.patternPiecesBtn.addEventListener('click', (event) => {
         event.stopPropagation();
-        if (typeof closeBoardToolbarMenus === 'function') closeBoardToolbarMenus(null, false);
+        closeBoardToolbarMenus(null, false);
         openPatternPiecesPanel();
       });
     }
@@ -22879,7 +20620,7 @@ const BOM_MATERIAL_LIBRARY = [
   // zooming in absurdly tight.
   function focusDxfMeasurementOnBoard(session, measurement) {
     const pts = dxfMeasureRouteWorldPoints(session, measurement, 8);
-    if (!pts.length || typeof fitBoundsToViewport !== 'function') return;
+    if (!pts.length) return;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of pts) {
       if (p.x < minX) minX = p.x;
@@ -23335,37 +21076,6 @@ const BOM_MATERIAL_LIBRARY = [
     el.autoApplyBtn.addEventListener('click', () => applyApprovedDraftsAtomically());
     el.autoDiscardBtn.addEventListener('click', () => discardAutoDrafts());
     el.autoResetBoardBtn.addEventListener('click', () => resetWorkingBoard());
-    el.autoLearnToggleBtn.addEventListener('click', () => setLearningEnabled(!isLearningEnabled()));
-    if (el.learningToolbarBtn) {
-      el.learningToolbarBtn.addEventListener('click', () => {
-        if (!isLearningEnabled()) {
-          setLearningEnabled(true);
-          showToast('Learning is ON. Correct an Auto line, then Save project + evidence.');
-          return;
-        }
-        openLearningDataDialog();
-      });
-    }
-    if (el.viewLearningDataItem) {
-      el.viewLearningDataItem.addEventListener('click', () => {
-        openLearningDataDialog();
-      });
-    }
-    if (el.resetResidualsItem) {
-      el.resetResidualsItem.addEventListener('click', () => {
-        resetLearning();
-      });
-    }
-    if (el.resetMeaningsCurrentItem) {
-      el.resetMeaningsCurrentItem.addEventListener('click', () => {
-        resetPomMeanings('current');
-      });
-    }
-    if (el.resetMeaningsAllItem) {
-      el.resetMeaningsAllItem.addEventListener('click', () => {
-        resetPomMeanings('all');
-      });
-    }
     if (el.styleIdInput) {
       el.styleIdInput.addEventListener('input', () => {
         state.styleId = el.styleIdInput.value.trim();
@@ -23735,6 +21445,14 @@ const BOM_MATERIAL_LIBRARY = [
 // Source part for app.js. Run `npm run build` after editing.
 
   const DXF_PATTERN_SOURCE_VERSION = 1;
+  // The grouping pipeline a saved source's board was built with (ADR 0091
+  // Phase 6). 2 = classified outlines, the only pipeline the parsers run.
+  // Every committed build that wrote a source also wrote this field (it and
+  // makeDxfPatternSource arrived in the same commit), so a source whose field
+  // is missing or 1 cannot be paired with today's native rebuild by index and
+  // is incompatible: the board geometry stays, Pattern Measure is cleared
+  // with the usual "Reopen the DXF" message (ADR 0105 retired the v1 rebuild).
+  const DXF_PIPELINE_VERSION = 2;
   const DXF_AUTOSAVE_DB_NAME = 'bra-sketch-dxf-autosave';
   const DXF_AUTOSAVE_DB_VERSION = 1;
   const DXF_AUTOSAVE_STORE = 'sources';
@@ -23794,6 +21512,13 @@ const BOM_MATERIAL_LIBRARY = [
 
   function dxfPatternSourceIsCompatible(source) {
     if (!source || source.version !== DXF_PATTERN_SOURCE_VERSION) return false;
+    if (source.pipelineVersion !== DXF_PIPELINE_VERSION) return false;
+    // ADR 0105: the pre-placement picker that wrote a non-empty exclusion
+    // list is gone, and the native rebuild no longer skips instances, so such
+    // a board's pieces would pair with the wrong native pieces. An empty list
+    // (what every other import wrote) changes nothing.
+    const excluded = source.importOptions && source.importOptions.excludeInstances;
+    if (Array.isArray(excluded) && excluded.length) return false;
     if (!source.fingerprint || !source.geometryFingerprint) return false;
     return dxfPatternGeometryFingerprint(source) === source.geometryFingerprint;
   }
@@ -23814,13 +21539,10 @@ const BOM_MATERIAL_LIBRARY = [
       // the default, drop.
       importOptions: {
         keepQualityCurves: !!(importOptions && importOptions.keepQualityCurves),
-        // Phase 4: the placement instances the TD deselected in the
-        // pre-placement picker; the native rebuild must skip the same ones.
-        excludeInstances: (importOptions && Array.isArray(importOptions.excludeInstances)) ? importOptions.excludeInstances.slice() : [],
       },
-      // Phase 6 (ADR 0091): which grouping built this board. Additive —
-      // sources saved before the field existed have none and mean 1.
-      pipelineVersion: (importOptions && importOptions.pipelineVersion === 1) ? 1 : DXF_PIPELINE_VERSION,
+      // Phase 6 (ADR 0091): which grouping built this board — see
+      // DXF_PIPELINE_VERSION above.
+      pipelineVersion: DXF_PIPELINE_VERSION,
       geometryFingerprint: null,
     };
     source.geometryFingerprint = dxfPatternGeometryFingerprint(source);
@@ -23951,17 +21673,12 @@ const BOM_MATERIAL_LIBRARY = [
     if (!source || !source.text || dxfPatternFingerprint(source.text) !== source.fingerprint
         || !dxfPatternSourceIsCompatible(source)) return false;
     resetDxfMeasureSession();
-    // Phase 6: the rebuild parses with the SOURCE's own pipeline version (a
-    // pre-ADR-0091 project carries none → 1), so the native pieces pair with
-    // the saved board pieces by index instead of silently nulling every
-    // pieceAnchor.
-    return !!startDxfMeasureSession(
-      source.text,
-      source.bounds,
-      source.transform,
-      source.pieceFirstAnnotationIds,
-      Object.assign({}, source.importOptions || {}, { pipelineVersion: source.pipelineVersion === 2 ? 2 : 1 })
-    );
+    const parseStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    const nativeModel = parseDxfNativeModel(source.text, {
+      keepQualityCurves: !!(source.importOptions && source.importOptions.keepQualityCurves),
+    });
+    const parseDurationMs = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - parseStartedAt;
+    return !!startDxfMeasureSession(nativeModel, source.bounds, source.transform, source.pieceFirstAnnotationIds, { parseDurationMs });
   }
 
   async function restoreDxfPatternSource(savedSource) {
@@ -24014,14 +21731,14 @@ const BOM_MATERIAL_LIBRARY = [
     state.history.future = [];
     // A new board (Open project, a DXF import, Reset Board) replaces the piece
     // list wholesale; an open Pattern pieces panel must not keep the old one.
-    if (typeof syncPatternPiecesPanelToBoard === 'function') syncPatternPiecesPanelToBoard();
+    syncPatternPiecesPanelToBoard();
   }
 
   function makeSnapshot() {
     // US-125: geometry can change through many established drag/nudge/resize
     // paths. Refresh the two Seam Path fingerprints at the shared snapshot
     // boundary so none of those paths can persist stale approval evidence.
-    if (typeof seamPathRefreshAllFingerprints === 'function') seamPathRefreshAllFingerprints();
+    seamPathRefreshAllFingerprints();
     return {
       tool: state.tool,
       drawStyle: state.drawStyle,
@@ -24113,8 +21830,8 @@ const BOM_MATERIAL_LIBRARY = [
     updateUI();
     // US-135 E2E defect 3: a committed change can add or remove pieces
     // (Delete, paste, Remove unchecked); the open Pattern pieces panel follows.
-    if (typeof syncPatternPiecesPanelToBoard === 'function') syncPatternPiecesPanelToBoard();
-    if (typeof scheduleAutosave === 'function') scheduleAutosave();
+    syncPatternPiecesPanelToBoard();
+    scheduleAutosave();
   }
 
   async function restoreSnapshot(snapshot) {
@@ -24147,19 +21864,20 @@ const BOM_MATERIAL_LIBRARY = [
     state.idCounter = snapshot.idCounter || inferNextIdCounter();
     state.calibration = snapshot.calibration || { unitsPerPx: null, unit: 'in' };
     state.pomSpecs = clone(snapshot.pomSpecs || {});
-    // migrate defensively: history is session-only, but a snapshot taken by
-    // pre-US-011 code (or with a legacy depthRules field) must still restore.
-    state.gradeRules = migrateGradeRulesV2(snapshot.gradeRules, snapshot.depthRules);
+    // History is session-only and every snapshot comes from makeSnapshot()
+    // above, which copies an already-v2 state.gradeRules — so a plain clone.
+    // Saved files migrate once, in loadProject (migrateGradeRulesV2).
+    state.gradeRules = clone(snapshot.gradeRules);
     state.customPoms = clone(snapshot.customPoms || []);
     state.deletedPomKeys = clone(snapshot.deletedPomKeys || []);
     state.mainPage = snapshot.mainPage ? clone(snapshot.mainPage) : null;
-    if (typeof renderMainPage === 'function') renderMainPage();
+    renderMainPage();
     state.construction = snapshot.construction ? clone(snapshot.construction) : null;
-    if (typeof renderConstruction === 'function') renderConstruction();
+    renderConstruction();
     state.bom = snapshot.bom ? clone(snapshot.bom) : null;
-    if (typeof renderBom === 'function') renderBom();
+    renderBom();
     state.preview = snapshot.preview ? clone(snapshot.preview) : null;
-    if (state.activePage === 'preview' && typeof renderPreviewPage === 'function') renderPreviewPage();
+    if (state.activePage === 'preview') renderPreviewPage();
     state.editingLabelId = null;
     state.drawSession = null;
     state.eraseSession = null;
@@ -24214,9 +21932,9 @@ const BOM_MATERIAL_LIBRARY = [
     updateUI();
     // US-135 E2E defect 3: Undo/Redo can bring pieces back or take them away;
     // the open Pattern pieces panel used to keep listing the old set.
-    if (typeof syncPatternPiecesPanelToBoard === 'function') syncPatternPiecesPanelToBoard();
+    syncPatternPiecesPanelToBoard();
     requestRender();
-    if (typeof scheduleAutosave === 'function') scheduleAutosave();
+    scheduleAutosave();
   }
 
   async function undo() {
@@ -24244,7 +21962,7 @@ const BOM_MATERIAL_LIBRARY = [
 // prompts the TD to apply, discard, or cancel before writing.
 
   function buildProjectSnapshot(options) {
-    if (typeof seamPathRefreshAllFingerprints === 'function') seamPathRefreshAllFingerprints();
+    seamPathRefreshAllFingerprints();
     const dxfSourceMode = options && options.dxfSourceMode === 'reference'
       ? 'reference' : 'inline';
     return {
@@ -24302,31 +22020,21 @@ const BOM_MATERIAL_LIBRARY = [
         // key, and an absent key means "no embedded copy", never "empty
         // library". The local library stays the source of truth; project-load
         // offers these for import rather than overwriting it.
-        linePresets: (typeof serializeLinePresetsForProject === 'function')
-          ? serializeLinePresetsForProject()
-          : [],
+        linePresets: serializeLinePresetsForProject(),
         // US-097 / ADR 0056: the saved-shape library, same additive+offered
         // contract as linePresets above.
-        shapeStamps: (typeof serializeShapeStampsForProject === 'function')
-          ? serializeShapeStampsForProject()
-          : [],
+        shapeStamps: serializeShapeStampsForProject(),
         sizeSelection: state.sizeSelection ? clone(state.sizeSelection) : null,
         // US-068: MAIN PAGE sheet. Additive — files saved before US-068 have
         // no key and seed a default on open. US-080: the serializer injects
         // the version-sketch bytes, which live outside state.mainPage.
-        mainPage: (typeof mpSerializeForProject === 'function')
-          ? mpSerializeForProject()
-          : (state.mainPage ? clone(state.mainPage) : null),
+        mainPage: mpSerializeForProject(),
         // US-070: Construction annotation page. Additive — files saved
         // before US-070 have no key and seed a default on open.
-        construction: (typeof ccSerializeForProject === 'function')
-          ? ccSerializeForProject()
-          : (state.construction ? clone(state.construction) : null),
+        construction: ccSerializeForProject(),
         // US-072: BOM page. Additive — files saved before US-072 have no
         // key and seed a default (empty BOM) on open.
-        bom: (typeof bmSerializeForProject === 'function')
-          ? bmSerializeForProject()
-          : (state.bom ? clone(state.bom) : null),
+        bom: bmSerializeForProject(),
         // US-079: Preview & Export page-inclusion checkboxes. Additive —
         // files saved before US-079 have no key and default to all enabled.
         preview: state.preview ? clone(state.preview) : null,
@@ -24338,7 +22046,7 @@ const BOM_MATERIAL_LIBRARY = [
   }
 
   function saveProject() {
-    if (typeof hasUnsavedWork === 'function' ? !hasUnsavedWork() : (!state.annotations.length && !state.images.length)) {
+    if (!hasUnsavedWork()) {
       showToast('Nothing to save yet. Add or edit Board/BOM work first.');
       return;
     }
@@ -24349,36 +22057,7 @@ const BOM_MATERIAL_LIBRARY = [
       );
       if (!ok) return;
     }
-
-    // Phase 2: style-evidence capture. Offer to remember TD-edited Auto
-    // lines for the current style. The dialog only opens when there is
-    // something to remember; an empty candidate list saves immediately.
-    const styleForEvidence = currentStyleId();
-    const candidates = (typeof collectStyleEvidenceCandidates === 'function')
-      ? collectStyleEvidenceCandidates(styleForEvidence)
-      : [];
-
-    if (candidates.length === 0) {
-      writeProjectFile();
-      return;
-    }
-
-    openSaveEvidenceDialog({ styleId: styleForEvidence, candidates }).then(choice => {
-      if (!choice || choice.action === 'cancel') return;
-      if (choice.action === 'save-with-evidence') {
-        // Re-read currentStyleId so a style code typed inside the dialog
-        // (which already wrote state.styleId on accept) takes effect on
-        // the commit. Falls back to the original styleId for callers
-        // that don't expose the inline input.
-        const targetStyle = currentStyleId();
-        const written = commitStyleEvidenceCandidates(targetStyle, candidates);
-        if (written > 0) {
-          showToast('Saved ' + written + ' style evidence record'
-            + (written === 1 ? '' : 's') + ' for this style.');
-        }
-      }
-      writeProjectFile();
-    });
+    writeProjectFile();
   }
 
   function writeProjectFile() {
@@ -24389,12 +22068,11 @@ const BOM_MATERIAL_LIBRARY = [
     // The user now holds a canonical copy of this work on disk, so the
     // in-browser autosave is no longer the safety net — clear it so the
     // next launch does not offer a stale restore.
-    if (typeof clearAutosave === 'function') clearAutosave();
+    clearAutosave();
     showToast('Project saved. Reopen it later with Open Project.');
   }
 
   function archiveProjectToLibrary(snapshot) {
-    if (typeof addLibraryEntry !== 'function') return;
     const styleId = (snapshot && snapshot.state && typeof snapshot.state.styleId === 'string')
       ? snapshot.state.styleId.trim()
       : '';
@@ -24487,7 +22165,7 @@ const BOM_MATERIAL_LIBRARY = [
       return;
     }
 
-    if ((typeof hasUnsavedWork === 'function' ? hasUnsavedWork() : (state.annotations.length || state.images.length)) &&
+    if (hasUnsavedWork() &&
         !window.confirm('Open this project? Your current board will be replaced. Save it first if you want to keep it.')) {
       return;
     }
@@ -24572,7 +22250,7 @@ const BOM_MATERIAL_LIBRARY = [
     // Silence autosave while we rewrite state in bulk; any edit after
     // load completes will re-arm it via pushHistoryIfChanged. Wrapped
     // in try/finally so autosave always resumes even on a failed load.
-    if (typeof suspendAutosave === 'function') suspendAutosave();
+    suspendAutosave();
     try {
       const s = project.state;
 
@@ -24696,28 +22374,14 @@ const BOM_MATERIAL_LIBRARY = [
         ? clone(s.sizeSelection) : null;
       // US-080: mpLoadProjectState pulls the sketch bytes out into the module
       // map and leaves state.mainPage byte-free, the way BOM images load.
-      if (typeof mpLoadProjectState === 'function') mpLoadProjectState(s.mainPage);
-      else {
-        state.mainPage = (s.mainPage && typeof s.mainPage === 'object')
-          ? clone(s.mainPage) : null;
-        if (typeof ensureMainPage === 'function') ensureMainPage();
-      }
-      if (typeof renderMainPage === 'function') renderMainPage();
-      if (typeof ccLoadProjectState === 'function') await ccLoadProjectState(s.construction, s.images);
-      else {
-        state.construction = (s.construction && typeof s.construction === 'object')
-          ? clone(s.construction) : null;
-        if (typeof ensureConstruction === 'function') ensureConstruction(s.images);
-      }
-      if (typeof renderConstruction === 'function') renderConstruction();
-      if (typeof bmLoadProjectState === 'function') await bmLoadProjectState(s.bom);
-      else {
-        state.bom = (s.bom && typeof s.bom === 'object') ? clone(s.bom) : null;
-        if (typeof ensureBom === 'function') ensureBom();
-      }
-      if (typeof renderBom === 'function') renderBom();
+      mpLoadProjectState(s.mainPage);
+      renderMainPage();
+      await ccLoadProjectState(s.construction, s.images);
+      renderConstruction();
+      await bmLoadProjectState(s.bom);
+      renderBom();
       state.preview = (s.preview && typeof s.preview === 'object') ? clone(s.preview) : null;
-      if (typeof ensurePreviewPage === 'function') ensurePreviewPage();
+      ensurePreviewPage();
 
       // Source-bearing projects open measure-ready in Manual + Sketch Focus.
       // Legacy projects omit this additive field and retain POM Focus.
@@ -24736,9 +22400,9 @@ const BOM_MATERIAL_LIBRARY = [
       requestRender();
       // Loaded state supersedes anything in the autosave slot; drop the
       // stale copy so a next-launch restore prompt does not resurface it.
-      if (typeof clearAutosave === 'function') clearAutosave();
+      clearAutosave();
     } finally {
-      if (typeof resumeAutosave === 'function') resumeAutosave();
+      resumeAutosave();
     }
   }
 
@@ -24808,8 +22472,8 @@ const BOM_MATERIAL_LIBRARY = [
     // US-092: a board holding only text notes is still work worth saving.
     if (state.notes && state.notes.length > 0) return true;
     if (state.graphics && state.graphics.length > 0) return true;
-    if (typeof hasMeaningfulConstructionWork === 'function' && hasMeaningfulConstructionWork()) return true;
-    if (typeof hasMeaningfulBomWork === 'function' && hasMeaningfulBomWork()) return true;
+    if (hasMeaningfulConstructionWork()) return true;
+    if (hasMeaningfulBomWork()) return true;
     if (state.autoMode && state.autoMode.draftAnnotations && state.autoMode.draftAnnotations.length > 0) return true;
     return false;
   }
@@ -24969,7 +22633,7 @@ const BOM_MATERIAL_LIBRARY = [
   // notification — losing it silently would defeat the point).
   function maybeOfferAutosaveRestore() {
     if (typeof document === 'undefined') return;
-    if (hasUnsavedWork()) return; // The URL / demo loader already put work on the board — do not clobber.
+    if (hasUnsavedWork()) return; // Work is already on the board — do not clobber.
     const record = readAutosave();
     if (!record) return;
     const s = record.snapshot && record.snapshot.state;
@@ -24979,16 +22643,14 @@ const BOM_MATERIAL_LIBRARY = [
     // destructive, not merely quiet: a false here falls through to clearAutosave()
     // and deletes the record. Teaching only hasUnsavedWork about notes would have
     // meant a notes-only board autosaves correctly and is then wiped at next boot.
+    // A construction or BOM section counts as content outright: its row edits can
+    // only be judged against the live seed (hasMeaningful*Work), and the record
+    // was written only because hasUnsavedWork() was true when it was saved.
     const hasContent = s && ((Array.isArray(s.annotations) && s.annotations.length)
       || (Array.isArray(s.images) && s.images.length)
       || (Array.isArray(s.notes) && s.notes.length)
-      || (s.construction && ((s.construction.callouts || []).length
-        || (s.construction.images && ['solid', 'lace'].some(sheet => ['outer', 'inner'].some(view =>
-          ((((s.construction.images[sheet] || {})[view]) || []).length))))
-        || (typeof hasMeaningfulConstructionWork === 'function' && s.construction)))
-      || (s.bom && ((s.bom.callouts || []).length
-        || (s.bom.images && ((s.bom.images.solid || []).length || (s.bom.images.lace || []).length))
-        || (typeof hasMeaningfulBomWork === 'function' && s.bom))));
+      || s.construction
+      || s.bom);
     if (!hasContent) { clearAutosave(); return; }
     showAutosaveRestoreBanner(record);
   }
@@ -25063,8 +22725,7 @@ const BOM_MATERIAL_LIBRARY = [
 // Every call to writeProjectFile() appends an entry here (in addition to the
 // .json file the browser downloads), so the TD can review and reopen past
 // styles inside the tool itself. The append-only design keeps a per-style
-// edit history; future learning passes can iterate the raw entries via
-// window.__braProjectLibrary as input data.
+// edit history, readable as raw entries via window.__braProjectLibrary.
 //
 // Storage: IndexedDB
 //   db    = 'bra-sketch-project-library'
@@ -26000,7 +23661,7 @@ const BOM_MATERIAL_LIBRARY = [
           am.detection.auxViews = am.detection.auxViews.filter(v => v.sourceImageId !== deletedId);
         }
       }
-      if (typeof ensureAutoModeStatus === 'function') ensureAutoModeStatus();
+      ensureAutoModeStatus();
     }
     return true;
   }
@@ -26027,15 +23688,14 @@ const BOM_MATERIAL_LIBRARY = [
       const anchorAnn = anchor ? getAnnotationById(state.selection.id) : null;
       if (anchor && anchorAnn && anchorAnn.type === 'curved'
           && Array.isArray(anchorAnn.points) && anchorAnn.points[anchor.index]) {
-        if (typeof seamPathNodeOwnsTreatmentBreak === 'function'
-            && seamPathNodeOwnsTreatmentBreak(anchorAnn, anchor.index)) {
+        if (seamPathNodeOwnsTreatmentBreak(anchorAnn, anchor.index)) {
           showToast('This point owns a Treatment Break. Use Remove Treatment Break first; the path point will be kept.');
           return;
         }
         deleteCurveAnchorAt(anchorAnn, anchor.index);
         state.selection.part = null;
         if (!anchorAnn.labelManual) anchorAnn.label = computeDefaultLabelPosition(anchorAnn);
-        if (isTDReviewDraft(anchorAnn)) markDraftTouchedByTD(anchorAnn);
+        markDraftTouchedByTD(anchorAnn);
         pushHistoryIfChanged();
         updateUI();
         requestRender();
@@ -26058,20 +23718,11 @@ const BOM_MATERIAL_LIBRARY = [
       if (!Array.isArray(state.deletedPomKeys)) state.deletedPomKeys = [];
       for (const ann of targets) {
         // US-096 / ADR 0055 code review, 2026-08-23: a construction line owns no
-        // POM identity, so deleting one must say NOTHING about a POM — neither
-        // in the exported spec nor to learning.
-        //
-        // This `continue` sits above markDeletedAutoAnnotationForEvidence on
-        // purpose. It was originally placed below it, which left the ABSENCE
-        // half of learning capture open: erasing a restyled auto line still
-        // pushed a snapshot into state.deletedAutoAnnotations, and Save
-        // Evidence turned that into an "absent-confirmed" record teaching the
-        // style that it has no such POM — from a line the TD had already
-        // declared to be construction, not measurement.
+        // POM identity, so deleting one must say NOTHING about a POM in the
+        // exported spec.
         if (!isMeasurementAnnotation(ann)) continue;
         // POM numbers are measurement identities, not list positions. Deleting
         // POM 7 must leave a gap instead of turning POM 8 into POM 7.
-        if (typeof markDeletedAutoAnnotationForEvidence === 'function') markDeletedAutoAnnotationForEvidence(ann);
         // US-047: deleting a POM line excludes that POM from the exported spec,
         // exactly like the review × Hide toggle (TD: "delete = hide"). The id is
         // gone after this, so remember the POM label; the export drops the row
@@ -26081,7 +23732,7 @@ const BOM_MATERIAL_LIBRARY = [
       }
     } else if (state.selection.kind === 'note') {
       // US-092: a note is drawing content, not a measurement. Nothing to record
-      // in deletedPomKeys, no evidence entry, no exported row to keep in sync —
+      // in deletedPomKeys, no exported row to keep in sync —
       // the whole point of keeping notes out of state.annotations.
       const before = (state.notes || []).length;
       state.notes = (state.notes || []).filter(note => note.id !== state.selection.id);
@@ -26089,7 +23740,7 @@ const BOM_MATERIAL_LIBRARY = [
     } else if (state.selection.kind === 'notch') {
       // ADR-0071: same reasoning as the note branch above — a notch is a
       // pattern-construction mark, not a measurement, so it needs no
-      // deletedPomKeys/evidence bookkeeping either.
+      // deletedPomKeys bookkeeping either.
       const before = (state.notches || []).length;
       state.notches = (state.notches || []).filter(notch => notch.id !== state.selection.id);
       if (state.notches.length === before) return;
@@ -26145,7 +23796,6 @@ const BOM_MATERIAL_LIBRARY = [
     // A line's notches go with it (ADR 0071 amendment).
     removeNotchesOwnedBy(new Set(state.annotations.map(a => a.id)));
     state.annotations = [];
-    state.deletedAutoAnnotations = [];
     state.deletedPomKeys = [];
     state.nextSequence = 1;
     if (state.selection.kind === 'annotation') {
@@ -27541,7 +25191,7 @@ function setSelection(kind, id) {
         if (!a) continue;
         restoreAnnotationMoveGeometry(a, source);
         moveAnnotation(a, aligned.dx, aligned.dy);
-        if (isTDReviewDraft(a)) markDraftTouchedByTD(a);
+        markDraftTouchedByTD(a);
       }
       state.smartAlignGuides = aligned.guides;
       interaction.smartAlignGuides = aligned.guides;
@@ -27636,7 +25286,7 @@ function setSelection(kind, id) {
         ann.label.x += dx;
         ann.label.y += dy;
         ann.labelManual = true;
-        if (isAutoDraft(ann) && state.appMode === 'auto') markDraftTouchedByTD(ann);
+        if (state.appMode === 'auto') markDraftTouchedByTD(ann);
         interaction.changed = true;
         interaction.prevWorld = world;
         requestRender();
@@ -27658,7 +25308,7 @@ function setSelection(kind, id) {
       // OTHER lines cross (see computeSmartIntersectionSnapForHandle).
       const snap = computeSmartIntersectionSnapForHandle(ann, interaction.part, target, e.altKey);
       dragHandle(ann, interaction.part, snap.point, interaction.prevWorld, e.altKey);
-      if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+      markDraftTouchedByTD(ann);
       interaction.changed = true;
       interaction.prevWorld = snap.point;
       state.smartAlignGuides = snap.guide ? [snap.guide] : [];
@@ -27796,24 +25446,14 @@ function setSelection(kind, id) {
       if (interaction.type === 'drag-anchor') {
         const anchor = getAnchorById(interaction.id);
         // U2: pull the released anchor onto the nearest sketch ink, unless
-        // the TD holds ⌥ to place it freely. Snap BEFORE the residual
-        // capture below so the learning loop sees the final position.
+        // the TD holds ⌥ to place it freely.
         if (anchor && !(e && e.altKey)) {
           const snapped = snapAnchorToInk(anchor);
           if (snapped && moveAnchorBy(anchor, snapped.x - anchor.x, snapped.y - anchor.y)) {
             maybeToastSnapHint();
           }
         }
-        // Learning-loop capture: log the (origin → final) anchor residual
-        // exactly once per drag commit. We do this here, not on every
-        // mousemove, so micro-jitter and aborted drags never reach the
-        // bucket. recordAnchorResidual self-filters sub-1px deltas.
-        // Gated on interaction.changed, NOT on the snapshot fingerprint:
-        // anchors are not part of history snapshots, so a pure anchor drag
-        // never changes the fingerprint and the old gate silently dropped
-        // every residual and anchor_dragged event.
-        //
-        // The panel is also refreshed HERE, unconditionally. moveAnchorBy
+        // The panel is refreshed HERE, unconditionally. moveAnchorBy
         // re-syncs the drafts (anchor-drag-sync.js) and that can drop a draft's
         // tdApproved and change its drawability / confidence — all of which the
         // spec panel and the Apply button render, and none of which used to
@@ -27825,39 +25465,11 @@ function setSelection(kind, id) {
         // first place. Once per commit, never per mousemove — updateUI rebuilds
         // the whole spec table, against a re-sync deliberately kept at
         // 0.05-0.08 ms.
-        if (interaction.learnOrigin) {
-          if (anchor && anchor.kind === interaction.learnOrigin.kind) {
-            recordAnchorResidual(
-              anchor.kind,
-              anchor.x - interaction.learnOrigin.x,
-              anchor.y - interaction.learnOrigin.y,
-              anchor
-            );
-            recordAutoTelemetryEvent('anchor_dragged', {
-              sourceImageId: anchor.sourceImageId,
-              anchor_id: anchor.id,
-              anchor_kind: anchor.kind,
-            });
-          }
-        }
+        updateUI();
       }
-      if (interaction.type === 'drag-anchor') updateUI();
       const before = interaction.beforeFingerprint;
       const after = snapshotFingerprint(makeSnapshot());
-      if (before !== after) {
-        const changedAnn = interaction.id != null ? getAnnotationById(interaction.id) : null;
-        pushHistoryIfChanged();
-        if (state.appMode === 'manual'
-            && changedAnn
-            && isAutoDraft(changedAnn)
-            && (interaction.type === 'drag-annotation' || interaction.type === 'drag-handle')) {
-          const evalResult = evaluateManualPomSample(changedAnn, { allowAuto: true });
-          if (evalResult.status === 'recorded') {
-            showToast('POM ' + evalResult.pom + ' learning sample saved from TD edit.');
-            updateUI();
-          }
-        }
-      }
+      if (before !== after) pushHistoryIfChanged();
     }
 
     state.interaction = null;
@@ -28226,20 +25838,10 @@ function resizeImagesFromCorner(interaction, world) {
     } else if (part === 'end') {
       ann.end = clonePoint(world);
       moveBy(ann.control2);
-    } else if (part === 'midPoint' && ann.type === 'curved') {
-      // The middle is a real anchor now: move it and BOTH its handles together
-      // so the whole joint slides and the two segments follow.
-      ann.midPoint = clonePoint(world);
-      moveBy(ann.midHandleIn);
-      moveBy(ann.midHandleOut);
     } else if (part === 'control1' && ann.type === 'curved' && ann.control1) {
       ann.control1 = clonePoint(world); // start handle — bends segment 1 only
     } else if (part === 'control2' && ann.type === 'curved' && ann.control2) {
       ann.control2 = clonePoint(world); // end handle — bends segment 2 only
-    } else if (part === 'midHandleIn' && ann.type === 'curved' && ann.midHandleIn) {
-      ann.midHandleIn = clonePoint(world); // middle handle toward the start
-    } else if (part === 'midHandleOut' && ann.type === 'curved' && ann.midHandleOut) {
-      ann.midHandleOut = clonePoint(world); // middle handle toward the end
     }
 
     if (!ann.labelManual) {
@@ -28505,7 +26107,7 @@ function onWheel(e) {
     }
     state.selection.part = 'point' + index + '.point';
     if (!ann.labelManual) ann.label = computeDefaultLabelPosition(ann);
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     pushHistoryIfChanged();
     updateUI();
     requestRender();
@@ -28781,16 +26383,14 @@ function onWheel(e) {
 
   // Ring order: the main points first (the common Tab targets), then the
   // bend handles (US-030) in geometric order start-side → end-side. Only
-  // parts the annotation actually has are included, so single-segment
-  // curves and straight lines get shorter rings automatically.
+  // parts the annotation actually has are included, so straight lines get a
+  // shorter ring automatically. (A legacy two-segment curve's midPoint never
+  // reaches the board — ensureCurveControls collapses it on every entry path.)
   function lineNudgeParts(ann) {
     const parts = [null, 'start'];
     if (ann.type === 'curved') {
-      if (ann.midPoint) parts.push('midPoint');
       parts.push('end');
       if (ann.control1) parts.push('control1');
-      if (ann.midHandleIn) parts.push('midHandleIn');
-      if (ann.midHandleOut) parts.push('midHandleOut');
       if (ann.control2) parts.push('control2');
       // US-093: interior anchors the TD added, appended after the fixed
       // fields so a curve with none cycles exactly as it always has.
@@ -28805,12 +26405,9 @@ function onWheel(e) {
 
   function nudgePartLabel(part) {
     if (part === 'start') return 'start point';
-    if (part === 'midPoint') return 'mid point';
     if (part === 'end') return 'end point';
     if (part === 'control1') return 'start bend handle';
     if (part === 'control2') return 'end bend handle';
-    if (part === 'midHandleIn') return 'mid bend handle (start side)';
-    if (part === 'midHandleOut') return 'mid bend handle (end side)';
     const anchor = parseCurveAnchorPart(part);
     if (anchor) {
       const n = anchor.index + 1;
@@ -28861,15 +26458,15 @@ function onWheel(e) {
     const point = part ? getAnnPartPoint(ann, part) : null;
     if (part && point) {
       // Route through dragHandle so curve semantics (endpoint carrying its
-      // control, mid point carrying both mid handles, an interior anchor's
-      // handles mirroring per US-093) match a mouse drag. Keyboard nudging
+      // control, an interior anchor's handles mirroring per US-093) match a
+      // mouse drag. Keyboard nudging
       // has no Alt-modifier gesture defined, so a handle always mirrors.
       const prev = clonePoint(point);
       dragHandle(ann, part, { x: prev.x + dx, y: prev.y + dy }, prev, false);
     } else {
       moveAnnotation(ann, dx, dy);
     }
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     if (lineNudgeSession.timer) clearTimeout(lineNudgeSession.timer);
     lineNudgeSession.timer = setTimeout(flushLineNudgeSession, LINE_NUDGE_COMMIT_MS);
     refreshMeasuredValueForAnnotation(ann.id); // US-028: live Value cell
@@ -28888,26 +26485,21 @@ function onWheel(e) {
     lineNudgeSession = null;
     if (!session) return;
     if (session.timer) clearTimeout(session.timer);
-    const ann = getAnnotationById(session.annId);
     pushHistoryIfChanged();
     requestRender(); // drop the on-canvas readout now that the burst committed
-    // Same learning capture as a committed mouse drag on an applied draft.
-    if (state.appMode === 'manual' && ann && isAutoDraft(ann)) {
-      const evalResult = evaluateManualPomSample(ann, { allowAuto: true });
-      if (evalResult.status === 'recorded') {
-        showToast('POM ' + evalResult.pom + ' learning sample saved from TD edit.');
-        updateUI();
-      }
-    }
   }
 
   // ---- src/commands/keyboard-shortcuts.js ----
 // Manual-mode keyboard shortcut router. Source part for app.js.
 // Run `npm run build` after editing.
 //
-// onKeyDown is the flat if-chain for every board shortcut (undo/redo,
-// save/open, arrow nudges, tool picks, board clears, exports, Escape); it
-// calls into selection.js, canvas-tools.js, line-nudge.js and the auto/
+// Stable single-key and chord shortcuts (tool picks, board clears, exports,
+// Auto steps, page navigation) are declared once in command-registry.js and
+// dispatched first. onKeyDown keeps the rest: continuous gestures (arrow
+// nudges, Tab point cycling, Space pan, eraser brush stepping, Escape) and the
+// few chords whose behaviour here still differs from their registry command
+// (undo/redo, save/open, select-all, copy, reflect, fit, Add Image, lock-all).
+// It calls into selection.js, canvas-tools.js, line-nudge.js and the auto/
 // render/ clusters. onKeyUp releases continuous Space/Shift modifiers.
 
   function onKeyDown(e) {
@@ -29024,26 +26616,13 @@ function onWheel(e) {
     }
 
     // US-027: Tab picks which point the arrows move — whole line → start →
-    // (mid point on curves) → end. Shift+Tab cycles backwards. Only fires
-    // with a line selected, so field-to-field tabbing keeps working.
+    // end → bend handles. Shift+Tab cycles backwards. Only fires with a line
+    // selected, so field-to-field tabbing keeps working.
     if (!isMeta && e.key === 'Tab' && state.appMode !== 'auto' && state.selection.kind === 'annotation') {
       const ann = getSelectedAnnotation();
       if (ann) {
         e.preventDefault();
         cycleNudgePart(ann, e.shiftKey ? -1 : 1);
-        return;
-      }
-    }
-
-    // Auto-Mode step shortcuts mirror the "1 Detect · 2 Generate · 3 Review"
-    // flow chips: 1 = Detect, 2 = Generate Drafts, 3 = Apply Lines. Clicking the
-    // button (rather than calling the handler) respects its disabled + hidden
-    // (recovery-only) state, so a step can't fire before it's available.
-    if (!isMeta && state.appMode === 'auto' && (key === '1' || key === '2' || key === '3')) {
-      const btn = key === '1' ? el.autoDetectBtn : key === '2' ? el.autoGenerateBtn : el.autoApplyBtn;
-      if (btn && !btn.disabled && btn.offsetParent !== null) {
-        e.preventDefault();
-        btn.click();
         return;
       }
     }
@@ -29105,30 +26684,10 @@ function onWheel(e) {
       return;
     }
 
-    if (!isMeta && key === 's') {
-      e.preventDefault();
-      setTool('select');
-      return;
-    }
-
-    // H shows/hides the Measurements side panel (same as the toolbar button).
-    if (!isMeta && key === 'h') {
-      e.preventDefault();
-      toggleSpecPanel();
-      return;
-    }
-
     // A opens the Add Image file picker (same as the toolbar button).
     if (!isMeta && key === 'a') {
       e.preventDefault();
       el.imageFileInput.click();
-      return;
-    }
-
-    // G opens the Grading dialog (same as the toolbar button).
-    if (!isMeta && key === 'g') {
-      e.preventDefault();
-      openGradingDialog();
       return;
     }
 
@@ -29137,83 +26696,6 @@ function onWheel(e) {
     if (!isMeta && key === 'l') {
       e.preventDefault();
       toggleAllImagesLock();
-      return;
-    }
-
-    // Board-level clears — both work in Auto Mode (this is an auto-only
-    // build) and are one history step, so Undo restores what they remove.
-    //   R — reset the whole working board (photo + lines + drafts). Same as
-    //       the Reset Board button; it keeps its own confirm dialog.
-    //   D — delete every POM line (applied + drafts) but keep the photo, so
-    //       the TD can re-Generate on the same sketch.
-    if (!isMeta && key === 'r') {
-      e.preventDefault();
-      resetWorkingBoard();
-      return;
-    }
-    if (!isMeta && key === 'd') {
-      e.preventDefault();
-      clearAllLinesKeepImage();
-      return;
-    }
-
-    // In Auto Mode, manual creation/eraser shortcuts must not steal the
-    // tool away from select. The project annotations are locked.
-    if (state.appMode !== 'auto') {
-      if (!isMeta && key === '0') {
-        e.preventDefault();
-        setTool('straight');
-        return;
-      }
-
-      if (!isMeta && (key === 'b' || key === 'c')) {
-        e.preventDefault();
-        setTool('curved');
-        return;
-      }
-
-      // Eraser moved E → X (TD request 2026-07-10: E now exports Excel).
-      if (!isMeta && key === 'x' && state.images.length > 0) {
-        e.preventDefault();
-        setTool('eraser');
-        return;
-      }
-
-      // US-092: T = Text note. No image requirement, unlike the eraser — a
-      // note may be a title or a general remark on an empty board.
-      if (!isMeta && key === 't') {
-        e.preventDefault();
-        setTool('text');
-        return;
-      }
-    }
-
-    // E exports the Excel measurement spec (same as the toolbar button;
-    // opens the size picker first). Manual-only, matching the button's
-    // manual-only class and the Cmd/Ctrl+Shift+C copy-image precedent.
-    if (!isMeta && key === 'e' && state.appMode !== 'auto') {
-      e.preventDefault();
-      void exportSpecXlsx();
-      return;
-    }
-
-    // P exports the PDF, I imports a PPTX — mirror the manual-only toolbar
-    // buttons (parity with E = Export Excel). Click the button so behavior
-    // (dialogs, disabled state) matches exactly.
-    if (!isMeta && key === 'p' && state.appMode !== 'auto') {
-      e.preventDefault();
-      el.exportPdfBtn.click();
-      return;
-    }
-    if (!isMeta && key === 'i' && state.appMode !== 'auto') {
-      e.preventDefault();
-      el.importPptxBtn.click();
-      return;
-    }
-
-    if (!isMeta && key === 'n') {
-      e.preventDefault();
-      toggleLabels();
       return;
     }
 
@@ -29501,7 +26983,7 @@ function onWheel(e) {
 //     control, and the zigzag/cover/bartack stitch styles — surface only in
 //     Sketch Focus.
 //   - `.pom-mode-only` elements — the "More" toolbar menu (Grading, Set
-//     Scale, Size Run, Learning, ...) — surface only in POM Focus.
+//     Scale, Size Run, ...) — surface only in POM Focus.
 //   - Smart Align (computeSmartAlignment in smart-align.js) is a hard off in
 //     POM Focus regardless of its own on/off preference, and honors that
 //     preference again in Sketch Focus.
@@ -29588,8 +27070,7 @@ function onWheel(e) {
       // SAME cleanup a TD gets from pressing Escape or picking another tool
       // runs here too: it already clears activeStampId (US-097 code review),
       // drawSession, eraseSession, and the eraser body class.
-      if ((state.tool === 'stamp' || state.tool === 'break-treatment')
-          && typeof setTool === 'function') setTool('select');
+      if (state.tool === 'stamp' || state.tool === 'break-treatment') setTool('select');
       // Defensive: cancel an in-progress placement drag outright, in the
       // (practically unreachable via mouse, but keyboard/Command-Palette
       // dispatch makes it not impossible) case one was mid-gesture.
@@ -30127,7 +27608,7 @@ function onWheel(e) {
   function commitLinePresets(list) {
     linePresetStore = normalizeLinePresetList(list);
     lastLinePresetWritePersisted = saveLinePresets();
-    if (typeof updateUI === 'function') updateUI();
+    updateUI();
     return lastLinePresetWritePersisted;
   }
 
@@ -30137,7 +27618,7 @@ function onWheel(e) {
   // nothing is selected — the same fallback the toolbar chips use, so "Save as
   // preset" always has something honest to save.
   function currentLineLook() {
-    const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    const ann = getSelectedAnnotation();
     if (ann) {
       return {
         style: getLineStyle(ann),
@@ -30164,8 +27645,8 @@ function onWheel(e) {
   }
 
   function currentLineTreatment() {
-    const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
-    const selectedRun = typeof seamPathSelectedRun === 'function' ? seamPathSelectedRun(ann) : null;
+    const ann = getSelectedAnnotation();
+    const selectedRun = seamPathSelectedRun(ann);
     if (selectedRun) return normalizeLineTreatment(selectedRun.treatment);
     if (ann && hasLineTreatment(ann)) return normalizeLineTreatment(ann.lineTreatment);
     const look = currentLineLook();
@@ -30212,7 +27693,7 @@ function onWheel(e) {
     if (!treatment || !anns.length) return 0;
     const before = snapshotFingerprint(makeSnapshot());
     for (const ann of anns) {
-      if (ann.seamPath && typeof seamPathApplyTreatmentToAllRuns === 'function') {
+      if (ann.seamPath) {
         seamPathApplyTreatmentToAllRuns(ann, treatment);
       } else {
         ann.lineTreatment = clone(treatment);
@@ -30233,8 +27714,8 @@ function onWheel(e) {
   }
 
   function customizeSelectedLineTreatment(recipe) {
-    const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
-    if (ann && typeof seamPathSelectedRun === 'function' && seamPathSelectedRun(ann)) {
+    const ann = getSelectedAnnotation();
+    if (ann && seamPathSelectedRun(ann)) {
       return applyTreatmentRecipeToSelectedRun(recipe) ? 1 : 0;
     }
     return applyTreatmentRecipeToAnnotations(recipe, ann ? [ann] : []);
@@ -30289,18 +27770,17 @@ function onWheel(e) {
       lineWidth: preset.lineWidth,
       arrowType: preset.arrowType,
     };
-    const selected = (typeof getSelectedAnnotationsForEdit === 'function')
-      ? getSelectedAnnotationsForEdit() : [];
+    const selected = getSelectedAnnotationsForEdit();
     if (selected.length) {
       if (preset.kind === 'treatment' && preset.treatment) {
-        const selectedRun = selected.length === 1 && typeof seamPathSelectedRun === 'function'
+        const selectedRun = selected.length === 1
           ? seamPathSelectedRun(selected[0]) : null;
         if (selectedRun) applyTreatmentRecipeToSelectedRun(preset.treatment);
         else applyTreatmentRecipeToAnnotations(preset.treatment, selected, preset);
       } else {
         applyToSelectedAnnotations({ ...settings, lineTreatment: null });
       }
-      const appliedToRun = selected.length === 1 && typeof seamPathSelectedRun === 'function'
+      const appliedToRun = selected.length === 1
         && !!seamPathSelectedRun(selected[0]);
       showToast(appliedToRun
         ? `${preset.name} applied to the selected Treatment Run.`
@@ -30413,7 +27893,6 @@ function onWheel(e) {
 // Source part for app.js. Run `npm run build` after editing.
 
   function seamPathSchemaVersion() { return 'seam-path/1'; }
-  function seamPathTraceVersion() { return 'normalized-detection-trace/1'; }
 
   function seamPathStableValue(value) {
     if (Array.isArray(value)) return value.map(seamPathStableValue);
@@ -30437,28 +27916,8 @@ function onWheel(e) {
     return prefix + '-' + (hash >>> 0).toString(16).padStart(8, '0');
   }
 
-  function seamPathFinitePoint(point) {
-    return !!point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y));
-  }
-
   function seamPathCleanPoint(point) {
     return { x: Number(point.x), y: Number(point.y) };
-  }
-
-  function seamPathNormalizedTrace(raw, sourceImageId, sourceSha256) {
-    if (!raw || raw.version !== seamPathTraceVersion() || !Array.isArray(raw.points)) return null;
-    const points = raw.points.filter(seamPathFinitePoint).map(point => ({
-      x: clamp(Number(point.x), 0, 1),
-      y: clamp(Number(point.y), 0, 1),
-    }));
-    if (points.length < 2) return null;
-    return {
-      version: seamPathTraceVersion(),
-      coordinateSpace: 'source-normalized',
-      sourceImageId: raw.sourceImageId != null ? raw.sourceImageId : sourceImageId,
-      sourceSha256: String(raw.sourceSha256 || sourceSha256 || ''),
-      points,
-    };
   }
 
   function seamPathNodeIds(ann) {
@@ -30567,14 +28026,7 @@ function onWheel(e) {
       ann.tdApproved = false;
       ann.tdApprovalRequired = true;
       ann.approvedAt = null;
-      if (isTDReviewDraft(ann)) ann.tdEdited = true;
-      if (geometryChanged && ann.seamPath.fidelityReceipt) {
-        ann.seamPath.fidelityReceipt = {
-          ...ann.seamPath.fidelityReceipt,
-          status: 'review',
-          invalidatedReason: 'td_geometry_changed',
-        };
-      }
+      markDraftTouchedByTD(ann);
     }
     return { geometryChanged, technicalChanged, geometryFingerprint, technicalContentFingerprint };
   }
@@ -30675,11 +28127,6 @@ function onWheel(e) {
       nextNodeSequence: Number.isInteger(source.nextNodeSequence) ? source.nextNodeSequence : 1,
       nextRunSequence: Number.isInteger(source.nextRunSequence) ? source.nextRunSequence : 1,
       treatmentRuns: Array.isArray(source.treatmentRuns) ? clone(source.treatmentRuns) : [],
-      detectionTrace: seamPathNormalizedTrace(source.detectionTrace,
-        ann.sourceImageId, ann.sourceSha256),
-      endpointTopology: source.endpointTopology ? clone(source.endpointTopology) : null,
-      pathCompleteness: source.pathCompleteness ? clone(source.pathCompleteness) : null,
-      fidelityReceipt: source.fidelityReceipt ? clone(source.fidelityReceipt) : null,
       geometryFingerprint: source.geometryFingerprint || null,
       technicalContentFingerprint: source.technicalContentFingerprint || null,
       validationStatus: source.validationStatus || 'pass',
@@ -30724,10 +28171,6 @@ function onWheel(e) {
         nextNodeSequence: 1,
         nextRunSequence: 1,
         treatmentRuns: [],
-        detectionTrace: options.detectionTrace || null,
-        endpointTopology: options.endpointTopology || null,
-        pathCompleteness: options.pathCompleteness || null,
-        fidelityReceipt: options.fidelityReceipt || null,
         geometryFingerprint: null,
         technicalContentFingerprint: null,
       };
@@ -30817,7 +28260,7 @@ function onWheel(e) {
     seamPathRefreshFingerprints(ann, true);
     state.selection.part = seamPathTreatmentPart(following.id);
     if (!ann.labelManual) ann.label = computeDefaultLabelPosition(ann);
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     return { status: 'inserted', nodeId, runId: following.id };
   }
 
@@ -30932,7 +28375,7 @@ function onWheel(e) {
     seamPathRefreshFingerprints(ann, true);
     state.selection.part = seamPathTreatmentPart(selected.id);
     if (!ann.labelManual) ann.label = computeDefaultLabelPosition(ann);
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     return { status: 'inserted', nodeIds, runId: selected.id };
   }
 
@@ -31048,7 +28491,7 @@ function onWheel(e) {
     run.treatment = clone(treatment);
     if (ann.seamPath.treatmentRuns.length === 1) ann.lineTreatment = clone(treatment);
     seamPathRefreshFingerprints(ann, true);
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     return true;
   }
 
@@ -31066,7 +28509,7 @@ function onWheel(e) {
     if (!changed) return false;
     ann.lineTreatment = clone(treatment);
     seamPathRefreshFingerprints(ann, true);
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     return true;
   }
 
@@ -31137,7 +28580,7 @@ function onWheel(e) {
     state.selection.part = seamPathTreatmentPart(left.id);
     ann.lineTreatment = clone(ann.seamPath.treatmentRuns[0].treatment);
     seamPathRefreshFingerprints(ann, true);
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     pushHistoryIfChanged();
     updateUI();
     requestRender();
@@ -31289,10 +28732,6 @@ function onWheel(e) {
       nextNodeSequence: 1,
       nextRunSequence: 1,
       treatmentRuns: [],
-      detectionTrace: null,
-      endpointTopology: null,
-      pathCompleteness: null,
-      fidelityReceipt: null,
       geometryFingerprint: null,
       technicalContentFingerprint: null,
     };
@@ -31530,7 +28969,7 @@ function onWheel(e) {
       savedSize: { width: bounds.width, height: bounds.height },
       members,
       // Keep the first member mirrored at top level so v1 exports and the
-      // existing one-path test/debug hooks remain readable during migration.
+      // existing one-path test and debug hooks remain readable during migration.
       ...clone(first),
       // 0 means "no preferred aspect": one of the axes had no extent, so any
       // box height is as faithful as any other.
@@ -31653,7 +29092,7 @@ function onWheel(e) {
     shapeStampStore = normalizeShapeStampList(list);
     lastShapeStampWritePersisted = writeLibraryStore(
       shapeStampsStorageKey(), 'stamps', shapeStampsFormatVersion(), shapeStampStore);
-    if (typeof updateUI === 'function') updateUI();
+    updateUI();
     return lastShapeStampWritePersisted;
   }
 
@@ -31667,9 +29106,9 @@ function onWheel(e) {
   // existing Template selects all its members, so saving a placed group again
   // is the same operation as saving a hand-built back wing.
   function shapeStampSaveTargets() {
-    const selected = (typeof getSelectedAnnotations === 'function') ? getSelectedAnnotations() : [];
+    const selected = getSelectedAnnotations();
     if (selected.length) return selected;
-    const primary = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    const primary = getSelectedAnnotation();
     return primary ? [primary] : [];
   }
 
@@ -31777,7 +29216,7 @@ function onWheel(e) {
     // they just deleted the thing they were about to place.
     if (state.activeStampId === id) {
       setActiveShapeStamp(null);
-      if (state.tool === 'stamp' && typeof setTool === 'function') setTool('select');
+      if (state.tool === 'stamp') setTool('select');
     }
     commitShapeStamps(list);
     return true;
@@ -31832,7 +29271,7 @@ function onWheel(e) {
       const { width, height } = stamp.savedSize;
       return { x: world.x - width / 2, y: world.y - height / 2, width, height };
     }
-    const image = (typeof bgTopImageAt === 'function') ? bgTopImageAt(world) : null;
+    const image = bgTopImageAt(world);
     const maxWidth = image && image.width ? image.width * 0.3 : 200;
     // Code review, 2026-08-23: bound BOTH axes. Sizing only the width meant a
     // tall stamp (aspect 4, say) was placed four times the sketch's own
@@ -31921,8 +29360,7 @@ function onWheel(e) {
     };
     if (curved) ensureCurveControls(ann);
     ann.label = computeDefaultLabelPosition(ann);
-    const owner = (typeof bgTopImageAt === 'function')
-      ? bgTopImageAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }) : null;
+    const owner = bgTopImageAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
     if (owner) ann.sourceImageId = owner.id;
     return ann;
   }
@@ -32004,10 +29442,10 @@ function onWheel(e) {
   // without a second render after setActiveShapeStamp, the toolbar/status
   // bar would keep showing the previously armed (or no) stamp.
   function armShapeStampForPlacement(id, opts) {
-    if (typeof setTool === 'function') setTool('stamp');
+    setTool('stamp');
     setActiveShapeStamp(id);
     if (opts && opts.mirrored) setActiveStampMirrored(true);
-    if (typeof updateUI === 'function') updateUI();
+    updateUI();
   }
 
   function getActiveShapeStamp() {
@@ -32093,13 +29531,12 @@ function onWheel(e) {
   // ---- src/dxf/dxf-import.js ----
 // US-104: DXF import — the BOARD layer. The pure parse layer (tokenizer,
 // section scan, converters, INSERT resolution, decoding, marks, legacy
-// grouping, placement transform, parseDxfDocument) moved to
-// src/dxf/parse/dxf-parse.js in US-124 Phase 5 so dxf-worker.js can run it
-// off the main thread; this part keeps everything that mutates state:
-// annotation building, the one-shot board mutation (importDxfText /
-// dxfPlaceParsedDocument), the measure-session hand-off, the toast, and the
-// pre-placement picker + worker hand-offs. Source part for app.js. Run
-// `npm run build` after editing.
+// grouping, placement transform, dxfParseDocumentAndModel) lives in
+// src/dxf/parse/ (split out in US-124 Phase 5; `npm run check` keeps it free
+// of Board state); this part keeps everything that mutates state: annotation
+// building, the one-shot board mutation (importDxfText /
+// dxfPlaceParsedDocument), the measure-session hand-off and the toast.
+// Source part for app.js. Run `npm run build` after editing.
 
   // ---- Board mutation (real annotations, real state) -------------------------
 
@@ -32148,7 +29585,7 @@ function onWheel(e) {
   }
 
   // (dxfFormatCount lives in the pure parse layer, src/dxf/parse/dxf-parse.js —
-  // parseDxfDocument's total-cap message uses it too, in the worker.)
+  // dxfParseDocumentAndModel's total-cap message uses it too.)
 
   // Phase 3: the skip summary names what was skipped (quality-curve twins,
   // exact duplicates, points by ASTM class, annotation text) instead of
@@ -32175,92 +29612,36 @@ function onWheel(e) {
     return parts.length ? 'Skipped: ' + parts.join(', ') + '.' : '';
   }
 
-  // The one entry point the Tools-menu button / test hooks call. `rect`
+  // The one entry point File ▸ Open project… / test hooks call. `rect`
   // defaults to the real board viewport; tests may pass a fake one.
-  // `extra` (Phase 4): `{ excludeInstances }` chosen in the pre-placement
-  // picker; the picker calls back into this same function with it.
-  function importDxfText(text, rect, fileName, extra) {
+  // A rejected file (binary, corrupt, empty, or over DXF_TOTAL_OUTPUT_CAP)
+  // changes nothing and says why in a toast.
+  function importDxfText(text, rect, fileName) {
     // Phase 3: the import options travel with the source so the native
-    // measurement model (built below and again on every project reopen)
-    // drops exactly the same twins — and, Phase 4, skips exactly the same
-    // instances — the board did.
+    // measurement model rebuilt on every project reopen drops exactly the
+    // same twins the board did.
     const importOptions = {
       keepQualityCurves: !!(state.dxfImportOptions && state.dxfImportOptions.keepQualityCurves),
-      excludeInstances: (extra && Array.isArray(extra.excludeInstances)) ? extra.excludeInstances.slice() : [],
-      // Phase 6: always the current pipeline for a real import. `1` is a
-      // test-only door (debug hook) that builds a board the way the pre-ADR-
-      // 0091 code did, so the reopen-compatibility suite has a genuine v1
-      // project to open without a checked-in binary fixture.
-      pipelineVersion: (extra && extra.pipelineVersion === 1) ? 1 : DXF_PIPELINE_VERSION,
     };
-    // Phase 5: route. A file with more top-level INSERTs than
-    // DXF_PATTERN_BATCH_THRESHOLD (or a forced route) parses in dxf-worker.js;
-    // the SAME parse functions run there, and the board mutation below runs
-    // here once the whole result is back. `extra.afterWorkerFailure` marks
-    // the in-thread retry after a worker failure so it cannot loop.
-    const route = (extra && extra.afterWorkerFailure)
-      ? { useWorker: false, reason: extra.afterWorkerFailure, estimate: extra.estimate == null ? null : extra.estimate }
-      : (typeof dxfWorkerRoute === 'function' ? dxfWorkerRoute(text) : { useWorker: false, reason: 'no-worker-client', estimate: null });
-    const started = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    const elapsed = () => Math.round((((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - started) * 10) / 10;
-    if (route.useWorker) {
-      const progress = openDxfImportProgressDialog(fileName, route.estimate, () => {
-        dxfCancelActiveWorkerImport();
-        dxfRecordImportExecution({ engine: 'worker', reason: 'cancelled', estimate: route.estimate, elapsedMs: elapsed(), fileName: fileName || null });
-        showToast('DXF import cancelled — nothing was placed.');
-      });
-      dxfWorkerParse(text, importOptions, (stage, done, total) => progress.update(stage, done, total))
-        .then((result) => {
-          if (progress.isCancelled()) return;
-          progress.close();
-          const execution = { engine: 'worker', reason: 'ok', estimate: route.estimate, elapsedMs: elapsed(), progressEvents: result.progressEvents, fileName: fileName || null };
-          dxfHandleParsedDocument(result.board, result.native, text, rect, fileName, importOptions, execution);
-        })
-        .catch((error) => {
-          if (error && error.message === 'cancelled') return;
-          progress.close();
-          if (typeof dxfMarkWorkerBroken === 'function') dxfMarkWorkerBroken();
-          const reason = 'worker-failed: ' + (error && error.message ? error.message : error);
-          console.warn('DXF import: ' + reason + '; parsing on the main thread for the rest of this session.');
-          importDxfText(text, rect, fileName, Object.assign({}, extra || {}, { afterWorkerFailure: reason, estimate: route.estimate }));
-        });
-      return { ok: false, reason: 'pending-worker', pending: true, estimate: route.estimate };
-    }
-    const parsed = parseDxfDocument(text, importOptions);
-    const execution = { engine: 'main-thread', reason: route.reason, estimate: route.estimate, elapsedMs: elapsed(), fileName: fileName || null };
-    return dxfHandleParsedDocument(parsed, null, text, rect, fileName, importOptions, execution);
-  }
-
-  // Shared by both routes: rejection handling (the total-cap picker, the
-  // toast) and then the one board mutation. `precomputedNative` is the
-  // worker's parseDxfNativeModel result; null on the synchronous path.
-  function dxfHandleParsedDocument(parsed, precomputedNative, text, rect, fileName, importOptions, execution) {
-    if (execution) dxfRecordImportExecution(execution);
+    // ONE parse: the board document and the native measurement model are two
+    // views of it (ADR 0105 follow-up), so Pattern Measure reads exactly the
+    // pieces the board draws.
+    const parseStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    const both = dxfParseDocumentAndModel(text, importOptions);
+    const parseDurationMs = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - parseStartedAt;
+    const parsed = both.board;
     if (!parsed.ok) {
-      if (parsed.reason === 'total-cap' && parsed.overCap && typeof openDxfPatternPickerDialog === 'function') {
-        // Phase 4 (owner decision 3): never turn the TD away — let them pick
-        // which placement instances (sizes / pieces) to place. The dialog
-        // re-enters importDxfText with the exclusions; cancel leaves the
-        // board untouched.
-        openDxfPatternPickerDialog(parsed.overCap, {
-          fileName,
-          alreadyExcluded: importOptions.excludeInstances,
-          onConfirm: (excludeInstances) => importDxfText(text, rect, fileName, { excludeInstances }),
-          onCancel: () => showToast('DXF import cancelled — nothing was placed.'),
-        });
-        return { ok: false, reason: 'total-cap', pending: true, overCap: parsed.overCap, message: parsed.message };
-      }
       const toastMsg = [parsed.message, dxfBucketsToast(parsed.buckets)].filter(Boolean).join(' ');
       showToast(toastMsg);
       return { ok: false, reason: parsed.reason, message: parsed.message, buckets: parsed.buckets || null };
     }
-    return dxfPlaceParsedDocument(parsed, precomputedNative, text, rect, fileName, importOptions, execution);
+    return dxfPlaceParsedDocument(parsed, both.native, text, rect, fileName, importOptions, parseDurationMs);
   }
 
-  // The one board mutation, identical for both routes: annotations, labels,
-  // meta, selection, the native measure session, the durable source, one
-  // history push, the toast, the panel.
-  function dxfPlaceParsedDocument(parsed, precomputedNative, text, rect, fileName, importOptions, execution) {
+  // The one board mutation: annotations, labels, meta, selection, the native
+  // measure session, the durable source, one history push, the toast, the
+  // panel.
+  function dxfPlaceParsedDocument(parsed, nativeModel, text, rect, fileName, importOptions, parseDurationMs) {
     const viewportRect = rect || getViewportRect();
     // US-127 / ADR 0102: frame the pieces that are the same order of size as
     // each other, not the raw extent of every coordinate in the file. See
@@ -32324,11 +29705,9 @@ function onWheel(e) {
           quantity: annotation ? annotation.quantity : null,
           kind: pattern ? pattern.kind : null,
           orphan: !!(pattern && pattern.orphan),
-          boundaryLayer: pattern ? pattern.boundaryLayer : null,
           classCounts: pattern ? clone(pattern.classCounts) : {},
           notchChains: pattern ? pattern.notchChains : 0,
           dropped: pattern ? clone(pattern.dropped) : { exact: 0, qvTwin: 0 },
-          totalSegCount: pattern ? pattern.totalSegCount : piece.length,
         };
       }
       // One sourceImageId per PIECE (not per segment), matching
@@ -32338,9 +29717,7 @@ function onWheel(e) {
       // every other sketch-element source.
       const pieceBounds = dxfBoundsOfPoints(pieceAnns.flatMap(a => a.type === 'straight'
         ? [a.start, a.end] : [a.start, a.control1, a.control2, a.end]));
-      const owner = (typeof bgTopImageAt === 'function')
-        ? bgTopImageAt({ x: pieceBounds.x + pieceBounds.width / 2, y: pieceBounds.y + pieceBounds.height / 2 })
-        : null;
+      const owner = bgTopImageAt({ x: pieceBounds.x + pieceBounds.width / 2, y: pieceBounds.y + pieceBounds.height / 2 });
       for (const ann of pieceAnns) {
         if (owner) ann.sourceImageId = owner.id;
         state.annotations.push(ann);
@@ -32352,25 +29729,21 @@ function onWheel(e) {
     state.selectedAnnotationIds = allNewIds;
     state.templateGroupEditId = null;
     // US-105: (re)build the native-coordinate measure session from the SAME
-    // text and the SAME bounds/transform just used for the board
+    // parse and the SAME bounds/transform just used for the board
     // annotations above, so Pattern Measure's overlay is pixel-aligned with
     // what actually got drawn. Reset first — opening another DXF must never
-    // leave a prior session's measurements dangling over new geometry.
+    // leave a prior session's measurements dangling over new geometry. The
+    // native model is the board's own pieces, so this cannot fail here.
     resetDxfMeasureSession();
-    const measureSession = startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNative || null, { quietFailure: true });
-    // ADR 0088: only a successful native-model build becomes the durable,
-    // newest measurable source. A failed native build remains fail-closed.
-    if (measureSession) {
-      setDxfPatternSource(makeDxfPatternSource(
-        text, fileName, bounds, transform,
-        pieceFirstAnnotationIds, pieceAnnotationIds, groupIds, importOptions
-      ));
-    } else {
-      clearDxfPatternSource();
-    }
+    const measureSession = startDxfMeasureSession(nativeModel, bounds, transform, pieceFirstAnnotationIds, { parseDurationMs });
+    // ADR 0088: the newest import is the durable, measurable source.
+    setDxfPatternSource(makeDxfPatternSource(
+      text, fileName, bounds, transform,
+      pieceFirstAnnotationIds, pieceAnnotationIds, groupIds, importOptions
+    ));
     pushHistoryIfChanged();
-    if (typeof updateUI === 'function') updateUI();
-    if (typeof requestRender === 'function') requestRender();
+    updateUI();
+    requestRender();
 
     const pieceCount = parsed.pieces.length;
     const pieceWord = pieceCount === 1 ? 'piece' : 'pieces';
@@ -32390,35 +29763,27 @@ function onWheel(e) {
     // ADR 0073: a guessed unit rides on the import toast itself, not a
     // separate earlier toast — toast.js's fair-reading queue would swap a
     // separate warning away after ~900ms in favor of this success message.
-    // Guarded: startDxfMeasureSession can fail and leave the session null
-    // (it shows its own explanation in that case).
     // US-126: three distinct things to say, not one. A declared unit says
     // nothing; an INFERRED one names what the geometry decided (so the TD can
     // disagree with a real claim rather than a silent default); only a file
     // whose size fits neither candidate still falls back to the old warning.
-    const unitStatus = measureSession ? measureSession.source.unitSource : null;
+    const unitStatus = measureSession.source.unitSource;
     const unitWarning = unitStatus === 'dxf-header' ? ''
       : unitStatus === 'inferred-geometry'
         ? ' Units auto-scaled to ' + ((measureSession.source.unitDiagnostic
           && measureSession.source.unitDiagnostic.inferredKey) || 'in')
           + ' from piece size (file declares none) — change under Pattern ▸ File units if wrong.'
-        : measureSession
-          ? ' Units assumed (in) — set them under Pattern ▸ File units if the file is mm/cm.'
-          : '';
-    // A failed native build rides on this toast for the same reason.
-    const measureFailure = measureSession ? '' : (dxfMeasureLastFailureMessage() || '');
+        : ' Units assumed (in) — set them under Pattern ▸ File units if the file is mm/cm.';
     showToast('Imported ' + pieceCount + ' ' + pieceWord + ' (' + allNewIds.length + ' ' + lineWord + ').'
-      + (measureFailure ? ' ' + measureFailure : '')
       + (skipMsg ? ' ' + skipMsg : '') + unitWarning);
     // ADR 0070: a grading-nest file places every chosen size's piece at the
     // same board position (see ADR 0069's Context) — more than one piece
     // means the TD likely just imported an overlapping stack of sizes and
     // needs the Pattern Pieces panel to tell them apart, not a single
     // "1 piece" import where there is nothing to pick between.
-    if (pieceCount > 1 && typeof openPatternPiecesPanel === 'function') openPatternPiecesPanel();
+    if (pieceCount > 1) openPatternPiecesPanel();
     return {
       ok: true,
-      execution: execution || null,
       pieceCount,
       annotationCount: allNewIds.length,
       annotationIds: allNewIds.slice(),
@@ -32429,28 +29794,28 @@ function onWheel(e) {
   }
 
   // ---- src/dxf/parse/dxf-native-parser.js ----
-// US-105: DXF Pattern Measurement — the native-coordinate parser adapter.
-// Parses the SAME DXF text US-104's importDxfText already accepts, but into
-// exact native `{kind:'straight'|'arc', ...}` geometry (see
-// src/dxf/parse/dxf-path-kernel.js's header comment for the shapes) instead of
-// the board-annotation-ready straight/Bézier segments parseDxfDocument
-// builds — arcs and bulges stay exactly circular here, never
-// Bézier-approximated, so the measurement kernel's arc length stays
-// analytic.
+// US-105: DXF Pattern Measure — the native-coordinate model, and the ONE set
+// of entity converters every DXF parse runs.
 //
-// Deliberately a SEPARATE parse over the same tokenized pairs, not a
-// modification of parseDxfDocument: that function (src/dxf/dxf-import.js)
-// is a closed, 119-assertion-tested contract (dxf-import-check.mjs), and this
-// story's own "compatibility-preserving adapter" requirement is satisfied
-// most safely by never touching its observable output at all. This file
-// reuses that file's PURE, already-correct primitives by name
-// (dxfNormalizeText, dxfTokenizePairs, dxfScanSections, dxfNum, dxfOptNum,
-// dxfFirst, dxfExtrusion, dxfPlanarOk, dxfOk/dxfSkip/dxfMalformed/
-// dxfNonPlanar/dxfUnsupportedType/dxfUnsupportedFit, dxfParseLwpolylineVertices,
-// dxfBulgeToArcParams, dxfBuildPieces, and the DXF_*_CAP/DXF_BINARY_SENTINEL
-// constants) rather than duplicating them — only the "which shape do I build
-// from this entity" step differs from that file's own converters, and that
-// step is duplicated deliberately per the same reasoning.
+// Each accepted entity becomes exact native geometry `{kind:'straight'|'arc'|
+// 'curve', ...}` (see src/dxf/parse/dxf-path-kernel.js's header comment for the
+// shapes): arcs, bulges and circles stay exactly circular, never
+// Bézier-approximated, so the measurement kernel's arc length stays analytic.
+// dxfParseDocumentAndModel (src/dxf/parse/dxf-parse.js) runs these converters
+// ONCE per parse and builds both views from the one result: the board's
+// Y-flipped straight/Bézier pieces, and the native model below.
+//
+// Until the ADR 0105 follow-up this file was a SECOND parse of the same text,
+// run after the board's, with its own copy of every converter and of the
+// INSERT resolution. The two were paired by index and drifted: the board's
+// duplicate removal ran on Y-flipped coordinates and could keep a different
+// copy than this file did, so with keepQualityCurves on the board drew lines
+// Pattern Measure did not have (SE0583-LACE, SN1252). One parse cannot drift.
+//
+// Shared primitives come from dxf-parse.js by name (dxfNum, dxfOptNum,
+// dxfFirst, dxfExtrusion, dxfPlanarOk, the dxfOk/dxfSkip/... outcome helpers,
+// dxfParseLwpolylineVertices, dxfBulgeToArcParams, dxfSplineParts,
+// dxfInsertParams, dxfInsertTransformPoint, dxfBlockRecordsFor).
 // Source part for app.js. Run `npm run build` after editing.
 
   // ---- $INSUNITS header read --------------------------------------------------
@@ -32480,21 +29845,13 @@ function onWheel(e) {
     return null;
   }
 
-  // ---- Per-entity native converters (mirrors dxf-import.js's converters —
-  // same validation/malformed/planarity rules, native line/arc output) ------
+  // ---- Per-entity converters ----------------------------------------------------
 
   function dxfNativeConvertLineEntity(rec) {
     const x1 = dxfNum(rec.pairs, 10), y1 = dxfNum(rec.pairs, 20);
     const x2 = dxfNum(rec.pairs, 11), y2 = dxfNum(rec.pairs, 21);
     if ([x1, y1, x2, y2].some(v => v === undefined)) return dxfMalformed('LINE missing 10/20 or 11/21');
     if (![x1, y1, x2, y2].every(Number.isFinite)) return dxfMalformed('LINE has a non-finite coordinate');
-    // RB-4: a zero-length LINE (both endpoints exactly coincident) has no
-    // direction and no meaningful length — reject it outright rather than
-    // silently accepting a segment dxfSegmentLength would report as 0 (see
-    // that function's own "never a plausible 0" contract; a segment that
-    // SHOULD never have existed is a different failure than an invalid
-    // length calculation on a real one).
-    if (x1 === x2 && y1 === y2) return dxfMalformed('LINE has zero length (coincident endpoints)');
     const z1 = dxfOptNum(rec.pairs, 30, 0), z2 = dxfOptNum(rec.pairs, 31, 0);
     const thickness = dxfOptNum(rec.pairs, 39, 0);
     const ext = dxfExtrusion(rec.pairs);
@@ -32502,6 +29859,12 @@ function onWheel(e) {
       return dxfMalformed('LINE has a non-finite planarity field');
     }
     if (!dxfPlanarOk([z1, z2], thickness, ext)) return dxfNonPlanar('LINE is not flat');
+    // RB-4 / US-127: a zero-length LINE (both endpoints exactly coincident)
+    // has no direction and no meaningful length — reject it outright rather
+    // than silently accepting a segment dxfSegmentLength would report as 0
+    // (see that function's own "never a plausible 0" contract), and rather
+    // than drawing it as the round dot `lineCap:'round'` makes of it.
+    if (x1 === x2 && y1 === y2) return dxfDegenerate('LINE has zero length (coincident endpoints)');
     return dxfOk([{ kind: 'straight', a: { x: x1, y: y1 }, b: { x: x2, y: y2 } }]);
   }
 
@@ -32519,8 +29882,8 @@ function onWheel(e) {
       return dxfMalformed('ARC has a non-finite planarity field');
     }
     if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('ARC is not flat');
-    // Same wraparound-safe sweep as convertDxfArcEntity: 350deg -> 10deg is a
-    // 20deg CCW sweep, never a naive -340deg.
+    // Always CCW from start to end per the DXF spec — this handles a
+    // 350deg -> 10deg wraparound as a 20deg sweep, not a naive -340deg.
     const sweepDeg = ((a1Deg - a0Deg) % 360 + 360) % 360;
     if (!(sweepDeg > 1e-9)) return dxfMalformed('ARC has zero sweep');
     const sweepRad = sweepDeg * Math.PI / 180;
@@ -32528,14 +29891,12 @@ function onWheel(e) {
     return dxfOk([{ kind: 'arc', center: { x: cx, y: cy }, radius: r, startAngle: startRad, sweep: sweepRad }]);
   }
 
-  // A CIRCLE is one full-circle arc (sweep = 2*PI). Unlike the board
-  // annotation model (which has no closed-loop annotation type and must
-  // split a circle into four quadrant curves — see convertDxfCircleEntity),
-  // the native measurement kernel has no such constraint: a single arc with
-  // a full sweep is the exact, natural representation, and the arbitrary
-  // start angle (0, matching the entity's own lack of one) does not affect
-  // any measurement made on it — length, projection, and route enumeration
-  // all work uniformly around the whole loop regardless of where t=0 sits.
+  // A CIRCLE is one full-circle arc (sweep = 2*PI): the exact, natural
+  // representation for the measurement kernel, and the arbitrary start angle
+  // (0, matching the entity's own lack of one) does not affect any
+  // measurement made on it — length, projection, and route enumeration all
+  // work uniformly around the whole loop regardless of where t=0 sits. The
+  // board draws it as exactly four quarter Béziers (dxfBoardCurvesForArc).
   function dxfNativeConvertCircleEntity(rec) {
     const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
     const r = dxfNum(rec.pairs, 40);
@@ -32552,13 +29913,13 @@ function onWheel(e) {
     return dxfOk([{ kind: 'arc', center: { x: cx, y: cy }, radius: r, startAngle: 0, sweep: Math.PI * 2 }]);
   }
 
-  // Shared by LWPOLYLINE and legacy POLYLINE, mirroring
-  // dxfPolylineVerticesToSegments but emitting a native arc (via
-  // dxfBulgeToArcParams) instead of Bézier chunks for a bulged segment. A
-  // A repeated vertex is malformed measurement geometry. US-104 may still
-  // display the other segments from that entity, but Pattern Measure must not
-  // silently erase one authored hop and then claim its shortened topology is
-  // the factory path.
+  // Shared by LWPOLYLINE and legacy POLYLINE: a bulged hop is an exact arc
+  // (via dxfBulgeToArcParams). A repeated vertex — the closing vertex of a
+  // polyline that already ends where it started, or a duplicated authoring
+  // click — is a hop of length zero: not a line (it draws as a dot), never
+  // measurable, and a non-topological member that keeps a boundary chain from
+  // reading as closed. It is dropped and counted (US-127 / ADR 0102); the
+  // entity's other hops stay.
   function dxfNativeVerticesToSegments(vertices, closed) {
     const segs = [];
     let rejectedDegenerateSegments = 0;
@@ -32604,7 +29965,7 @@ function onWheel(e) {
     if (!dxfPlanarOk([elevation], thickness, ext)) return dxfNonPlanar('LWPOLYLINE is not flat');
     const closed = (Math.trunc(flags) & 1) === 1;
     const converted = dxfNativeVerticesToSegments(vertices, closed);
-    if (!converted.segments.length) return dxfMalformed('LWPOLYLINE has no non-degenerate segment');
+    if (!converted.segments.length) return dxfDegenerate('LWPOLYLINE has no non-degenerate segment');
     return { ok: true, segments: converted.segments, rejectedDegenerateSegments: converted.rejectedDegenerateSegments };
   }
 
@@ -32634,38 +29995,30 @@ function onWheel(e) {
     }
     if (!dxfPlanarOk([headerZ, ...vertices.map(v => v.z)], thickness, ext)) return dxfNonPlanar('POLYLINE is not flat');
     const converted = dxfNativeVerticesToSegments(vertices, closed);
-    if (!converted.segments.length) return dxfMalformed('POLYLINE has no non-degenerate segment');
+    if (!converted.segments.length) return dxfDegenerate('POLYLINE has no non-degenerate segment');
     return { ok: true, segments: converted.segments, rejectedDegenerateSegments: converted.rejectedDegenerateSegments };
   }
 
-  // ---- INSERT -> BLOCK resolution (ADR 0073, reversing ADR 0068 item 1) ----
+  // ---- INSERT -> BLOCK resolution (ADR 0073) -----------------------------------
   //
-  // Same real-world motivation as dxf-import.js's dxfConvertInsertEntity:
   // 36/44 real factory files in the demo corpus keep every piece's geometry
-  // inside a named BLOCK and reference it once via INSERT — without resolving
-  // that here, Pattern Measure was structurally dead on all of them (the
-  // board displayed the pieces, this parser returned reason:'empty'; see
-  // findings-dxf.md Finding 1). Gates and reason strings mirror the board
-  // converter byte-for-byte so the two parses never disagree about WHICH
-  // entities are acceptable — only about the shape of the accepted geometry.
+  // inside a named BLOCK and reference it once via INSERT (see the INSERT
+  // section of dxf-parse.js for the full motivation and the gates).
 
-  // Exact similarity transform of a native segment. Unlike the board's
-  // dxfApplyInsertTransformToSegment (straight/curve only — the board never
-  // has an 'arc' kind at INSERT time), this must map an exact arc to an
-  // exact arc: the INSERT gate below enforces |sx| == |sy|, so the linear
-  // part R(angle)·diag(sx,sy) is a similarity — circles map to circles with
-  // radius scaled by |sx|. The new start angle is derived from the
-  // TRANSFORMED start point (not analytic angle arithmetic), which is exact
-  // and uniform across all four sign combinations of (sx, sy); a mirrored
-  // instance (sx·sy < 0) flips traversal orientation, so the sweep sign
-  // flips — |sweep| is unchanged, so a full-circle CIRCLE arc (sweep 2π)
-  // stays within the kernel's |sweep| <= 2π contract.
+  // Exact similarity transform of a native segment: the INSERT gate below
+  // enforces |sx| == |sy|, so the linear part R(angle)·diag(sx,sy) is a
+  // similarity — circles map to circles with radius scaled by |sx|. The new
+  // start angle is derived from the TRANSFORMED start point (not analytic
+  // angle arithmetic), which is exact and uniform across all four sign
+  // combinations of (sx, sy); a mirrored instance (sx·sy < 0) flips traversal
+  // orientation, so the sweep sign flips — |sweep| is unchanged, so a
+  // full-circle CIRCLE arc (sweep 2π) stays within the kernel's |sweep| <= 2π
+  // contract.
   //
-  // Object.assign clone, not a rebuilt object: native segments already carry
-  // provenance (layer/handle/entityOrder/partIndex, stamped by
-  // dxfNativeConvertEntity below) that must survive the transform — the
-  // board's transform rebuilds bare objects only because the board stamps
-  // nothing at that stage.
+  // Object.assign clone, not a rebuilt object: the provenance stamped by
+  // dxfNativeConvertEntity below (layer, entityType, handle, entityOrder,
+  // partIndex) must survive the transform — ADR 0069 lost `instance` exactly
+  // this way once, and the classifier reads `layer`.
   function dxfNativeApplyInsertTransformToSegment(seg, ins) {
     if (seg.kind === 'straight') {
       return Object.assign({}, seg, {
@@ -32693,10 +30046,15 @@ function onWheel(e) {
     return Object.assign({}, seg, { center, radius, startAngle, sweep });
   }
 
-  // `order` is the TOP-LEVEL entity index — every segment resolved out of a
-  // block (however deeply nested) inherits the placing INSERT's own order,
-  // while keeping the child entity's layer/handle (nothing downstream
-  // consumes entityOrder today; it stays pure provenance).
+  // `buckets` is the parse's shared {board, native} rejection tally
+  // (dxfCountRejected): a block's own rejected children (e.g. TEXT alongside
+  // LINE) are counted here as they're found, so one tally covers both
+  // directly-placed and block-resolved entities. `instance` (ADR 0069) is
+  // opaque here — always the SAME value this call's own caller was given,
+  // propagated unchanged to every child so a piece assembled from nested
+  // INSERTs still shares one instance boundary. `order` is the TOP-LEVEL
+  // entity index: every segment resolved out of a block (however deeply
+  // nested) inherits the placing INSERT's own order.
   function dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order, ordinal) {
     const p = dxfInsertParams(rec);
     if (p.blockName == null) return dxfMalformed('INSERT missing block name (group 2)');
@@ -32708,15 +30066,19 @@ function onWheel(e) {
     if ((p.colCount && p.colCount !== 1) || (p.rowCount && p.rowCount !== 1)) {
       return dxfUnsupportedType('INSERT is a rectangular array (MINSERT), not supported');
     }
-    // Same k-th-definition rule as the board parser (dxfBlockRecordsFor).
+    // The k-th top-level INSERT of a name takes the k-th definition
+    // (dxfBlockRecordsFor).
     const blockRecords = dxfBlockRecordsFor(blocks, p.blockName, ordinal);
     if (!blockRecords) return dxfMalformed('INSERT references an undefined block "' + p.blockName + '"');
     if (depth >= DXF_INSERT_MAX_DEPTH) return dxfMalformed('INSERT nesting is too deep (possible circular BLOCK reference)');
     const segments = [];
+    // US-127: a block child's own dropped zero-length hops ride up with the
+    // geometry so one instance's count reaches the import toast (the child's
+    // whole-entity rejections are tallied into `buckets` directly).
     let rejectedDegenerateSegments = 0;
     for (const childRec of blockRecords) {
       const result = dxfNativeConvertEntityResolvingBlocks(childRec, blocks, depth + 1, buckets, instance, order);
-      if (!result.ok) { buckets[result.bucket] += 1; continue; }
+      if (!result.ok) { dxfCountRejected(buckets, result); continue; }
       rejectedDegenerateSegments += result.rejectedDegenerateSegments || 0;
       segments.push(...result.segments);
     }
@@ -32729,13 +30091,11 @@ function onWheel(e) {
   }
 
   // Dispatch + `instance` stamp (ADR 0069: piece detection must never union
-  // segments from different placed instances — without this, a grading-nest
-  // file's overlapping sizes fuse on the native side and the piece list
-  // diverges from the board's, nulling every pieceAnchor in
-  // makeDxfMeasureSession). NOTE this wrapper deliberately does NOT copy the
-  // board wrapper's `{ok, segments}`-only return shape: this parser's
-  // converters also report `rejectedDegenerateSegments` (RB-4), and dropping
-  // that field here would silently zero the bucket for every entity.
+  // segments from different placed instances — a grading-nest file's
+  // overlapping sizes would fuse). NOTE this wrapper deliberately does NOT
+  // reduce its return to `{ok, segments}`: the converters also report
+  // `rejectedDegenerateSegments` (RB-4), and dropping that field here would
+  // silently zero the count for every entity.
   function dxfNativeConvertEntityResolvingBlocks(rec, blocks, depth, buckets, instance, order, ordinal) {
     const result = rec.type === 'INSERT'
       ? dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order, ordinal)
@@ -32748,27 +30108,25 @@ function onWheel(e) {
     };
   }
 
-  // Same shared reader the board converter uses (src/dxf/parse/dxf-parse.js),
-  // mapped onto the native `{kind:'curve', p0,p1,p2,p3}` shape the
-  // measurement kernel already understands. The two parsers are paired by
-  // index, so they must accept and reject the identical set of splines —
-  // which is why the decision lives in one shared function and only the
-  // output shape differs here.
+  // The one SPLINE reader (dxfSplineParts) mapped onto the native
+  // `{kind:'curve', p0,p1,p2,p3}` shape the measurement kernel understands.
   function dxfNativeConvertSplineEntity(rec) {
     const read = dxfSplineParts(rec);
     if (!read.ok) return read;
-    if (!read.parts.length) return dxfMalformed('SPLINE has no non-degenerate span');
+    if (!read.parts.length) return dxfDegenerate('SPLINE has no non-degenerate span');
     const segments = read.parts.map(part => (part.type === 'line'
       ? { kind: 'straight', a: part.a, b: part.b }
       : { kind: 'curve', p0: part.p0, p1: part.p1, p2: part.p2, p3: part.p3 }));
     return { ok: true, segments, rejectedDegenerateSegments: read.degenerate };
   }
 
-  // Dispatch, then stamp provenance (layer, handle when present, and the
-  // entity's own order in the file) onto every segment the entity produced —
-  // "original entity order and direction" per the checklist, kept on the
-  // segment itself rather than threaded separately through every later
-  // consumer.
+  // Dispatch, then stamp provenance onto every segment the entity produced:
+  // `layer` (group 8 — the ASTM layer dxfClassifyPatterns reads to tell a
+  // piece boundary from a grain line, sew line or internal mark), the source
+  // `entityType`, and the handle, the entity's own order in the file and its
+  // part index ("original entity order and direction" per the checklist, kept
+  // on the segment itself rather than threaded separately through every
+  // later consumer).
   function dxfNativeConvertEntity(rec, order) {
     const result = (() => {
       switch (rec.type) {
@@ -32778,7 +30136,9 @@ function onWheel(e) {
         case 'LWPOLYLINE': return dxfNativeConvertLwpolylineEntity(rec);
         case 'POLYLINE': return dxfNativeConvertPolylineEntity(rec);
         case 'SPLINE': return dxfNativeConvertSplineEntity(rec);
-        // Phase 3 (ADR 0091): same non-geometry bucket as the board parser.
+        // Phase 3 (ADR 0091): ASTM turn/curve points, notches, drill holes and
+        // annotation text are standard non-geometry, not "unsupported" — they
+        // are counted by dxfCollectMarks and reported as what they are.
         case 'POINT': case 'TEXT': case 'MTEXT':
           return dxfSkip('nonGeometry', rec.type + ' is a mark/annotation, not drawn geometry');
         default: return dxfUnsupportedType('entity type "' + rec.type + '" is not supported');
@@ -32792,115 +30152,21 @@ function onWheel(e) {
       handle: handle == null ? null : String(handle).trim(),
       entityOrder: order,
       partIndex,
+      entityType: rec.type,
     }));
     return { ok: true, segments, rejectedDegenerateSegments: result.rejectedDegenerateSegments || 0 };
   }
 
-  // ---- Document-level native parse (pure; no state/DOM) ----------------------
+  // ---- The native model (pure; no state/DOM) -----------------------------------
 
-  // text -> { ok, pieces: [{segments}], unit, unitSource, insunits, buckets,
-  // skippedOversizedPieces } | { ok:false, reason, message, buckets }. Reuses
-  // parseDxfDocument's own binary/corrupt-file/section-scan gates and its
-  // three output caps verbatim (same constants, same thresholds, same
-  // atomic-vs-partial behavior) so the two parses never disagree about
-  // whether a given file is acceptable — only about what SHAPE the accepted
-  // geometry takes.
-  // `options.keepQualityCurves` (Phase 3) must be the SAME value the board
-  // import used — importDxfText passes it, and dxfPatternSource carries it
-  // for every later rebuild — or the two parsers' pieces stop matching.
-  function parseDxfNativeModel(text, options) {
-    const normalized = dxfNormalizeText(text);
-    if (normalized.slice(0, DXF_BINARY_SENTINEL.length) === DXF_BINARY_SENTINEL) {
-      return {
-        ok: false, atomic: true, reason: 'binary',
-        message: 'This looks like a binary DXF file. Re-export as ASCII DXF and try again.',
-      };
-    }
-    const pairs = dxfTokenizePairs(normalized);
-    if (!pairs) {
-      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file.' };
-    }
-    const scan = dxfScanSections(pairs);
-    if (scan.error) {
-      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file (' + scan.error + ').' };
-    }
-    const insunits = dxfReadInsunits(pairs);
+  // The native-model view of an ACCEPTED parse (dxfParseDocumentAndModel):
+  // `pieces` are [{segments}] in native coordinates, the same pieces in the
+  // same order as the board's, so makeDxfMeasureSession pairs them by index.
+  // `patterns`/`stats` are the one classification's, shared with the board
+  // view — they count board LINES (dxfBoardLineCount: a circle is 4).
+  function dxfNativeModelView(parse) {
+    const { insunits, pieces } = parse;
     const unitInfo = dxfResolveNativeToInch(insunits);
-    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, nonGeometry: 0, rejectedDegenerateSegments: 0 };
-    const acceptedSegments = [];
-    // ADR 0073: same instance-id scheme as parseDxfDocument (ADR 0069) —
-    // instance 0 for every directly-placed entity, a fresh id per top-level
-    // INSERT (nested INSERTs inherit their parent's) — so dxfBuildPieces
-    // groups the native pieces exactly the way it groups the board's,
-    // keeping makeDxfMeasureSession's count-based pieceAnchors pairing alive.
-    let nativeNextInstanceId = 1;
-    const nativeInsertOrdinals = new Map();
-    const pipelineVersion = dxfPipelineVersionOf(options);
-    scan.entityRecords.forEach((rec, order) => {
-      const instance = rec.type === 'INSERT' ? nativeNextInstanceId++ : 0;
-      let ordinal = 0;
-      if (rec.type === 'INSERT') {
-        const blockName = dxfInsertParams(rec).blockName;
-        ordinal = nativeInsertOrdinals.get(blockName) || 0;
-        nativeInsertOrdinals.set(blockName, ordinal + 1);
-        if (pipelineVersion === 1) ordinal = 'all';
-      }
-      const result = dxfNativeConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, order, ordinal);
-      if (!result.ok) { buckets[result.bucket] += 1; return; }
-      buckets.rejectedDegenerateSegments += result.rejectedDegenerateSegments || 0;
-      acceptedSegments.push(...result.segments);
-    });
-    if (!acceptedSegments.length) {
-      return { ok: false, atomic: true, reason: 'empty', message: 'No supported entities were found in this DXF file.', buckets };
-    }
-    // Reused verbatim from dxf-import.js: connected-component + containment-
-    // merge piece detection, which already works generically off
-    // dxfSegmentEndpoints/dxfSegmentPoints — both extended for the 'arc' kind
-    // this file emits. No Y-flip here: native space stays exactly as
-    // authored (see this file's header comment).
-    //
-    // ADR 0091: the same dxfClassifyPatterns the board parser runs, on the
-    // same `instance`/`layer`-stamped segments — the ONLY thing keeping the
-    // count-and-order pairing in makeDxfMeasureSession alive is that both
-    // parsers group through this one function. Point-in-polygon containment
-    // is invariant under the board's Y-flip, so the two agree without it.
-    const classified = dxfClassifyPatterns(acceptedSegments, {
-      keepQualityCurves: !!(options && options.keepQualityCurves),
-      excludeInstances: (options && Array.isArray(options.excludeInstances)) ? options.excludeInstances : [],
-      onProgress: (options && typeof options.onProgress === 'function') ? options.onProgress : null,
-      pipelineVersion,
-    });
-    const allPieces = classified.pieces;
-    // Phase 4: no piece-count rejection here either (see
-    // DXF_PATTERN_BATCH_THRESHOLD in dxf-import.js) — the board import that
-    // preceded this call already decided the file is placeable.
-    const keptPieces = [];
-    const keptPatterns = [];
-    let skippedOversizedPieces = 0;
-    for (let i = 0; i < allPieces.length; i += 1) {
-      const piece = allPieces[i];
-      // Same exemption as parseDxfDocument (ADR 0091): a classified pattern
-      // is never dropped by the per-piece cap — the two parsers must keep
-      // the identical piece list or makeDxfMeasureSession's index pairing
-      // breaks.
-      if (piece.length > DXF_PER_PIECE_CAP && classified.patterns[i].kind !== 'classified') { skippedOversizedPieces += 1; continue; }
-      keptPieces.push(piece);
-      keptPatterns.push(classified.patterns[i]);
-    }
-    if (!keptPieces.length) {
-      return {
-        ok: false, atomic: true, reason: 'empty-after-piece-cap', buckets,
-        message: 'Every piece in this DXF exceeded the ' + DXF_PER_PIECE_CAP + '-line per-piece limit. Import rejected.',
-      };
-    }
-    const totalOutputCount = keptPieces.reduce((sum, piece) => sum + piece.length, 0);
-    if (totalOutputCount > DXF_TOTAL_OUTPUT_CAP) {
-      return {
-        ok: false, atomic: true, reason: 'total-cap', buckets,
-        message: 'This DXF would place ' + totalOutputCount + ' lines, over the ' + DXF_TOTAL_OUTPUT_CAP + '-line combined limit. Import rejected.',
-      };
-    }
-    const pieces = keptPieces.map(segments => ({ segments }));
     // US-126: auto-scale. The $INSUNITS header stays authoritative wherever
     // the file declares one this tool understands — a declaration is evidence
     // and a size statistic is only an inference. When it does NOT (31 of the
@@ -32950,227 +30216,27 @@ function onWheel(e) {
     return {
       ok: true,
       pieces,
-      patterns: keptPatterns,
-      stats: classified.stats,
+      patterns: parse.patterns,
+      stats: parse.stats,
       unit,
       unitSource,
       unitDiagnostic,
       insunits,
-      buckets,
-      skippedOversizedPieces,
+      buckets: parse.buckets,
+      skippedOversizedPieces: parse.skippedOversizedPieces,
     };
   }
 
-  // ---- src/dxf/dxf-worker-client.js ----
-// US-124 Phase 5 (ADR 0091): DXF Worker client — the main-thread side of
-// dxf-worker.js.
-//
-// importDxfText() parses synchronously on the main thread, which freezes the
-// tab for the duration — fine for the corpus's ≤1 s files, not for a
-// full-size-run nest (the 16–36 MB 齐码 exports) or anything with hundreds
-// of placement instances. When a file looks large (more top-level INSERTs
-// than DXF_PATTERN_BATCH_THRESHOLD, or the TD/debug forces it), the SAME
-// pure parse runs in the worker: parseDxfDocument + parseDxfNativeModel on
-// the same text with the same options, posting one progress message per
-// classified instance. The board mutation (dxfPlaceParsedDocument) still
-// runs here, unchanged, once the whole result is back — all-or-nothing, so
-// Cancel can never leave a half-placed board.
-//
-// Behaviour-preserving by construction: both bundles are built from the same
-// parts (DXF_WORKER_PARTS) — scripts/dxf-worker-check.mjs asserts the parse
-// result is byte-identical per corpus file. The fallback is NOT silent: a
-// disabled/unsupported/failed worker parses in-thread and the execution
-// record (state.dxfLastImportExecution) says engine + reason.
-// Source part for app.js. Run `npm run build` after editing.
-
-  var dxfWorkerHandle = null;         // lazily created Worker, reused across imports
-  var dxfWorkerBroken = false;        // sticky for the session after a load/runtime failure
-  var dxfWorkerOverride = null;       // debug/test: true/false forces on/off; null = URL flag / default
-  var dxfWorkerForce = false;         // debug/test: route EVERY import to the worker regardless of size
-  var dxfWorkerUrlOverride = null;    // debug/test: point at a different (e.g. missing) worker file
-  var dxfWorkerRequestSeq = 0;
-  var dxfWorkerActiveRequest = null;  // { requestId, cancelled } for the import in flight
-  var DXF_WORKER_TIMEOUT_MS = 180000; // a 36 MB nest can legitimately take minutes
-
-  function dxfWorkerUrl() {
-    if (dxfWorkerUrlOverride) return dxfWorkerUrlOverride;
-    return typeof DXF_WORKER_URL === 'string' ? DXF_WORKER_URL : '';
-  }
-
-  function dxfWorkerEnabled() {
-    if (dxfWorkerOverride != null) return !!dxfWorkerOverride;
-    try {
-      if (new URLSearchParams(window.location.search).get('dxfWorker') === '0') return false;
-    } catch (error) { /* no window.location in odd hosts: default on */ }
-    return true;
-  }
-
-  function dxfWorkerSupported() {
-    return typeof Worker === 'function' && dxfWorkerUrl().length > 0;
-  }
-
-  function dxfGetWorker() {
-    if (!dxfWorkerHandle) dxfWorkerHandle = new Worker(dxfWorkerUrl());
-    return dxfWorkerHandle;
-  }
-
-  function dxfDisposeWorker() {
-    if (!dxfWorkerHandle) return;
-    try { dxfWorkerHandle.terminate(); } catch (error) { /* already gone */ }
-    dxfWorkerHandle = null;
-  }
-
-  function dxfSetWorkerEnabled(enabled) {
-    dxfWorkerOverride = enabled == null ? null : !!enabled;
-    if (enabled) dxfWorkerBroken = false;
-    if (enabled === false) dxfDisposeWorker();
-  }
-
-  function dxfSetWorkerForce(force) { dxfWorkerForce = !!force; }
-
-  // Sticky for the session after a load/runtime failure (the client's own
-  // catch and importDxfText's retry both call this).
-  function dxfMarkWorkerBroken() {
-    dxfWorkerBroken = true;
-    dxfDisposeWorker();
-  }
-
-  function dxfSetWorkerUrl(url) {
-    dxfWorkerUrlOverride = url ? String(url) : null;
-    dxfWorkerBroken = false;
-    dxfDisposeWorker();
-  }
-
-  // Cheap size estimate WITHOUT parsing: top-level INSERTs in ENTITIES. For
-  // every grading-nest / CLO export in the corpus one INSERT is one placement
-  // instance is one pattern, so this is the pattern count the 120 threshold
-  // means. A no-INSERT file estimates 0 and stays synchronous (its cost is
-  // the legacy O(n²) grouping, not this story's target).
-  function dxfEstimateInstanceCount(text) {
-    const s = String(text || '');
-    const entities = s.search(/\n\s*2\s*\r?\n\s*ENTITIES\s*\r?\n/);
-    if (entities < 0) return 0;
-    const tail = s.slice(entities);
-    const m = tail.match(/\n\s*0\s*\r?\n\s*INSERT\s*\r?\n/g);
-    return m ? m.length : 0;
-  }
-
-  // The routing decision importDxfText makes before parsing. Returns
-  // { useWorker, reason, estimate }.
-  function dxfWorkerRoute(text) {
-    const estimate = dxfEstimateInstanceCount(text);
-    const large = dxfWorkerForce || estimate > DXF_PATTERN_BATCH_THRESHOLD;
-    if (!large) return { useWorker: false, reason: 'under-threshold', estimate };
-    if (!dxfWorkerEnabled()) return { useWorker: false, reason: 'worker-disabled', estimate };
-    if (!dxfWorkerSupported()) return { useWorker: false, reason: 'worker-unavailable', estimate };
-    if (dxfWorkerBroken) return { useWorker: false, reason: 'worker-failed-earlier', estimate };
-    return { useWorker: true, reason: 'ok', estimate };
-  }
-
-  // Resolves { board, native, elapsedMs, progressEvents }; rejects on worker
-  // load/runtime failure or timeout. `onProgress(stage, done, total)` is
-  // optional. A cancelled request rejects with Error('cancelled') and the
-  // worker is terminated so the heavy parse actually stops.
-  function dxfWorkerParse(text, options, onProgress) {
-    const worker = dxfGetWorker();
-    return new Promise((resolve, reject) => {
-      const requestId = 'dxf-req-' + (++dxfWorkerRequestSeq);
-      const request = { requestId, cancelled: false };
-      dxfWorkerActiveRequest = request;
-      let settled = false;
-      let progressEvents = 0;
-      const finish = (error, value) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        worker.removeEventListener('message', onMessage);
-        worker.removeEventListener('error', onError);
-        if (dxfWorkerActiveRequest === request) dxfWorkerActiveRequest = null;
-        if (error) reject(error); else resolve(value);
-      };
-      request.cancel = () => {
-        request.cancelled = true;
-        dxfDisposeWorker();
-        finish(new Error('cancelled'));
-      };
-      const onMessage = (event) => {
-        const data = event && event.data ? event.data : {};
-        if (data.requestId !== requestId) return;
-        if (data.type === 'progress') { progressEvents += 1; if (onProgress) onProgress(data.stage, data.done, data.total); }
-        else if (data.type === 'result') finish(null, { board: data.board, native: data.native, elapsedMs: data.elapsedMs, progressEvents });
-        else if (data.type === 'error') finish(new Error(data.message || 'worker error'));
-      };
-      const onError = (event) => {
-        finish(new Error(event && event.message ? event.message : 'worker failed to load or crashed'));
-      };
-      const timer = setTimeout(() => finish(new Error('worker-timeout')), DXF_WORKER_TIMEOUT_MS);
-      worker.addEventListener('message', onMessage);
-      worker.addEventListener('error', onError);
-      worker.postMessage({ type: 'parse', requestId, text, options: options || {} });
-    });
-  }
-
-  function dxfCancelActiveWorkerImport() {
-    if (dxfWorkerActiveRequest && dxfWorkerActiveRequest.cancel) dxfWorkerActiveRequest.cancel();
-  }
-
-  // The progress dialog — buildDialog's shell so Esc / click-outside behave
-  // like every other modal. Closing it by any route cancels the import: the
-  // result is discarded (never placed) and the worker terminated.
-  function openDxfImportProgressDialog(fileName, estimate, onCancel) {
-    const dlg = buildDialog({
-      title: 'Importing large DXF…',
-      sub: (fileName ? fileName + ' — ' : '') + 'about ' + estimate.toLocaleString('en-US') + ' placement instances. Parsing off the main thread; the board stays responsive.',
-    });
-    dlg.overlay.classList.add('dxf-import-progress');
-    const body = document.createElement('div');
-    body.className = 'dialog-body';
-    body.style.cssText = 'display:flex;flex-direction:column;gap:10px;min-width:420px;';
-    const bar = document.createElement('progress');
-    bar.className = 'dxf-import-progress-bar';
-    bar.max = 100; bar.value = 0;
-    bar.style.cssText = 'width:100%;height:10px;';
-    const text = document.createElement('div');
-    text.className = 'dxf-import-progress-text';
-    text.style.cssText = 'font-size:12px;color:#444;';
-    text.textContent = 'Starting…';
-    body.appendChild(bar);
-    body.appendChild(text);
-    const footer = document.createElement('div');
-    footer.className = 'picker-footer';
-    footer.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'picker-btn dxf-import-progress-cancel';
-    cancelBtn.textContent = 'Cancel import';
-    footer.appendChild(cancelBtn);
-    dlg.panel.appendChild(body);
-    dlg.panel.appendChild(footer);
-    let cancelled = false;
-    const cancel = () => { if (cancelled) return; cancelled = true; dlg.close(); if (onCancel) onCancel(); };
-    cancelBtn.addEventListener('click', cancel);
-    // Esc / click-outside / the × go through buildDialog's own close() —
-    // detect the overlay leaving the DOM and treat it as Cancel too.
-    const observer = new MutationObserver(() => {
-      if (!dlg.overlay.isConnected) { observer.disconnect(); cancel(); }
-    });
-    dlg.open();
-    observer.observe(document.body, { childList: true });
-    return {
-      update(stage, done, total) {
-        const stageLabel = stage === 'native' ? 'Building measurement model' : 'Classifying patterns';
-        const pct = total ? Math.round((done / total) * 100) : 0;
-        bar.value = pct;
-        text.textContent = stageLabel + ' — ' + done.toLocaleString('en-US') + ' / ' + total.toLocaleString('en-US') + ' instances';
-      },
-      close() { observer.disconnect(); cancelled = true; dlg.close(); },
-      isCancelled: () => cancelled,
-    };
-  }
-
-  function dxfRecordImportExecution(record) {
-    state.dxfLastImportExecution = record;
-    return record;
+  // text -> { ok, pieces: [{segments}], patterns, stats, unit, unitSource,
+  // unitDiagnostic, insunits, buckets, skippedOversizedPieces } | { ok:false,
+  // atomic, reason, message, buckets }. An import does not call this — it
+  // takes both views from its one dxfParseDocumentAndModel — but a saved
+  // project's pattern source re-parses its text on reopen
+  // (rebuildDxfMeasureSessionFromActiveSource) and needs only this view.
+  // `options.keepQualityCurves` must be the value the board import used —
+  // dxfPatternSource carries it for every later rebuild.
+  function parseDxfNativeModel(text, options) {
+    return dxfParseDocumentAndModel(text, options).native;
   }
 
   // ---- src/dxf/measure/dxf-measure-session.js ----
@@ -33223,8 +30289,8 @@ function onWheel(e) {
   // anchor annotation's CURRENT position against where import originally
   // placed that same native point — the delta is the piece's whole-move
   // offset, whatever gesture produced it (drag, arrow-key nudge, undo/redo).
-  // `pieceAnchors[i]` is null (offset always {0,0}) when dxf-import.js could
-  // not pair native piece i with a board annotation id — see startDxfMeasureSession.
+  // `pieceAnchors[i]` is null (offset always {0,0}) when native piece i has no
+  // board annotation id to follow — see makeDxfMeasureSession.
   function dxfMeasureCurrentPieceOffset(session, pieceIndex) {
     const anchor = session && session.pieceAnchors && session.pieceAnchors[pieceIndex];
     if (!anchor) return { x: 0, y: 0 };
@@ -33300,23 +30366,14 @@ function onWheel(e) {
 
   function makeDxfMeasureSession(nativeModel, bounds, transform, pieceFirstAnnotationIds) {
     // Pairs native piece i with the board annotation id dxf-import.js built
-    // for that same piece's first segment, PROVIDED the two parses agree on
-    // piece count — true whenever the file has no ARC/CIRCLE/bulge entity
-    // (an arc is one native segment but N>=1 Bézier chunks in the board
-    // model, which cannot shift which entities end up grouped into which
-    // piece, but its slightly looser native bounding box, see
-    // dxf-import.js's dxfSegmentPoints 'arc' case, could in principle change
-    // a containment-merge decision at the margin — accepted for v1, flagged
-    // here rather than silently assumed exact). A mismatch leaves every
-    // pieceAnchors entry null, which dxfMeasureCurrentPieceOffset already
-    // treats as "assume unmoved" (offset {0,0}) rather than throwing.
+    // for that same piece's first segment. The two piece lists are two views
+    // of one parse (dxfParseDocumentAndModel), so they always line up;
+    // startDxfMeasureSession refuses a list that does not.
     const ids = Array.isArray(pieceFirstAnnotationIds) ? pieceFirstAnnotationIds : [];
-    const pieceAnchors = nativeModel.pieces.length === ids.length
-      ? nativeModel.pieces.map((piece, i) => (ids[i] == null || !piece.segments.length ? null : {
-        annotationId: ids[i],
-        nativeStart: dxfPointOnSegment(piece.segments[0], 0),
-      }))
-      : nativeModel.pieces.map(() => null);
+    const pieceAnchors = nativeModel.pieces.map((piece, i) => (ids[i] == null || !piece.segments.length ? null : {
+      annotationId: ids[i],
+      nativeStart: dxfPointOnSegment(piece.segments[0], 0),
+    }));
     return {
       source: {
         unit: nativeModel.unit,
@@ -33531,52 +30588,39 @@ function onWheel(e) {
     requestRender();
   }
 
-  // Called from importDxfText right after a successful import, with the
-  // SAME bounds/transform it just computed for the board annotations (see
-  // the mapping comment above for why) and the id of each piece's first
+  // Builds the session from a native model the caller already parsed, with
+  // the SAME bounds/transform the board annotations were placed with (see the
+  // mapping comment above for why) and the id of each board piece's first
   // annotation (for later move-tracking, see dxfMeasureCurrentPieceOffset).
-  // Parses the same text a second time, through the native-coordinate
-  // adapter — a corrupt/rejected file here would already have been rejected
-  // by parseDxfDocument first, so this is not expected to fail in practice,
-  // but a failure here leaves the session null rather than half-built.
-  // `importOptions` (Phase 3, ADR 0091): the board import's
-  // `{ keepQualityCurves }`, forwarded to the native parser so both drop the
-  // same twins. Omitted -> defaults (drop), which is also what a source saved
-  // before this option existed means.
-  // `precomputedNativeModel` (Phase 5): the worker already ran
-  // parseDxfNativeModel on the same text with the same options; reuse it
-  // instead of parsing a second time on the main thread. Omitted -> parse
-  // here (the synchronous path and every project reopen).
-  // `options.quietFailure`: the caller puts dxfMeasureLastFailureMessage() into
-  // its own toast. importDxfText does — a separate toast fired here, a moment
-  // before its "Imported N pieces" toast, was swapped away after toast.js's
-  // ~900ms fair-reading window (findings-dxf.md, Minor).
-  function startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNativeModel, options) {
-    const parseStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-    const nativeModel = precomputedNativeModel || parseDxfNativeModel(text, importOptions || {});
-    const parseFinishedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-    dxfMeasureLastFailure = null;
-    if (!nativeModel.ok) {
-      // RB-5: the board-annotation import (importDxfText, US-104) already
-      // succeeded by the time this runs — that atomic behavior must not be
-      // disturbed — but a TD who just imported a DXF and reaches for Pattern
-      // Measure deserves an explicit reason it is not available, rather than
-      // a silently-missing Tools-menu feature.
-      dxfMeasureLastFailure = dxfMeasureFailureMessage(nativeModel);
-      if (!(options && options.quietFailure)) showToast('DXF imported, but ' + dxfMeasureLastFailure);
+  // Two callers: importDxfText hands over the native view of its one parse
+  // (dxfParseDocumentAndModel), which cannot fail; a project reopen
+  // (rebuildDxfMeasureSessionFromActiveSource) re-parses the saved source
+  // with parseDxfNativeModel and its saved importOptions. A model that is not
+  // ok, or whose pieces no longer pair one-to-one with the saved board's,
+  // leaves the session null rather than half-built or mis-paired.
+  // `options.parseDurationMs`: how long that parse took (diagnostic only).
+  function startDxfMeasureSession(nativeModel, bounds, transform, pieceFirstAnnotationIds, options) {
+    const ids = Array.isArray(pieceFirstAnnotationIds) ? pieceFirstAnnotationIds : [];
+    const failure = !nativeModel.ok ? dxfMeasureFailureMessage(nativeModel)
+      : nativeModel.pieces.length !== ids.length ? dxfMeasureFailureMessage({
+        message: 'its ' + nativeModel.pieces.length + ' pieces do not match the ' + ids.length + ' on the board — reopen the DXF',
+      })
+        : null;
+    if (failure) {
+      // RB-5: the board geometry stays — that atomic behavior must not be
+      // disturbed — but a TD who reaches for Pattern Measure deserves an
+      // explicit reason it is not available, rather than a silently-missing
+      // Tools-menu feature.
+      showToast('DXF imported, but ' + failure);
       state.dxfMeasureSession = null;
       return null;
     }
-    state.dxfMeasureSession = makeDxfMeasureSession(nativeModel, bounds, transform, pieceFirstAnnotationIds);
-    state.dxfMeasureSession.source.nativeParseDurationMs = Math.max(0, parseFinishedAt - parseStartedAt);
-    state.dxfMeasureSession.source.nativeParserExecution = precomputedNativeModel ? 'worker-precomputed' : 'main-thread-measured';
+    state.dxfMeasureSession = makeDxfMeasureSession(nativeModel, bounds, transform, ids);
+    state.dxfMeasureSession.source.nativeParseDurationMs = options && Number.isFinite(options.parseDurationMs)
+      ? Math.max(0, options.parseDurationMs) : null;
     dxfMeasureSeedHistory();
     return state.dxfMeasureSession;
   }
-
-  // Why the last startDxfMeasureSession built no session (null when it did).
-  let dxfMeasureLastFailure = null;
-  function dxfMeasureLastFailureMessage() { return dxfMeasureLastFailure; }
 
   // The parser's message is already a sentence ("No supported entities were
   // found in this DXF file."); its own period is dropped so the wrapper's
@@ -33951,8 +30995,8 @@ function onWheel(e) {
     if (session.unitOverride === normalized) return false;
     session.unitOverride = normalized;
     session.topologyToleranceNative = 0.01 / (25.4 * (dxfMeasureEffectiveUnitFactor(session) || 1));
-    if (typeof updateUI === 'function') updateUI();
-    if (typeof requestRender === 'function') requestRender();
+    updateUI();
+    requestRender();
     return true;
   }
 
@@ -35676,8 +32720,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       setTool('select');
       return;
     }
-    const treatmentBreakAvailable = typeof seamPathBreakEligibility === 'function'
-      && seamPathBreakEligibility().ok;
+    const treatmentBreakAvailable = seamPathBreakEligibility().ok;
     if (state.tool === 'break-treatment' && !treatmentBreakAvailable) {
       setTool('select');
       return;
@@ -35820,7 +32863,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     } else if (state.tool === 'notch') {
       toolText = 'Notch – Click near a line to place a small perpendicular notch mark there. <span class="kbd">Esc</span> returns to Select.';
     } else if (state.tool === 'stamp') {
-      const stamp = (typeof getActiveShapeStamp === 'function') ? getActiveShapeStamp() : null;
+      const stamp = getActiveShapeStamp();
       toolText = stamp
         ? 'Shape – Drag on the board to place <strong>' + escapeHtml(stamp.name)
           + '</strong> at that size. <span class="kbd">Shift</span> keeps its proportions, '
@@ -36011,10 +33054,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       el.dxfMeasurementsListBtn.title = hasSession ? 'List every measurement in this session' : 'Import a DXF file first';
       el.dxfMeasurementsListBtn.classList.toggle('active', isDxfMeasurementsPanelOpen());
     }
-    if (typeof renderDxfMeasurementsPanel === 'function') renderDxfMeasurementsPanel();
+    renderDxfMeasurementsPanel();
     // US-114: the active-size filter — hidden entirely unless the current
     // import actually carries 2+ distinct size labels.
-    if (typeof renderDxfMeasureSizeSelect === 'function') renderDxfMeasureSizeSelect();
+    renderDxfMeasureSizeSelect();
     // ADR 0073: the native-unit select + provenance note. The select mirrors
     // the session's EFFECTIVE unit; the activeElement guard is the
     // brushSizeInput pattern above — never fight the TD mid-interaction.
@@ -36192,66 +33235,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     el.autoApplyBtn.disabled = approvedCount === 0 || auto.status === 'applying';
     el.autoDiscardBtn.disabled = draftCount === 0;
     el.autoResetBoardBtn.disabled = busy || isWorkingBoardEmpty();
-
-    // Learning loop controls: toggle reflects the persisted flag, chip
-    // exposes the running sample count (the "measurable" property),
-    // reset is only enabled when there is something to clear.
-    const learningOn = isLearningEnabled();
-    const learningSamples = getLearningSampleCount();
-    el.autoLearnToggleBtn.classList.toggle('active', learningOn);
-    el.autoLearnToggleBtn.title = learningOn
-      ? 'Learning is ON — applies median calibration after Detect Sketch. Click to turn off.'
-      : 'Learning is OFF — Detect Sketch uses pure geometric rules. Click to turn on.';
-    el.autoLearnChip.textContent = learningSamples + ' sample' + (learningSamples === 1 ? '' : 's');
-    el.autoLearnChip.dataset.status = learningOn && learningSamples >= 5 ? 'detected' : 'idle';
-    if (el.learningToolbarBtn) {
-      el.learningToolbarBtn.classList.toggle('active', learningOn);
-      el.learningToolbarBtn.textContent = learningOn ? 'Learning On' : 'Learning Off';
-      el.learningToolbarBtn.title = learningOn
-        ? 'Learning is ON — click to view learning data. Correct Auto lines, then Save project + evidence.'
-        : 'Click to turn learning on before correcting Auto lines.';
-    }
-    if (el.learningToolbarChip) {
-      el.learningToolbarChip.textContent = learningSamples + ' sample' + (learningSamples === 1 ? '' : 's');
-      el.learningToolbarChip.dataset.status = learningOn && learningSamples >= 5 ? 'detected' : 'idle';
-      el.learningToolbarChip.title = learningOn
-        ? 'Recorded TD correction samples used by learning.'
-        : 'Learning is off. Click Learning Off to start collecting corrections.';
-    }
-    if (el.autoAcceptanceChip) {
-      const acceptance = getAutoAcceptanceStats();
-      const accepted = acceptance.acceptedWithoutEdit || 0;
-      const total = acceptance.totalApplied || 0;
-      const rate = total > 0 ? Math.round(accepted / total * 100) : 0;
-      el.autoAcceptanceChip.textContent = accepted + '/' + total + ' accepted';
-      el.autoAcceptanceChip.title = total > 0
-        ? 'Auto-applied POM lines accepted without edit: ' + accepted + ' of ' + total + ' (' + rate + '%).'
-        : 'No Auto-applied POM lines have been tracked yet.';
-    }
-
-    // Menu items reflect what is actually present.
-    const styleId = currentStyleId();
-    const currentMeaningCount = listConfirmedMeanings(styleId).length;
-    let totalMeaningCount = 0;
-    for (const sid of listKnownStyleIds()) {
-      totalMeaningCount += listConfirmedMeanings(sid).length;
-    }
-    if (el.resetResidualsItem) {
-      el.resetResidualsItem.disabled = learningSamples === 0;
-      el.resetResidualsItem.textContent = 'Reset calibration residuals (' + learningSamples + ')';
-    }
-    if (el.resetMeaningsCurrentItem) {
-      el.resetMeaningsCurrentItem.disabled = currentMeaningCount === 0;
-      const styleLabel = styleId === '__default__' ? 'default bucket' : 'style "' + styleId + '"';
-      el.resetMeaningsCurrentItem.textContent = 'Forget POM meanings — ' + styleLabel + ' (' + currentMeaningCount + ')';
-    }
-    if (el.resetMeaningsAllItem) {
-      el.resetMeaningsAllItem.disabled = totalMeaningCount === 0;
-      el.resetMeaningsAllItem.textContent = 'Forget POM meanings — all styles (' + totalMeaningCount + ')';
-    }
-    if (el.manageMeaningsItem) {
-      el.manageMeaningsItem.disabled = currentMeaningCount === 0;
-    }
   }
 
   // ---- src/board/images/image-import.js ----
@@ -36280,7 +33263,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         if (!blob) continue;
         dataURLs.push(await blobToDataURL(blob));
       }
-      if (dataURLs.length && state.activePage === 'bom' && typeof bmAddImagesFromDataURLs === 'function') {
+      if (dataURLs.length && state.activePage === 'bom') {
         await bmAddImagesFromDataURLs(dataURLs, bmVariant);
       } else if (dataURLs.length) {
         await addImagesFromDataURLs(dataURLs);
@@ -36314,12 +33297,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // drag of the new photo moves both together.
       state.selection = { kind: 'image', id: imageRecord.id };
       state.selectedImageIds = [imageRecord.id];
-      recordAutoTelemetryEvent('image_loaded', {
-        sourceImageId: imageRecord.id,
-        sketch_id: imageRecord.id,
-        image_width: img.width,
-        image_height: img.height,
-      });
       added += 1;
     }
 
@@ -36498,8 +33475,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   }
 
   // Is this line part of the MEASUREMENT set — the collection the spec panel,
-  // both Excel exports, the Preview page, grading and learning evidence all
-  // derive their rows from?
+  // both Excel exports, the Preview page and grading all derive their rows
+  // from?
   //
   // Plain and Dashed always are. Zigzag / Cover / Bartack are construction
   // marks: they say how a seam is sewn, not how long it is, so they are drawn
@@ -36647,15 +33624,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 
   function isAutoDraft(ann) {
     return !!(ann && ann.auto === true && ann.sourceMode === 'auto-mode' && ann.autoRunId);
-  }
-
-  // A draft the TD is expected to review before it counts as their own
-  // geometry — editing one stamps `tdEdited` (markDraftTouchedByTD). Auto Mode
-  // POM drafts are the only producer since Auto Detect Seam was removed
-  // (ADR 0101); kept as its own predicate because every call site means "a
-  // draft under review", not "an Auto Mode draft".
-  function isTDReviewDraft(ann) {
-    return isAutoDraft(ann);
   }
 
   function isReviewOnlyDraft(ann) {
@@ -37996,33 +34964,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 //                derived   — built from other landmarks (inferred cup model)
 //                projected — extended or guessed (seam projection, ratio seed)
 //                missing   — no seed will be placed; the POM demotes to review
-//   (anchors nudged by the learning loop are re-tagged 'learned' at seed time —
-//   that is an anchor-stage fact, so it lives on the anchor record, not here.)
 //
-// This function only READS the detection object — it never mutates it, places
-// no coordinates, and applies no learning bias.
-
-  // Semantic bra part for a landmark kind (Engineering Workflow Phase 5
-  // vocabulary, consumed by the Phase 8 learning context). This is the
-  // "engine speaks bra construction language" mapping: which named part of
-  // the garment the landmark belongs to. Kind → part is static — a landmark's
-  // meaning does not depend on the sketch.
-  function semanticPartForAnchorKind(kind) {
-    if (!kind) return null;
-    if (kind === 'band-left' || kind === 'band-right') return 'bottomBand';
-    if (kind === 'cf-top' || kind === 'cf-bottom') return 'centerFront';
-    if (kind === 'chest-left' || kind === 'chest-right') return 'cradle';
-    if (kind.indexOf('cradle-') === 0) return 'cradle';
-    if (kind.indexOf('inner-cup-') === 0) return 'frontCup';
-    if (kind === 'apex-left' || kind === 'apex-right') return 'frontCup';
-    if (kind === 'side-top' || kind === 'side-bottom') return 'sideSeam';
-    if (kind === '171' || kind === '172') return 'frontCup';
-    if (kind === '181' || kind === '182') return 'sideSeam';
-    if (kind === 'strap-top' || kind === 'strap-bottom') return 'strap';
-    if (kind === 'back-strap-left' || kind === 'back-strap-right') return 'strap';
-    if (kind.indexOf('back-') === 0) return 'backPanel';
-    return null;
-  }
+// This function only READS the detection object — it never mutates it and
+// places no coordinates.
 
   function buildLandmarkQaFromDetection(detection) {
     if (!detection || !detection.bbox) return null;
@@ -38541,13 +35485,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     };
   }
 
+  // The defaults, overridden only by an explicit options.params (tests and
+  // tuning). Nothing is learned or persisted between runs.
   function activeDetectionParams(options) {
-    const sources = [];
-    if (!(options && options.skipLearningParams) && typeof getLearnedDetectionParams === 'function') {
-      sources.push(getLearnedDetectionParams());
-    }
-    if (options && options.params) sources.push(options.params);
-    return normalizeDetectionParams(Object.assign({}, ...sources));
+    return normalizeDetectionParams(options && options.params);
   }
 
   // Side-effect-only: reads RGBA pixels off the source image via an offscreen
@@ -38657,29 +35598,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // detectSketchFromImage.
     let inkBackend = null;
 
-    // Phase 3 seam: a registered SAM-like segmentation adapter gets first
-    // refusal. Default is null (see registerSegmentationAdapter), so this
-    // branch is skipped entirely in normal offline runs. An adapter mask keeps
-    // the in-house components path (inkBackend stays null) unless the adapter
-    // also exposes connectedComponentsWithStats — same rule as the legacy path.
-    const adapter = getSegmentationAdapter();
-    if (adapter) {
-      try {
-        const adapted = adapter(src, { targetWidth: DETECTION_TARGET_WIDTH, minSize: 32 });
-        if (adapted && adapted.mask && adapted.stats) {
-          cvAnalysis = adapted;
-          if (!cvAnalysis.engine) cvAnalysis.engine = 'external-segmentation-adapter';
-          inkBackend = (typeof adapted.connectedComponentsWithStats === 'function') ? adapted : null;
-        }
-      } catch (err) {
-        console.warn('[Auto Mode] segmentation adapter failed; using built-in detector:', err);
-        cvAnalysis = null;
-        inkBackend = null;
-      }
-    }
-
     const cv = getCvApi();
-    if (!cvAnalysis && cv && typeof cv.createInkMaskFromImage === 'function') {
+    if (cv && typeof cv.createInkMaskFromImage === 'function') {
       try {
         cvAnalysis = cv.createInkMaskFromImage(src, { targetWidth: DETECTION_TARGET_WIDTH, minSize: 32 });
         if (cvAnalysis && cvAnalysis.mask && cvAnalysis.stats) inkBackend = cv;
@@ -39250,36 +36170,12 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // Stage 2 of the detection pipeline: segmentation. Turns the ink analysis from
 // ink-mask.js into the cleaned foreground mask the rest of the pipeline reads.
 //
-// Holds the pluggable external-segmenter registry (the adapter seam consumed by
-// src/debug/debug-api.js's test hooks), the backend-id classifier, the
-// deterministic segmentation-quality score and its serializable view, the mask
-// statistics / bounds helpers, the in-house connected-component ink filter, and
-// the segmentSketch stage itself.
+// Holds the backend-id classifier, the deterministic segmentation-quality score
+// and its serializable view, the mask statistics / bounds helpers, the in-house
+// connected-component ink filter, and the segmentSketch stage itself.
 //
 // Depends on ink-mask.js and math-utils.js.
 // Source part for app.js. Run `npm run build` after editing.
-
-  // -------- Segmentation adapter seam (Engineering Workflow Phase 3, item 4) --------
-  //
-  // A single, null-guarded plug point for a future SAM-like segmenter. The
-  // contract mirrors the built-in ink-mask adapters (createInkMaskFromImage):
-  // an adapter receives the source bitmap + options and returns the SAME ink
-  // analysis shape { engine, width, height, total, mask, stats, threshold,
-  // luminanceThreshold, backgroundLum, ... }. When registered it is tried
-  // first in buildInkAnalysisFromImage and, on any failure or bad shape, the
-  // pipeline falls back to OpenCV / legacy exactly as before.
-  //
-  // HARD OFFLINE RULE: an adapter MUST run fully locally. It may wrap a
-  // vendored/WASM model, but it MUST NOT make any network call that carries
-  // sketch or measurement data. Nothing here reaches the network; the default
-  // is null, so the runtime is unchanged until a caller opts in.
-  let externalSegmentationAdapter = null;
-  function registerSegmentationAdapter(fn) {
-    externalSegmentationAdapter = (typeof fn === 'function') ? fn : null;
-    return !!externalSegmentationAdapter;
-  }
-  function clearSegmentationAdapter() { externalSegmentationAdapter = null; }
-  function getSegmentationAdapter() { return externalSegmentationAdapter; }
 
   // Normalize the many possible ink-mask engine strings into a small, stable
   // set of backend ids so downstream code / debug summaries never have to
@@ -39289,7 +36185,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     if (/^real-opencv/.test(e)) return 'opencv-real';
     if (/^free-opencv/.test(e)) return 'opencv-free';
     if (/^offline-vision-legacy/.test(e)) return 'legacy';
-    if (/^external/.test(e)) return 'external-adapter';
     if (/^synthetic/.test(e)) return 'synthetic';
     return e || 'unknown';
   }
@@ -39622,9 +36517,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // (via an offscreen canvas), parses the SVG it emits into normalized contour
 // paths, and fits a cubic through the traced arc between two POM endpoints.
 //
-// Also holds buildContourCurveCandidates, the one classification pass that turns
-// traced paths into the reusable curve-candidate list on the detection object.
-//
 // matchContourForCurve is called cross-file from
 // src/auto/drafts/pom-fixture-builder.js behind a `typeof` guard, so its name is
 // part of the contract. Nothing else in the detector needs to know how an SVG
@@ -39911,42 +36803,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     return arc;
   }
 
-  // Phase 4: normalize traced contour paths into a reusable curve-candidate
-  // list. One classification pass shared by every downstream consumer (cup
-  // inner seam, gore bottom, and future geometry/landmark curve reads) instead
-  // of each re-scanning contours.paths ad hoc. Pure SHAPE evidence: bbox +
-  // orientation + span flags + a back-reference to the source path index (full
-  // samples remain available via samplePathPoints on demand, so this list stays
-  // lean on the session-only detection object). No garment meaning is baked in.
-  function buildContourCurveCandidates(traced, detection) {
-    if (!traced || !Array.isArray(traced.paths)) return [];
-    const axisX = detection && detection.axisX != null ? detection.axisX : null;
-    const round6 = (v) => Math.round(v * 1e6) / 1e6;
-    const out = [];
-    for (let i = 0; i < traced.paths.length; i += 1) {
-      const p = traced.paths[i];
-      const b = p && p.bbox;
-      if (!b) continue;
-      const width = b.width, height = b.height;
-      const orientation = width >= height * 1.6 ? 'horizontal'
-        : height >= width * 1.6 ? 'vertical'
-        : 'arc';
-      const minX = b.x, maxX = b.x + width;
-      const spansAxisX = axisX != null && minX < axisX && maxX > axisX;
-      out.push({
-        id: i,
-        pathIndex: i,
-        bbox: { x: round6(b.x), y: round6(b.y), width: round6(width), height: round6(height) },
-        orientation,
-        lengthNorm: round6(Math.hypot(width, height)),
-        spansAxisX,
-        center: { x: round6(minX + width / 2), y: round6(b.y + height / 2) },
-        segmentCount: Array.isArray(p.segments) ? p.segments.length : 0,
-      });
-    }
-    return out;
-  }
-
   // ---- src/auto/detect/geometry-stage.js ----
 // Stage 4 of the detection pipeline: geometry analysis. Groups the ink into view
 // boxes and dispatches their roles, refines the symmetry axis, picks the band /
@@ -39998,12 +36854,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   function analyzeGeometry(seg, ctx) {
     const { detectionParams, stageTimingsMs } = ctx;
     const _stageMark = ctx.mark;
-    // Phase 4: the contour-evidence bundle (endpoints / curve candidates /
-    // stroke stats) is available here via ctx.contourEvidence so geometry can
-    // read shape evidence without re-deriving it. Geometry decisions do not
-    // consume it yet — wiring that in is Phase 5 — so output stays identical.
-    const contourEvidence = ctx.contourEvidence || null;
-    void contourEvidence;
     const {
       dark, rawDark, w, h, total, globalStats, filtered,
       threshold, luminanceThreshold,
@@ -43827,8 +40677,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // evidence kept SEPARATE from the geometry / landmark decisions above:
       // type-split feature points, deterministic stroke stats, and a compact
       // serializable summary. Additive — the junctions / junctionSummary
-      // contract above is unchanged. The trace-dependent parts (contours,
-      // curveCandidates) are attached later at the Potrace edge.
+      // contract above is unchanged. The trace-dependent part (contours) is
+      // attached later at the Potrace edge.
       endpoints: contourEndpoints,
       corners: contourCorners,
       strokeStats: contourStrokeStats,
@@ -44172,11 +41022,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     const contours = extractContours(seg, { mark });
 
     // Stage 4: geometry analysis (view roles, axis, band/cup rows, seams).
-    // The contour-evidence bundle is threaded in so the geometry stage CAN read
-    // endpoints / curve candidates (Phase 4, item 3); geometry decisions are
-    // unchanged in this phase — it is availability, not forced consumption.
     const geometry = analyzeGeometry(seg, {
-      detectionParams, mark, stageTimingsMs, contourEvidence: contours,
+      detectionParams, mark, stageTimingsMs,
       singleView: !!(opts && opts.singleView),
     });
     if (geometry.earlyReturn) return geometry.earlyReturn;
@@ -44204,18 +41051,16 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 
   // ---- Stage 3: contour / topology extraction (Engineering Workflow Phase 4) ----
   // Input: the cleaned mask from segmentSketch. Output: a clean CONTOUR-EVIDENCE
-  // bundle — { contours, endpoints, junctions, corners, curves, strokeStats }
-  // (plus the raw junctionMap handle for back-compat). This is deliberately a
+  // bundle — { endpoints, junctions, corners, strokeStats } (plus the raw
+  // junctionMap handle for back-compat). This is deliberately a
   // bag of SHAPE EVIDENCE, not geometry decisions: nothing here is an anchor or
   // a garment-level verdict, and downstream stages only READ it. Keeping the
   // raw contour data separate from technical meaning is the whole point of the
   // phase (see Engineering Workflow.md §3, "Keep raw contour data separate").
   //
-  // Two fields are populated lazily by the deferred Potrace edge pass (its
-  // duration is non-deterministic, so it runs at the orchestrator edge, not in
-  // this pure stage): `contours` (traced outlines → detection.contours) and
-  // `curves` (reusable curve candidates → detection.curveCandidates, built by
-  // buildContourCurveCandidates). They are null here by design.
+  // Traced outlines are NOT part of it: the Potrace pass's duration is
+  // non-deterministic, so it runs at the orchestrator edge, not in this pure
+  // stage, and writes detection.contours directly.
   // Auxiliary data only — a failure here must never sink the detection.
   function extractContours(seg, ctx) {
     const _stageMark = ctx.mark;
@@ -44241,15 +41086,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     const topology = buildContourTopology(junctionMap);
 
     return {
-      // Raw traced outlines — filled by the deferred Potrace edge pass.
-      contours: null,
       // Skeleton topology, split so consumers don't re-filter by type.
       junctions: topology.junctions,
       endpoints: topology.endpoints,
       corners: topology.corners,
-      // Reusable curve candidates — populated from the trace (see
-      // buildContourCurveCandidates) once detection.contours exists.
-      curves: null,
       // Deterministic skeleton stroke statistics (px, iterations, counts).
       strokeStats: topology.strokeStats,
       // Internal handle: detectLandmarks maps this to the unchanged
@@ -44260,8 +41100,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 
   // Phase 4: build a compact, serializable summary of the contour-evidence
   // bundle for the detection result. Deterministic skeleton-derived counts +
-  // stroke stats; the trace-dependent fields (traced / contourCount /
-  // curveCandidateCount) start empty here and are filled at the Potrace edge.
+  // stroke stats; the trace-dependent fields (traced / contourCount) start
+  // empty here and are filled at the Potrace edge.
   function buildContourEvidenceSummary(contourEvidence) {
     const ce = contourEvidence || {};
     const stroke = ce.strokeStats || null;
@@ -44273,7 +41113,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // Raw traced outlines are optional shape evidence attached at the edge.
       traced: false,
       contourCount: null,
-      curveCandidateCount: 0,
     };
   }
 
@@ -45342,9 +42181,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // re-seeds them from back-view coordinates and leaves that role correct.
       // But on a FRONT-ONLY sketch the back branch never runs, so these anchors
       // carry the FRONT coordinates seeded just above while still labelled
-      // 'back' — which mislabels their view (POM 11) and, worse, files their
-      // learning residuals in the side-*|back bucket where they collide with
-      // genuine back-view corrections. Tag them to the view they came from.
+      // 'back' — which mislabels their view (POM 11). Tag them to the view they
+      // came from.
       if (!backView) {
         roleByKind['side-top'] = 'front_outer';
         roleByKind['side-bottom'] = 'front_outer';
@@ -45542,7 +42380,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // the baseline seed set), seed-cradle-cf.js (POM 6/8 CF cradle geometry),
 // seed-cup-width.js (POM 9/10 cup geometry, used by the front branch),
 // seed-front-view.js and seed-back-view.js — and then runs the cup-anchor QA
-// gate, the anchor-record assembly, and the learning-bias hook that live here.
+// gate and the anchor-record assembly that live here.
 
   // -------- Anchor layer (Phase 2 of the offline engine) --------
   //
@@ -45552,7 +42390,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // Anchors x/y are normalized [0, 1] in the source image's pixel space, so
   // they travel with the image (pan / zoom / resize / save).
 
-  function seedAnchorsFromDetection(detection, sourceImage, options) {
+  function seedAnchorsFromDetection(detection, sourceImage) {
     if (!detection || !detection.bbox || !sourceImage) return [];
 
     const seedCtx = resolveSeedViewContext(detection);
@@ -45649,8 +42487,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         reviewRequired,
       };
       // Phase 6 provenance carried onto the anchor record: the landmark
-      // source class (detected / derived / projected — 'learned' is applied
-      // below when the learning loop moves the seed) and the QA notes that
+      // source class (detected / derived / projected) and the QA notes that
       // explain any weakness in TD language.
       if (qaEntry) {
         record.landmarkSourceClass = qaEntry.sourceClass;
@@ -45665,33 +42502,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       }
       list.push(record);
     }
-    // Learning-loop hook: when enabled, nudge each seeded anchor by the
-    // median (detected → corrected) residual recorded from past TD drags.
-    // No-op when learning is off or a bucket has fewer than the minimum
-    // samples. The geometric rules above are not changed.
-    //
-    // Phase 2 shadow runs pass { skipLearning: true } so the residual is
-    // computed against the unbiased prediction, never against an already-
-    // biased one (which would compound the error and make the median drift).
-    if (options && options.skipLearning) return captureDerivedOffsets(list);
-    const biased = applyLearningBiasToAnchors(list);
-    // Phase 6: an anchor the learning loop actually moved is 'learned' — the
-    // seed position is no longer purely the detector's landmark. The fine
-    // `source` provenance is untouched (it still says which detector path
-    // produced the seed); only the source CLASS is re-tagged.
-    for (const anchor of biased) {
-      if (anchor && anchor.calibrated && anchor.landmarkSourceClass) {
-        anchor.landmarkSourceClass = 'learned';
-        anchor.qaNotes = (anchor.qaNotes || []).concat(
-          'learned: seed nudged by the median residual of past TD corrections.'
-        );
-      }
-    }
     // Record the hem gap each drop_to_line dependent was seeded with, while the
     // anchors still hold exactly what detection placed. deriveAnchors replays it
     // so a band nudge moves cf-bottom / cradle-cup-bottom WITH the band instead
     // of flattening them onto its chord and discarding US-061's hem following.
-    return captureDerivedOffsets(biased);
+    return captureDerivedOffsets(list);
   }
 
   function clamp01(v) { return Math.max(0, Math.min(1, Number(v) || 0)); }
@@ -45715,7 +42530,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // ---- src/auto/mode/offline-detection-run.js ----
 // Auto Mode's "Detect Sketch" edge: the DOM / state glue wrapped around the
 // pure detection pipeline. Runs the detector from the toolbar (toasts,
-// state.autoMode.* writes, telemetry, history), seeds and relocates anchors,
+// state.autoMode.* writes, history), seeds and relocates anchors,
 // recognizes extra board photos as auxiliary views (US-039 / US-049), runs the
 // deferred Potrace trace, lets the TD confirm ambiguous view roles, and reads
 // the ?cvDebug=1 / ?freeCv=1 URL flags and picks the OpenCV adapter.
@@ -45756,10 +42571,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       showToast('Source image is not ready yet — try again in a moment.');
       return;
     }
-
-    recordAutoTelemetryEvent('detect_clicked', {
-      sourceImageId: sourceImage.id,
-    });
 
     // ---- Edge: status flip + render so the chip updates before the scan ----
     state.autoMode.status = 'detecting';
@@ -45850,26 +42661,16 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // "back" vs "front_inner" is genuinely ambiguous from the sketch — let the
     // TD confirm/correct the roles BEFORE anchors are seeded, so a corrected
     // front/back/inner assignment places anchors on the right panels. Awaited so
-    // seeding uses the confirmed roles. In test/label modes it returns
-    // immediately (see maybePromptForViewRoles) and seeding proceeds with the
+    // seeding uses the confirmed roles. In headless-suite and label modes it
+    // returns immediately (see maybePromptForViewRoles) and seeding proceeds with the
     // auto roles, so headless suites are unaffected.
     await maybePromptForViewRoles(detection, sourceImage);
     seedAndRelocateAnchors(detection, sourceImage);
-    recordAutoTelemetryEvent('anchor_seeded', {
-      sourceImageId: sourceImage.id,
-      count: state.autoMode.anchors.length,
-      duration_ms: detection.durationMs,
-    });
     state.autoMode.anchorSelectedId = null;
     state.autoMode.anchorsHidden = false;
     state.autoMode.hiddenAnchorKinds = []; // US-038: fresh detect shows all anchors
     state.autoMode.status = 'detected';
     state.autoMode.lastError = null;
-    recordAutoTelemetryEvent('detect_finished', {
-      sourceImageId: sourceImage.id,
-      duration_ms: detection.durationMs,
-      status: 'ok',
-    });
 
     pushHistoryIfChanged();
     updateUI();
@@ -46023,15 +42824,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           (typeof performance !== 'undefined' ? performance.now() : Date.now()) - traceT0
         );
         detection.engine += '+potrace';
-        // Phase 4: normalize the traced outlines into reusable curve candidates
-        // (one shared classification pass) and complete the contour-evidence
-        // summary. Both are the deferred half of extractContours' bundle —
-        // shape evidence only, no geometry decision.
-        detection.curveCandidates = buildContourCurveCandidates(traced, detection);
+        // Phase 4: complete the contour-evidence summary — the deferred half
+        // of extractContours' bundle, shape evidence only, no geometry decision.
         if (detection.contourEvidence) {
           detection.contourEvidence.traced = true;
           detection.contourEvidence.contourCount = traced.paths.length;
-          detection.contourEvidence.curveCandidateCount = detection.curveCandidates.length;
         }
       }
     } catch (err) {
@@ -46044,7 +42841,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     if (!detection.viewRoleReviewRequired && !detection.views.some(v => !v.viewRole || v.viewRole === 'unknown')) return;
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search || '');
-    if (params.has('autoDraft') || params.has('smoke') || params.has('learningTests') || params.has('meaningTests') || params.has('evidenceTests') || params.has('golden') || params.has('accuracy') || params.has('invariants') || params.has('contract') || params.get('label') === '1') return;
+    if (params.has('smoke') || params.has('golden') || params.has('accuracy') || params.has('invariants') || params.has('contract') || params.get('label') === '1') return;
     const roles = await askForViewRoles(detection, sourceImage);
     if (!roles || !roles.length) return;
     for (let i = 0; i < detection.views.length && i < roles.length; i += 1) {
@@ -46070,7 +42867,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // the legacy letter-code window.prompt only where the dialog can't run
   // (no DOM dialog shell available, e.g. stripped-down test harnesses).
   async function askForViewRoles(detection, sourceImage) {
-    if (typeof openViewRolesDialog === 'function' && typeof document !== 'undefined' && document.body) {
+    if (typeof document !== 'undefined' && document.body) {
       return openViewRolesDialog({ views: detection.views, sourceImage });
     }
     if (typeof window.prompt !== 'function') return null;
@@ -46456,27 +43253,13 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // Source part for app.js. Run `npm run build` after editing.
 //
 // hitTestAnchors funnels into onMouseDown so anchor pins beat annotation
-// hits in Auto Mode. startAnchorDrag captures a learnOrigin so the
-// learning loop sees one (anchor pre-drag → anchor post-drag) sample per
-// commit, regardless of how the mouse moved in between. moveAnchorBy is
-// the single mutation path for every anchor move (drag, nudge, snap), so
-// the derived-pin / cascade / draft-sync side effects can't diverge.
+// hits in Auto Mode. moveAnchorBy is the single mutation path for every
+// anchor move (drag, nudge, snap), so the derived-pin / cascade / draft-sync
+// side effects can't diverge.
 //
 // getAnchorById and the US-038 hide/show/isolate state live in
 // anchor-visibility.js; this file consumes isAnchorHidden so hidden pins
 // stay ungrabbable.
-
-  // Learning origin = the UNBIASED predicted position when learning stashed one
-  // (predictedX/Y set by applyLearningBiasToAnchors), else the current position.
-  // Recording the TD's correction relative to the raw prediction — not the
-  // biased seed — is what lets the bucket median converge to the FULL offset
-  // instead of half of it (A2).
-  function learnOriginX(anchor) {
-    return Number.isFinite(anchor && anchor.predictedX) ? anchor.predictedX : anchor.x;
-  }
-  function learnOriginY(anchor) {
-    return Number.isFinite(anchor && anchor.predictedY) ? anchor.predictedY : anchor.y;
-  }
 
   function anchorWorldPos(anchor) {
     const image = getImageById(anchor.sourceImageId);
@@ -46512,29 +43295,20 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 
   function startAnchorDrag(anchorId, world) {
     // A pending keyboard-nudge session must commit before a new drag begins,
-    // or its learnOrigin would blend two separate corrections into one sample.
+    // so its history entry lands before this drag's before-fingerprint.
     flushAnchorNudgeSession();
     const before = snapshotFingerprint(makeSnapshot());
-    const anchor = getAnchorById(anchorId);
     state.interaction = {
       type: 'drag-anchor',
       id: anchorId,
       prevWorld: world,
       // US-086: arm like every other geometry drag. An anchor is the highest-
-      // stakes thing on the board — a stray pixel moves it, snapAnchorToInk
-      // then pulls it onto the nearest ink on mouseup, and recordAnchorResidual
-      // files that accident as a TD correction the learner trains on.
+      // stakes thing on the board — a stray pixel moves it, and snapAnchorToInk
+      // then pulls it onto the nearest ink on mouseup.
       startWorld: { x: world.x, y: world.y },
       armed: false,
       changed: false,
       beforeFingerprint: before,
-      // Snapshot the anchor's pre-drag normalized position so onMouseUp
-      // can compute the (detected → corrected) residual exactly once
-      // per commit, regardless of how the mouse moved in between. Use the
-      // UNBIASED prediction (predictedX/Y stashed by applyLearningBiasToAnchors)
-      // so the residual trains against the raw detector, not the biased seed
-      // (A2). Falls back to the current position when no bias was applied.
-      learnOrigin: anchor ? { kind: anchor.kind, x: learnOriginX(anchor), y: learnOriginY(anchor) } : null,
     };
     document.body.classList.add('grabbing');
   }
@@ -46573,11 +43347,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // ---- U1: arrow-key nudge -------------------------------------------------
   // Arrow keys move the selected anchor by whole source-image pixels (the
   // space the ink mask and detectors work in). Rapid keystrokes form one
-  // "nudge session": the learning residual, telemetry event, and history
-  // push commit once, NUDGE_COMMIT_MS after the last keystroke — mirroring
-  // the one-commit-per-drag contract of the mouse path.
+  // "nudge session": the history push commits once, NUDGE_COMMIT_MS after
+  // the last keystroke — mirroring the one-commit-per-drag contract of the
+  // mouse path.
   const NUDGE_COMMIT_MS = 700;
-  let anchorNudgeSession = null; // { anchorId, learnOrigin, timer }
+  let anchorNudgeSession = null; // { anchorId, timer }
 
   function nudgeSelectedAnchor(dxPx, dyPx) {
     if (state.appMode !== 'auto' || state.autoMode.anchorsHidden) return false;
@@ -46592,12 +43366,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       flushAnchorNudgeSession();
     }
     if (!anchorNudgeSession) {
-      anchorNudgeSession = {
-        anchorId: anchor.id,
-        // Train against the unbiased prediction, not the biased seed (A2).
-        learnOrigin: { kind: anchor.kind, x: learnOriginX(anchor), y: learnOriginY(anchor) },
-        timer: null,
-      };
+      anchorNudgeSession = { anchorId: anchor.id, timer: null };
     }
     moveAnchorBy(anchor, dxPx / naturalW, dyPx / naturalH);
     if (anchorNudgeSession.timer) clearTimeout(anchorNudgeSession.timer);
@@ -46610,17 +43379,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     anchorNudgeSession = null;
     if (!session) return;
     if (session.timer) clearTimeout(session.timer);
-    const anchor = getAnchorById(session.anchorId);
-    if (!anchor || anchor.kind !== session.learnOrigin.kind) return;
-    const dx = anchor.x - session.learnOrigin.x;
-    const dy = anchor.y - session.learnOrigin.y;
-    if (!dx && !dy) return;
-    recordAnchorResidual(anchor.kind, dx, dy, anchor);
-    recordAutoTelemetryEvent('anchor_nudged', {
-      sourceImageId: anchor.sourceImageId,
-      anchor_id: anchor.id,
-      anchor_kind: anchor.kind,
-    });
+    if (!getAnchorById(session.anchorId)) return;
     pushHistoryIfChanged();
     // Same reason as the drag-anchor branch of onMouseUp: the nudge re-synced
     // the drafts, which can drop an approval and change a drawability tier, and
@@ -46834,7 +43593,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     {
       const detN = state.autoMode && state.autoMode.detection;
       const paths = detN && detN.contours && detN.contours.paths;
-      const traced = (typeof matchContourForCurve === 'function' && paths && paths.length)
+      const traced = (paths && paths.length)
         ? matchContourForCurve(paths, neck17start, neck17end, { preferThin: true })
         : null;
       // POM 17 keeps the plain range behaviour (short neckline arc, tame
@@ -46880,7 +43639,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     {
       const detA = state.autoMode && state.autoMode.detection;
       const pathsA = detA && detA.contours && detA.contours.paths;
-      const tracedA = (typeof matchContourForCurve === 'function' && pathsA && pathsA.length)
+      const tracedA = (pathsA && pathsA.length)
         ? matchContourForCurve(pathsA, arm18start, arm18end, { preferThin: true })
         : null;
       if (traceIsUsable(tracedA) && traceShapeOk(tracedA, arm18start, arm18end)) {
@@ -47552,9 +44311,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   }
 
   // Geometry fingerprint used to decide whether a draft really moved. Taken
-  // before the rebuild and again after the post-passes below, never in between:
-  // the style-evidence blend rewrites the endpoints again, so a draft can be
-  // rewritten with raw fixture geometry and still end up exactly where it was.
+  // before the rebuild and again after it, so a draft rewritten with the same
+  // fixture geometry it already held does not count as moved.
   function draftGeometryKey(draft) {
     const p = (q) => q ? q.x.toFixed(6) + ',' + q.y.toFixed(6) : '-';
     return [draft.drawability, p(draft.start), p(draft.end),
@@ -47565,13 +44323,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // derivation in buildDraftAnnotation (build-draft-annotation.js) — a field
   // added there and not here would silently stop tracking its anchors.
   //
-  // Writes unconditionally, even when the rebuilt geometry is identical. That
-  // looks wasteful and is load-bearing: the style-evidence pass below has to see
-  // every draft sitting on RAW fixture geometry. Skipping the unchanged ones
-  // would leave them holding their already-blended endpoints, and blending those
-  // again would compound the 40% pull on every mousemove. Resetting to raw first
-  // makes the whole re-sync idempotent. "Did it actually move" is answered later,
-  // by comparing geometry keys across the entire pass.
+  // Writes unconditionally, even when the rebuilt geometry is identical, which
+  // keeps the re-sync idempotent. "Did it actually move" is answered later, by
+  // comparing geometry keys across the entire pass.
   function applyFixtureRowToDraft(draft, row, image) {
     if (!draft || !row || !image || !image.width) return false;
     const reviewOnly = row.drawability === 'REVIEW_ONLY';
@@ -47591,7 +44345,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     draft.arrowType = reviewOnly ? 'double' : (row.arrowType || 'double');
     draft.drawability = row.drawability;
     draft.confidence = row.confidence || 'medium';
-    draft.endpointApproximate = row.drawability === 'APPROXIMATE';
     draft.desc = row.desc || null;
     draft.reason = row.reason || null;
     draft.uncertainty = row.uncertainty || null;
@@ -47603,16 +44356,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       ? row.missingAnchors.slice() : null;
     draft.reviewNotes = Array.isArray(row.reviewNotes) && row.reviewNotes.length
       ? row.reviewNotes.slice() : null;
-    // Clear the style-evidence marks along with the geometry they described.
-    // The two passes at the end of the re-sync re-apply them from the store, so
-    // after this the draft is in exactly the state a fresh Generate would build.
-    // Leaving them set would be worse than untidy: applyStyleConfirmedEvidence-
-    // ToDrafts skips anything still flagged 'absent-confirmed', so a draft whose
-    // absence evidence has since been forgotten would be rebuilt with real
-    // geometry and then never receive the confirmed prior again.
-    draft.styleEvidenceId = null;
-    draft.styleEvidenceStatus = null;
-    draft.styleEvidenceSamples = null;
     // A REVIEW_ONLY row has no line to caption. Otherwise re-derive the callout
     // position unless the TD placed it by hand; the collision pass below then
     // spreads the whole set, exactly as it does after Generate.
@@ -47621,10 +44364,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     } else if (!draft.labelManual) {
       draft.label = computeDefaultLabelPosition(draft);
     }
-    // Approval is NOT decided here — see the end of resyncDraftsFromAnchors.
-    // The style-evidence pass can move these endpoints again, so whether the
-    // line the TD approved actually changed is only knowable once every pass has
-    // run.
+    // Approval is NOT decided here — see the end of resyncDraftsFromAnchors,
+    // which compares geometry keys once every draft has been rebuilt.
     return true;
   }
 
@@ -47694,28 +44435,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     }
     if (!touched.length) return 0;
 
-    // Same post-passes Generate runs, in the same order (absence wipes, then
-    // the confirmed-style soft pull, then label de-collision), over the rebuilt
-    // rows only — a hand-edited draft is excluded above and must stay excluded
-    // here too. Each pass reads the freshly rebuilt geometry rather than its own
-    // previous output, so repeating this on every mousemove cannot compound.
-    //
-    // Evidence is scoped to drafts on the DETECTION SOURCE image, matching
-    // generate-drafts-action.js: it runs both passes before the inner-view pass
-    // replaces POM 9/10/17/18, so an inner-photo draft never gets blended — and
-    // the evidence medians are normalized against the source image anyway, so
-    // applying them to a draft on a different photo would place it by the wrong
-    // rectangle. It covers EVERY rebuilt front draft, not only the ones whose
-    // anchors moved: Generate blends the whole set, so blending a subset here
-    // would leave the board in a state Generate can never produce.
-    const frontTouched = touched.filter(d => String(d.sourceImageId) === String(sourceImage.id));
-    if (frontTouched.length && typeof applyStyleAbsenceEvidenceToDrafts === 'function') {
-      applyStyleAbsenceEvidenceToDrafts(frontTouched);
-    }
-    if (frontTouched.length && typeof applyStyleConfirmedEvidenceToDrafts === 'function') {
-      applyStyleConfirmedEvidenceToDrafts(frontTouched, sourceImage);
-    }
-    // Hand-edited drafts stay out of this too, not just out of the rebuild.
+    // Same label de-collision pass Generate runs. Hand-edited drafts stay out
+    // of this too, not just out of the rebuild.
     // The pass shifts any label with labelManual === false, and a tdEdited
     // draft's label was never reset to its default here — so where every other
     // callout starts each pass from a fresh default, that one would keep and
@@ -47723,16 +44444,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // the TD deliberately placed. Excluding it can let a rebuilt callout overlap
     // it, which is cosmetic and already possible; the drift was neither, since
     // Apply copies the label position onto the applied annotation.
-    if (typeof nudgeAutoLabelsToAvoidCollisions === 'function') {
-      nudgeAutoLabelsToAvoidCollisions(drafts.filter(d => d && !d.tdEdited));
-    }
+    nudgeAutoLabelsToAvoidCollisions(drafts.filter(d => d && !d.tdEdited));
 
-    // Now that every pass has run, drop the approval on the drafts whose line
-    // actually ended up somewhere else. Deciding this before the blend would
-    // unapprove a draft on a style with stored evidence every single time any
-    // anchor moved, because the pre-blend rebuild always differs from the
-    // post-blend geometry the TD is looking at — even when the two passes
-    // together land it right back where it was.
+    // Now that every draft has been rebuilt, drop the approval on the drafts
+    // whose line actually ended up somewhere else.
     let moved = 0;
     for (const draft of touched) {
       if (geometryBefore.get(draft) === draftGeometryKey(draft)) continue;
@@ -47814,7 +44529,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       tdEdited: false,
       tdApproved: false,
       tdApprovalRequired: true,
-      endpointApproximate: row.drawability === 'APPROXIMATE',
       proposedStartLandmark: row.proposedStartLandmark || null,
       proposedEndLandmark: row.proposedEndLandmark || null,
       reason: row.reason || null,
@@ -48062,27 +44776,22 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // current detection.
 // Source part for app.js. Run `npm run build` after editing.
 //
-// These mutate one draft's tdApproved / drawability / telemetry fields. The
+// These mutate one draft's tdApproved / drawability fields. The
 // atomic commit-to-board pipeline lives in apply-drafts.js, and the
 // whole-board discard / reset operations in board-reset.js.
 
   // -------- TD review actions on drafts --------
 
+  // A draft the TD is expected to review before it counts as their own
+  // geometry. Auto Mode POM drafts are the only producer since Auto Detect
+  // Seam was removed (ADR 0101), so this is a no-op on anything else and every
+  // edit path may call it unconditionally.
   function markDraftTouchedByTD(ann) {
-    if (!isTDReviewDraft(ann)) return;
-    const wasEdited = !!ann.tdEdited;
+    if (!isAutoDraft(ann)) return;
     ann.tdEdited = true;
     ann.tdApprovalRequired = true;
-    ann.endpointApproximate = true;
     ann.tdApproved = false;
     ann.approvedAt = null;
-    if (!wasEdited) {
-      recordAutoTelemetryEvent('draft_edited', {
-        sourceImageId: ann.sourceImageId,
-        draft_id: ann.id,
-        pom_id: ann.seq != null ? String(ann.seq) : (ann.text != null ? String(ann.text) : null),
-      });
-    }
   }
 
   function approveDraftAnnotation(ann) {
@@ -48097,13 +44806,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     }
     ann.tdApproved = true;
     ann.tdApprovalRequired = false;
-    ann.endpointApproximate = false;
     ann.approvedAt = new Date().toISOString();
-    recordAutoTelemetryEvent('draft_approved', {
-      sourceImageId: ann.sourceImageId,
-      draft_id: ann.id,
-      pom_id: ann.seq != null ? String(ann.seq) : (ann.text != null ? String(ann.text) : null),
-    });
   }
 
   function markDraftReviewOnly(ann) {
@@ -48118,14 +44821,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     ann.tdEdited = true;
     ann.tdApproved = false;
     ann.tdApprovalRequired = true;
-    ann.endpointApproximate = false;
     ann.approvedAt = null;
     if (!ann.uncertainty) ann.uncertainty = 'Marked REVIEW_ONLY by TD.';
-    recordAutoTelemetryEvent('draft_review_only', {
-      sourceImageId: ann.sourceImageId,
-      draft_id: ann.id,
-      pom_id: ann.seq != null ? String(ann.seq) : (ann.text != null ? String(ann.text) : null),
-    });
   }
 
   // Toolbar action: throw away every TD anchor correction and re-seed the
@@ -48184,10 +44881,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     }
 
     state.autoMode.status = 'applying';
-    recordAutoTelemetryEvent('apply_started', {
-      sourceImageId: approved[0] && approved[0].sourceImageId,
-      approved_count: approved.length,
-    });
     updateUI();
 
     // Atomic validation: every approved draft must still be drawable and
@@ -48285,15 +44978,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     nudgeAutoLabelsToAvoidCollisions(sameImageAutoLines.concat(applied));
 
     // Commit.
-    for (const ann of applied) {
-      state.annotations.push(ann);
-      recordAutoTelemetryEvent('draft_applied', {
-        sourceImageId: ann.sourceImageId,
-        draft_id: ann.originDraftId,
-        pom_id: ann.seq != null ? String(ann.seq) : (ann.text != null ? String(ann.text) : null),
-      });
-    }
-    recordAutoAcceptanceStats(applied);
+    for (const ann of applied) state.annotations.push(ann);
     // Remove the applied drafts from the draft layer (matched by id).
     const appliedDraftIds = new Set(approved.map(d => d.id));
     state.autoMode.draftAnnotations = drafts.filter(d => !appliedDraftIds.has(d.id));
@@ -48320,16 +45005,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     state.autoMode.anchorsHidden = true;
     state.autoMode.anchorSelectedId = null;
     state.autoMode.lastError = null;
-    recordAutoTelemetryEvent('apply_finished', {
-      sourceImageId: applied[0] && applied[0].sourceImageId,
-      count: applied.length,
-      status: 'ok',
-    });
-    recordAutoTelemetryEvent('auto_session_done', {
-      sourceImageId: applied[0] && applied[0].sourceImageId,
-      count: applied.length,
-      status: 'applied',
-    });
 
     pushHistoryIfChanged();
     // Handoff: Apply means "review is done" — switch straight to Manual
@@ -48372,28 +45047,14 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       drawability: draft.drawability,
       confidence: draft.confidence,
       tdEdited: !!draft.tdEdited,
-      acceptedWithoutEdit: !draft.tdEdited,
-      acceptedTrackedAt: new Date().toISOString(),
       tdApproved: true,
       tdApprovalRequired: false,
-      endpointApproximate: false,
       approvedAt: draft.approvedAt || new Date().toISOString(),
       proposedStartLandmark: draft.proposedStartLandmark || null,
       proposedEndLandmark: draft.proposedEndLandmark || null,
       reason: draft.reason || null,
       uncertainty: draft.uncertainty || null,
       sharedAnchorFamily: draft.sharedAnchorFamily || null,
-      // Style-evidence provenance. A 'confirmed-prior' line was pulled 40% off
-      // the anchors toward the median of past TD confirmations, and an
-      // 'absent-confirmed' one was wiped because the style is known not to
-      // measure that POM. Dropping these on Apply left no record anywhere that
-      // the line is not where detection put it — while the contract suite reads
-      // the same flag to decide which rows its line-anchor assertions may skip.
-      // Exactly what the note at the top of this file warns about: a field added
-      // to buildDraftAnnotation and not here vanishes silently.
-      styleEvidenceId: draft.styleEvidenceId || null,
-      styleEvidenceStatus: draft.styleEvidenceStatus || null,
-      styleEvidenceSamples: draft.styleEvidenceSamples != null ? draft.styleEvidenceSamples : null,
       viewRole: draft.viewRole || effectivePomViewRole(draft.seq),
       originDraftId: draft.id,
     };
@@ -48419,8 +45080,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   function discardAutoDrafts(silent) {
     if (state.autoMode.draftAnnotations.length === 0) return;
     if (!silent && !window.confirm('Discard all current Auto Mode drafts? Project annotations are not affected.')) return;
-    const discardedCount = state.autoMode.draftAnnotations.length;
-    const sourceImageId = state.autoMode.draftAnnotations[0] && state.autoMode.draftAnnotations[0].sourceImageId;
     state.autoMode.draftAnnotations = [];
     state.autoMode.validation = null;
     // Drafts are gone — any hide toggles that targeted them are stale.
@@ -48430,15 +45089,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     }
     ensureAutoModeStatus();
     pushHistoryIfChanged();
-    recordAutoTelemetryEvent('draft_discarded', {
-      sourceImageId,
-      count: discardedCount,
-    });
-    recordAutoTelemetryEvent('auto_session_done', {
-      sourceImageId,
-      count: discardedCount,
-      status: 'discarded',
-    });
     updateUI();
     requestRender();
     if (!silent) showToast('Drafts discarded. Project unchanged.');
@@ -48470,7 +45120,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     if (state.dxfPatternSource || state.dxfMeasureSession) clearDxfPatternSource();
     state.annotations = [];
     state.graphics = [];
-    state.deletedAutoAnnotations = [];
     state.images = [];
     state.eraseStrokes = [];
     // US-092: notes are board content, so a whole-board reset takes them too.
@@ -48493,9 +45142,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     state.hiddenAnnIds = [];
     state.hiddenDraftIds = [];
     el.labelEditor.style.display = 'none';
-
-    // Images going away invalidates every cached shadow detection.
-    clearManualLearnCache();
 
     ensureAutoModeStatus();
     pushHistoryIfChanged();
@@ -48522,7 +45168,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     // A line's notches go with it (ADR 0071 amendment).
     removeNotchesOwnedBy(new Set(state.annotations.map(a => a.id)));
     state.annotations = [];
-    state.deletedAutoAnnotations = [];
     state.autoMode.draftAnnotations = [];
     state.autoMode.validation = null;
     state.hiddenAnnIds = [];
@@ -48553,8 +45198,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // ---- src/auto/drafts/generate-drafts-action.js ----
 // Auto Mode "Generate Drafts" action: the UI-action orchestration around the
 // fixture engine — mode/image/anchor guards, the destructive-replace confirm,
-// the front-outer / front-inner two-pass build (US-049), learning-evidence
-// hooks, telemetry, and the history/UI/render side effects.
+// the front-outer / front-inner two-pass build (US-049), and the
+// history/UI/render side effects.
 // Source part for app.js. Run `npm run build` after editing.
 //
 // The geometry itself lives in pom-fixture-builder.js
@@ -48615,16 +45260,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     }
 
     const drafts = fixture.annotations.map(row => buildDraftAnnotation(row, sourceImage, fixture, runId));
-    if (typeof applyStyleAbsenceEvidenceToDrafts === 'function') {
-      applyStyleAbsenceEvidenceToDrafts(drafts);
-    }
-    // Soft-pull endpoints toward the median of recent TD-confirmed lines
-    // for this style. Runs after the absence pass so REVIEW_ONLY drafts
-    // stay wiped, and before label collision avoidance so labels follow
-    // the nudged endpoints.
-    if (typeof applyStyleConfirmedEvidenceToDrafts === 'function') {
-      applyStyleConfirmedEvidenceToDrafts(drafts, sourceImage);
-    }
 
     // US-049: second pass — measure POM 9/10/17/18 on the front-inner view when
     // one is present. The inner photo carries its OWN detection + anchor set
@@ -48670,11 +45305,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     state.autoMode.status = 'reviewing';
     state.autoMode.lastError = null;
     state.selection = { kind: null, id: null };
-    recordAutoTelemetryEvent('drafts_generated', {
-      sourceImageId: sourceImage.id,
-      run_id: runId,
-      draft_count: finalDrafts.length,
-    });
 
     pushHistoryIfChanged();
     updateUI();
@@ -48717,2032 +45347,18 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
     showToast(msg, 4200);
   }
 
-  // ---- src/auto/learning/acceptance-stats.js ----
-// Auto Mode acceptance statistics — totalApplied / acceptedWithoutEdit
-// counters per POM, persisted via localStorage. Source part for app.js.
-// Run `npm run build` after editing.
-//
-// recordAutoAcceptanceStats is called from applyApprovedDraftsAtomically
-// after each apply; the panel header reads loadAutoAcceptanceStats to
-// surface the per-POM accepted/edited counts in the Auto review header.
-
-  const AUTO_ACCEPTANCE_KEY = 'bra.autoAcceptance.v1';
-
-  function makeEmptyAcceptanceStats() {
-    return {
-      totalApplied: 0,
-      acceptedWithoutEdit: 0,
-      edited: 0,
-      byPom: {},
-    };
-  }
-
-  function loadAutoAcceptanceStats() {
-    try {
-      const raw = localStorage.getItem(AUTO_ACCEPTANCE_KEY);
-      if (!raw) return makeEmptyAcceptanceStats();
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return makeEmptyAcceptanceStats();
-      return {
-        totalApplied: Number(parsed.totalApplied) || 0,
-        acceptedWithoutEdit: Number(parsed.acceptedWithoutEdit) || 0,
-        edited: Number(parsed.edited) || 0,
-        byPom: parsed.byPom && typeof parsed.byPom === 'object' ? parsed.byPom : {},
-      };
-    } catch (_) {
-      return makeEmptyAcceptanceStats();
-    }
-  }
-
-  function saveAutoAcceptanceStats(stats) {
-    try { localStorage.setItem(AUTO_ACCEPTANCE_KEY, JSON.stringify(stats)); }
-    catch (_) { /* quota — stats are helpful, not project-critical */ }
-  }
-
-  function getAutoAcceptanceStats() {
-    return loadAutoAcceptanceStats();
-  }
-
-  function clearAutoAcceptanceStats() {
-    try { localStorage.removeItem(AUTO_ACCEPTANCE_KEY); } catch (_) { /* ignore */ }
-    updateUI();
-  }
-
-  function recordAutoAcceptanceStats(applied) {
-    if (!Array.isArray(applied) || !applied.length) return;
-    const stats = loadAutoAcceptanceStats();
-    for (const ann of applied) {
-      const pom = getLabelText(ann);
-      const key = String(pom || '?');
-      const row = stats.byPom[key] || {
-        applied: 0,
-        acceptedWithoutEdit: 0,
-        edited: 0,
-        approximate: 0,
-      };
-      row.applied += 1;
-      stats.totalApplied += 1;
-      if (ann.tdEdited) {
-        row.edited += 1;
-        stats.edited += 1;
-      } else {
-        row.acceptedWithoutEdit += 1;
-        stats.acceptedWithoutEdit += 1;
-      }
-      if (ann.drawability === 'APPROXIMATE') row.approximate += 1;
-      stats.byPom[key] = row;
-    }
-    saveAutoAcceptanceStats(stats);
-  }
-
-  // ---- src/auto/learning/calibration-store.js ----
-// Manual-to-Auto learning loop: per-anchor residual buckets, detection
-// parameter calibration, and the bias applier that nudges Auto Mode
-// anchors toward where the TD ends up putting them. Source part for
-// app.js. Run `npm run build` after editing.
-//
-// Three contracts: optional (toggle persists in localStorage), measurable
-// (sample count + per-bucket medians inspectable), resettable (one-click
-// clear). Buckets are keyed by (anchorKind × viewRole). Nothing leaves
-// the browser — sketch IP stays local.
-
-  // =============================================================
-  // Phase 1: Manual-to-Auto Learning Loop
-  //
-  // Records (detected → corrected) anchor residuals after every commit
-  // and applies the running median as a calibration bias on top of the
-  // geometric rules from auto_mode_rules/*.json. The rule data is unchanged.
-  //
-  // Three properties the design must keep:
-  //   - optional   : user toggle persists in localStorage; off => raw rules
-  //   - measurable : sample count + per-bucket medians inspectable
-  //   - resettable : one-click clear of every bucket
-  //
-  // Buckets are keyed by (anchorKind × viewRole). View role is explicit on
-  // detected anchors where available, with schema-based fallback for older
-  // projects.
-  // Nothing leaves the browser — sketch IP stays local.
-  // =============================================================
-
-  const LEARNING_KEY = 'bra.learning.v1';
-  const LEARNING_ENABLED_KEY = 'bra.learning.enabled.v1';
-  const LEARNING_MIN_SAMPLES = 5;
-  const LEARNING_MAX_PER_BUCKET = 50;
-  const LEARNING_CLAMP = 0.05; // ±5% of image dimension
-  const DETECTION_PARAM_MIN_SAMPLES = 5;
-  const DETECTION_PARAM_MAX_SAMPLES = 50;
-  // Anything smaller than ~1px on a 1024-wide image is UI jitter, not a
-  // real correction. Keeps fat-finger drags and accidental clicks out
-  // of the bucket.
-  const LEARNING_MIN_DELTA = 0.001;
-  // Hard ceiling on a single residual before it pollutes the bucket
-  // median. A 15% drag is almost certainly a mislabel or a fat-finger
-  // hand-off — applyMeaningSample already rejects 50% manual residuals
-  // for label-collision safety; this is the tighter ceiling for the
-  // calibration bucket where the median has to stay representative.
-  const LEARNING_OUTLIER_LIMIT = 0.15;
-
-  function emptyLearningStore() {
-    return { buckets: {}, paramSamples: {} };
-  }
-
-  function normalizeLearningStore(parsed) {
-    if (!parsed || typeof parsed !== 'object') return emptyLearningStore();
-    return {
-      buckets: (parsed.buckets && typeof parsed.buckets === 'object') ? parsed.buckets : {},
-      paramSamples: (parsed.paramSamples && typeof parsed.paramSamples === 'object') ? parsed.paramSamples : {},
-    };
-  }
-
-  function loadLearningStore() {
-    try {
-      const raw = localStorage.getItem(LEARNING_KEY);
-      if (!raw) return emptyLearningStore();
-      const parsed = JSON.parse(raw);
-      return normalizeLearningStore(parsed);
-    } catch (_) {
-      return emptyLearningStore();
-    }
-  }
-
-  function saveLearningStore() {
-    try { localStorage.setItem(LEARNING_KEY, JSON.stringify(learningStore)); }
-    catch (_) { /* quota — silently drop, no UX regression */ }
-  }
-
-  let learningStore = loadLearningStore();
-
-  function isLearningEnabled() {
-    try { return localStorage.getItem(LEARNING_ENABLED_KEY) !== '0'; }
-    catch (_) { return true; }
-  }
-
-  function setLearningEnabled(on) {
-    try { localStorage.setItem(LEARNING_ENABLED_KEY, on ? '1' : '0'); }
-    catch (_) { /* ignore */ }
-    updateUI();
-  }
-
-  function anchorView(anchorKind, anchor) {
-    if (anchor && anchor.viewRole) return anchor.viewRole;
-    const schema = ANCHOR_SCHEMA.find(s => s.kind === anchorKind);
-    if (schema && schema.group === 'back') return 'back';
-    if (anchorKind && anchorKind.indexOf('inner-cup-') === 0 && hasDetectedViewRole('front_inner')) {
-      return 'front_inner';
-    }
-    return 'front_outer';
-  }
-
-  function learningBucketKey(anchorKind, anchor) {
-    return anchorKind + '|' + anchorView(anchorKind, anchor);
-  }
-
-  function medianOf(arr) {
-    if (!arr.length) return 0;
-    const sorted = arr.slice().sort((a, b) => a - b);
-    const mid = sorted.length >> 1;
-    return sorted.length % 2 ? sorted[mid] : 0.5 * (sorted[mid - 1] + sorted[mid]);
-  }
-
-  // Median-absolute-deviation — the robust spread metric paired with
-  // medianOf. A bucket with [+1%, −5%, +4%] and one with [+0.5%, +0.6%]
-  // produce the same median but very different MADs, which is exactly
-  // the "this median is unreliable" signal we want surfaced.
-  function madOf(arr, median) {
-    if (!arr.length) return 0;
-    const m = (typeof median === 'number') ? median : medianOf(arr);
-    return medianOf(arr.map(v => Math.abs(v - m)));
-  }
-
-  // Returns true when the bucket's median is dwarfed by its spread —
-  // [+5%, −5%, +4%, −4%] has median ≈ 0 but huge MAD, so applying it
-  // would just inject noise. We downweight bias in that case instead of
-  // suppressing it entirely so a slowly-stabilizing bucket can still
-  // contribute when its spread tightens.
-  function isBucketConflicting(samples, medianDx, medianDy) {
-    if (!samples || samples.length < LEARNING_MIN_SAMPLES) return false;
-    const dxs = samples.map(r => Number(r.dx) || 0);
-    const dys = samples.map(r => Number(r.dy) || 0);
-    const madDx = madOf(dxs, medianDx);
-    const madDy = madOf(dys, medianDy);
-    // Both axes wider than 1.5× the median magnitude → noise dominates.
-    const noisyDx = madDx > 1.5 * Math.max(Math.abs(medianDx), LEARNING_MIN_DELTA * 4);
-    const noisyDy = madDy > 1.5 * Math.max(Math.abs(medianDy), LEARNING_MIN_DELTA * 4);
-    return noisyDx && noisyDy;
-  }
-
-  function getAnchorBias(anchorKind, anchor) {
-    const bucket = learningStore.buckets[learningBucketKey(anchorKind, anchor)];
-    if (!bucket || bucket.length < LEARNING_MIN_SAMPLES) {
-      return { dx: 0, dy: 0, n: bucket ? bucket.length : 0 };
-    }
-    const dx = medianOf(bucket.map(r => r.dx));
-    const dy = medianOf(bucket.map(r => r.dy));
-    // Softly down-weight conflicting buckets — applies half the bias so
-    // a stabilizing bucket still nudges, but a thrashing one barely
-    // touches the anchor.
-    const weight = isBucketConflicting(bucket, dx, dy) ? 0.5 : 1;
-    return {
-      dx: Math.max(-LEARNING_CLAMP, Math.min(LEARNING_CLAMP, dx)) * weight,
-      dy: Math.max(-LEARNING_CLAMP, Math.min(LEARNING_CLAMP, dy)) * weight,
-      n: bucket.length,
-    };
-  }
-
-  function detectionParamBucket(paramName) {
-    if (!learningStore.paramSamples || typeof learningStore.paramSamples !== 'object') {
-      learningStore.paramSamples = {};
-    }
-    return learningStore.paramSamples[paramName] || (learningStore.paramSamples[paramName] = []);
-  }
-
-  function pushDetectionParamSample(paramName, sample) {
-    const bucket = detectionParamBucket(paramName);
-    bucket.push({ ...sample, ts: Date.now() });
-    if (bucket.length > DETECTION_PARAM_MAX_SAMPLES) {
-      bucket.splice(0, bucket.length - DETECTION_PARAM_MAX_SAMPLES);
-    }
-  }
-
-  function detectionNoiseDelta(anchor, residualMagnitude) {
-    const conf = anchor && anchor.confidence;
-    if (conf === 'high') return Math.min(0.08, 0.015 + residualMagnitude * 0.5);
-    return -Math.min(0.10, 0.02 + residualMagnitude * 0.7);
-  }
-
-  function recordDetectionParamResidual(anchorKind, dxNorm, dyNorm, anchor) {
-    const sampleAnchor = anchor || { kind: anchorKind };
-    const absX = Math.abs(dxNorm);
-    const absY = Math.abs(dyNorm);
-    const viewRole = anchorView(anchorKind, sampleAnchor);
-    const base = {
-      kind: anchorKind,
-      viewRole,
-      confidence: sampleAnchor.confidence || null,
-    };
-
-    // Bottom-band anchors are the cleanest signal for the detector's
-    // bottom-band preferred row. Store the actual TD residual, then
-    // getLearnedDetectionParams converts the running median into a small
-    // ratio shift. (cf-bottom is intentionally NOT here: it is a DERIVED
-    // anchor, so recordAnchorResidual returns before this runs — A6 removed
-    // the dead clause that could never fire.)
-    if ((anchorKind === 'band-left' || anchorKind === 'band-right')
-        && absY >= LEARNING_MIN_DELTA) {
-      pushDetectionParamSample('bandPreferredRatio', {
-        ...base,
-        residual: dyNorm,
-        value: Math.max(-0.08, Math.min(0.08, dyNorm)),
-      });
-    }
-
-    // Row features that consistently need vertical TD correction imply the
-    // horizontal-feature gate is too permissive (high-confidence wrong row)
-    // or too strict (fallback / low-confidence row). Store both the residual
-    // and the proposed multiplier delta for later median aggregation.
-    if (isRowLearnAnchor(anchorKind) && absY >= LEARNING_MIN_DELTA * 4) {
-      pushDetectionParamSample('rowNoiseMultiplier', {
-        ...base,
-        residual: dyNorm,
-        value: detectionNoiseDelta(sampleAnchor, absY),
-      });
-    }
-
-    // Side / back edge anchors teach the column gate in the same way.
-    if (isColumnLearnAnchor(anchorKind) && absX >= LEARNING_MIN_DELTA * 4) {
-      pushDetectionParamSample('colNoiseMultiplier', {
-        ...base,
-        residual: dxNorm,
-        value: detectionNoiseDelta(sampleAnchor, absX),
-      });
-    }
-  }
-
-  function isRowLearnAnchor(kind) {
-    // cf-bottom omitted: it is derived, so it never reaches this gate (A6).
-    return kind === 'cf-top'
-      || kind === 'chest-left'
-      || kind === 'chest-right'
-      || kind === 'inner-cup-top'
-      || kind === 'inner-cup-bottom'
-      || kind === 'back-top'
-      || kind === 'back-bottom'
-      || kind === 'back-panel-top'
-      || kind === 'back-panel-bottom'
-      || kind === 'strap-top'
-      || kind === 'strap-bottom';
-  }
-
-  function isColumnLearnAnchor(kind) {
-    return kind === 'band-left'
-      || kind === 'band-right'
-      || kind === 'chest-left'
-      || kind === 'chest-right'
-      || kind === 'side-top'
-      || kind === 'side-bottom'
-      || kind === 'inner-cup-left'
-      || kind === 'inner-cup-right'
-      || kind === 'back-strap-left'
-      || kind === 'back-strap-right'
-      || kind === 'apex-left'
-      || kind === 'apex-right';
-  }
-
-  function getDetectionParamSampleCount(paramName) {
-    if (!learningStore.paramSamples || typeof learningStore.paramSamples !== 'object') return 0;
-    if (paramName) return (learningStore.paramSamples[paramName] || []).length;
-    let n = 0;
-    for (const key in learningStore.paramSamples) n += learningStore.paramSamples[key].length;
-    return n;
-  }
-
-  function getLearnedDetectionParams() {
-    if (!isLearningEnabled()) return getDefaultDetectionParams();
-    const base = typeof getDefaultDetectionParams === 'function'
-      ? getDefaultDetectionParams()
-      : { bandSearchStartRatio: 0.58, bandPreferredRatio: 0.82, rowNoiseMultiplier: 1, colNoiseMultiplier: 1 };
-    const samples = learningStore.paramSamples || {};
-    const medianDelta = (paramName) => {
-      const bucket = samples[paramName] || [];
-      if (bucket.length < DETECTION_PARAM_MIN_SAMPLES) return 0;
-      return medianOf(bucket.map(r => Number(r.value) || 0));
-    };
-    const bandDelta = medianDelta('bandPreferredRatio');
-    const rowDelta = medianDelta('rowNoiseMultiplier');
-    const colDelta = medianDelta('colNoiseMultiplier');
-    return {
-      bandSearchStartRatio: Math.max(0.50, Math.min(0.68, base.bandSearchStartRatio + bandDelta * 0.5)),
-      bandPreferredRatio: Math.max(0.72, Math.min(0.90, base.bandPreferredRatio + bandDelta)),
-      rowNoiseMultiplier: Math.max(0.75, Math.min(1.25, base.rowNoiseMultiplier + rowDelta)),
-      colNoiseMultiplier: Math.max(0.75, Math.min(1.25, base.colNoiseMultiplier + colDelta)),
-      sampleCounts: {
-        bandPreferredRatio: getDetectionParamSampleCount('bandPreferredRatio'),
-        rowNoiseMultiplier: getDetectionParamSampleCount('rowNoiseMultiplier'),
-        colNoiseMultiplier: getDetectionParamSampleCount('colNoiseMultiplier'),
-      },
-    };
-  }
-
-  // Stage attribution (Engineering Workflow Phase 8, item 1): which pipeline
-  // stage most likely caused the correction the TD just made. Purely
-  // diagnostic — the bias math never reads it — but it tells an engineer (via
-  // the learning-data dialog and the sample records) WHERE the engine loses
-  // accuracy. Precedence follows the pipeline upstream-first: a tiny drag is
-  // an anchor nudge whatever the stage flags say; otherwise the deepest weak
-  // stage claims the correction (segmentation → contour/seam evidence →
-  // geometry frame → the landmark pick itself).
-  const RESIDUAL_NUDGE_LIMIT = 0.015; // ≤1.5% of the image dimension = fine-tune
-  function classifyResidualStage(anchorKind, dxNorm, dyNorm) {
-    const mag = Math.max(Math.abs(Number(dxNorm) || 0), Math.abs(Number(dyNorm) || 0));
-    if (mag < RESIDUAL_NUDGE_LIMIT) return 'anchor-nudge';
-    const det = state.autoMode && state.autoMode.detection;
-    if (!det) return 'unknown';
-    if (det.segmentationReviewRequired) return 'segmentation-weak';
-    const qa = det.landmarkQa && det.landmarkQa.byKind
-      ? det.landmarkQa.byKind[anchorKind]
-      : null;
-    // 'projected' covers seamProjected / seamDip / ratio / cupRatioFallback —
-    // the landmark had no direct contour/seam/ink evidence to rest on.
-    if (qa && qa.sourceClass === 'projected') return 'contour-missing';
-    if (det.geometryReviewRequired) return 'geometry-wrong';
-    return 'landmark-wrong';
-  }
-
-  function recordAnchorResidual(anchorKind, dxNorm, dyNorm, anchor) {
-    if (!isLearningEnabled()) return false;
-    // Derived anchors (Phase 3, plan 2) are geometric consequences of their
-    // primaries — a drag on one is a pin, not a detection correction, so it
-    // must not train the calibration bias for that kind.
-    if (typeof anchorDerivationForKind === 'function' && anchorDerivationForKind(anchorKind)) return false;
-    if (!Number.isFinite(dxNorm) || !Number.isFinite(dyNorm)) return false;
-    if (Math.abs(dxNorm) < LEARNING_MIN_DELTA && Math.abs(dyNorm) < LEARNING_MIN_DELTA) return false;
-    // Drop residuals beyond the outlier ceiling — see LEARNING_OUTLIER_LIMIT.
-    // A bucket of 50 samples carries each entry's contribution for a long
-    // time, so one bad drag is worth rejecting at the door.
-    if (Math.abs(dxNorm) > LEARNING_OUTLIER_LIMIT) return false;
-    if (Math.abs(dyNorm) > LEARNING_OUTLIER_LIMIT) return false;
-    const sampleAnchor = anchor || { kind: anchorKind };
-    const key = learningBucketKey(anchorKind, anchor);
-    const bucket = learningStore.buckets[key] || (learningStore.buckets[key] = []);
-    // Phase 8 sample context — additive fields the bias math never reads:
-    //   stage — suspected pipeline stage behind the correction (item 1);
-    //   part  — semantic bra part (item 3 scoping context);
-    //   style — the project's style code, so a future scoped-bias pass can
-    //           split buckets per style WITHOUT invalidating today's data
-    //           (the bucket key stays kind|viewRole on purpose);
-    //   conf  — the anchor's confidence tier before the correction.
-    const sample = {
-      dx: dxNorm, dy: dyNorm, ts: Date.now(),
-      stage: classifyResidualStage(anchorKind, dxNorm, dyNorm),
-    };
-    const part = (typeof semanticPartForAnchorKind === 'function')
-      ? semanticPartForAnchorKind(anchorKind)
-      : null;
-    if (part) sample.part = part;
-    const styleId = (typeof currentStyleId === 'function') ? currentStyleId() : null;
-    if (styleId) sample.style = styleId;
-    if (anchor && anchor.confidence) sample.conf = anchor.confidence;
-    bucket.push(sample);
-    // Drop the oldest entries first — recent TDs are more representative
-    // of the current sketch style than ones from months ago.
-    if (bucket.length > LEARNING_MAX_PER_BUCKET) {
-      bucket.splice(0, bucket.length - LEARNING_MAX_PER_BUCKET);
-    }
-    recordDetectionParamResidual(anchorKind, dxNorm, dyNorm, sampleAnchor);
-    saveLearningStore();
-    return true;
-  }
-
-  function getLearningSampleCount() {
-    let n = 0;
-    for (const key in learningStore.buckets) n += learningStore.buckets[key].length;
-    return n;
-  }
-
-  // Reset learned residuals only. POM meaning confirmations are kept —
-  // those are reset via resetPomMeanings() so the TD can clear bad
-  // calibration without losing every catalog choice.
-  function resetLearning() {
-    const count = getLearningSampleCount();
-    if (count === 0) {
-      showToast('Nothing learned yet.');
-      return;
-    }
-    if (!window.confirm('Reset learned calibration? This deletes ' + count + ' recorded correction(s). Confirmed POM meanings are kept. Auto Mode will go back to the raw geometric rules.')) return;
-    learningStore = emptyLearningStore();
-    saveLearningStore();
-    clearManualLearnCache();
-    showToast('Calibration reset.');
-    updateUI();
-  }
-
-  // Apply the median residual to every anchor in-place. Called by
-  // seedAnchorsFromDetection so every code path that re-seeds anchors
-  // (Detect Sketch, Reset Anchors) gets the same treatment.
-  function applyLearningBiasToAnchors(anchors) {
-    if (!Array.isArray(anchors) || !anchors.length) return anchors;
-    if (!isLearningEnabled()) return anchors;
-    for (const anchor of anchors) {
-      // Derived anchors no longer learn residuals (see recordAnchorResidual),
-      // so skip applying any bucket recorded before they became derived —
-      // stale bias would fight the cascade's geometric projection.
-      if (typeof anchorDerivationForKind === 'function' && anchorDerivationForKind(anchor.kind)) continue;
-      // A2: stash the UNBIASED prediction so a later TD correction trains the
-      // residual against it, not against this biased seed. Recording against
-      // the biased seed makes the bucket median (and thus the bias) converge to
-      // only HALF the true systematic offset — the loop never fully learns.
-      // startAnchorDrag / nudgeSelectedAnchor read predictedX/Y as learnOrigin.
-      anchor.predictedX = anchor.x;
-      anchor.predictedY = anchor.y;
-      const bias = getAnchorBias(anchor.kind, anchor);
-      if (!bias.dx && !bias.dy) continue;
-      anchor.x = clamp01(anchor.x + bias.dx);
-      anchor.y = clamp01(anchor.y + bias.dy);
-      // Tag so future UI can show "this anchor was nudged by learning"
-      // without recomputing the bias. Harmless if unused.
-      anchor.calibrated = true;
-    }
-    // A3: inner-cup-left and inner-cup-right are biased from independent
-    // buckets (up to ±LEARNING_CLAMP each), so a large opposing pair can push
-    // left past right on a narrow cup and swap the POM-10 width endpoints. The
-    // "left < right" invariant is only guaranteed at seed time, so re-assert it
-    // here: if biasing inverted the order, revert BOTH to their unbiased
-    // prediction (which seeding kept correctly ordered) rather than trust a
-    // bias inappropriate for this cup.
-    const icl = anchors.find(a => a && a.kind === 'inner-cup-left');
-    const icr = anchors.find(a => a && a.kind === 'inner-cup-right');
-    if (icl && icr && icl.x >= icr.x
-        && Number.isFinite(icl.predictedX) && Number.isFinite(icr.predictedX)
-        && icl.predictedX < icr.predictedX) {
-      icl.x = clamp01(icl.predictedX);
-      icr.x = clamp01(icr.predictedX);
-    }
-    return anchors;
-  }
-
-  // Transparent Learning panel feed. Aggregates the per-bucket residual
-  // store into rows the Learning Data modal can render directly without
-  // having to know the persisted shape. The status field encodes the
-  // same activation / clamp thresholds used by getAnchorBias:
-  //   - 'active'              : >= LEARNING_MIN_SAMPLES samples, normal bias
-  //   - 'needs-more-samples'  : 1..LEARNING_MIN_SAMPLES-1 samples
-  //   - 'large-correction'    : active AND median delta hit the clamp limit
-  //   - 'conflicting'         : active but spread dwarfs the median; bias
-  //                             is softly down-weighted at apply time
-  function summarizeLearningStore() {
-    const buckets = (learningStore && learningStore.buckets) || {};
-    const rows = [];
-    let totalSamples = 0;
-    // Phase 8: corrections by suspected pipeline stage. Samples recorded
-    // before stage attribution existed have no stage field — counted as
-    // 'unattributed' so the totals still reconcile.
-    const stageCounts = {};
-    for (const key of Object.keys(buckets)) {
-      const bucket = buckets[key] || [];
-      const n = bucket.length;
-      totalSamples += n;
-      for (const r of bucket) {
-        const stage = r && r.stage ? r.stage : 'unattributed';
-        stageCounts[stage] = (stageCounts[stage] || 0) + 1;
-      }
-      const pipe = key.indexOf('|');
-      const kind = pipe >= 0 ? key.slice(0, pipe) : key;
-      const viewRole = pipe >= 0 ? key.slice(pipe + 1) : '';
-      const dxs = bucket.map(r => Number(r.dx) || 0);
-      const dys = bucket.map(r => Number(r.dy) || 0);
-      const medianDx = n ? medianOf(dxs) : 0;
-      const medianDy = n ? medianOf(dys) : 0;
-      const madDx = n ? madOf(dxs, medianDx) : 0;
-      const madDy = n ? madOf(dys, medianDy) : 0;
-      const lastTs = n ? bucket.reduce((m, r) => Math.max(m, Number(r.ts) || 0), 0) : 0;
-      const conflicting = isBucketConflicting(bucket, medianDx, medianDy);
-      let status;
-      if (n === 0) status = 'empty';
-      else if (n < LEARNING_MIN_SAMPLES) status = 'needs-more-samples';
-      else {
-        const clamped = Math.abs(medianDx) >= LEARNING_CLAMP - 1e-6
-          || Math.abs(medianDy) >= LEARNING_CLAMP - 1e-6;
-        if (clamped) status = 'large-correction';
-        else if (conflicting) status = 'conflicting';
-        else status = 'active';
-      }
-      rows.push({ key, kind, viewRole, samples: n, medianDx, medianDy, madDx, madDy, lastTs, status });
-    }
-    rows.sort((a, b) => {
-      if (a.viewRole !== b.viewRole) return a.viewRole < b.viewRole ? -1 : 1;
-      return a.kind < b.kind ? -1 : (a.kind > b.kind ? 1 : 0);
-    });
-
-    const paramSamples = (learningStore && learningStore.paramSamples) || {};
-    const params = {};
-    let totalParamSamples = 0;
-    for (const name of Object.keys(paramSamples)) {
-      const count = (paramSamples[name] || []).length;
-      params[name] = count;
-      totalParamSamples += count;
-    }
-
-    return {
-      enabled: isLearningEnabled(),
-      totalSamples,
-      bucketCount: rows.length,
-      activeBucketCount: rows.filter(r => r.status === 'active' || r.status === 'large-correction' || r.status === 'conflicting').length,
-      needsMoreCount: rows.filter(r => r.status === 'needs-more-samples').length,
-      largeCorrectionCount: rows.filter(r => r.status === 'large-correction').length,
-      conflictingCount: rows.filter(r => r.status === 'conflicting').length,
-      minSamples: LEARNING_MIN_SAMPLES,
-      clampLimit: LEARNING_CLAMP,
-      outlierLimit: LEARNING_OUTLIER_LIMIT,
-      stageCounts,
-      paramSampleCounts: params,
-      totalParamSamples,
-      rows,
-    };
-  }
-
-  // ---- src/auto/learning/shadow-detection.js ----
-// Shared shadow-detection utilities: a per-image cache of a raw (unbiased)
-// re-detection, plus the small geometry/label helpers built on top of it.
-// Source part for app.js. Run `npm run build` after editing.
-//
-// These are low-level helpers consumed by meaning-commit.js (and, through
-// it, by meaning-store.js's ranking heuristics) — not calibration math, so
-// they live apart from src/auto/learning/calibration-store.js even though
-// they originally accreted there. calibration-store.js keeps the residual
-// buckets and bias math; meaning-store.js keeps the POM-meaning catalog;
-// meaning-commit.js is the workflow that spans all three.
-
-  // =============================================================
-  // Phase 2 + Phase 3: Manual Mode silently teaches Auto Mode.
-  //
-  // Trigger: TD labels a manual line with a recognised POM number 1–18.
-  // The tool runs a shadow detection on that image (cached per-image),
-  // resolves the POM number to a *measurement meaning* (fixed for POMs
-  // 1, 3, 5; confirmed once by the TD for POMs 6+), then records the
-  // residual between the manual endpoints and the raw anchors of that
-  // meaning. Phase 1 store, Auto Mode behavior, Manual Mode UI, and
-  // Auto Mode JSON rules all stay untouched.
-  //
-  // Phase 3 design notes:
-  //   - POMs 1, 3, 5 share fixed meanings across styles, so no
-  //     confirmation is asked.
-  //   - POMs 2, 4 are extension lines with derived endpoints — skipped.
-  //   - POMs 6+ vary by style (POM 9 could be cup-height or
-  //     side-height). First time the TD labels POM N (N ≥ 6) on this
-  //     machine, the UI asks once, remembers in localStorage forever.
-  //   - Bucketing remains anchor × view (Phase 1). Different meanings
-  //     → different anchor pairs → different buckets. No new store.
-  // =============================================================
-
-  // Per-image shadow detection cache. Detection is expensive (~100–300 ms
-  // on a 1024-wide sketch) and the result is purely a function of the
-  // image pixels — so once per image is enough. Cache lives in module
-  // scope, not state, because it never needs to survive save/reopen.
-  const manualLearnCache = new Map();
-
-  // Realistic ceiling for a POM number parsed from a label. The regex below
-  // already caps at two digits; this bound keeps incidental 2-digit numbers
-  // in a label (e.g. "12 cm") from being read as a POM, while still letting
-  // custom POMs (19, 20, …) through. Tunable.
-  const POM_LABEL_MAX = 40;
-
-  // Pull "1" out of labels like "1", "POM 1", "1A", "Underbust (1)".
-  // Accepts any POM in the 1–POM_LABEL_MAX range. POMs above the fixed 1–18
-  // core template are not dropped here — they resolve to a style-scoped meaning
-  // via the confirmation popover instead of being silently ignored.
-  function parsePomNumberFromLabel(text) {
-    if (!text) return null;
-    const m = /(?:^|[^\d])(\d{1,2})(?:$|[^\d])/.exec(' ' + String(text) + ' ');
-    if (!m) return null;
-    const n = Number(m[1]);
-    return (n >= 1 && n <= POM_LABEL_MAX) ? String(n) : null;
-  }
-
-  // World-coord midpoint test — picks the image whose displayed bbox
-  // contains the line's midpoint. Works in all standard cases (one
-  // image per sketch, or multiple sketches on a board with disjoint
-  // images). Returns null when the line is outside every image.
-  function pickImageForAnnotation(ann) {
-    if (!ann || !ann.start || !ann.end) return null;
-    const mx = (ann.start.x + ann.end.x) / 2;
-    const my = (ann.start.y + ann.end.y) / 2;
-    for (const image of state.images) {
-      if (!image || !image.img) continue;
-      if (mx >= image.x && mx <= image.x + image.width
-       && my >= image.y && my <= image.y + image.height) return image;
-    }
-    return null;
-  }
-
-  // Same normalization scheme anchors use (see anchorWorldPos in
-  // auto-detection.js): fraction of the image's displayed width/height.
-  // Keeps residuals comparable to the Phase 1 anchor-drag residuals.
-  function worldToAnchorSpace(image, world) {
-    return {
-      x: (world.x - image.x) / image.width,
-      y: (world.y - image.y) / image.height,
-    };
-  }
-
-  // Run (or reuse) a shadow detection on this image. Skips bias so the
-  // returned anchors are the raw prediction, not the already-corrected
-  // one. Returns null on any failure — Phase 2 stays silent in that case.
-  function getShadowAnchorsForImage(image) {
-    if (!image || !image.img || !image.img.complete) return null;
-    const cached = manualLearnCache.get(image.id);
-    if (cached && cached.rawAnchors) return cached.rawAnchors;
-    let detection;
-    try { detection = detectSketchFromImage(image, { skipLearningParams: true }); }
-    catch (_) { return null; }
-    if (!detection || !detection.bbox || detection.coverage < 0.001) return null;
-    detection.sourceImageId = image.id;
-    const rawAnchors = seedAnchorsFromDetection(detection, image, { skipLearning: true });
-    manualLearnCache.set(image.id, { detection, rawAnchors });
-    return rawAnchors;
-  }
-
-  // Clear the shadow detection cache. Called by the working-board reset
-  // (images going away) and by Reset Learning (so a fresh learning run
-  // starts from a clean shadow too).
-  function clearManualLearnCache() {
-    manualLearnCache.clear();
-  }
-
-  // ---- src/auto/learning/meaning-store.js ----
-// POM-meaning catalog and style-scoped confirmation store. Source part
-// for app.js. Run `npm run build` after editing.
-//
-// The meaning store is keyed by style id (per-project Style code). POMs
-// 1/3/5 are fixed and resolve via POM_FIXED_MEANINGS; POMs 6+ resolve via
-// each style bucket. The ranking heuristics and the manual-line-to-meaning
-// commit workflow (including evaluateManualPomSample, the single funnel
-// between manual labelling and the meaning popover) live in the sibling
-// src/auto/learning/meaning-commit.js, which loads after this file.
-// resetPomMeanings lives here (not in calibration-store.js) because it
-// only touches this file's own meaningStore/getStyleBucket/clearMeaningStore
-// state.
-
-  // ---- Phase 3: meaning catalog + confirmation store -----------------
-
-  const MEANINGS_KEY = 'bra.pomMeanings.v1';
-
-  // Built-in catalog. Each measurement maps a {start, end} anchor pair
-  // to a human label. Seeded from the original POM_ENDPOINT_ANCHORS map
-  // — these are the only meanings present on first launch. POMs 1/3/5
-  // pin to entries here; POMs 6+ pick at confirmation time.
-  const BUILTIN_MEANINGS = [
-    { id: 'band-width',        label: 'Band width',          start: 'band-left',       end: 'band-right' },
-    { id: 'chest-width',       label: 'Chest width',         start: 'chest-left',      end: 'chest-right' },
-    { id: 'cf-height',         label: 'Center-front height', start: 'cf-top',          end: 'cf-bottom' },
-    { id: 'cup-height',        label: 'Cup height',          start: 'inner-cup-top',   end: 'inner-cup-bottom' },
-    { id: 'cup-width',         label: 'Cup width',           start: 'inner-cup-left',  end: 'inner-cup-right' },
-    { id: 'cradle-height-bottom-cup', label: 'Cradle height at center bottom cup', start: 'cradle-cup-top', end: 'cradle-cup-bottom' },
-    { id: 'side-height',       label: 'Side height',         start: 'side-top',        end: 'side-bottom' },
-    { id: 'back-height',       label: 'Back height',         start: 'back-top',        end: 'back-bottom' },
-    { id: 'back-panel-height', label: 'Back panel height',   start: 'back-panel-top',  end: 'back-panel-bottom' },
-    { id: 'strap-length',      label: 'Strap length',        start: 'strap-top',       end: 'strap-bottom' },
-    { id: 'back-strap-width',  label: 'Back strap width',    start: 'back-strap-left', end: 'back-strap-right' },
-    { id: 'apex-width',        label: 'Apex width',          start: 'apex-left',       end: 'apex-right' },
-  ];
-
-  // POMs whose meaning never varies across styles. POM 2 and 4 are
-  // omitted on purpose: their end points are derived (extension lines),
-  // not anchors. evaluateManualPomSample() short-circuits both.
-  const POM_FIXED_MEANINGS = {
-    '1': 'band-width',
-    '3': 'chest-width',
-    '5': 'cf-height',
-    '7': 'cradle-height-bottom-cup',
-  };
-
-  // localStorage shape (style-scoped, Phase 3.5):
-  //   styles: {
-  //     [styleId]:      { pomMeanings: { [pomNumber]: meaningId } },
-  //     '__default__':  { pomMeanings: {...} }   // empty styleId falls here
-  //   }
-  //   customMeanings:   { [id]: { id, label, start, end } }   // shared
-  //   usage:            { [meaningId]: { count, lastUsedAt } } // shared
-  //
-  // POM 9 = cup-height in Style A and POM 9 = side-height in Style B
-  // never collide — each lives in its own style bucket.
-  const DEFAULT_STYLE_ID = '__default__';
-
-  let meaningStore = { styles: {}, customMeanings: {}, usage: {} };
-  (function loadMeaningStore() {
-    try {
-      const raw = localStorage.getItem(MEANINGS_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return;
-      const styles = (parsed.styles && typeof parsed.styles === 'object') ? parsed.styles : {};
-      // Migrate Phase 3.0 flat shape — { pomMeanings: {...} } at top
-      // level — into the '__default__' style bucket so existing
-      // confirmations on this machine survive the upgrade.
-      if (parsed.pomMeanings && typeof parsed.pomMeanings === 'object' && !styles[DEFAULT_STYLE_ID]) {
-        styles[DEFAULT_STYLE_ID] = { pomMeanings: parsed.pomMeanings };
-      }
-      meaningStore = {
-        styles,
-        customMeanings: parsed.customMeanings || {},
-        usage:          parsed.usage          || {},
-      };
-    } catch (_) {}
-  })();
-
-  function saveMeaningStore() {
-    try { localStorage.setItem(MEANINGS_KEY, JSON.stringify(meaningStore)); }
-    catch (_) {}
-  }
-
-  function currentStyleId() {
-    const id = (state && state.styleId && String(state.styleId).trim()) || '';
-    return id || DEFAULT_STYLE_ID;
-  }
-
-  function getStyleBucket(styleId, createIfMissing) {
-    let bucket = meaningStore.styles[styleId];
-    if (!bucket && createIfMissing) {
-      bucket = { pomMeanings: {} };
-      meaningStore.styles[styleId] = bucket;
-    }
-    return bucket || null;
-  }
-
-  function getCatalogEntry(meaningId) {
-    if (!meaningId) return null;
-    const builtin = BUILTIN_MEANINGS.find(m => m.id === meaningId);
-    return builtin || meaningStore.customMeanings[meaningId] || null;
-  }
-
-  function getAllCatalogMeanings() {
-    const out = [];
-    const seen = new Set();
-    for (const m of BUILTIN_MEANINGS) { seen.add(m.id); out.push(m); }
-    for (const id in meaningStore.customMeanings) {
-      if (!seen.has(id)) out.push(meaningStore.customMeanings[id]);
-    }
-    return out;
-  }
-
-  function resolvePomMeaning(pom) {
-    if (POM_FIXED_MEANINGS[pom]) return getCatalogEntry(POM_FIXED_MEANINGS[pom]);
-    const bucket = getStyleBucket(currentStyleId(), false);
-    const id = bucket ? bucket.pomMeanings[pom] : null;
-    return id ? getCatalogEntry(id) : null;
-  }
-
-  function confirmPomMeaning(pom, meaningId) {
-    const bucket = getStyleBucket(currentStyleId(), true);
-    bucket.pomMeanings[pom] = meaningId;
-    saveMeaningStore();
-  }
-
-  // Drop a single (style, pom) binding. Next POM N commit in that
-  // style will re-open the meaning popover. Returns true if a binding
-  // was actually removed.
-  function forgetPomMeaning(pom, styleId) {
-    const bucket = getStyleBucket(styleId || currentStyleId(), false);
-    if (!bucket || !bucket.pomMeanings[pom]) return false;
-    delete bucket.pomMeanings[pom];
-    saveMeaningStore();
-    return true;
-  }
-
-  // Sorted snapshot of confirmed bindings for one style. Used by the
-  // Manage Meanings UI to list and edit prior confirmations.
-  function listConfirmedMeanings(styleId) {
-    const bucket = getStyleBucket(styleId || currentStyleId(), false);
-    if (!bucket) return [];
-    const rows = [];
-    for (const pom of Object.keys(bucket.pomMeanings)) {
-      const meaning = getCatalogEntry(bucket.pomMeanings[pom]);
-      if (meaning) rows.push({ pom, meaning });
-    }
-    rows.sort((a, b) => Number(a.pom) - Number(b.pom));
-    return rows;
-  }
-
-  function listKnownStyleIds() {
-    return Object.keys(meaningStore.styles);
-  }
-
-  function addCustomMeaning(label, startAnchor, endAnchor) {
-    const cleanLabel = String(label || '').trim();
-    if (!cleanLabel) return null;
-    const slug = cleanLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'meaning';
-    const id = 'custom-' + slug + '-' + Date.now().toString(36);
-    const entry = { id, label: cleanLabel, start: startAnchor, end: endAnchor };
-    meaningStore.customMeanings[id] = entry;
-    saveMeaningStore();
-    return entry;
-  }
-
-  // Clear meanings only. Accepts 'current' (current style only) or
-  // 'all' (every style + every custom meaning + usage stats).
-  function clearMeaningStore(scope) {
-    if (scope === 'all') {
-      meaningStore = { styles: {}, customMeanings: {}, usage: {} };
-    } else {
-      const styleId = currentStyleId();
-      if (meaningStore.styles[styleId]) {
-        meaningStore.styles[styleId] = { pomMeanings: {} };
-      }
-    }
-    saveMeaningStore();
-  }
-
-  // Reset POM meanings only. 'current' wipes the current style bucket
-  // ({styleId} or default), 'all' wipes every style + custom meanings.
-  // Calibration residuals are untouched.
-  function resetPomMeanings(scope) {
-    const styleId = currentStyleId();
-    if (scope === 'all') {
-      let total = 0;
-      for (const sid in meaningStore.styles) {
-        total += Object.keys(meaningStore.styles[sid].pomMeanings || {}).length;
-      }
-      const customCount = Object.keys(meaningStore.customMeanings || {}).length;
-      if (total === 0 && customCount === 0) {
-        showToast('No POM meanings confirmed yet.');
-        return;
-      }
-      if (!window.confirm('Forget every confirmed POM meaning across every style code, plus ' + customCount + ' custom measurement(s)? This cannot be undone.')) return;
-      clearMeaningStore('all');
-      showToast('All POM meanings forgotten.');
-    } else {
-      const bucket = getStyleBucket(styleId, false);
-      const count = bucket ? Object.keys(bucket.pomMeanings).length : 0;
-      if (count === 0) {
-        showToast(styleId === DEFAULT_STYLE_ID
-          ? 'No POM meanings confirmed for the default bucket yet.'
-          : 'No POM meanings confirmed for style "' + styleId + '" yet.');
-        return;
-      }
-      const label = styleId === DEFAULT_STYLE_ID ? 'the default bucket' : 'style "' + styleId + '"';
-      if (!window.confirm('Forget ' + count + ' confirmed POM meaning(s) for ' + label + '?')) return;
-      clearMeaningStore('current');
-      showToast('POM meanings forgotten for ' + label + '.');
-    }
-    updateUI();
-  }
-
-  // Transparent Learning panel feed. Collapses the style-scoped meaning
-  // store into a shape the Learning Data modal can render directly.
-  // Fixed POMs (1/3/5) are always included so the panel shows the full
-  // resolved catalog instead of just style-confirmed POMs.
-  function summarizeMeaningStore() {
-    const styleId = currentStyleId();
-    const currentRows = [];
-    const fixedCatalog = {};
-    for (const pom of Object.keys(POM_FIXED_MEANINGS)) {
-      fixedCatalog[pom] = getCatalogEntry(POM_FIXED_MEANINGS[pom]);
-    }
-    for (const pom of Object.keys(POM_FIXED_MEANINGS)) {
-      const meaning = fixedCatalog[pom];
-      if (!meaning) continue;
-      currentRows.push({ pom, meaning, source: 'fixed' });
-    }
-    for (const row of listConfirmedMeanings(styleId)) {
-      currentRows.push({ pom: row.pom, meaning: row.meaning, source: 'confirmed' });
-    }
-    currentRows.sort((a, b) => Number(a.pom) - Number(b.pom));
-
-    const styles = [];
-    let totalConfirmed = 0;
-    for (const sid of Object.keys(meaningStore.styles)) {
-      const count = Object.keys(meaningStore.styles[sid].pomMeanings || {}).length;
-      totalConfirmed += count;
-      styles.push({ styleId: sid, confirmedCount: count });
-    }
-    styles.sort((a, b) => {
-      if (a.styleId === DEFAULT_STYLE_ID) return -1;
-      if (b.styleId === DEFAULT_STYLE_ID) return 1;
-      return a.styleId < b.styleId ? -1 : (a.styleId > b.styleId ? 1 : 0);
-    });
-
-    return {
-      currentStyleId: styleId,
-      currentStyleIsDefault: styleId === DEFAULT_STYLE_ID,
-      defaultStyleId: DEFAULT_STYLE_ID,
-      fixedPomCount: Object.keys(POM_FIXED_MEANINGS).length,
-      confirmedForCurrent: listConfirmedMeanings(styleId).length,
-      totalConfirmed,
-      customCount: Object.keys(meaningStore.customMeanings || {}).length,
-      knownStyles: styles,
-      currentRows,
-    };
-  }
-
-  // ---- src/auto/learning/meaning-commit.js ----
-// Manual-line-to-meaning commit workflow: ranking heuristics for a freshly
-// drawn manual line, the dedup hash, and the funnel that resolves a TD's
-// manual POM label into a recorded calibration residual. Source part for
-// app.js. Run `npm run build` after editing.
-//
-// This is the one workflow in the learning cluster that spans all three
-// stores: it reads the catalog from src/auto/learning/meaning-store.js,
-// runs shadow re-detection via src/auto/learning/shadow-detection.js, and
-// records residuals through src/auto/learning/calibration-store.js's
-// recordAnchorResidual. It must load after all three.
-
-  // Recency-decayed usage weight. A meaning confirmed yesterday should
-  // outrank one that was confirmed 200 times two years ago but never
-  // since — TDs change templates, and stale usage stats mislead the
-  // top-3. Half-life of ~21d (exp(-21/30) ≈ 0.5) decays old confirmations
-  // smoothly without ever zeroing them out completely.
-  function meaningUsagePriority(meaningId) {
-    const u = meaningStore.usage[meaningId];
-    if (!u || !u.count) return 0;
-    const ageMs = Math.max(0, Date.now() - (u.lastUsedAt || 0));
-    const ageDays = ageMs / 86400000;
-    return u.count * Math.exp(-ageDays / 30);
-  }
-
-  // Rank catalog entries by anchor-pair distance to the manual line.
-  // Stroke direction is arbitrary, so we compare both orderings. Distance
-  // dominates so the geometry of the current sketch always wins; ties
-  // break on a recency-weighted usage score so a meaning the TD just
-  // confirmed on the last two sketches floats above a stale heavyweight.
-  function rankCatalogForLine(image, ann, limit) {
-    if (!image || !ann || !ann.start || !ann.end) return [];
-    const rawAnchors = getShadowAnchorsForImage(image);
-    if (!rawAnchors) return [];
-    const ms = worldToAnchorSpace(image, ann.start);
-    const me = worldToAnchorSpace(image, ann.end);
-    const scored = [];
-    for (const m of getAllCatalogMeanings()) {
-      const a = rawAnchors.find(r => r.kind === m.start);
-      const b = rawAnchors.find(r => r.kind === m.end);
-      if (!a || !b) continue;
-      const direct  = (ms.x - a.x) ** 2 + (ms.y - a.y) ** 2 + (me.x - b.x) ** 2 + (me.y - b.y) ** 2;
-      const swapped = (ms.x - b.x) ** 2 + (ms.y - b.y) ** 2 + (me.x - a.x) ** 2 + (me.y - a.y) ** 2;
-      scored.push({ meaning: m, d: Math.min(direct, swapped), priority: meaningUsagePriority(m.id) });
-    }
-    scored.sort((x, y) => x.d - y.d || y.priority - x.priority);
-    return scored.slice(0, limit || 3).map(s => s.meaning);
-  }
-
-  // Picks the nearest raw anchor to each manual endpoint independently.
-  // Used when the TD names a brand-new measurement so we can register
-  // its anchor pair without asking them to pick anchors.
-  function detectAnchorPairForLine(image, ann) {
-    const rawAnchors = getShadowAnchorsForImage(image);
-    if (!rawAnchors || rawAnchors.length < 2) return null;
-    const ms = worldToAnchorSpace(image, ann.start);
-    const me = worldToAnchorSpace(image, ann.end);
-    const d2 = (p, a) => (p.x - a.x) ** 2 + (p.y - a.y) ** 2;
-    let bestStart = null, bestStartD = Infinity;
-    let bestEnd   = null, bestEndD   = Infinity;
-    for (const a of rawAnchors) {
-      const ds = d2(ms, a);
-      if (ds < bestStartD) { bestStartD = ds; bestStart = a; }
-      const de = d2(me, a);
-      if (de < bestEndD)   { bestEndD   = de; bestEnd   = a; }
-    }
-    if (!bestStart || !bestEnd || bestStart.kind === bestEnd.kind) return null;
-    return { start: bestStart.kind, end: bestEnd.kind };
-  }
-
-  // Endpoint coord hash for de-dup. Re-commit with no movement → same
-  // hash → skip. Move an endpoint → new hash → new sample.
-  function makeLearnSampleHash(pom, ann) {
-    return pom + '|'
-      + ann.start.x.toFixed(2) + ',' + ann.start.y.toFixed(2) + '|'
-      + ann.end.x.toFixed(2)   + ',' + ann.end.y.toFixed(2);
-  }
-
-  // True when a re-evaluation of the same annotation should be skipped.
-  // The endpoint-coord hash alone is not enough: if the TD reconfirms POM
-  // N as a *different* meaning (e.g. POM 9 was cup-height, now side-height),
-  // the residual lives in a different anchor bucket and must be re-recorded.
-  // So we treat (hash, meaningId) as the dedup key.
-  function isSameLearnSample(ann, hash, meaningId) {
-    if (!ann || ann.learnSampleHash !== hash) return false;
-    if (meaningId && ann.learnMeaningId && ann.learnMeaningId !== meaningId) return false;
-    return true;
-  }
-
-  // Returns one of:
-  //   { status: 'recorded',          pom }
-  //   { status: 'skipped' }                              — no learning happens
-  //   { status: 'needsConfirmation', pom, ann, image, hash, suggestions }
-  //     — caller should open the meaning picker. After the TD picks,
-  //       call commitMeaningChoice() / commitMeaningChoiceCustom() with
-  //       the original eval result.
-  function evaluateManualPomSample(ann, options = {}) {
-    if (!ann || !ann.start || !ann.end) return { status: 'skipped' };
-    if (!isLearningEnabled())            return { status: 'skipped' };
-    // US-096 / ADR 0055 code review, 2026-08-23: a construction line carries no
-    // POM meaning, so its geometry must never bias a POM's anchor seed.
-    //
-    // This is the LIVE capture path (drag-commit in pointer-events.js, arrow
-    // nudge in line-nudge.js), and it was missed when the save-time path
-    // (isEligibleEvidenceAnnotation, style-evidence-capture.js) was gated.
-    // The gap was reachable and expensive: restyling an APPLIED auto line to
-    // zigzag leaves ann.auto / sourceMode / autoRunId intact, so isAutoDraft
-    // stays true and allowAuto makes labelText fall back to getLabelText(ann)
-    // — the seq the line was born with, i.e. the very POM number it no longer
-    // measures. Dragging it then wrote the stitch path into that POM's bucket,
-    // and the learning store outlives the project.
-    if (!isMeasurementAnnotation(ann)) return { status: 'skipped' };
-    if (ann.auto === true && !options.allowAuto) return { status: 'skipped' };
-
-    const explicitText = ann.text != null && String(ann.text).trim() !== ''
-      ? ann.text
-      : null;
-    const labelText = explicitText != null
-      ? explicitText
-      : (options.allowAuto ? getLabelText(ann) : null);
-    const pom = parsePomNumberFromLabel(labelText);
-    if (!pom) return { status: 'skipped' };
-
-    // POMs 2 and 4: derived endpoints (extension lines). Skip silently.
-    const pomNum = Number(pom);
-    if (pomNum === 2 || pomNum === 4) return { status: 'skipped' };
-
-    const image = pickImageForAnnotation(ann);
-    if (!image) return { status: 'skipped' };
-
-    const hash = makeLearnSampleHash(pom, ann);
-    const meaning = resolvePomMeaning(pom);
-    if (meaning) {
-      // Skip only when the same hash AND meaning were already recorded on
-      // this annotation; a meaning change still re-records so the new
-      // anchor bucket gets the sample.
-      if (isSameLearnSample(ann, hash, meaning.id)) return { status: 'skipped' };
-      const ok = applyMeaningSample(ann, image, pom, meaning, hash);
-      return { status: ok ? 'recorded' : 'skipped', pom };
-    }
-
-    // POM 6+ with no confirmed meaning — surface to the UI. No meaning is
-    // known yet, so dedup falls back to the endpoint hash alone.
-    if (ann.learnSampleHash === hash) return { status: 'skipped' };
-    const suggestions = rankCatalogForLine(image, ann, 3);
-    return { status: 'needsConfirmation', pom, ann, image, hash, suggestions };
-  }
-
-  // Records the residual for a (line, meaning) pair through the Phase 1
-  // store. Returns true if the sample was actually committed.
-  function applyMeaningSample(ann, image, pom, meaning, hash) {
-    if (!meaning) return false;
-    const rawAnchors = getShadowAnchorsForImage(image);
-    if (!rawAnchors) return false;
-    const startAnchor = rawAnchors.find(a => a.kind === meaning.start);
-    const endAnchor   = rawAnchors.find(a => a.kind === meaning.end);
-    if (!startAnchor || !endAnchor) return false;
-
-    const manualStart = worldToAnchorSpace(image, ann.start);
-    const manualEnd   = worldToAnchorSpace(image, ann.end);
-
-    // Stroke orientation is arbitrary — pair endpoints by min total distance.
-    const d2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
-    const direct  = d2(manualStart, startAnchor) + d2(manualEnd, endAnchor);
-    const swapped = d2(manualStart, endAnchor)   + d2(manualEnd, startAnchor);
-    const pairs = direct <= swapped
-      ? [[startAnchor, manualStart], [endAnchor, manualEnd]]
-      : [[startAnchor, manualEnd],   [endAnchor, manualStart]];
-
-    // Label-collision guardrail: a manual line more than half the image
-    // away from the predicted anchor is almost certainly mislabeled.
-    const maxResidual = 0.50;
-    for (const [anchor, manual] of pairs) {
-      if (Math.abs(manual.x - anchor.x) > maxResidual) return false;
-      if (Math.abs(manual.y - anchor.y) > maxResidual) return false;
-    }
-
-    for (const [anchor, manual] of pairs) {
-      recordAnchorResidual(anchor.kind, manual.x - anchor.x, manual.y - anchor.y, anchor);
-    }
-
-    ann.learnSampleHash = hash;
-    ann.learnSamplePom  = pom;
-    ann.learnMeaningId  = meaning.id;
-
-    if (meaning.id) {
-      const u = meaningStore.usage[meaning.id] || { count: 0, lastUsedAt: 0 };
-      u.count += 1;
-      u.lastUsedAt = Date.now();
-      meaningStore.usage[meaning.id] = u;
-      saveMeaningStore();
-    }
-    return true;
-  }
-
-  // TD picked an existing catalog entry from the popover.
-  function commitMeaningChoice(evalResult, meaningId) {
-    if (!evalResult || evalResult.status !== 'needsConfirmation') return false;
-    const meaning = getCatalogEntry(meaningId);
-    if (!meaning) return false;
-    confirmPomMeaning(evalResult.pom, meaningId);
-    return applyMeaningSample(evalResult.ann, evalResult.image, evalResult.pom, meaning, evalResult.hash);
-  }
-
-  // TD typed a brand-new measurement name. We auto-detect the anchor
-  // pair from the manual line itself, register it as a custom meaning,
-  // pin POM N to it, then record the sample.
-  function commitMeaningChoiceCustom(evalResult, label) {
-    if (!evalResult || evalResult.status !== 'needsConfirmation') return false;
-    const pair = detectAnchorPairForLine(evalResult.image, evalResult.ann);
-    if (!pair) return false;
-    const meaning = addCustomMeaning(label, pair.start, pair.end);
-    if (!meaning) return false;
-    confirmPomMeaning(evalResult.pom, meaning.id);
-    return applyMeaningSample(evalResult.ann, evalResult.image, evalResult.pom, meaning, evalResult.hash);
-  }
-
-  // ---- src/auto/learning/style-evidence-record.js ----
-// Style-scoped evidence store: the durable storage layer for TD-confirmed
-// POM lines and anchors a project can reuse next time the same style is
-// detected. Source part for app.js. Run `npm run build` after editing.
-//
-// Separate from bra.learning.v1 (residual buckets) and bra.pomMeanings.v1
-// (POM→meaning catalog) on purpose: residuals are statistical, meanings
-// are categorical, evidence is concrete (this exact line was right). They
-// evolve at different rates and need to stay independently resettable.
-//
-// Coordinates in stored records are normalized to the source image's
-// displayed bbox (same scheme as anchors / manual learn residuals), so
-// evidence survives zoom, pan, and image resizing.
-//
-// This file is schema + CRUD only. Save-time candidate scanning of the
-// live project lives in the sibling src/auto/learning/style-evidence-capture.js;
-// generate-time reuse of stored evidence to bias/veto fresh drafts lives in
-// src/auto/learning/style-evidence-reuse.js. Both load after this file.
-
-  const STYLE_EVIDENCE_KEY = 'bra.styleEvidence.v1';
-  const STYLE_EVIDENCE_VERSION = 1;
-  // Hard ceiling so a noisy style can't grow unboundedly. The newest
-  // records win on overflow — TDs trust their most recent confirmation
-  // more than something from six months ago.
-  const STYLE_EVIDENCE_MAX_PER_STYLE = 200;
-
-  function emptyStyleEvidenceStore() {
-    return { version: STYLE_EVIDENCE_VERSION, styles: {} };
-  }
-
-  function emptyStyleEvidenceBucket() {
-    return { evidence: [], updatedAt: null };
-  }
-
-  // Strict normalization. Drops anything that isn't a plausible record
-  // (no id, no POM for absence, no line geometry for confirmed-line
-  // evidence) so a corrupted localStorage payload can't crash the panel
-  // or detection. Older keys without a version stamp are still accepted
-  // — we treat anything in the right shape as v1.
-  function normalizeStyleEvidenceStore(parsed) {
-    if (!parsed || typeof parsed !== 'object') return emptyStyleEvidenceStore();
-    const stylesIn = (parsed.styles && typeof parsed.styles === 'object') ? parsed.styles : {};
-    const stylesOut = {};
-    for (const styleId of Object.keys(stylesIn)) {
-      const bucket = stylesIn[styleId] || {};
-      const evidenceIn = Array.isArray(bucket.evidence) ? bucket.evidence : [];
-      const evidenceOut = [];
-      for (const rec of evidenceIn) {
-        const norm = normalizeEvidenceRecord(rec, styleId);
-        if (norm) evidenceOut.push(norm);
-      }
-      stylesOut[styleId] = {
-        evidence: evidenceOut,
-        updatedAt: typeof bucket.updatedAt === 'string' ? bucket.updatedAt : null,
-      };
-    }
-    return { version: STYLE_EVIDENCE_VERSION, styles: stylesOut };
-  }
-
-  function normalizeEvidenceRecord(rec, fallbackStyleId) {
-    if (!rec || typeof rec !== 'object') return null;
-    if (!rec.id) return null;
-    const absent = rec.tdStatus === 'absent-confirmed' || rec.source === 'td-deleted-auto-line';
-    const line = normalizeEvidenceLine(rec.line);
-    const rejectedLine = normalizeEvidenceLine(rec.rejectedLine);
-    if (!absent && !line) return null;
-    if (absent && rec.pom == null) return null;
-    return {
-      id: String(rec.id),
-      styleId: String(rec.styleId || fallbackStyleId || ''),
-      annotationId: rec.annotationId != null ? rec.annotationId : null,
-      sourceImageId: rec.sourceImageId || null,
-      imageFingerprint: rec.imageFingerprint || null,
-      savedAt: typeof rec.savedAt === 'string' ? rec.savedAt : null,
-      appRuleVersion: rec.appRuleVersion || null,
-      templateVersion: rec.templateVersion || null,
-      source: rec.source || null,
-      tdStatus: rec.tdStatus || null,
-      pom: rec.pom != null ? String(rec.pom) : null,
-      meaningId: rec.meaningId || null,
-      meaningLabel: rec.meaningLabel || null,
-      viewRole: rec.viewRole || null,
-      line: line || null,
-      rejectedLine: rejectedLine || null,
-      absentReason: rec.absentReason || null,
-      anchors: rec.anchors && typeof rec.anchors === 'object' ? rec.anchors : null,
-      quality: rec.quality && typeof rec.quality === 'object' ? rec.quality : null,
-    };
-  }
-
-  function normalizeEvidencePoint(pt) {
-    if (!pt || typeof pt !== 'object') return null;
-    const x = Number(pt.x);
-    const y = Number(pt.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return { x, y };
-  }
-
-  function normalizeEvidenceLine(line) {
-    if (!line || typeof line !== 'object') return null;
-    const start = normalizeEvidencePoint(line.start);
-    const end = normalizeEvidencePoint(line.end);
-    if (!start || !end) return null;
-    const out = {
-      type: line.type === 'curved' ? 'curved' : 'straight',
-      start,
-      end,
-    };
-    const c1 = normalizeEvidencePoint(line.control1);
-    const c2 = normalizeEvidencePoint(line.control2);
-    if (c1) out.control1 = c1;
-    if (c2) out.control2 = c2;
-    const mp = normalizeEvidencePoint(line.midPoint);
-    if (mp) out.midPoint = mp;
-    const mhi = normalizeEvidencePoint(line.midHandleIn);
-    const mho = normalizeEvidencePoint(line.midHandleOut);
-    if (mhi) out.midHandleIn = mhi;
-    if (mho) out.midHandleOut = mho;
-    const points = Array.isArray(line.points) ? line.points.map(pt => {
-      if (!pt || typeof pt !== 'object') return null;
-      const point = normalizeEvidencePoint(pt.point);
-      const handleIn = normalizeEvidencePoint(pt.handleIn);
-      const handleOut = normalizeEvidencePoint(pt.handleOut);
-      return (point && handleIn && handleOut) ? { point, handleIn, handleOut } : null;
-    }).filter(Boolean) : [];
-    if (points.length) out.points = points;
-    return out;
-  }
-
-  let styleEvidenceStore = (function loadStyleEvidenceStore() {
-    try {
-      const raw = localStorage.getItem(STYLE_EVIDENCE_KEY);
-      if (!raw) return emptyStyleEvidenceStore();
-      return normalizeStyleEvidenceStore(JSON.parse(raw));
-    } catch (_) {
-      return emptyStyleEvidenceStore();
-    }
-  })();
-
-  function saveStyleEvidenceStore() {
-    try { localStorage.setItem(STYLE_EVIDENCE_KEY, JSON.stringify(styleEvidenceStore)); }
-    catch (_) { /* quota — silently drop, evidence is non-critical */ }
-  }
-
-  function getStyleEvidenceBucket(styleId, createIfMissing) {
-    if (!styleId) return null;
-    let bucket = styleEvidenceStore.styles[styleId];
-    if (!bucket && createIfMissing) {
-      bucket = emptyStyleEvidenceBucket();
-      styleEvidenceStore.styles[styleId] = bucket;
-    }
-    return bucket || null;
-  }
-
-  function listStyleEvidence(styleId) {
-    const bucket = getStyleEvidenceBucket(styleId, false);
-    if (!bucket) return [];
-    // Return a stable, newest-first ordering. Older records are kept but
-    // pushed to the bottom of the panel so the most recent TD confirmation
-    // is always closest to the eye.
-    return bucket.evidence.slice().sort((a, b) => {
-      const ta = a.savedAt ? Date.parse(a.savedAt) : 0;
-      const tb = b.savedAt ? Date.parse(b.savedAt) : 0;
-      return tb - ta;
-    });
-  }
-
-  function listKnownEvidenceStyleIds() {
-    return Object.keys(styleEvidenceStore.styles);
-  }
-
-  // Roll-up the panel will render. Groups records by POM so the TD can see
-  // at a glance which measurements have prior evidence and which don't.
-  // Falls back to a `(no POM)` bucket for records that lost their POM
-  // number — shouldn't happen in practice but the panel must not crash.
-  function summarizeStyleEvidence(styleId) {
-    const records = listStyleEvidence(styleId);
-    const byPom = new Map();
-    let confirmedCount = 0;
-    let absentCount = 0;
-    let pendingCount = 0;
-    let lastUpdated = null;
-    for (const rec of records) {
-      const pomKey = rec.pom != null ? String(rec.pom) : '?';
-      let row = byPom.get(pomKey);
-      if (!row) {
-        row = {
-          pom: pomKey,
-          meaningLabel: null,
-          meaningId: rec.meaningId || null,
-          viewRole: rec.viewRole || null,
-          source: rec.source || null,
-          status: rec.tdStatus || null,
-          count: 0,
-          absentCount: 0,
-          lastSavedAt: null,
-        };
-        byPom.set(pomKey, row);
-      }
-      row.count += 1;
-      if (rec.tdStatus === 'absent-confirmed') row.absentCount += 1;
-      if (rec.meaningId && !row.meaningId) row.meaningId = rec.meaningId;
-      if (rec.meaningLabel && !row.meaningLabel) row.meaningLabel = rec.meaningLabel;
-      if (!row.viewRole && rec.viewRole) row.viewRole = rec.viewRole;
-      if (!row.source && rec.source) row.source = rec.source;
-      // Status precedence: confirmed beats pending beats null. Even one
-      // unconfirmed record shouldn't downgrade a POM that already has a
-      // confirmed entry.
-      if (rec.tdStatus === 'confirmed') row.status = 'confirmed';
-      else if (rec.tdStatus === 'absent-confirmed' && row.status !== 'confirmed') row.status = 'absent-confirmed';
-      else if (rec.tdStatus && row.status !== 'confirmed') row.status = rec.tdStatus;
-      if (rec.tdStatus === 'confirmed') confirmedCount += 1;
-      else if (rec.tdStatus === 'absent-confirmed') { confirmedCount += 1; absentCount += 1; }
-      else pendingCount += 1;
-      if (rec.savedAt) {
-        const ts = Date.parse(rec.savedAt);
-        if (!row.lastSavedAt || ts > Date.parse(row.lastSavedAt)) row.lastSavedAt = rec.savedAt;
-        if (!lastUpdated || ts > Date.parse(lastUpdated)) lastUpdated = rec.savedAt;
-      }
-    }
-
-    // Hydrate meaning labels from the meaning catalog when possible. The
-    // catalog is loaded by meaning-store.js earlier in the bundle, so the
-    // helper is in scope here.
-    const rows = [];
-    for (const row of byPom.values()) {
-      if (row.meaningId && typeof getCatalogEntry === 'function') {
-        const entry = getCatalogEntry(row.meaningId);
-        if (entry) row.meaningLabel = entry.label;
-      }
-      rows.push(row);
-    }
-    rows.sort((a, b) => {
-      const na = Number(a.pom);
-      const nb = Number(b.pom);
-      if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
-      return String(a.pom) < String(b.pom) ? -1 : 1;
-    });
-
-    return {
-      styleId,
-      totalRecords: records.length,
-      confirmedCount,
-      absentCount,
-      pendingCount,
-      pomRowCount: rows.length,
-      lastUpdated,
-      rows,
-    };
-  }
-
-  // Adds (or updates) one evidence record. Records are keyed by id — if
-  // the caller re-saves the same id (same POM on the same image after
-  // another TD edit), we replace the prior entry instead of stacking
-  // duplicates. Records without an id or line geometry are rejected so
-  // the store stays normalized.
-  function addStyleEvidence(styleId, record) {
-    if (!styleId) return null;
-    const normalized = normalizeEvidenceRecord(record, styleId);
-    if (!normalized) return null;
-    if (!normalized.savedAt) normalized.savedAt = new Date().toISOString();
-    normalized.styleId = styleId;
-    const bucket = getStyleEvidenceBucket(styleId, true);
-    const existingIndex = bucket.evidence.findIndex(e => e.id === normalized.id);
-    if (existingIndex >= 0) bucket.evidence[existingIndex] = normalized;
-    else bucket.evidence.push(normalized);
-    if (bucket.evidence.length > STYLE_EVIDENCE_MAX_PER_STYLE) {
-      bucket.evidence.sort((a, b) => {
-        const ta = a.savedAt ? Date.parse(a.savedAt) : 0;
-        const tb = b.savedAt ? Date.parse(b.savedAt) : 0;
-        return tb - ta;
-      });
-      bucket.evidence.length = STYLE_EVIDENCE_MAX_PER_STYLE;
-    }
-    bucket.updatedAt = new Date().toISOString();
-    saveStyleEvidenceStore();
-    return normalized;
-  }
-
-  function forgetStyleEvidence(styleId, evidenceId) {
-    const bucket = getStyleEvidenceBucket(styleId, false);
-    if (!bucket) return false;
-    const before = bucket.evidence.length;
-    bucket.evidence = bucket.evidence.filter(e => e.id !== evidenceId);
-    if (bucket.evidence.length === before) return false;
-    bucket.updatedAt = new Date().toISOString();
-    saveStyleEvidenceStore();
-    return true;
-  }
-
-  // Wipe evidence for one style, or every style. Kept separate from the
-  // residual / meaning resets so a TD can prune evidence without losing
-  // the calibration medians or POM-meaning catalog.
-  function clearStyleEvidence(scope, styleId) {
-    if (scope === 'all') {
-      styleEvidenceStore = emptyStyleEvidenceStore();
-    } else if (styleId && styleEvidenceStore.styles[styleId]) {
-      delete styleEvidenceStore.styles[styleId];
-    } else {
-      return false;
-    }
-    saveStyleEvidenceStore();
-    return true;
-  }
-
-  // ---- src/auto/learning/style-evidence-capture.js ----
-// Style evidence: save-time candidate capture from the live project.
-// Source part for app.js. Run `npm run build` after editing.
-//
-// The durable store schema and CRUD (addStyleEvidence, listStyleEvidence,
-// etc.) live in the sibling src/auto/learning/style-evidence-record.js,
-// which loads before this file. Generate-time reuse of stored evidence to
-// bias/veto fresh drafts lives in src/auto/learning/style-evidence-reuse.js.
-//
-// ---- Phase 2: evidence capture from TD-edited Auto lines ----------
-//
-// collectStyleEvidenceCandidates scans the current project annotations
-// and picks rows the save flow can offer to remember for next time:
-//
-//   - auto === true          (line came out of Auto Mode, not a sketch)
-//   - tdEdited === true      (the TD actually moved it after applying)
-//   - drawability !== REVIEW_ONLY
-//   - has start + end + a numeric POM (seq or label)
-//   - sourceImageId resolves to a currently loaded image
-//
-// Output is a list of normalized records the same shape addStyleEvidence
-// accepts. Nothing is written to storage here — the save dialog runs the
-// commit step after the TD confirms.
-
-  function evidenceSourceForAnnotation(ann) {
-    if (!ann) return null;
-    if (ann.auto === true && ann.tdEdited === true) return 'td-edited-auto-line';
-    // Manual confirmed POM line: the meaning popover (or the fixed POM
-    // path for 1/3/5) has already stamped these fields after the TD
-    // committed a meaning, so the line is durable enough to remember.
-    if (ann.auto !== true && ann.learnSampleHash && ann.learnMeaningId) {
-      return 'manual-confirmed-line';
-    }
-    return null;
-  }
-
-  function isEligibleEvidenceAnnotation(ann) {
-    if (!ann) return false;
-    // US-096: a construction line carries no POM meaning, so learning must not
-    // take its geometry as evidence for the POM number it happens to sit on.
-    if (!isMeasurementAnnotation(ann)) return false;
-    if (ann.drawability === 'REVIEW_ONLY') return false;
-    if (!ann.start || !ann.end) return false;
-    if (!Number.isFinite(ann.start.x) || !Number.isFinite(ann.start.y)) return false;
-    if (!Number.isFinite(ann.end.x) || !Number.isFinite(ann.end.y)) return false;
-    if (!evidencePomFromAnnotation(ann)) return false;
-    if (!evidenceSourceForAnnotation(ann)) return false;
-    return true;
-  }
-
-  function evidencePomFromAnnotation(ann) {
-    if (!ann) return null;
-    // Manual confirmed lines are stamped with the POM number that drove
-    // the meaning popover — prefer it over the label since the TD could
-    // have appended explanatory text after committing.
-    if (ann.learnSamplePom) return String(ann.learnSamplePom);
-    if (Number.isFinite(ann.seq) && ann.seq > 0) return String(ann.seq);
-    if (ann.text) {
-      const parsed = (typeof parsePomNumberFromLabel === 'function')
-        ? parsePomNumberFromLabel(ann.text)
-        : null;
-      if (parsed) return parsed;
-    }
-    return null;
-  }
-
-  function markDeletedAutoAnnotationForEvidence(ann) {
-    if (!ann || ann.auto !== true) return false;
-    const pom = evidencePomFromAnnotation(ann);
-    if (!pom) return false;
-    if (!state.deletedAutoAnnotations) state.deletedAutoAnnotations = [];
-    const snapshot = clone(ann);
-    snapshot.deletedAt = new Date().toISOString();
-    snapshot.tdDeleted = true;
-    const existingIndex = state.deletedAutoAnnotations.findIndex(row => row && row.id === snapshot.id);
-    if (existingIndex >= 0) state.deletedAutoAnnotations[existingIndex] = snapshot;
-    else state.deletedAutoAnnotations.push(snapshot);
-    return true;
-  }
-
-  function findImageById(imageId) {
-    if (!imageId || !state || !Array.isArray(state.images)) return null;
-    return state.images.find(im => im && im.id === imageId) || null;
-  }
-
-  function worldPointToImageNormalized(point, image) {
-    if (!point || !image || !image.width || !image.height) return null;
-    const x = (Number(point.x) - image.x) / image.width;
-    const y = (Number(point.y) - image.y) / image.height;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return { x, y };
-  }
-
-  function normalizeLineForEvidence(ann, image) {
-    const start = worldPointToImageNormalized(ann.start, image);
-    const end = worldPointToImageNormalized(ann.end, image);
-    if (!start || !end) return null;
-    const out = {
-      type: ann.type === 'curved' ? 'curved' : 'straight',
-      start,
-      end,
-    };
-    if (ann.type === 'curved') {
-      const c1 = worldPointToImageNormalized(ann.control1, image);
-      const c2 = worldPointToImageNormalized(ann.control2, image);
-      if (c1) out.control1 = c1;
-      if (c2) out.control2 = c2;
-      const mp = worldPointToImageNormalized(ann.midPoint, image);
-      if (mp) out.midPoint = mp;
-      if (Array.isArray(ann.points) && ann.points.length) {
-        const points = ann.points.map(pt => ({
-          point: worldPointToImageNormalized(pt.point, image),
-          handleIn: worldPointToImageNormalized(pt.handleIn, image),
-          handleOut: worldPointToImageNormalized(pt.handleOut, image),
-        })).filter(pt => pt.point && pt.handleIn && pt.handleOut);
-        if (points.length) out.points = points;
-      }
-    }
-    return out;
-  }
-
-  // Stable id per (style, image, POM, source-kind) so re-saving the same
-  // project after another edit replaces the previous evidence instead of
-  // stacking near-duplicates. The annotation id alone is too volatile —
-  // every Apply mints a fresh one, so a second Save would otherwise grow
-  // the bucket unboundedly. Source-kind enters the id because a single
-  // image can hold both a manual confirmed POM 9 and the auto-applied
-  // POM 9 it was correcting — we want both, not a collision.
-  function makeEvidenceId(styleId, ann, source, image) {
-    const pom = evidencePomFromAnnotation(ann) || '?';
-    const imageId = (ann.sourceImageId || (image && image.id) || '?');
-    const kind = source === 'manual-confirmed-line'
-      ? 'm'
-      : (source === 'td-deleted-auto-line' ? 'x' : 'a');
-    return 'ev_' + encodeURIComponent(styleId || '_')
-      + '_' + encodeURIComponent(imageId) + '_pom-' + pom + '_' + kind;
-  }
-
-  function pickImageForEvidence(ann) {
-    if (ann.sourceImageId) {
-      const direct = findImageById(ann.sourceImageId);
-      if (direct) return direct;
-    }
-    // Manual lines have no sourceImageId — fall back to the midpoint
-    // bbox test the meaning store already uses for shadow detection.
-    if (typeof pickImageForAnnotation === 'function') {
-      return pickImageForAnnotation(ann) || null;
-    }
-    return null;
-  }
-
-  function buildEvidenceCandidate(styleId, ann) {
-    const source = evidenceSourceForAnnotation(ann);
-    if (!source) return null;
-    const image = pickImageForEvidence(ann);
-    if (!image) return null;
-    const line = normalizeLineForEvidence(ann, image);
-    if (!line) return null;
-    const pom = evidencePomFromAnnotation(ann);
-    // Manual lines record the meaning ID directly on the annotation. Auto
-    // lines round-trip through the current style's meaning store. Either
-    // way, hydrate a human-readable label from the catalog when possible.
-    const meaningIdFromAnn = source === 'manual-confirmed-line' ? (ann.learnMeaningId || null) : null;
-    const meaningFromCatalog = (typeof resolvePomMeaning === 'function') ? resolvePomMeaning(pom) : null;
-    const meaningId = meaningIdFromAnn || (meaningFromCatalog ? meaningFromCatalog.id : null);
-    const catalogEntry = (meaningId && typeof getCatalogEntry === 'function')
-      ? getCatalogEntry(meaningId)
-      : meaningFromCatalog;
-    const ruleVersion = (typeof AUTO_RULE_VERSION === 'string') ? AUTO_RULE_VERSION : null;
-    const templateVersion = (typeof AUTO_TEMPLATE_VERSION === 'string') ? AUTO_TEMPLATE_VERSION : null;
-    return {
-      id: makeEvidenceId(styleId, ann, source, image),
-      styleId,
-      annotationId: ann.id,
-      sourceImageId: ann.sourceImageId || image.id || null,
-      savedAt: null, // addStyleEvidence stamps on commit
-      appRuleVersion: ruleVersion,
-      templateVersion,
-      source,
-      tdStatus: 'confirmed',
-      pom,
-      meaningId,
-      meaningLabel: catalogEntry ? catalogEntry.label : null,
-      viewRole: ann.viewRole || null,
-      line,
-      quality: {
-        sourceConfidence: ann.confidence || null,
-        editedFromAuto: source === 'td-edited-auto-line',
-        drawability: ann.drawability || null,
-      },
-    };
-  }
-
-  function isDeletedAutoAbsenceStillValid(ann) {
-    if (!ann || ann.auto !== true) return false;
-    const pom = evidencePomFromAnnotation(ann);
-    if (!pom) return false;
-    if (!state || !Array.isArray(state.annotations)) return true;
-    // Undo, redraw, or manual correction of the same POM means this is not
-    // absence evidence anymore. Keep the rule conservative: if any current
-    // annotation carries the same POM, don't learn "missing".
-    return !state.annotations.some(current => {
-      if (!current) return false;
-      if (current.id === ann.id) return true;
-      return evidencePomFromAnnotation(current) === pom;
-    });
-  }
-
-  function buildAbsenceEvidenceCandidate(styleId, ann) {
-    if (!isDeletedAutoAbsenceStillValid(ann)) return null;
-    const image = pickImageForEvidence(ann);
-    if (!image) return null;
-    const pom = evidencePomFromAnnotation(ann);
-    const rejectedLine = normalizeLineForEvidence(ann, image);
-    const meaningFromCatalog = (typeof resolvePomMeaning === 'function') ? resolvePomMeaning(pom) : null;
-    const catalogEntry = meaningFromCatalog || null;
-    const ruleVersion = (typeof AUTO_RULE_VERSION === 'string') ? AUTO_RULE_VERSION : null;
-    const templateVersion = (typeof AUTO_TEMPLATE_VERSION === 'string') ? AUTO_TEMPLATE_VERSION : null;
-    return {
-      id: makeEvidenceId(styleId, ann, 'td-deleted-auto-line', image),
-      styleId,
-      annotationId: ann.id,
-      sourceImageId: ann.sourceImageId || image.id || null,
-      savedAt: null,
-      appRuleVersion: ruleVersion,
-      templateVersion,
-      source: 'td-deleted-auto-line',
-      tdStatus: 'absent-confirmed',
-      pom,
-      meaningId: catalogEntry ? catalogEntry.id : null,
-      meaningLabel: catalogEntry ? catalogEntry.label : null,
-      viewRole: ann.viewRole || null,
-      line: null,
-      rejectedLine,
-      absentReason: 'TD deleted the Auto-applied POM line because this style does not use that measurement.',
-      quality: {
-        sourceConfidence: ann.confidence || null,
-        deletedAutoLine: true,
-        drawability: ann.drawability || null,
-      },
-    };
-  }
-
-  function collectStyleEvidenceCandidates(styleId) {
-    const targetStyle = (styleId == null ? currentStyleId() : styleId);
-    if (!state || !Array.isArray(state.annotations)) return [];
-    const out = [];
-    for (const ann of state.annotations) {
-      if (!isEligibleEvidenceAnnotation(ann)) continue;
-      const candidate = buildEvidenceCandidate(targetStyle, ann);
-      if (candidate) out.push(candidate);
-    }
-    const deleted = Array.isArray(state.deletedAutoAnnotations) ? state.deletedAutoAnnotations : [];
-    for (const ann of deleted) {
-      const candidate = buildAbsenceEvidenceCandidate(targetStyle, ann);
-      if (candidate) out.push(candidate);
-    }
-    return out;
-  }
-
-  // Commit a vetted list of candidates. Returns the count of records that
-  // actually landed in the store; bad records (missing geometry) are
-  // dropped silently because addStyleEvidence already validates them.
-  function commitStyleEvidenceCandidates(styleId, candidates) {
-    const targetStyle = (styleId == null ? currentStyleId() : styleId);
-    if (!targetStyle) return 0;
-    if (!Array.isArray(candidates) || candidates.length === 0) return 0;
-    let written = 0;
-    for (const candidate of candidates) {
-      const stored = addStyleEvidence(targetStyle, candidate);
-      if (stored) written += 1;
-    }
-    if (state && Array.isArray(state.deletedAutoAnnotations)) {
-      const committedDeletedIds = new Set(candidates
-        .filter(c => c && c.source === 'td-deleted-auto-line')
-        .map(c => c.annotationId));
-      if (committedDeletedIds.size) {
-        state.deletedAutoAnnotations = state.deletedAutoAnnotations
-          .filter(ann => !committedDeletedIds.has(ann && ann.id));
-      }
-    }
-    return written;
-  }
-
-  // ---- src/auto/learning/style-evidence-reuse.js ----
-// Style evidence: generate-time reuse of stored evidence to bias or veto
-// freshly generated drafts. Source part for app.js. Run `npm run build`
-// after editing.
-//
-// The durable store schema and CRUD (listStyleEvidence, etc.) live in the
-// sibling src/auto/learning/style-evidence-record.js, which loads before
-// this file. Save-time candidate capture from the live project lives in
-// src/auto/learning/style-evidence-capture.js.
-
-  function latestEvidenceByPom(styleId) {
-    const out = new Map();
-    for (const rec of listStyleEvidence(styleId)) {
-      if (!rec || rec.pom == null) continue;
-      const pom = String(rec.pom);
-      if (!out.has(pom)) out.set(pom, rec);
-    }
-    return out;
-  }
-
-  function getAbsentEvidenceByPom(styleId) {
-    const latest = latestEvidenceByPom(styleId || currentStyleId());
-    const out = new Map();
-    for (const [pom, rec] of latest.entries()) {
-      if (rec && rec.tdStatus === 'absent-confirmed') out.set(pom, rec);
-    }
-    return out;
-  }
-
-  // ---- Phase 3: reuse confirmed evidence to pre-seed drafts ----------
-  //
-  // Absence evidence (above) wipes the draft when the style is known not to
-  // measure a POM. The confirmed side does the symmetric job: when prior
-  // TD edits keep landing in roughly the same spot for a POM on this style,
-  // pull the freshly generated draft a fraction of the way toward the
-  // median of those edits. This is a soft prior — geometry from the
-  // current sketch still dominates so a different image doesn't snap to
-  // the wrong place — but it shortens TD review when a style has settled.
-  //
-  // Three guardrails keep the prior honest:
-  //   - aggregate across at most the N most-recent confirmed records,
-  //   - reject when the evidence is more than a third of the image away
-  //     from the current draft (almost certainly a different sketch type),
-  //   - never overwrite an absence-flagged draft (REVIEW_ONLY survives).
-  const STYLE_EVIDENCE_REUSE_BLEND = 0.4;        // 40% pull toward evidence
-  const STYLE_EVIDENCE_REUSE_RECENT = 5;         // last N confirmations per POM
-  const STYLE_EVIDENCE_REUSE_MAX_GAP = 0.30;     // reject if >30% of image away
-
-  function getConfirmedEvidenceMediansByPom(styleId) {
-    const records = listStyleEvidence(styleId == null ? currentStyleId() : styleId);
-    const byPom = new Map();
-    for (const rec of records) {
-      if (!rec || rec.tdStatus !== 'confirmed' || rec.pom == null || !rec.line) continue;
-      if (!rec.line.start || !rec.line.end) continue;
-      const pom = String(rec.pom);
-      let arr = byPom.get(pom);
-      if (!arr) { arr = []; byPom.set(pom, arr); }
-      arr.push(rec);
-    }
-    const out = new Map();
-    for (const [pom, recs] of byPom.entries()) {
-      // listStyleEvidence already returns newest-first; trim to the most
-      // recent N so a stale 6-month-old confirmation can't outvote a
-      // freshly-edited one when the TD has reworked the POM lately.
-      const recent = recs.slice(0, STYLE_EVIDENCE_REUSE_RECENT);
-      if (!recent.length) continue;
-      const startXs = recent.map(r => Number(r.line.start.x) || 0);
-      const startYs = recent.map(r => Number(r.line.start.y) || 0);
-      const endXs   = recent.map(r => Number(r.line.end.x)   || 0);
-      const endYs   = recent.map(r => Number(r.line.end.y)   || 0);
-      const isCurved = recent.every(r => r.line && r.line.type === 'curved');
-      out.set(pom, {
-        pom,
-        startNorm: { x: medianOf(startXs), y: medianOf(startYs) },
-        endNorm:   { x: medianOf(endXs),   y: medianOf(endYs) },
-        lineType: isCurved ? 'curved' : 'straight',
-        sampleCount: recent.length,
-        lastSavedAt: recent[0].savedAt,
-        meaningId: recent[0].meaningId || null,
-        latestRecordId: recent[0].id,
-      });
-    }
-    return out;
-  }
-
-  function applyStyleConfirmedEvidenceToDrafts(drafts, sourceImage) {
-    if (!Array.isArray(drafts) || !drafts.length) return 0;
-    if (!sourceImage || !sourceImage.width || !sourceImage.height) return 0;
-    const confirmedByPom = getConfirmedEvidenceMediansByPom(currentStyleId());
-    if (!confirmedByPom.size) return 0;
-    const maxGapPx = STYLE_EVIDENCE_REUSE_MAX_GAP
-      * Math.max(sourceImage.width, sourceImage.height);
-    let changed = 0;
-    for (const draft of drafts) {
-      if (!draft) continue;
-      if (draft.drawability === 'REVIEW_ONLY') continue;
-      // Absence evidence already cleared geometry above; don't undo it.
-      if (draft.styleEvidenceStatus === 'absent-confirmed') continue;
-      if (!draft.start || !draft.end) continue;
-      const pom = draft.seq != null ? String(draft.seq) : null;
-      const ev = pom ? confirmedByPom.get(pom) : null;
-      if (!ev) continue;
-      // Curved evidence on a straight draft (or vice versa) means the
-      // template intent doesn't match — blending endpoints would warp
-      // the line into a meaningless shape. Skip and let detection win.
-      if ((draft.type === 'curved') !== (ev.lineType === 'curved')) continue;
-      const evStart = {
-        x: sourceImage.x + ev.startNorm.x * sourceImage.width,
-        y: sourceImage.y + ev.startNorm.y * sourceImage.height,
-      };
-      const evEnd = {
-        x: sourceImage.x + ev.endNorm.x * sourceImage.width,
-        y: sourceImage.y + ev.endNorm.y * sourceImage.height,
-      };
-      // Pair endpoints (start↔start, end↔end) by min total squared distance.
-      // Strokes have arbitrary orientation, so a confirmed line drawn
-      // bottom-to-top still nudges a top-to-bottom draft correctly.
-      const d2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
-      const direct  = d2(draft.start, evStart) + d2(draft.end, evEnd);
-      const swapped = d2(draft.start, evEnd)   + d2(draft.end, evStart);
-      const [evS, evE] = direct <= swapped ? [evStart, evEnd] : [evEnd, evStart];
-      // Reject when evidence is far from current draft — almost certainly
-      // a sketch with a different layout or scale.
-      const gapStart = Math.hypot(draft.start.x - evS.x, draft.start.y - evS.y);
-      const gapEnd   = Math.hypot(draft.end.x   - evE.x, draft.end.y   - evE.y);
-      if (gapStart > maxGapPx || gapEnd > maxGapPx) continue;
-      const a = STYLE_EVIDENCE_REUSE_BLEND;
-      // Keep the pre-blend chord: every other geometry field on the draft is an
-      // ABSOLUTE world point measured against it, so the carry below needs both
-      // the old frame and the new one.
-      const oldStart = { x: draft.start.x, y: draft.start.y };
-      const oldEnd = { x: draft.end.x, y: draft.end.y };
-      draft.start = {
-        x: draft.start.x * (1 - a) + evS.x * a,
-        y: draft.start.y * (1 - a) + evS.y * a,
-      };
-      draft.end = {
-        x: draft.end.x * (1 - a) + evE.x * a,
-        y: draft.end.y * (1 - a) + evE.y * a,
-      };
-      carryDraftGeometryToNewChord(draft, oldStart, oldEnd);
-      draft.styleEvidenceId = ev.latestRecordId;
-      draft.styleEvidenceStatus = 'confirmed-prior';
-      draft.styleEvidenceSamples = ev.sampleCount;
-      // Prior evidence is a stronger signal than vanilla detection on
-      // this style — promote the confidence so the TD review chip shows
-      // the line as high-trust, but only raise (never demote).
-      if (draft.confidence !== 'high') draft.confidence = 'high';
-      changed += 1;
-    }
-    return changed;
-  }
-
-  // Carry a blended draft's non-endpoint geometry onto its new chord.
-  //
-  // applyStyleConfirmedEvidenceToDrafts rewrites start/end, but a draft's curve
-  // handles, interior anchors and label are absolute world points that
-  // buildDraftAnnotation baked from the PRE-blend geometry — nothing recomputes
-  // them. Left behind they stay exactly where they were: measured on demo1, a
-  // 0.06 evidence offset moved POM 14 / 17 / 18's endpoints 0.024 while
-  // control1, control2 and label each moved 0.000. That is a traced arc pulled
-  // out of shape under a callout number parked off its own line, and it reached
-  // the applied annotations — the real Generate button auto-applies.
-  //
-  // A cubic's handles are only meaningful relative to its chord, so carry every
-  // dependent point through the similarity (rotate + uniform scale + translate)
-  // that maps the old chord onto the new one. The arc keeps the shape the
-  // contour trace found for it; only its frame moves. Also the reason POM 14's
-  // "handles interpolate the strap span" invariant (validate-fixture.js) still
-  // holds after a blend that validateAutoFixture ran before.
-  //
-  // The field list mirrors scaleAnnotationAbout (src/board/view/viewport.js) on
-  // purpose: that is the other place a whole annotation's geometry moves as a
-  // unit, and a field added to one and not the other is exactly how ann.points
-  // got torn once already (ADR 0053).
-  function carryDraftGeometryToNewChord(draft, oldStart, oldEnd) {
-    if (!draft || !oldStart || !oldEnd || !draft.start || !draft.end) return;
-    const ux = oldEnd.x - oldStart.x;
-    const uy = oldEnd.y - oldStart.y;
-    const den = ux * ux + uy * uy;
-    const vx = draft.end.x - draft.start.x;
-    const vy = draft.end.y - draft.start.y;
-    // A degenerate old chord (both endpoints coincided) has no frame to rotate
-    // out of, so fall back to a pure translation by the start delta. The P5
-    // guard in pom-fixture-builder demotes zero-length straight rows before
-    // they get here, but a curve can still be degenerate.
-    const rotate = den > 1e-12;
-    const cos = rotate ? (vx * ux + vy * uy) / den : 1;
-    const sin = rotate ? (vy * ux - vx * uy) / den : 0;
-    const carry = (p) => {
-      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
-      const dx = p.x - oldStart.x;
-      const dy = p.y - oldStart.y;
-      p.x = draft.start.x + cos * dx - sin * dy;
-      p.y = draft.start.y + sin * dx + cos * dy;
-    };
-    for (const key of ['midPoint', 'midHandleIn', 'midHandleOut', 'control1', 'control2']) {
-      if (draft[key]) carry(draft[key]);
-    }
-    if (Array.isArray(draft.points)) {
-      for (const anchor of draft.points) {
-        if (!anchor) continue;
-        for (const field of ['point', 'handleIn', 'handleOut']) {
-          if (anchor[field]) carry(anchor[field]);
-        }
-      }
-    }
-    // The label is a DERIVED default on a generated draft (buildDraftAnnotation
-    // only honours an explicit fixture label, which no generated row sets), so
-    // re-derive it from the moved geometry rather than transporting it: its
-    // perpendicular offset is a fixed screen distance and must not pick up the
-    // chord's scale factor. A hand-placed label is a TD decision and rides the
-    // transform instead. Either way this runs before
-    // nudgeAutoLabelsToAvoidCollisions, so the de-collision pass still gets the
-    // last word — which is what the comment at its call site already claimed.
-    if (draft.labelManual) {
-      carry(draft.label);
-    } else if (typeof computeDefaultLabelPosition === 'function') {
-      draft.label = computeDefaultLabelPosition(draft);
-    }
-  }
-
-  function applyStyleAbsenceEvidenceToDrafts(drafts) {
-    if (!Array.isArray(drafts) || !drafts.length) return 0;
-    const absentByPom = getAbsentEvidenceByPom(currentStyleId());
-    if (!absentByPom.size) return 0;
-    let changed = 0;
-    for (const draft of drafts) {
-      const pom = draft && draft.seq != null ? String(draft.seq) : null;
-      const evidence = pom ? absentByPom.get(pom) : null;
-      if (!evidence) continue;
-      draft.drawability = 'REVIEW_ONLY';
-      draft.start = null;
-      draft.end = null;
-      draft.control1 = null;
-      draft.control2 = null;
-      draft.label = null;
-      draft.confidence = 'low';
-      draft.tdApproved = false;
-      draft.tdApprovalRequired = true;
-      draft.endpointApproximate = false;
-      draft.styleEvidenceId = evidence.id;
-      draft.styleEvidenceStatus = 'absent-confirmed';
-      draft.uncertainty = 'Style evidence says POM ' + pom + ' is absent for this style.';
-      draft.reason = draft.uncertainty;
-      changed += 1;
-    }
-    return changed;
-  }
-
   // ---- src/debug/debug-export.js ----
 // Debug / introspection export builders for offline tooling. Source part
 // for app.js. Run `npm run build` after editing.
 //
 // exportGroundTruth/downloadGroundTruth emit a normalized anchor JSON for
-// scripts/accuracy-tests.mjs. buildCvDebugExport/downloadCvDebugExport
-// dump the intermediate CV pipeline state captured by runOfflineDetection
+// scripts/accuracy-tests.mjs (the ?label=1 labeling button). buildCvDebugExport
+// dumps the intermediate CV pipeline state captured by runOfflineDetection
 // when window.__braAutoModeDebug.cv.setEnabled(true) is on (or ?cvDebug=1).
-// buildStageDebugSummary is the per-pipeline-stage read-only projection
-// used by the Engineering Workflow debug view.
 //
-// The window.__braAutoModeDebug facade that wires these onto the by-name
-// test-suite contract lives in the sibling src/debug/debug-api.js, which
-// loads after this file.
+// The window.__braAutoModeDebug facade (the sibling src/debug/debug-api.js,
+// which loads after this file) exposes buildCvDebugExport as cv.exportDebug;
+// downloadGroundTruth is wired by src/app/url-bootstrap.js.
 
   // -------- Ground-truth labeling export (accuracy harness) --------
   //
@@ -50809,10 +45425,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
   // save and diff later. Designed to answer "why did this image fail?" without
   // the TD having to re-open the page and reproduce by hand. Includes:
   //   - image identity (name/id, displayed + sample size)
-  //   - detection params (effective, after learning bias)
+  //   - detection params (effective)
   //   - threshold values + per-stage timing
   //   - detected anchors with normalized position + confidence tier
-  //   - learned parameter sample counts + current resolved params
   //   - validation status (errors + warnings)
   //   - the full CV debug snapshot (rows/cols/components/etc.) when CV Debug
   //     mode was on for the last detection — null otherwise
@@ -50830,22 +45445,10 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       viewRole: a.viewRole || null,
       confidence: a.confidence || null,
       autoFilled: !!a.autoFilled,
-      calibrated: !!a.calibrated,
       source: a.source || null,
       reviewRequired: !!a.reviewRequired,
       cupModelId: a.cupModelId || null,
     }));
-    const learnedParams = (typeof getLearnedDetectionParams === 'function')
-      ? getLearnedDetectionParams()
-      : null;
-    const learning = {
-      enabled: typeof isLearningEnabled === 'function' ? isLearningEnabled() : null,
-      sampleCount: typeof getLearningSampleCount === 'function' ? getLearningSampleCount() : 0,
-      learnedParams,
-      paramSampleCounts: learnedParams && learnedParams.sampleCounts
-        ? { ...learnedParams.sampleCounts }
-        : null,
-    };
     const validation = state.autoMode.validation
       ? {
         status: state.autoMode.validation.status || null,
@@ -50909,283 +45512,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         })) : [],
       } : null,
       anchors,
-      learning,
       validation,
       cvDebug,
-    };
-  }
-
-  // Trigger an in-browser download of the compact CV debug JSON. Used by the
-  // ?cvDebug=1 inspector button and by the debug API. Returns the exported
-  // payload (without the side effect) when document isn't available.
-  function downloadCvDebugExport(imageName) {
-    const payload = buildCvDebugExport(imageName);
-    if (state.autoMode.cvDebug) state.autoMode.cvDebug.lastExport = payload;
-    if (typeof document === 'undefined') return payload;
-    const baseName = String(imageName || payload.image.name || 'cv-debug').replace(/[^\w.\-]+/g, '_');
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName = (/\.json$/i.test(baseName) ? baseName.replace(/\.json$/i, '') : baseName)
-      + '.cv-debug.' + stamp + '.json';
-    try {
-      const blob = new Blob([JSON.stringify(payload, null, 2) + '\n'], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      if (typeof showToast === 'function') {
-        showToast('Saved CV debug: ' + fileName + ' (anchors=' + payload.anchors.length + ').');
-      }
-    } catch (err) {
-      console.warn('[CV Debug] download failed:', err);
-      if (typeof showToast === 'function') {
-        showToast('Could not save CV debug file.', 4200);
-      }
-    }
-    return payload;
-  }
-
-  // -------- Per-stage debug summary (Engineering Workflow, Phase 1) --------
-  //
-  // A compact, strictly READ-ONLY snapshot of what each pipeline stage produced
-  // on the most recent Auto-Mode run. It maps the "segmentation -> contour ->
-  // geometry -> landmark -> anchor" mental model in Engineering Workflow.md onto
-  // the fields the current detector already emits, so an engineer or TD reviewer
-  // can answer "did this stage do its job?" at a glance.
-  //
-  // This function only READS state.autoMode.detection / .anchors — it never
-  // writes back, so it cannot alter detection output or drift golden. Fields
-  // that the current pipeline does not yet compute cleanly are reported as null
-  // with a `notes` entry rather than invented; those gaps are later phases
-  // (e.g. a dedicated segmentation-quality score is Phase 3).
-  function buildStageDebugSummary(imageName) {
-    const det = state.autoMode.detection || null;
-    const anchors = state.autoMode.anchors || [];
-    const notes = [];
-    const round = (v, digits) => {
-      if (typeof v !== 'number' || !Number.isFinite(v)) return null;
-      const f = Math.pow(10, digits || 4);
-      return Math.round(v * f) / f;
-    };
-
-    if (!det) {
-      return {
-        generatedAt: new Date().toISOString(),
-        image: imageName || null,
-        ruleVersion: AUTO_RULE_VERSION,
-        templateVersion: AUTO_TEMPLATE_VERSION,
-        hasDetection: false,
-        notes: ['No detection has run yet — run Detect Sketch first.'],
-        segmentation: null,
-        contour: null,
-        geometry: null,
-        landmarks: null,
-        anchors: null,
-        overall: null,
-      };
-    }
-
-    // ---- Stage 2: Segmentation (ink mask separation) ----
-    // Phase 3 made segmentation a first-class stage: det.segmentation carries a
-    // normalized cross-backend result (backend id, bbox, deterministic quality,
-    // and a weak-segmentation review flag). overall.quality remains the blended
-    // detection quality (axis + band + chest), distinct from the mask score.
-    const seg = det.segmentation || null;
-    const segmentation = {
-      // Normalized Phase-3 fields (null on very old captures without the block).
-      backend: seg ? seg.backend : (det.segmentationBackend || null),
-      quality: seg ? round(seg.quality, 4) : round(det.segmentationQuality, 4),
-      weak: seg ? !!seg.weak : !!det.segmentationWeak,
-      reviewRequired: seg ? !!seg.reviewRequired : !!det.segmentationReviewRequired,
-      reasons: seg && Array.isArray(seg.reasons) ? seg.reasons.slice() : [],
-      subScores: seg && seg.subScores ? { ...seg.subScores } : null,
-      retainedInk: seg ? round(seg.retainedInk, 4) : null,
-      rawCoverage: seg ? round(seg.rawCoverage, 6) : null,
-      componentsBackend: seg ? seg.componentsBackend : null,
-      inkCleanupReverted: seg ? !!seg.inkCleanupReverted : null,
-      bbox: seg && seg.bbox ? { ...seg.bbox } : null,
-      // Signals available before Phase 3 too.
-      engine: det.engine || null,
-      coverage: round(det.coverage, 6),
-      primaryCoverage: round(det.primaryCoverage, 6),
-      componentCount: det.componentCount || 0,
-      keptComponentCount: det.keptComponentCount || 0,
-      inkThreshold: det.threshold != null ? det.threshold : null,
-      luminanceThreshold: det.luminanceThreshold != null ? det.luminanceThreshold : null,
-      backgroundLum: det.backgroundLum != null ? det.backgroundLum : null,
-      sampleWidth: det.sampleWidth || null,
-      sampleHeight: det.sampleHeight || null,
-      hasInkMask: !!det.inkMask,
-    };
-    if (segmentation.reviewRequired) {
-      notes.push('segmentation.reviewRequired is set — weak mask quality (' + (segmentation.reasons.join('; ') || 'low score') + '); treat all POMs with extra scrutiny.');
-    }
-
-    // ---- Stage 3: Contour extraction (outlines / seams / junctions) ----
-    // Phase 4 made this a clean CONTOUR-EVIDENCE bundle kept separate from
-    // geometry decisions: type-split skeleton feature points (junctions /
-    // endpoints / corners), deterministic stroke stats, and — once the deferred
-    // Potrace trace runs — traced outlines plus reusable curve candidates.
-    // contours/contourCount/curveCandidates only exist when the trace ran;
-    // junctionSummary is the skeleton pass and is always attempted.
-    const js = det.junctionSummary || null;
-    const ce = det.contourEvidence || null;
-    const contour = {
-      contourCount: typeof det.contourCount === 'number' ? det.contourCount : null,
-      traceDurationMs: typeof det.traceDurationMs === 'number' ? det.traceDurationMs : null,
-      traceRan: !!det.contours,
-      junctionPointCount: Array.isArray(det.junctions) ? det.junctions.length : 0,
-      // Phase 4 evidence bundle (null on old captures without the block).
-      endpointCount: Array.isArray(det.endpoints) ? det.endpoints.length
-        : (ce ? (ce.endpointCount || 0) : null),
-      cornerCount: Array.isArray(det.corners) ? det.corners.length
-        : (ce ? (ce.cornerCount || 0) : null),
-      curveCandidateCount: Array.isArray(det.curveCandidates) ? det.curveCandidates.length
-        : (ce ? (ce.curveCandidateCount || 0) : 0),
-      strokeStats: det.strokeStats ? { ...det.strokeStats }
-        : (ce && ce.strokeStats ? { ...ce.strokeStats } : null),
-      junctionSummary: js ? {
-        junctions: js.junctions || 0,
-        endpoints: js.endpoints || 0,
-        corners: js.corners || 0,
-        skeletonPx: js.skeletonPx || 0,
-        thinningIterations: js.thinningIterations || 0,
-        prunedSpurs: js.prunedSpurs || 0,
-        capped: !!js.capped,
-      } : null,
-    };
-    if (contour.contourCount == null) {
-      notes.push('contour.contourCount is null: the Potrace vector trace did not run for this detection (contours are optional shape evidence).');
-    }
-
-    // ---- Stage 4: Geometry analysis (axis / band / views) ----
-    const geometry = {
-      bbox: det.bbox ? { ...det.bbox } : null,
-      axisX: round(det.axisX, 4),
-      bandY: round(det.bandY, 4),
-      chestY: round(det.chestY, 4),
-      cradleY: round(det.cradleY, 4),
-      sideLeftX: round(det.sideLeftX, 4),
-      sideRightX: round(det.sideRightX, 4),
-      symmetry: round(det.symmetry, 4),
-      axisConfidence: round(det.axisConfidence, 4),
-      baselineConfidence: round(det.baselineConfidence, 4),
-      viewCount: Array.isArray(det.views) ? det.views.length : 0,
-      primaryViewIndex: det.primaryViewIndex,
-      frontOuterViewIndex: det.frontOuterViewIndex,
-      frontInnerViewIndex: det.frontInnerViewIndex,
-      backViewIndex: det.backViewIndex,
-      viewRoleReviewRequired: !!det.viewRoleReviewRequired,
-      views: Array.isArray(det.views) ? det.views.map(v => ({
-        role: v.role || v.viewRole || null,
-        roleConfidence: v.roleConfidence != null ? v.roleConfidence : null,
-      })) : [],
-      // Phase 5: the explicit geometry-fact bundle (center axis, band line, cup
-      // curves, strap candidates, back-panel candidates, and view regions with
-      // roles + confidence), plus the geometry-quality review verdict. This is
-      // produced by the geometry stage BEFORE anchor placement — the seed layer
-      // reads these roles, it does not re-derive them. Null on old captures.
-      geometryFacts: det.geometryFacts ? clone(det.geometryFacts) : null,
-      geometryReviewRequired: !!det.geometryReviewRequired,
-    };
-    if (geometry.geometryReviewRequired) {
-      const reasons = det.geometryFacts && det.geometryFacts.quality
-        && Array.isArray(det.geometryFacts.quality.reasons)
-        ? det.geometryFacts.quality.reasons.join('; ')
-        : 'weak geometry';
-      notes.push('geometry.geometryReviewRequired is set — ' + (reasons || 'weak geometry') + '; the affected landmarks are flagged for TD review.');
-    }
-
-    // ---- Stage 5: Landmark detection (technical points + confidence) ----
-    // Phase 6 made this a first-class layer: det.landmarkQa classifies every
-    // anchor-schema kind (source class, tier, review verdict, QA notes) before
-    // anchor placement. Seeding recomputes and re-attaches it, so it reflects
-    // the verdicts the current anchors actually consumed; for a detection that
-    // has not been seeded yet (or an old capture) it is rebuilt read-only here.
-    const lq = det.landmarkQa
-      || (typeof buildLandmarkQaFromDetection === 'function'
-        ? buildLandmarkQaFromDetection(det)
-        : null);
-    const landmarks = {
-      confidenceByKind: det.confidence ? { ...det.confidence } : null,
-      seamEvidence: det.seamEvidence ? clone(det.seamEvidence) : null,
-      apexJoin: det.apexJoin ? clone(det.apexJoin) : null,
-      cupModelId: det.cupModel && det.cupModel.id ? det.cupModel.id : null,
-      cupVisibility: det.cupModel && det.cupModel.visibility ? det.cupModel.visibility : null,
-      // Phase 6 landmark QA layer (per anchor-schema kind).
-      qaByKind: lq ? clone(lq.byKind) : null,
-      qaSummary: lq ? clone(lq.summary) : null,
-      cupGate: lq ? clone(lq.cupGate) : null,
-    };
-    if (lq) {
-      if (lq.summary.missing > 0) {
-        const missingKinds = Object.keys(lq.byKind).filter(k => !lq.byKind[k].present);
-        notes.push('landmarks: ' + lq.summary.missing + ' kind(s) missing (' + missingKinds.join(', ') + ') — their POMs demote to REVIEW_ONLY rather than fake certainty.');
-      }
-      notes.push('landmarks.qaByKind: ' + lq.summary.reviewRequired + '/' + lq.summary.total + ' kinds flagged reviewRequired (sources: '
-        + lq.summary.bySourceClass.detected + ' detected, '
-        + lq.summary.bySourceClass.derived + ' derived, '
-        + lq.summary.bySourceClass.projected + ' projected, '
-        + lq.summary.bySourceClass.missing + ' missing).');
-    } else {
-      notes.push('landmarks.qaByKind unavailable: this capture predates the Phase 6 landmark QA layer.');
-    }
-
-    // ---- Stage 6: Anchor placement (normalized [0,1] anchors) ----
-    const tierCounts = { high: 0, medium: 0, low: 0, none: 0 };
-    const sourceCounts = {};
-    let reviewRequiredCount = 0;
-    const anchorList = anchors.map(a => {
-      const tier = a.confidence || 'none';
-      if (Object.prototype.hasOwnProperty.call(tierCounts, tier)) tierCounts[tier] += 1;
-      else tierCounts[tier] = (tierCounts[tier] || 0) + 1;
-      const src = a.source || 'unknown';
-      sourceCounts[src] = (sourceCounts[src] || 0) + 1;
-      if (a.reviewRequired) reviewRequiredCount += 1;
-      return {
-        kind: a.kind,
-        confidence: a.confidence || null,
-        source: a.source || null,
-        reviewRequired: !!a.reviewRequired,
-        autoFilled: !!a.autoFilled,
-        calibrated: !!a.calibrated,
-        viewRole: a.viewRole || null,
-      };
-    });
-    const anchorSummary = {
-      count: anchorList.length,
-      reviewRequiredCount,
-      byConfidenceTier: tierCounts,
-      bySource: sourceCounts,
-      anchors: anchorList,
-    };
-
-    const overall = {
-      quality: round(det.quality, 4),
-      segmentationQuality: segmentation.quality,
-      segmentationReviewRequired: segmentation.reviewRequired,
-      durationMs: det.durationMs != null ? det.durationMs : null,
-      computedAt: det.computedAt || null,
-      stageTimingsMs: det.stageTimingsMs ? { ...det.stageTimingsMs } : null,
-      validationStatus: state.autoMode.validation ? (state.autoMode.validation.status || null) : null,
-    };
-
-    return {
-      generatedAt: new Date().toISOString(),
-      image: imageName || (det.sourceImageId || null),
-      ruleVersion: AUTO_RULE_VERSION,
-      templateVersion: AUTO_TEMPLATE_VERSION,
-      hasDetection: true,
-      segmentation,
-      contour,
-      geometry,
-      landmarks,
-      anchors: anchorSummary,
-      overall,
-      notes,
     };
   }
 
@@ -51195,13 +45523,12 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
 // defined throughout the rest of the bundle by name. Source part for
 // app.js. Run `npm run build` after editing.
 //
-// The export builders this facade calls (exportGroundTruth/downloadGroundTruth,
-// buildCvDebugExport/downloadCvDebugExport, buildStageDebugSummary) live in
-// the sibling src/debug/debug-export.js, which loads before this file.
+// The export builder this facade calls (buildCvDebugExport) lives in the
+// sibling src/debug/debug-export.js, which loads before this file.
 //
 // window.__braAutoModeDebug is a by-NAME contract with the headless test
-// suites (smoke, golden, invariants, contract, learning-tests, evidence-tests,
-// junction-tests, pipeline-tests, and others) — every key/method name here
+// suites (smoke, golden, invariants, contract, junction-tests, pipeline-tests,
+// and others) — every key/method name here
 // must stay character-for-character identical even as implementations move.
 
   if (typeof window !== 'undefined') {
@@ -51210,7 +45537,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // synthetic input and timed independently. Side effects (canvas reads,
       // state writes, toasts) live in runOfflineDetection, not here.
       pipeline: {
-        readSourceImagePixels: (img, targetWidth) => readSourceImagePixels(img, targetWidth),
         pixelsToLegacyInkAnalysis: (pixels, w, h) => pixelsToLegacyInkAnalysis(pixels, w, h),
         detectSketchFromInkAnalysis: (cvAnalysis, opts) => detectSketchFromInkAnalysis(cvAnalysis, opts || {}),
         // Skeleton junction / endpoint / corner pass (Phase 1, plan 2).
@@ -51220,8 +45546,8 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         // Derived-anchor cascade (Phase 3, plan 2). Pure — tests feed an
         // anchor list and assert dependents follow their primaries.
         deriveAnchors: (anchors, opts) => deriveAnchors(anchors, opts),
-        seedAnchorsFromDetection: (detection, sourceImage, options) =>
-          seedAnchorsFromDetection(detection, sourceImage, options),
+        seedAnchorsFromDetection: (detection, sourceImage) =>
+          seedAnchorsFromDetection(detection, sourceImage),
         // Headless-Chrome-free POM-fixture builder. Tests pass an anchor list
         // and the matching detection so the closure that reads
         // state.autoMode.detection (for cradle/cradleCfTop signals) sees the
@@ -51254,30 +45580,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         const { inkMask, ...rest } = det;
         return Object.assign(clone(rest), { hasInkMask: !!inkMask });
       },
-      // Read-only per-stage debug summary (Engineering Workflow, Phase 1):
-      // segmentation quality signals, contour/junction counts, geometry facts,
-      // landmark confidence, and anchor confidence for the most recent run.
-      // Pure read of state.autoMode.detection/.anchors — never mutates them, so
-      // it cannot affect detection output.
-      getStageSummary: (name) => clone(buildStageDebugSummary(name)),
-      // Phase 3 segmentation seam. A registered adapter is tried FIRST in the
-      // segmentation stage; it must return the built-in ink-analysis shape and
-      // MUST run fully offline (no network call carrying sketch/measurement
-      // data). Default is unregistered, so the runtime is unchanged until a
-      // caller opts in. clear() restores the built-in OpenCV / legacy path.
-      segmentation: {
-        registerAdapter: (fn) => registerSegmentationAdapter(fn),
-        clearAdapter: () => clearSegmentationAdapter(),
-        hasAdapter: () => !!getSegmentationAdapter(),
-      },
       getAnchors: () => clone(state.autoMode.anchors),
       // Board viewport, so UI-level tests can convert an anchor's world
       // position (image rect + normalized anchor) into canvas screen
       // coordinates for synthetic mouse events.
       getViewport: () => ({ zoom: state.zoom, panX: state.panX, panY: state.panY }),
-      // Ground-truth export for scripts/accuracy-tests.mjs. Returns the
-      // current anchors keyed by kind in normalized image space.
-      exportGroundTruth: (name) => clone(exportGroundTruth(name)),
       getDrafts: () => clone(state.autoMode.draftAnnotations),
       getImages: () => state.images.map(image => ({
         id: image.id,
@@ -51320,7 +45627,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           setSelection('graphic',graphicId); state.graphicEdit={graphicId,active:{kind:'segment',subpathId:sp.id,startNodeId:n.id,t:Number.isFinite(t)?t:0.5}};updateUI();requestRender();return true;
         },
         cut: () => cutSelectedBoardGraphicPath(),
-        setSegmentType: type => bgSetActiveSegmentType(type),
         selectImage: id => { setSelection('image', id); return !!getSelectedImage(); },
       },
       // US-092 Board text notes. getNotes is the read side; addNote is the
@@ -51332,7 +45638,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         const note = createNote(text, pos, options);
         state.notes.push(note);
         pushHistoryIfChanged();
-        if (typeof requestRender === 'function') requestRender();
+        requestRender();
         return clone(note);
       },
       setNoteAppearance: value => { setNoteAppearance(value); return normalizeNoteAppearance(state.noteAppearance); },
@@ -51384,17 +45690,15 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         return clone(state.hiddenAnnIds);
       },
       // Tier-0 library-value suggestions (scripts/suggestions-tests.mjs).
-      // getPomSuggestions: the raw per-POM corpus stats loaded into scope.
       // getEffectivePomSpec: the panel's effective spec for a POM (TD override
       //   if any, else the library suggestion) — proves the fallback + export
       //   path. setPomSpecOverride: set a TD override and re-render, returning
       //   the new effective spec so a test can assert override wins.
-      getPomSuggestions: () => clone(POM_SUGGESTIONS),
-      getEffectivePomSpec: (key) => (typeof getPomSpec === 'function' ? clone(getPomSpec(key)) : null),
+      getEffectivePomSpec: (key) => clone(getPomSpec(key)),
       setPomSpecOverride: (key, field, value) => {
         const changed = setPomSpec(key, field, value);
         if (changed) pushHistoryIfChanged();
-        if (typeof renderSpecPanel === 'function') renderSpecPanel();
+        renderSpecPanel();
         return clone(getPomSpec(key));
       },
       // US-096 / ADR 0055: the measurement set and the preset library.
@@ -51405,19 +45709,14 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       //     just not measured).
       //   getLinePresets / applyLinePreset: drive the library without opening
       //     the menu, so a suite can assert the model separately from the UI.
-      getMeasurementAnnIds: () => (typeof measurementAnnotations === 'function'
-        ? measurementAnnotations().map(a => a.id) : null),
-      getLinePresets: () => (typeof getLinePresets === 'function' ? clone(getLinePresets()) : null),
-      applyLinePreset: (id) => (typeof applyLinePreset === 'function' ? applyLinePreset(id) : false),
-      addLinePreset: (name) => (typeof addLinePreset === 'function' ? clone(addLinePreset(name)) : null),
-      addLineTreatment: (name, recipe) => (typeof addLineTreatment === 'function'
-        ? clone(addLineTreatment(name, recipe)) : null),
-      updateLineTreatment: (id, recipe, name) => (typeof updateLineTreatment === 'function'
-        ? updateLineTreatment(id, recipe, name) : false),
+      getMeasurementAnnIds: () => measurementAnnotations().map(a => a.id),
+      getLinePresets: () => clone(getLinePresets()),
+      applyLinePreset: (id) => applyLinePreset(id),
+      addLinePreset: (name) => clone(addLinePreset(name)),
+      addLineTreatment: (name, recipe) => clone(addLineTreatment(name, recipe)),
       applyLineTreatmentToIds: (ids, recipe) => {
         const anns = (Array.isArray(ids) ? ids : []).map(id => getAnnotationById(id)).filter(Boolean);
-        return typeof applyTreatmentRecipeToAnnotations === 'function'
-          ? applyTreatmentRecipeToAnnotations(recipe, anns) : 0;
+        return applyTreatmentRecipeToAnnotations(recipe, anns);
       },
       getLineTreatmentMetrics: (id) => {
         const ann = getAnnotationById(id);
@@ -51452,8 +45751,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
             value: null,
             templateGroupId: raw.templateGroupId || null,
             sourceMode: raw.sourceMode || null,
-            candidateTier: raw.candidateTier || null,
-            reviewDecision: raw.reviewDecision || null,
             tdApproved: !!raw.tdApproved,
             tdApprovalRequired: !raw.tdApproved,
             approvedAt: raw.tdApproved ? (raw.approvedAt || 'test-approved') : null,
@@ -51495,15 +45792,6 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           const result = seamPathInsertTreatmentBreakAt(ann, Number(segIndex), Number(t));
           if (result.status === 'inserted') pushHistoryIfChanged();
           return { result: clone(result), annotation: clone(ann), selectionPart: state.selection.part || null };
-        },
-        selectRun: (id, runId) => {
-          const ann = getAnnotationById(id);
-          if (!ann || !ann.seamPath?.treatmentRuns.some(run => run.id === runId)) return false;
-          setSelection('annotation', id);
-          state.selection.part = seamPathTreatmentPart(runId);
-          updateUI();
-          requestRender();
-          return true;
         },
         applyPreset: (id, runId, presetId) => {
           const ann = getAnnotationById(id);
@@ -51568,35 +45856,26 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       },
       labelsVisible: () => labelsVisible(),
       resetLinePresets: () => {
-        if (typeof resetLinePresetsToBuiltins === 'function') resetLinePresetsToBuiltins();
+        resetLinePresetsToBuiltins();
       },
-      importLinePresetsJson: (text) => (typeof importLinePresetsFromJson === 'function'
-        ? importLinePresetsFromJson(text) : 0),
-      // US-107: a project's own presets the local library does not have yet —
-      // the model half of the Library dialog's "Import N from project" action
-      // (src/library/line-presets.js), so a suite can assert the offer without
-      // the dialog's own visibility rule standing in for it.
-      getPendingLinePresets: () => (typeof getPendingProjectLinePresets === 'function'
-        ? clone(getPendingProjectLinePresets()) : null),
+      importLinePresetsJson: (text) => importLinePresetsFromJson(text),
       // US-097 / ADR 0056: the shape-stamp library. getShapeStamps returns the
       // stored geometry so a suite can compare a placed line against the stamp
       // it came from; sampleAnnotationShape returns the SHAPE of any line,
       // normalized into its own bounding box, which is the only way to assert
       // "the curve that came back is the curve that was saved" independently of
       // where and how big it was placed.
-      getShapeStamps: () => (typeof getShapeStamps === 'function' ? clone(getShapeStamps()) : null),
+      getShapeStamps: () => clone(getShapeStamps()),
       resetShapeStamps: () => {
-        if (typeof commitShapeStamps === 'function') commitShapeStamps([]);
+        commitShapeStamps([]);
       },
-      importShapeStampsJson: (text) => (typeof importShapeStampsFromJson === 'function'
-        ? importShapeStampsFromJson(text) : 0),
+      importShapeStampsJson: (text) => importShapeStampsFromJson(text),
       setActiveShapeStamp: (id) => {
-        if (typeof setActiveShapeStamp === 'function') setActiveShapeStamp(id);
+        setActiveShapeStamp(id);
       },
       addTemplateFromAnnotationIds: (name, ids, options) => {
         const anns = (Array.isArray(ids) ? ids : []).map(id => getAnnotationById(id)).filter(Boolean);
-        const template = typeof shapeStampFromAnnotations === 'function'
-          ? shapeStampFromAnnotations(anns, name, options) : null;
+        const template = shapeStampFromAnnotations(anns, name, options);
         if (!template) return null;
         commitShapeStamps([...getShapeStamps(), template]);
         return clone(template);
@@ -51619,13 +45898,12 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // small placement seams (place-at-saved-size and mirror) so a suite can
       // assert on the model directly, alongside driving the real dialog.
       library: {
-        categories: () => (typeof libraryCategories === 'function' ? clone(libraryCategories()) : []),
-        setCategory: (id, category) => (typeof setShapeStampCategory === 'function' ? setShapeStampCategory(id, category) : false),
-        setTags: (id, tags) => (typeof setShapeStampTags === 'function' ? setShapeStampTags(id, tags) : false),
-        setNotes: (id, notes) => (typeof setShapeStampNotes === 'function' ? setShapeStampNotes(id, notes) : false),
-        setFavorite: (id, favorite) => (typeof setShapeStampFavorite === 'function' ? setShapeStampFavorite(id, favorite) : false),
-        toggleFavorite: (id) => (typeof toggleShapeStampFavorite === 'function' ? toggleShapeStampFavorite(id) : false),
-        duplicate: (id) => (typeof duplicateShapeStamp === 'function' ? clone(duplicateShapeStamp(id)) : null),
+        categories: () => clone(libraryCategories()),
+        setCategory: (id, category) => setShapeStampCategory(id, category),
+        setTags: (id, tags) => setShapeStampTags(id, tags),
+        setNotes: (id, notes) => setShapeStampNotes(id, notes),
+        toggleFavorite: (id) => toggleShapeStampFavorite(id),
+        duplicate: (id) => clone(duplicateShapeStamp(id)),
         // US-107: deleting a Template is a real dialog action (card menu ▸
         // Delete…, behind a window.confirm the Library dialog itself owns).
         // This hook isolates deleteShapeStamp's OWN model-layer behavior —
@@ -51633,14 +45911,13 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         // the arm and switches the tool away from 'stamp' — from the
         // confirm-dialog plumbing around it, which library-manager-check.mjs
         // already drives for real.
-        deleteStamp: (id) => (typeof deleteShapeStamp === 'function' ? deleteShapeStamp(id) : false),
+        deleteStamp: (id) => deleteShapeStamp(id),
         armForPlacement: (id, opts) => {
-          if (typeof armShapeStampForPlacement === 'function') armShapeStampForPlacement(id, opts);
+          armShapeStampForPlacement(id, opts);
         },
-        getArmedMirrored: () => !!state.activeStampMirrored,
         defaultBoxAt: (id, world) => {
           const stamp = getShapeStampById(id);
-          return stamp && typeof defaultStampBoxAt === 'function' ? clone(defaultStampBoxAt(stamp, world)) : null;
+          return stamp ? clone(defaultStampBoxAt(stamp, world)) : null;
         },
       },
       // US-104: DXF import. `parse` is the pure text -> pieces parser (no
@@ -51650,61 +45927,36 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // a real viewport. `importText` drives the real one-shot board mutation
       // the Tools-menu button itself calls.
       dxf: {
-        parse: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text)) : null),
-        // ADR 0091: same parse, plus `stats.instances` — the per-instance
-        // boundary diagnosis (segments/chains/closed per boundary layer, and
-        // why an open chain stayed open) so a corpus audit can say WHY an
-        // instance fell back to the legacy grouping.
-        parseDiagnostics: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text, { diagnostics: true })) : null),
-        computePlacement: (bounds, rect, centerWorld, zoom) => (typeof computeDxfPlacementTransform === 'function'
-          ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld, zoom)) : null),
-        importText: (text, rect, fileName, extra) => (typeof importDxfText === 'function'
-          ? clone(importDxfText(text, rect, fileName, extra || undefined)) : null),
+        parse: (text) => clone(parseDxfDocument(text)),
+        computePlacement: (bounds, rect, centerWorld, zoom) => clone(computeDxfPlacementTransform(bounds, rect, centerWorld, zoom)),
+        importText: (text, rect, fileName) => clone(importDxfText(text, rect, fileName)),
         // ADR 0091 follow-up: the byte decoder the real file input runs
         // (strict UTF-8 → $DWGCODEPAGE → GBK → windows-1252), so a suite or a
         // corpus scan can feed the parser EXACTLY the text the TD's pick
         // would, instead of fetch().text()'s lossy UTF-8.
-        decodeBytes: (buffer) => (typeof decodeDxfBytes === 'function' ? decodeDxfBytes(buffer) : null),
+        decodeBytes: (buffer) => decodeDxfBytes(buffer),
         // Phase 3: the import-time options the real toggle in the Pattern
         // Pieces panel writes, and a parse with explicit options (so a suite
-        // can prove keepQualityCurves without touching state).
+        // can prove keepQualityCurves without touching state; `diagnostics:
+        // true` adds the per-instance boundary diagnosis, stats.instances).
         getImportOptions: () => clone(state.dxfImportOptions || { keepQualityCurves: false }),
-        setImportOptions: (opts) => {
-          state.dxfImportOptions = { keepQualityCurves: !!(opts && opts.keepQualityCurves) };
-          if (typeof syncPatternPiecesImportOptions === 'function') syncPatternPiecesImportOptions();
-          return clone(state.dxfImportOptions);
-        },
-        parseWith: (text, opts) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text, opts || {})) : null),
-        parseNative: (text, opts) => (typeof parseDxfNativeModel === 'function' ? clone(parseDxfNativeModel(text, opts || {})) : null),
-        // Phase 5: the DXF Worker surface.
-        worker: {
-          supported: () => (typeof dxfWorkerSupported === 'function' ? dxfWorkerSupported() : false),
-          route: (text) => (typeof dxfWorkerRoute === 'function' ? dxfWorkerRoute(text) : null),
-          estimate: (text) => (typeof dxfEstimateInstanceCount === 'function' ? dxfEstimateInstanceCount(text) : null),
-          setEnabled: (v) => { if (typeof dxfSetWorkerEnabled === 'function') dxfSetWorkerEnabled(v); },
-          setForce: (v) => { if (typeof dxfSetWorkerForce === 'function') dxfSetWorkerForce(v); },
-          setUrl: (u) => { if (typeof dxfSetWorkerUrl === 'function') dxfSetWorkerUrl(u); },
-          parse: (text, opts) => (typeof dxfWorkerParse === 'function'
-            ? dxfWorkerParse(text, opts || {}).then(r => ({ board: clone(r.board), native: clone(r.native), elapsedMs: r.elapsedMs, progressEvents: r.progressEvents }))
-            : Promise.reject(new Error('no worker client'))),
-          cancel: () => { if (typeof dxfCancelActiveWorkerImport === 'function') dxfCancelActiveWorkerImport(); },
-          lastExecution: () => clone(state.dxfLastImportExecution || null),
-        },
+        parseWith: (text, opts) => clone(parseDxfDocument(text, opts || {})),
+        parseNative: (text, opts) => clone(parseDxfNativeModel(text, opts || {})),
         source: () => (state.dxfPatternSource ? clone(state.dxfPatternSource) : null),
         // ADR 0070: the Pattern Pieces panel's pure state operations, exposed
         // independently of the real DOM panel (src/dxf/pattern-pieces-panel.js)
         // so a headless suite can assert the group-list/remove logic without
         // driving live checkbox clicks for every case.
         patternPieces: {
-          groups: () => (typeof patternPieceGroups === 'function' ? clone(patternPieceGroups()) : null),
+          groups: () => clone(patternPieceGroups()),
           // Phase 3: groupId -> { pieceName, size, quantity, kind, classCounts, dropped, … }.
           meta: () => clone(state.templateGroupMeta || {}),
-          remove: (groupIds) => { if (typeof removePatternPieceGroups === 'function') removePatternPieceGroups(groupIds); },
+          remove: (groupIds) => { removePatternPieceGroups(groupIds); },
           // ADR 0072.
-          simplify: (groupId) => (typeof simplifyPieceGroup === 'function' ? clone(simplifyPieceGroup(groupId)) : null),
-          isOpen: () => (typeof isPatternPiecesPanelOpen === 'function' ? isPatternPiecesPanelOpen() : null),
-          open: () => { if (typeof openPatternPiecesPanel === 'function') openPatternPiecesPanel(); },
-          close: () => { if (typeof closePatternPiecesPanel === 'function') closePatternPiecesPanel(); },
+          simplify: (groupId) => clone(simplifyPieceGroup(groupId)),
+          isOpen: () => isPatternPiecesPanelOpen(),
+          open: () => { openPatternPiecesPanel(); },
+          close: () => { closePatternPiecesPanel(); },
         },
         // US-105: Pattern Measure. `measure.*` exposes the pure native
         // parser + geometry kernel independently of any board/UI state (unit
@@ -51715,7 +45967,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         // namespace never substitutes for driving that path in an
         // integration-level test, only for isolating the pure math.
         measure: {
-          parseNative: (text) => (typeof parseDxfNativeModel === 'function' ? clone(parseDxfNativeModel(text)) : null),
+          parseNative: (text) => clone(parseDxfNativeModel(text)),
           // Pure kernel primitives (src/dxf/parse/dxf-path-kernel.js), exposed
           // independently of any session/board state so a unit test can
           // drive exact synthetic segments (bulge signs, wraparound sweeps,
@@ -51724,72 +45976,56 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           reasonCodes: () => clone(DXF_MEASURE_REASON),
           // The sentence a TD reads when the native model could not be built
           // (dxf-import.js folds it into the import toast).
-          failureMessage: (nativeModel) => (typeof dxfMeasureFailureMessage === 'function' ? dxfMeasureFailureMessage(nativeModel) : null),
-          segmentLength: (seg) => (typeof dxfSegmentLength === 'function' ? dxfSegmentLength(seg) : null),
-          segmentFailureReason: (seg) => (typeof dxfSegmentFailureReason === 'function' ? dxfSegmentFailureReason(seg) : null),
-          partialLength: (seg, t0, t1) => (typeof dxfPartialLength === 'function' ? dxfPartialLength(seg, t0, t1) : null),
-          projectPointOnSegment: (point, seg) => (typeof dxfProjectPointOnSegment === 'function' ? clone(dxfProjectPointOnSegment(point, seg)) : null),
-          directDistance: (a, b) => (typeof dxfDirectDistance === 'function' ? dxfDirectDistance(a, b) : null),
+          failureMessage: (nativeModel) => dxfMeasureFailureMessage(nativeModel),
+          segmentLength: (seg) => dxfSegmentLength(seg),
+          segmentFailureReason: (seg) => dxfSegmentFailureReason(seg),
+          partialLength: (seg, t0, t1) => dxfPartialLength(seg, t0, t1),
+          projectPointOnSegment: (point, seg) => clone(dxfProjectPointOnSegment(point, seg)),
+          directDistance: (a, b) => dxfDirectDistance(a, b),
           // US-112: snap. `lineArcIntersections` is pure kernel math (like
-          // directDistance above); the piece-index getters are read-only
-          // inspection of the session's own cached snap index, same
-          // read-only convention as pieceSegments below — this file's header
-          // comment is explicit that a MUTATING action (toggling a snap kind
-          // on/off) always goes through its real UI path
-          // (#dxfMeasureSnapEndpointBtn etc., src/dxf/measure/dxf-measure-panel.js),
-          // never a debug shortcut, so there is deliberately no setter here.
-          lineArcIntersections: (lineSeg, arcSeg) => (typeof dxfMeasureLineArcIntersections === 'function'
-            ? clone(dxfMeasureLineArcIntersections(lineSeg, arcSeg)) : null),
+          // directDistance above) — this file's header comment is explicit
+          // that a MUTATING action (toggling a snap kind on/off) always goes
+          // through its real UI path (#dxfMeasureSnapEndpointBtn etc.,
+          // src/dxf/measure/dxf-measure-panel.js), never a debug shortcut, so
+          // there is deliberately no setter here.
+          lineArcIntersections: (lineSeg, arcSeg) => clone(dxfMeasureLineArcIntersections(lineSeg, arcSeg)),
           // Pure-function versions taking a bare `segments` array directly
           // (no DXF parse, no board import, no piece-grouping involved) —
           // same "isolate the math from any session/board state" contract as
           // parseNative/segmentLength above.
-          buildSnapIndexForSegments: (segments, tolerance) => (typeof dxfMeasureBuildPieceSnapIndex === 'function'
-            ? clone(dxfMeasureBuildPieceSnapIndex({ segments }, tolerance)) : null),
-          buildIntersectionsForSegments: (segments) => (typeof dxfMeasureBuildPieceIntersections === 'function'
-            ? clone(dxfMeasureBuildPieceIntersections({ segments })) : null),
-          pieceSnapIndex: (pieceIndex) => (typeof dxfMeasureEnsurePieceSnapIndex === 'function' && state.dxfMeasureSession
-            ? clone(dxfMeasureEnsurePieceSnapIndex(state.dxfMeasureSession, pieceIndex)) : null),
-          pieceIntersectionIndex: (pieceIndex) => (typeof dxfMeasureEnsurePieceIntersectionIndex === 'function' && state.dxfMeasureSession
-            ? clone(dxfMeasureEnsurePieceIntersectionIndex(state.dxfMeasureSession, pieceIndex)) : null),
-          snapCandidate: (world) => (typeof dxfMeasureSnapCandidate === 'function'
-            ? clone(dxfMeasureSnapCandidate(state.dxfMeasureSession, world)) : null),
+          buildSnapIndexForSegments: (segments, tolerance) => clone(dxfMeasureBuildPieceSnapIndex({ segments }, tolerance)),
+          buildIntersectionsForSegments: (segments) => clone(dxfMeasureBuildPieceIntersections({ segments })),
           // US-114: every within-tolerance candidate, and the near-tie subset
           // dxfMeasureSnapEntityHitsForClick actually resolves a click
           // against — exposed separately so a test can assert both "how many
           // candidates exist at all" and "how many count as a genuine tie".
-          snapCandidates: (world) => (typeof dxfMeasureSnapCandidates === 'function'
-            ? clone(dxfMeasureSnapCandidates(state.dxfMeasureSession, world)) : null),
-          snapTieCandidates: (world) => (typeof dxfMeasureSnapTieCandidates === 'function'
-            ? clone(dxfMeasureSnapTieCandidates(state.dxfMeasureSession, world)) : null),
+          snapCandidates: (world) => clone(dxfMeasureSnapCandidates(state.dxfMeasureSession, world)),
+          snapTieCandidates: (world) => clone(dxfMeasureSnapTieCandidates(state.dxfMeasureSession, world)),
           snapEnabled: () => ({ endpoint: !!state.dxfMeasureSnapEndpoint, midpoint: !!state.dxfMeasureSnapMidpoint, intersection: !!state.dxfMeasureSnapIntersection }),
           // US-114: the Pattern-Measure-only size filter. Read-only by design
           // (see this file's own header on why a real UI action is never
           // exposed as a debug shortcut) — a test drives the real
           // #dxfMeasureSizeSelect element, same as every other real control.
-          pieceSizeLabel: (pieceIndex) => (typeof dxfMeasurePieceSizeLabel === 'function' && state.dxfMeasureSession
+          pieceSizeLabel: (pieceIndex) => (state.dxfMeasureSession
             ? dxfMeasurePieceSizeLabel(state.dxfMeasureSession, pieceIndex) : null),
           // ADR 0084: the size TOKEN the filter actually groups by (the part
           // of the block name after its last underscore) — what
           // availableSizeLabels lists and activeSizeLabel holds.
-          pieceSizeToken: (pieceIndex) => (typeof dxfMeasurePieceSizeToken === 'function' && state.dxfMeasureSession
+          pieceSizeToken: (pieceIndex) => (state.dxfMeasureSession
             ? dxfMeasurePieceSizeToken(state.dxfMeasureSession, pieceIndex) : null),
-          availableSizeLabels: () => (typeof dxfMeasureAvailableSizeLabels === 'function' && state.dxfMeasureSession
+          availableSizeLabels: () => (state.dxfMeasureSession
             ? clone(dxfMeasureAvailableSizeLabels(state.dxfMeasureSession)) : []),
-          enumerateRoutesRaw: (segments, refA, refB, tolerance) => (typeof dxfEnumerateRoutes === 'function'
-            ? clone(dxfEnumerateRoutes(segments, refA, refB, tolerance)) : null),
-          reverseRoute: (route) => (typeof dxfReverseRoute === 'function' ? clone(dxfReverseRoute(route)) : null),
-          routeLength: (route, segments) => (typeof dxfRouteLength === 'function' ? dxfRouteLength(route, segments) : null),
-          routeAuthoredDirectionScore: (route, segments) => (typeof dxfRouteAuthoredDirectionScore === 'function'
-            ? dxfRouteAuthoredDirectionScore(route, segments) : null),
-          resolveNativeToInch: (insunits) => (typeof dxfResolveNativeToInch === 'function' ? clone(dxfResolveNativeToInch(insunits)) : null),
+          enumerateRoutesRaw: (segments, refA, refB, tolerance) => clone(dxfEnumerateRoutes(segments, refA, refB, tolerance)),
+          reverseRoute: (route) => clone(dxfReverseRoute(route)),
+          routeLength: (route, segments) => dxfRouteLength(route, segments),
+          routeAuthoredDirectionScore: (route, segments) => dxfRouteAuthoredDirectionScore(route, segments),
+          resolveNativeToInch: (insunits) => clone(dxfResolveNativeToInch(insunits)),
           // US-126: the geometry-based unit inference, exposed pure so the
           // suite can prove the mm/in decision and the deliberate
           // "fits both / fits neither -> infer nothing" abstention without
           // going through a whole import.
-          inferUnitFromGeometry: (pieces) => (typeof dxfInferUnitFromGeometry === 'function'
-            ? clone(dxfInferUnitFromGeometry(pieces)) : null),
-          unitStatus: () => (typeof dxfMeasureUnitStatus === 'function' && state.dxfMeasureSession
+          inferUnitFromGeometry: (pieces) => clone(dxfInferUnitFromGeometry(pieces)),
+          unitStatus: () => (state.dxfMeasureSession
             ? clone(dxfMeasureUnitStatus(state.dxfMeasureSession)) : null),
           getSession: () => {
             const session = state.dxfMeasureSession;
@@ -51805,7 +46041,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
               // ADR 0073: the TD's unit override + the resolved status the
               // UI note/status chip renders from.
               unitOverride: session.unitOverride || null,
-              unitStatus: (typeof dxfMeasureUnitStatus === 'function') ? clone(dxfMeasureUnitStatus(session)) : null,
+              unitStatus: clone(dxfMeasureUnitStatus(session)),
               topologyToleranceNative: session.topologyToleranceNative,
               measurementCount: session.measurements.length,
               measurements: clone(session.measurements),
@@ -51820,15 +46056,13 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
               historyPast: session.history.past.length,
               historyFuture: session.history.future.length,
               diagnostics: clone(session.diagnostics || {}),
-              pieceAnchorAnnotationIds: (session.pieceAnchors || []).map(anchor => anchor ? anchor.annotationId : null),
               pieceBounds: clone(session.pieceBounds || []),
               // US-112: read-only, for diagnosing the hover-driven snap preview.
               hoverWorld: clone(session.hoverWorld),
               hoverAltKey: !!session.hoverAltKey,
               // US-114: the active-size filter + what's actually selectable.
               activeSizeLabel: session.activeSizeLabel || null,
-              availableSizeLabels: (typeof dxfMeasureAvailableSizeLabels === 'function')
-                ? clone(dxfMeasureAvailableSizeLabels(session)) : [],
+              availableSizeLabels: clone(dxfMeasureAvailableSizeLabels(session)),
             };
           },
           pieceSegments: (pieceIndex) => {
@@ -51836,19 +46070,9 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
             const piece = session && session.pieces[pieceIndex];
             return piece ? clone(piece.segments) : null;
           },
-          enumerateRoutes: (refA, refB) => (typeof dxfMeasureEnumerateRoutes === 'function'
-            ? clone(dxfMeasureEnumerateRoutes(state.dxfMeasureSession, refA, refB)) : null),
-          nativeToBoard: (point) => (typeof dxfMeasureNativeToBoard === 'function'
-            ? clone(dxfMeasureNativeToBoard(point, state.dxfMeasureSession)) : null),
-          nativeToBoardLive: (point, pieceIndex) => (typeof dxfMeasureNativeToBoardLive === 'function'
-            ? clone(dxfMeasureNativeToBoardLive(point, state.dxfMeasureSession, pieceIndex)) : null),
-          boardToNative: (point) => (typeof dxfMeasureBoardToNative === 'function'
-            ? clone(dxfMeasureBoardToNative(point, state.dxfMeasureSession)) : null),
-          valueInches: (measurementId) => {
-            const session = state.dxfMeasureSession;
-            const measurement = session && dxfMeasureGetMeasurement(session, measurementId);
-            return measurement ? dxfMeasureValueInches(session, measurement) : null;
-          },
+          enumerateRoutes: (refA, refB) => clone(dxfMeasureEnumerateRoutes(state.dxfMeasureSession, refA, refB)),
+          nativeToBoard: (point) => clone(dxfMeasureNativeToBoard(point, state.dxfMeasureSession)),
+          nativeToBoardLive: (point, pieceIndex) => clone(dxfMeasureNativeToBoardLive(point, state.dxfMeasureSession, pieceIndex)),
           handleWorldPosition: (measurementId, which) => {
             const session = state.dxfMeasureSession;
             const measurement = session && dxfMeasureGetMeasurement(session, measurementId);
@@ -51899,36 +46123,32 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
             startAnnotationDrag(ann.id, world);
             return true;
           },
-          formatInches: (value) => (typeof dxfMeasureFormatInches === 'function' ? dxfMeasureFormatInches(value) : null),
+          formatInches: (value) => dxfMeasureFormatInches(value),
           // US-111: seamPairStatus is pure (a {judged} object in, a status
           // string out) — exposed directly for exact-boundary unit testing,
           // same "isolate the math" contract as directDistance/segmentLength.
-          seamPairStatus: (delta) => (typeof dxfMeasureSeamPairStatus === 'function' ? dxfMeasureSeamPairStatus(delta) : null),
-          seamPairPartnerId: (measurementId) => (typeof dxfMeasureSeamPairPartnerId === 'function'
-            ? dxfMeasureSeamPairPartnerId(state.dxfMeasureSession, measurementId) : null),
+          seamPairStatus: (delta) => dxfMeasureSeamPairStatus(delta),
+          seamPairPartnerId: (measurementId) => dxfMeasureSeamPairPartnerId(state.dxfMeasureSession, measurementId),
           seamPairDelta: (pairId) => {
             const session = state.dxfMeasureSession;
-            const pair = session && typeof dxfMeasureGetSeamPair === 'function' ? dxfMeasureGetSeamPair(session, pairId) : null;
-            return pair && typeof dxfMeasureSeamPairDelta === 'function' ? clone(dxfMeasureSeamPairDelta(session, pair)) : null;
+            const pair = session ? dxfMeasureGetSeamPair(session, pairId) : null;
+            return pair ? clone(dxfMeasureSeamPairDelta(session, pair)) : null;
           },
           valueInches: (measurementId) => {
             const session = state.dxfMeasureSession;
-            const m = session && typeof dxfMeasureGetMeasurement === 'function' ? dxfMeasureGetMeasurement(session, measurementId) : null;
-            return m && typeof dxfMeasureValueInches === 'function' ? dxfMeasureValueInches(session, m) : null;
+            const m = session ? dxfMeasureGetMeasurement(session, measurementId) : null;
+            return m ? dxfMeasureValueInches(session, m) : null;
           },
-          deleteMeasurement: (id) => (typeof dxfMeasureDeleteMeasurement === 'function'
-            ? dxfMeasureDeleteMeasurement(state.dxfMeasureSession, id) : false),
           // ADR 0073: the TD unit override — same function the real
           // #dxfMeasureUnitSelect change handler calls.
-          setUnitOverride: (key) => (typeof dxfMeasureSetUnitOverride === 'function'
-            ? dxfMeasureSetUnitOverride(state.dxfMeasureSession, key) : false),
-          undo: () => (typeof dxfMeasureUndo === 'function' ? dxfMeasureUndo() : false),
-          redo: () => (typeof dxfMeasureRedo === 'function' ? dxfMeasureRedo() : false),
+          setUnitOverride: (key) => dxfMeasureSetUnitOverride(state.dxfMeasureSession, key),
+          undo: () => dxfMeasureUndo(),
+          redo: () => dxfMeasureRedo(),
         },
       },
       sampleAnnotationShape: (annotationId, samples) => {
         const ann = state.annotations.find(a => a && a.id === annotationId);
-        if (!ann || typeof getAnnotationPolyline !== 'function') return null;
+        if (!ann) return null;
         const n = Math.max(8, Number(samples) || 64);
         const pts = getAnnotationPolyline(ann, n);
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -51953,18 +46173,15 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         }
         return { points: out, width: w, height: h, aspect: w > 1e-6 ? h / w : 0 };
       },
-      exportLinePresetsJson: () => (typeof linePresetsEnvelope === 'function'
-        ? JSON.stringify(linePresetsEnvelope()) : null),
+      exportLinePresetsJson: () => JSON.stringify(linePresetsEnvelope()),
       // Export image paths honor hidden POMs (scripts/export-hidden-tests.mjs).
       // getExportAnnIds: the exact applied-annotation set the export renderers
       //   (PDF / Copy Image / Excel embedded PNG) draw and crop from, so a test
       //   can assert a hidden POM is dropped without a real canvas.
       // exportBoardDataUrl: the rendered export board as a PNG data URL, for
       //   visual verification that a hidden line's pixels are gone.
-      getExportAnnIds: () => (typeof visibleExportAnnotations === 'function'
-        ? visibleExportAnnotations().map(a => a.id) : null),
+      getExportAnnIds: () => visibleExportAnnotations().map(a => a.id),
       exportBoardDataUrl: () => {
-        if (typeof getContentBounds !== 'function' || typeof renderBoardRegionToCanvas !== 'function') return null;
         const bounds = getContentBounds();
         if (!bounds) return null;
         return renderBoardRegionToCanvas(bounds).toDataURL('image/png');
@@ -52007,18 +46224,13 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           changed: !!it.changed,
         };
       },
-      getAcceptanceStats: () => clone(getAutoAcceptanceStats()),
-      clearAcceptanceStats: () => clearAutoAcceptanceStats(),
-      getTelemetryLog: () => clone(getAutoTelemetryLog()),
-      getTelemetryReport: (limit) => clone(getAutoTelemetryReport(limit || 10)),
-      clearTelemetryLog: () => clearAutoTelemetryLog(),
       runAutoOnDataUrl: async (dataURL, opts) => {
         // Opt-in CV debug capture per-call. When opts.cvDebug is true, the
         // CV debug flag is flipped on before detection so the resulting
         // detection.debug payload is populated for the caller to inspect.
         if (opts && opts.cvDebug) {
           if (!state.autoMode.cvDebug) {
-            state.autoMode.cvDebug = { enabled: false, lastDebug: null, lastExport: null };
+            state.autoMode.cvDebug = { enabled: false, lastDebug: null };
           }
           state.autoMode.cvDebug.enabled = true;
         }
@@ -52046,7 +46258,7 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
           detection: window.__braAutoModeDebug.getDetection(),
           anchors: window.__braAutoModeDebug.getAnchors(),
           drafts: window.__braAutoModeDebug.getDrafts(),
-          cvDebug: window.__braAutoModeDebug.cv.getLastDebug(),
+          cvDebug: clone(state.autoMode.cvDebug && state.autoMode.cvDebug.lastDebug),
           cvExport: window.__braAutoModeDebug.cv.exportDebug(sourceImage.id),
         };
       },
@@ -52060,17 +46272,11 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         return targets.length;
       },
       applyApprovedDrafts: () => applyApprovedDraftsAtomically({ suppressPrompt: true }),
-      /* The draft -> applied-annotation field copy on its own, so a suite can
-         assert what survives Apply without having to drive a whole board into a
-         state where Apply succeeds. buildAppliedAnnotation is the mirror of
-         buildDraftAnnotation and a field missing from it vanishes silently. */
-      buildAppliedAnnotationForTest: (draft) => clone(buildAppliedAnnotation(clone(draft))),
       exportProject: () => clone(buildProjectSnapshot()),
       /* US-080: drives a MAIN PAGE sketch slot the way the upload/paste menu
          does, and hands back the RAW runtime state.mainPage — the one history
          clones — so a suite can prove the image bytes never land in it. */
       setMainPageSketch: async (variant, index, dataURL) => {
-        if (typeof mpSetSketch !== 'function') return null;
         await mpSetSketch(variant, index, dataURL);
         return JSON.stringify(state.mainPage);
       },
@@ -52081,12 +46287,12 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
       // Autosave hooks — only intended for end-to-end tests that need
       // to force a write without simulating a live edit cycle.
       autosave: {
-        flush: () => (typeof flushAutosave === 'function' ? flushAutosave() : null),
+        flush: () => flushAutosave(),
         peek: () => {
           try { return localStorage.getItem('bra-sketch-autosave-v1'); }
           catch (_) { return null; }
         },
-        clear: () => (typeof clearAutosave === 'function' ? clearAutosave() : null),
+        clear: () => clearAutosave(),
       },
       getState: () => ({
         appMode: state.appMode,
@@ -52143,245 +46349,43 @@ function scaleNotesForImageResize(previousBounds, origin, factor) {
         run: id => runAppCommand(String(id || '')),
       },
       // CV debug surface. Toggles intermediate detector state capture and
-      // hands tests a compact JSON snapshot they can diff. Pure orthogonal
-      // to learning / meaning — only intermediate detector signals.
+      // hands tests a compact JSON snapshot they can diff — only intermediate
+      // detector signals.
       cv: {
-        isEnabled: () => !!(state.autoMode.cvDebug && state.autoMode.cvDebug.enabled),
         setEnabled: (on) => {
           if (!state.autoMode.cvDebug) {
-            state.autoMode.cvDebug = { enabled: false, lastDebug: null, lastExport: null };
+            state.autoMode.cvDebug = { enabled: false, lastDebug: null };
           }
           state.autoMode.cvDebug.enabled = !!on;
           if (!state.autoMode.cvDebug.enabled) state.autoMode.cvDebug.lastDebug = null;
           return state.autoMode.cvDebug.enabled;
         },
-        getLastDebug: () => clone(state.autoMode.cvDebug && state.autoMode.cvDebug.lastDebug),
-        clearLastDebug: () => {
-          if (state.autoMode.cvDebug) {
-            state.autoMode.cvDebug.lastDebug = null;
-            state.autoMode.cvDebug.lastExport = null;
-          }
-        },
-        // Compact JSON snapshot — anchors + thresholds + learned params +
+        // Compact JSON snapshot — anchors + thresholds + detection params +
         // validation warnings + (when CV debug was on) the full intermediate
         // capture. Safe to call any time after Detect Sketch.
         exportDebug: (imageName) => clone(buildCvDebugExport(imageName)),
-        // Browser-only: triggers a Blob download of the export JSON.
-        downloadDebug: (imageName) => clone(downloadCvDebugExport(imageName)),
       },
-      // Learning-mode test surface. Lets scripts/learning-tests.mjs
-      // drive recordAnchorResidual / getAnchorBias / the on-off toggle
-      // without touching the DOM or window.confirm. Not used by the
-      // app itself — purely a CDP hook for the test runner.
-      learning: {
-        isEnabled: () => isLearningEnabled(),
-        setEnabled: (on) => { setLearningEnabled(!!on); },
-        recordResidual: (kind, dx, dy, anchor) => recordAnchorResidual(kind, dx, dy, anchor),
-        // Phase 8: stage attribution for a hypothetical correction, without
-        // recording it — lets the learning suite assert the classifier.
-        classifyResidual: (kind, dx, dy) => classifyResidualStage(kind, dx, dy),
-        getBias: (kind, anchor) => clone(getAnchorBias(kind, anchor)),
-        getSampleCount: () => getLearningSampleCount(),
-        // US-096 / ADR 0055 code review, 2026-08-23: the LIVE TD-edit capture
-        // funnel (pointer-events drag-commit, line-nudge arrow keys) reached
-        // through directly, so a suite can prove a construction line is refused
-        // without having to run detection and stage a real drag.
-        evaluateManualPomSample: (annotationId, options) => {
-          const ann = state.annotations.find(a => a && a.id === annotationId);
-          if (!ann) return null;
-          return clone(evaluateManualPomSample(ann, options || {}));
-        },
-        getBuckets: () => clone(learningStore.buckets),
-        getParamSamples: () => clone(learningStore.paramSamples || {}),
-        getDetectionParams: () => clone(getLearnedDetectionParams()),
-        summarize: () => clone(summarizeLearningStore()),
-        clearBuckets: () => {
-          learningStore = emptyLearningStore();
-          saveLearningStore();
-          clearManualLearnCache();
-        },
-        applyBiasTo: (anchors) => clone(applyLearningBiasToAnchors(clone(anchors))),
-        evaluateSample: (ann) => {
-          const result = evaluateManualPomSample(ann);
-          // Surface the status + hash so a follow-up call can confirm
-          // the same hash is now considered a duplicate.
-          return {
-            status: result.status,
-            pom: result.pom || null,
-            hash: result.hash || null,
-            annHash: ann.learnSampleHash || null,
-          };
-        },
-        evaluateAutoAppliedSample: (ann) => {
-          const result = evaluateManualPomSample(ann, { allowAuto: true });
-          return {
-            status: result.status,
-            pom: result.pom || null,
-            hash: result.hash || null,
-            annHash: ann.learnSampleHash || null,
-          };
-        },
+      // Switch Auto/Manual mode through the same setAppMode the toolbar
+      // toggle uses. Anything other than 'auto' means Manual.
+      setAppMode: (mode) => { setAppMode(mode === 'auto' ? 'auto' : 'manual'); },
+      // Test-only: push a synthetic annotation straight into state.annotations
+      // (no history entry, no UI refresh). Returns the inserted id.
+      pushAnnotation: (ann) => {
+        if (!ann || typeof ann !== 'object') return null;
+        state.annotations.push(ann);
+        return ann.id;
       },
-      // Meaning-aware learning test surface. scripts/meaning-tests.mjs
-      // drives the (style, POM) catalog and the confirmation flow without
-      // touching the DOM. Keeping it here so the meaning helpers stay
-      // private to auto-drafts.js but a runner can still poke at them.
-      meaning: {
-        getStore: () => clone(meaningStore),
-        clearAll: () => { clearMeaningStore('all'); },
-        clearCurrent: () => { clearMeaningStore('current'); },
-        setStyleId: (id) => { state.styleId = (id == null ? '' : String(id)); },
-        getStyleId: () => state.styleId || '',
-        currentStyleBucketId: () => currentStyleId(),
-        resolve: (pom) => {
-          const m = resolvePomMeaning(String(pom));
-          return m ? clone(m) : null;
-        },
-        confirm: (pom, meaningId) => { confirmPomMeaning(String(pom), meaningId); },
-        forget: (pom, styleId) => forgetPomMeaning(String(pom), styleId),
-        listForStyle: (styleId) => clone(listConfirmedMeanings(styleId || currentStyleId())),
-        summarize: () => clone(summarizeMeaningStore()),
-        knownStyles: () => listKnownStyleIds(),
-        catalog: () => clone(getAllCatalogMeanings()),
-        addCustom: (label, startAnchor, endAnchor) => {
-          const entry = addCustomMeaning(label, startAnchor, endAnchor);
-          return entry ? clone(entry) : null;
-        },
-        usagePriority: (meaningId) => meaningUsagePriority(meaningId),
-        suggest: (ann, limit) => {
-          const image = pickImageForAnnotation(ann);
-          if (!image) return [];
-          return clone(rankCatalogForLine(image, ann, limit || 3));
-        },
-        // Run the full evaluate → commit cycle from a script. Returns the
-        // eval result + the final ann.learnSampleHash so callers can
-        // check whether the sample was actually recorded.
-        commitChoice: (ann, meaningId) => {
-          const evalResult = evaluateManualPomSample(ann);
-          if (evalResult.status !== 'needsConfirmation') {
-            return { status: evalResult.status, pom: evalResult.pom || null, applied: false };
-          }
-          const ok = commitMeaningChoice(evalResult, meaningId);
-          return {
-            status: ok ? 'recorded' : 'skipped',
-            pom: evalResult.pom || null,
-            applied: ok,
-            meaningId,
-          };
-        },
-        commitCustom: (ann, label) => {
-          const evalResult = evaluateManualPomSample(ann);
-          if (evalResult.status !== 'needsConfirmation') {
-            return { status: evalResult.status, pom: evalResult.pom || null, applied: false };
-          }
-          const ok = commitMeaningChoiceCustom(evalResult, label);
-          return {
-            status: ok ? 'recorded' : 'skipped',
-            pom: evalResult.pom || null,
-            applied: ok,
-            label,
-          };
-        },
-        // Force-set a usage record so recency tests can synthesize an
-        // "I confirmed this 100 days ago" history without waiting.
-        seedUsage: (meaningId, count, lastUsedAt) => {
-          if (!meaningId) return false;
-          meaningStore.usage[meaningId] = {
-            count: Number(count) || 0,
-            lastUsedAt: Number(lastUsedAt) || 0,
-          };
-          saveMeaningStore();
-          return true;
-        },
-        // Popover + canvas inspection — these reach into manual-tools.js
-        // through the shared IIFE scope (the bundle wraps every source
-        // part in the same closure). Keeping them here keeps the test
-        // surface in one namespace.
-        getCanvasTool: () => state.tool,
-        setAppMode: (mode) => { setAppMode(mode === 'auto' ? 'auto' : 'manual'); },
-      },
-      // Style evidence test surface. Read-only Phase 1 store — scripts
-      // can list/summarize/add/forget without touching the DOM. Kept
-      // alongside learning and meaning so a test runner sees one
-      // namespace per durable store.
-      styleEvidence: {
-        getStore: () => clone(styleEvidenceStore),
-        list: (styleId) => clone(listStyleEvidence(styleId || currentStyleId())),
-        summarize: (styleId) => clone(summarizeStyleEvidence(styleId || currentStyleId())),
-        add: (styleId, record) => {
-          const out = addStyleEvidence(styleId || currentStyleId(), record);
-          return out ? clone(out) : null;
-        },
-        forget: (styleId, evidenceId) =>
-          forgetStyleEvidence(styleId || currentStyleId(), evidenceId),
-        clearAll: () => clearStyleEvidence('all'),
-        clearStyle: (styleId) => clearStyleEvidence('style', styleId || currentStyleId()),
-        knownStyles: () => listKnownEvidenceStyleIds(),
-        // Phase 2 capture path. Tests can preview the candidate list and
-        // commit it without driving the dialog — the save flow uses the
-        // same two helpers under the hood.
-        collectCandidates: (styleId) =>
-          clone(collectStyleEvidenceCandidates(styleId)),
-        commitCandidates: (styleId, candidates) =>
-          commitStyleEvidenceCandidates(styleId || currentStyleId(), candidates || []),
-        applyAbsenceToDrafts: (drafts) => {
-          const copied = clone(drafts || []);
-          applyStyleAbsenceEvidenceToDrafts(copied);
-          return copied;
-        },
-        // Confirmed-evidence reuse: returns the drafts after the soft
-        // blend toward the median of recent TD-confirmed lines for the
-        // current style. Caller passes the source image so we can convert
-        // normalized evidence into world coords.
-        applyConfirmedToDrafts: (drafts, sourceImage) => {
-          const copied = clone(drafts || []);
-          applyStyleConfirmedEvidenceToDrafts(copied, sourceImage);
-          return copied;
-        },
-        confirmedMedians: (styleId) => {
-          const map = getConfirmedEvidenceMediansByPom(styleId || currentStyleId());
-          const out = {};
-          for (const [pom, value] of map.entries()) out[pom] = clone(value);
-          return out;
-        },
-        // Test-only: push a synthetic annotation into state.annotations
-        // so collectCandidates can see it. Used by the manual-confirmed
-        // path test, which needs a real annotation in the project (not
-        // just a synthetic ann passed through the meaning popover).
-        // Returns the inserted annotation id.
-        pushAnnotation: (ann) => {
-          if (!ann || typeof ann !== 'object') return null;
-          state.annotations.push(ann);
-          return ann.id;
-        },
-        // Test-only: simulate a TD edit on one applied auto annotation
-        // by id. Optional `patch` overrides specific endpoints in world
-        // coordinates so the harness can verify normalization without
-        // having to fake mouse interactions.
-        simulateTdEdit: (annotationId, patch) => {
-          const ann = state.annotations.find(a => a && a.id === annotationId);
-          if (!ann) return null;
-          ann.tdEdited = true;
-          if (patch && typeof patch === 'object') {
-            if (patch.start && typeof patch.start === 'object') {
-              ann.start = { x: Number(patch.start.x), y: Number(patch.start.y) };
-            }
-            if (patch.end && typeof patch.end === 'object') {
-              ann.end = { x: Number(patch.end.x), y: Number(patch.end.y) };
-            }
-          }
-          return clone(ann);
-        },
-        simulateTdDelete: (annotationId) => {
-          const ann = state.annotations.find(a => a && a.id === annotationId);
-          if (!ann) return null;
-          markDeletedAutoAnnotationForEvidence(ann);
-          state.annotations = state.annotations.filter(a => a && a.id !== annotationId);
-          if (state.selection.kind === 'annotation' && state.selection.id === annotationId) {
-            state.selection = { kind: null, id: null };
-          }
-          return clone(ann);
-        },
+      // Test-only: drop one annotation by id (no history entry, no
+      // deletedPomKeys bookkeeping), clearing the selection if it pointed at
+      // it. Returns the removed annotation, or null.
+      removeAnnotation: (annotationId) => {
+        const ann = state.annotations.find(a => a && a.id === annotationId);
+        if (!ann) return null;
+        state.annotations = state.annotations.filter(a => a && a.id !== annotationId);
+        if (state.selection.kind === 'annotation' && state.selection.id === annotationId) {
+          state.selection = { kind: null, id: null };
+        }
+        return clone(ann);
       },
     };
   }
@@ -53877,9 +47881,9 @@ function makeExportFileName() {
 
   // Enabled preview sheets → workbook bytes; null when nothing is ticked.
   async function buildTechPackXlsxBytes(now) {
-    if (typeof ensureMainPage === 'function') ensureMainPage();
-    if (typeof ensureConstruction === 'function') ensureConstruction();
-    if (typeof ensureBom === 'function') ensureBom();
+    ensureMainPage();
+    ensureConstruction();
+    ensureBom();
     const enabled = pvEnabledSheets();
     if (!enabled.length) return null;
     const parts = [];
@@ -54947,8 +48951,7 @@ function makeExportFileName() {
     let style = getLineStyle(ann);
     if (style === 'solid' && annotationCrossesViews(ann)) style = 'dashed';
 
-    const treatmentSegments = typeof seamPathTreatmentSegments === 'function'
-      ? seamPathTreatmentSegments(ann) : [];
+    const treatmentSegments = seamPathTreatmentSegments(ann);
     const treated = treatmentSegments.length
       ? treatmentSegments.every(item => drawLineTreatment(item.annotation, item.treatment))
       : hasLineTreatment(ann) && drawLineTreatment(ann, ann.lineTreatment);
@@ -55072,12 +49075,8 @@ function makeExportFileName() {
       ? state.selection.part || null : null;
     ctx.save();
 
-    if (typeof drawSelectedTreatmentRunHighlight === 'function') {
-      drawSelectedTreatmentRunHighlight(ann);
-    }
-    if (typeof drawTreatmentBreakMarkers === 'function') {
-      drawTreatmentBreakMarkers(ann);
-    }
+    drawSelectedTreatmentRunHighlight(ann);
+    drawTreatmentBreakMarkers(ann);
 
     if (ann.type === 'curved') {
       // Single cubic: two control handles, each with a dashed guide line from
@@ -56340,7 +50339,6 @@ function makeExportFileName() {
       // ring so the TD can tell "this one moves by itself" from a normal
       // pin. The ring disappears once the anchor is pinned by a direct drag.
       if (!anchor.derivedPinned
-          && typeof anchorDerivationForKind === 'function'
           && anchorDerivationForKind(anchor.kind)) {
         ctx.strokeStyle = 'rgba(15, 23, 42, 0.45)';
         ctx.lineWidth = 1 / z;
@@ -57228,10 +51226,10 @@ function requestRender() {
     // don't autosave it or offer to restore a prior label session, which would
     // pop a "Recovered work" modal over the board on every reload.
     const labeling = new URLSearchParams(window.location.search).get('label') === '1';
-    if (!labeling) armAutosave();
-    void loadProjectFromUrl()
-      .then(() => (labeling ? null : maybeOfferAutosaveRestore()))
-      .then(() => maybeAutoDraftFromUrl());
+    if (!labeling) {
+      armAutosave();
+      maybeOfferAutosaveRestore();
+    }
   }
 
   // S1: watch the real OpenCV backend's readiness and mirror it into
@@ -57262,8 +51260,8 @@ function requestRender() {
   }
 
   // ---- src/app/url-bootstrap.js ----
-// URL-query-param test/demo boot paths: ground-truth labeling, URL project
-// load, and URL auto-draft demo automation.
+// URL-query-param boot path for ground-truth labeling (?label=1, with an
+// optional &image= to auto-load one image).
 // Source part for app.js. Run `npm run build` after editing.
 
   // Ground-truth labeling helper: ?label=1 shows a floating "Save Ground
@@ -57339,48 +51337,6 @@ function requestRender() {
       console.error('[Ground Truth] auto-load failed:', err);
       showToast('Could not auto-load ' + imagePath + ' — add it manually, then Detect Sketch.', 5200);
     }
-  }
-
-  async function loadProjectFromUrl() {
-    const projectUrl = new URLSearchParams(window.location.search).get('project');
-    if (!projectUrl) return;
-    try {
-      const response = await fetch(projectUrl, { cache: 'no-store' });
-      if (!response.ok) throw new Error('Could not load project');
-      await loadProject(await response.json());
-      showToast('Draft project loaded.');
-    } catch (error) {
-      console.error(error);
-      showToast('Could not load the draft project.', 4200);
-    }
-  }
-
-  // Demo helper: ?autoDraft=1 drives Auto Mode → Detect Sketch → Generate POM
-  // Drafts on whatever image is on the board after load. Lets the demo flow be
-  // shared as a URL without manual clicking. No-op when the param is absent.
-  async function maybeAutoDraftFromUrl() {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('autoDraft') !== '1') return;
-    const waitForImage = async () => {
-      for (let i = 0; i < 50; i += 1) {
-        const img = pickAutoSourceImage();
-        if (img && img.img && img.img.complete) return img;
-        await new Promise((r) => setTimeout(r, 100));
-      }
-      return null;
-    };
-    const sourceImage = await waitForImage();
-    if (!sourceImage) {
-      showToast('autoDraft: no source image found.', 4200);
-      return;
-    }
-    setAppMode('auto');
-    await runOfflineDetection();
-    if (state.autoMode.status !== 'detected') {
-      showToast('autoDraft: detection did not complete.', 4200);
-      return;
-    }
-    generatePOMDraftsFromAnchors();
   }
 
 

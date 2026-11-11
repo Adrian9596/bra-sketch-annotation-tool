@@ -47,8 +47,8 @@
   // anchor annotation's CURRENT position against where import originally
   // placed that same native point — the delta is the piece's whole-move
   // offset, whatever gesture produced it (drag, arrow-key nudge, undo/redo).
-  // `pieceAnchors[i]` is null (offset always {0,0}) when dxf-import.js could
-  // not pair native piece i with a board annotation id — see startDxfMeasureSession.
+  // `pieceAnchors[i]` is null (offset always {0,0}) when native piece i has no
+  // board annotation id to follow — see makeDxfMeasureSession.
   function dxfMeasureCurrentPieceOffset(session, pieceIndex) {
     const anchor = session && session.pieceAnchors && session.pieceAnchors[pieceIndex];
     if (!anchor) return { x: 0, y: 0 };
@@ -124,23 +124,14 @@
 
   function makeDxfMeasureSession(nativeModel, bounds, transform, pieceFirstAnnotationIds) {
     // Pairs native piece i with the board annotation id dxf-import.js built
-    // for that same piece's first segment, PROVIDED the two parses agree on
-    // piece count — true whenever the file has no ARC/CIRCLE/bulge entity
-    // (an arc is one native segment but N>=1 Bézier chunks in the board
-    // model, which cannot shift which entities end up grouped into which
-    // piece, but its slightly looser native bounding box, see
-    // dxf-import.js's dxfSegmentPoints 'arc' case, could in principle change
-    // a containment-merge decision at the margin — accepted for v1, flagged
-    // here rather than silently assumed exact). A mismatch leaves every
-    // pieceAnchors entry null, which dxfMeasureCurrentPieceOffset already
-    // treats as "assume unmoved" (offset {0,0}) rather than throwing.
+    // for that same piece's first segment. The two piece lists are two views
+    // of one parse (dxfParseDocumentAndModel), so they always line up;
+    // startDxfMeasureSession refuses a list that does not.
     const ids = Array.isArray(pieceFirstAnnotationIds) ? pieceFirstAnnotationIds : [];
-    const pieceAnchors = nativeModel.pieces.length === ids.length
-      ? nativeModel.pieces.map((piece, i) => (ids[i] == null || !piece.segments.length ? null : {
-        annotationId: ids[i],
-        nativeStart: dxfPointOnSegment(piece.segments[0], 0),
-      }))
-      : nativeModel.pieces.map(() => null);
+    const pieceAnchors = nativeModel.pieces.map((piece, i) => (ids[i] == null || !piece.segments.length ? null : {
+      annotationId: ids[i],
+      nativeStart: dxfPointOnSegment(piece.segments[0], 0),
+    }));
     return {
       source: {
         unit: nativeModel.unit,
@@ -355,52 +346,39 @@
     requestRender();
   }
 
-  // Called from importDxfText right after a successful import, with the
-  // SAME bounds/transform it just computed for the board annotations (see
-  // the mapping comment above for why) and the id of each piece's first
+  // Builds the session from a native model the caller already parsed, with
+  // the SAME bounds/transform the board annotations were placed with (see the
+  // mapping comment above for why) and the id of each board piece's first
   // annotation (for later move-tracking, see dxfMeasureCurrentPieceOffset).
-  // Parses the same text a second time, through the native-coordinate
-  // adapter — a corrupt/rejected file here would already have been rejected
-  // by parseDxfDocument first, so this is not expected to fail in practice,
-  // but a failure here leaves the session null rather than half-built.
-  // `importOptions` (Phase 3, ADR 0091): the board import's
-  // `{ keepQualityCurves }`, forwarded to the native parser so both drop the
-  // same twins. Omitted -> defaults (drop), which is also what a source saved
-  // before this option existed means.
-  // `precomputedNativeModel` (Phase 5): the worker already ran
-  // parseDxfNativeModel on the same text with the same options; reuse it
-  // instead of parsing a second time on the main thread. Omitted -> parse
-  // here (the synchronous path and every project reopen).
-  // `options.quietFailure`: the caller puts dxfMeasureLastFailureMessage() into
-  // its own toast. importDxfText does — a separate toast fired here, a moment
-  // before its "Imported N pieces" toast, was swapped away after toast.js's
-  // ~900ms fair-reading window (findings-dxf.md, Minor).
-  function startDxfMeasureSession(text, bounds, transform, pieceFirstAnnotationIds, importOptions, precomputedNativeModel, options) {
-    const parseStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-    const nativeModel = precomputedNativeModel || parseDxfNativeModel(text, importOptions || {});
-    const parseFinishedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-    dxfMeasureLastFailure = null;
-    if (!nativeModel.ok) {
-      // RB-5: the board-annotation import (importDxfText, US-104) already
-      // succeeded by the time this runs — that atomic behavior must not be
-      // disturbed — but a TD who just imported a DXF and reaches for Pattern
-      // Measure deserves an explicit reason it is not available, rather than
-      // a silently-missing Tools-menu feature.
-      dxfMeasureLastFailure = dxfMeasureFailureMessage(nativeModel);
-      if (!(options && options.quietFailure)) showToast('DXF imported, but ' + dxfMeasureLastFailure);
+  // Two callers: importDxfText hands over the native view of its one parse
+  // (dxfParseDocumentAndModel), which cannot fail; a project reopen
+  // (rebuildDxfMeasureSessionFromActiveSource) re-parses the saved source
+  // with parseDxfNativeModel and its saved importOptions. A model that is not
+  // ok, or whose pieces no longer pair one-to-one with the saved board's,
+  // leaves the session null rather than half-built or mis-paired.
+  // `options.parseDurationMs`: how long that parse took (diagnostic only).
+  function startDxfMeasureSession(nativeModel, bounds, transform, pieceFirstAnnotationIds, options) {
+    const ids = Array.isArray(pieceFirstAnnotationIds) ? pieceFirstAnnotationIds : [];
+    const failure = !nativeModel.ok ? dxfMeasureFailureMessage(nativeModel)
+      : nativeModel.pieces.length !== ids.length ? dxfMeasureFailureMessage({
+        message: 'its ' + nativeModel.pieces.length + ' pieces do not match the ' + ids.length + ' on the board — reopen the DXF',
+      })
+        : null;
+    if (failure) {
+      // RB-5: the board geometry stays — that atomic behavior must not be
+      // disturbed — but a TD who reaches for Pattern Measure deserves an
+      // explicit reason it is not available, rather than a silently-missing
+      // Tools-menu feature.
+      showToast('DXF imported, but ' + failure);
       state.dxfMeasureSession = null;
       return null;
     }
-    state.dxfMeasureSession = makeDxfMeasureSession(nativeModel, bounds, transform, pieceFirstAnnotationIds);
-    state.dxfMeasureSession.source.nativeParseDurationMs = Math.max(0, parseFinishedAt - parseStartedAt);
-    state.dxfMeasureSession.source.nativeParserExecution = precomputedNativeModel ? 'worker-precomputed' : 'main-thread-measured';
+    state.dxfMeasureSession = makeDxfMeasureSession(nativeModel, bounds, transform, ids);
+    state.dxfMeasureSession.source.nativeParseDurationMs = options && Number.isFinite(options.parseDurationMs)
+      ? Math.max(0, options.parseDurationMs) : null;
     dxfMeasureSeedHistory();
     return state.dxfMeasureSession;
   }
-
-  // Why the last startDxfMeasureSession built no session (null when it did).
-  let dxfMeasureLastFailure = null;
-  function dxfMeasureLastFailureMessage() { return dxfMeasureLastFailure; }
 
   // The parser's message is already a sentence ("No supported entities were
   // found in this DXF file."); its own period is dropped so the wrapper's
@@ -775,8 +753,8 @@
     if (session.unitOverride === normalized) return false;
     session.unitOverride = normalized;
     session.topologyToleranceNative = 0.01 / (25.4 * (dxfMeasureEffectiveUnitFactor(session) || 1));
-    if (typeof updateUI === 'function') updateUI();
-    if (typeof requestRender === 'function') requestRender();
+    updateUI();
+    requestRender();
     return true;
   }
 

@@ -174,6 +174,6 @@
     // Placed here (not the caller) so any future caller of this mutator —
     // debug hook included — gets the same guarantee removePatternPieceGroups
     // already has.
-    if (typeof dxfMeasureInvalidateOnPieceEdit === 'function') dxfMeasureInvalidateOnPieceEdit();
+    dxfMeasureInvalidateOnPieceEdit();
     return { chains: runs.length, removed };
   }

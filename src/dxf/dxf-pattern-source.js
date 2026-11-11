@@ -5,6 +5,14 @@
 // Source part for app.js. Run `npm run build` after editing.
 
   const DXF_PATTERN_SOURCE_VERSION = 1;
+  // The grouping pipeline a saved source's board was built with (ADR 0091
+  // Phase 6). 2 = classified outlines, the only pipeline the parsers run.
+  // Every committed build that wrote a source also wrote this field (it and
+  // makeDxfPatternSource arrived in the same commit), so a source whose field
+  // is missing or 1 cannot be paired with today's native rebuild by index and
+  // is incompatible: the board geometry stays, Pattern Measure is cleared
+  // with the usual "Reopen the DXF" message (ADR 0105 retired the v1 rebuild).
+  const DXF_PIPELINE_VERSION = 2;
   const DXF_AUTOSAVE_DB_NAME = 'bra-sketch-dxf-autosave';
   const DXF_AUTOSAVE_DB_VERSION = 1;
   const DXF_AUTOSAVE_STORE = 'sources';
@@ -64,6 +72,13 @@
 
   function dxfPatternSourceIsCompatible(source) {
     if (!source || source.version !== DXF_PATTERN_SOURCE_VERSION) return false;
+    if (source.pipelineVersion !== DXF_PIPELINE_VERSION) return false;
+    // ADR 0105: the pre-placement picker that wrote a non-empty exclusion
+    // list is gone, and the native rebuild no longer skips instances, so such
+    // a board's pieces would pair with the wrong native pieces. An empty list
+    // (what every other import wrote) changes nothing.
+    const excluded = source.importOptions && source.importOptions.excludeInstances;
+    if (Array.isArray(excluded) && excluded.length) return false;
     if (!source.fingerprint || !source.geometryFingerprint) return false;
     return dxfPatternGeometryFingerprint(source) === source.geometryFingerprint;
   }
@@ -84,13 +99,10 @@
       // the default, drop.
       importOptions: {
         keepQualityCurves: !!(importOptions && importOptions.keepQualityCurves),
-        // Phase 4: the placement instances the TD deselected in the
-        // pre-placement picker; the native rebuild must skip the same ones.
-        excludeInstances: (importOptions && Array.isArray(importOptions.excludeInstances)) ? importOptions.excludeInstances.slice() : [],
       },
-      // Phase 6 (ADR 0091): which grouping built this board. Additive —
-      // sources saved before the field existed have none and mean 1.
-      pipelineVersion: (importOptions && importOptions.pipelineVersion === 1) ? 1 : DXF_PIPELINE_VERSION,
+      // Phase 6 (ADR 0091): which grouping built this board — see
+      // DXF_PIPELINE_VERSION above.
+      pipelineVersion: DXF_PIPELINE_VERSION,
       geometryFingerprint: null,
     };
     source.geometryFingerprint = dxfPatternGeometryFingerprint(source);
@@ -221,17 +233,12 @@
     if (!source || !source.text || dxfPatternFingerprint(source.text) !== source.fingerprint
         || !dxfPatternSourceIsCompatible(source)) return false;
     resetDxfMeasureSession();
-    // Phase 6: the rebuild parses with the SOURCE's own pipeline version (a
-    // pre-ADR-0091 project carries none → 1), so the native pieces pair with
-    // the saved board pieces by index instead of silently nulling every
-    // pieceAnchor.
-    return !!startDxfMeasureSession(
-      source.text,
-      source.bounds,
-      source.transform,
-      source.pieceFirstAnnotationIds,
-      Object.assign({}, source.importOptions || {}, { pipelineVersion: source.pipelineVersion === 2 ? 2 : 1 })
-    );
+    const parseStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    const nativeModel = parseDxfNativeModel(source.text, {
+      keepQualityCurves: !!(source.importOptions && source.importOptions.keepQualityCurves),
+    });
+    const parseDurationMs = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - parseStartedAt;
+    return !!startDxfMeasureSession(nativeModel, source.bounds, source.transform, source.pieceFirstAnnotationIds, { parseDurationMs });
   }
 
   async function restoreDxfPatternSource(savedSource) {

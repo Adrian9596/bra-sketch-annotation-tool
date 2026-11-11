@@ -23,7 +23,7 @@
         if (!blob) continue;
         dataURLs.push(await blobToDataURL(blob));
       }
-      if (dataURLs.length && state.activePage === 'bom' && typeof bmAddImagesFromDataURLs === 'function') {
+      if (dataURLs.length && state.activePage === 'bom') {
         await bmAddImagesFromDataURLs(dataURLs, bmVariant);
       } else if (dataURLs.length) {
         await addImagesFromDataURLs(dataURLs);
@@ -57,12 +57,6 @@
       // drag of the new photo moves both together.
       state.selection = { kind: 'image', id: imageRecord.id };
       state.selectedImageIds = [imageRecord.id];
-      recordAutoTelemetryEvent('image_loaded', {
-        sourceImageId: imageRecord.id,
-        sketch_id: imageRecord.id,
-        image_width: img.width,
-        image_height: img.height,
-      });
       added += 1;
     }
 

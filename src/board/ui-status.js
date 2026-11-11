@@ -60,8 +60,7 @@
       setTool('select');
       return;
     }
-    const treatmentBreakAvailable = typeof seamPathBreakEligibility === 'function'
-      && seamPathBreakEligibility().ok;
+    const treatmentBreakAvailable = seamPathBreakEligibility().ok;
     if (state.tool === 'break-treatment' && !treatmentBreakAvailable) {
       setTool('select');
       return;
@@ -204,7 +203,7 @@
     } else if (state.tool === 'notch') {
       toolText = 'Notch – Click near a line to place a small perpendicular notch mark there. <span class="kbd">Esc</span> returns to Select.';
     } else if (state.tool === 'stamp') {
-      const stamp = (typeof getActiveShapeStamp === 'function') ? getActiveShapeStamp() : null;
+      const stamp = getActiveShapeStamp();
       toolText = stamp
         ? 'Shape – Drag on the board to place <strong>' + escapeHtml(stamp.name)
           + '</strong> at that size. <span class="kbd">Shift</span> keeps its proportions, '
@@ -395,10 +394,10 @@
       el.dxfMeasurementsListBtn.title = hasSession ? 'List every measurement in this session' : 'Import a DXF file first';
       el.dxfMeasurementsListBtn.classList.toggle('active', isDxfMeasurementsPanelOpen());
     }
-    if (typeof renderDxfMeasurementsPanel === 'function') renderDxfMeasurementsPanel();
+    renderDxfMeasurementsPanel();
     // US-114: the active-size filter — hidden entirely unless the current
     // import actually carries 2+ distinct size labels.
-    if (typeof renderDxfMeasureSizeSelect === 'function') renderDxfMeasureSizeSelect();
+    renderDxfMeasureSizeSelect();
     // ADR 0073: the native-unit select + provenance note. The select mirrors
     // the session's EFFECTIVE unit; the activeElement guard is the
     // brushSizeInput pattern above — never fight the TD mid-interaction.
@@ -576,64 +575,4 @@
     el.autoApplyBtn.disabled = approvedCount === 0 || auto.status === 'applying';
     el.autoDiscardBtn.disabled = draftCount === 0;
     el.autoResetBoardBtn.disabled = busy || isWorkingBoardEmpty();
-
-    // Learning loop controls: toggle reflects the persisted flag, chip
-    // exposes the running sample count (the "measurable" property),
-    // reset is only enabled when there is something to clear.
-    const learningOn = isLearningEnabled();
-    const learningSamples = getLearningSampleCount();
-    el.autoLearnToggleBtn.classList.toggle('active', learningOn);
-    el.autoLearnToggleBtn.title = learningOn
-      ? 'Learning is ON — applies median calibration after Detect Sketch. Click to turn off.'
-      : 'Learning is OFF — Detect Sketch uses pure geometric rules. Click to turn on.';
-    el.autoLearnChip.textContent = learningSamples + ' sample' + (learningSamples === 1 ? '' : 's');
-    el.autoLearnChip.dataset.status = learningOn && learningSamples >= 5 ? 'detected' : 'idle';
-    if (el.learningToolbarBtn) {
-      el.learningToolbarBtn.classList.toggle('active', learningOn);
-      el.learningToolbarBtn.textContent = learningOn ? 'Learning On' : 'Learning Off';
-      el.learningToolbarBtn.title = learningOn
-        ? 'Learning is ON — click to view learning data. Correct Auto lines, then Save project + evidence.'
-        : 'Click to turn learning on before correcting Auto lines.';
-    }
-    if (el.learningToolbarChip) {
-      el.learningToolbarChip.textContent = learningSamples + ' sample' + (learningSamples === 1 ? '' : 's');
-      el.learningToolbarChip.dataset.status = learningOn && learningSamples >= 5 ? 'detected' : 'idle';
-      el.learningToolbarChip.title = learningOn
-        ? 'Recorded TD correction samples used by learning.'
-        : 'Learning is off. Click Learning Off to start collecting corrections.';
-    }
-    if (el.autoAcceptanceChip) {
-      const acceptance = getAutoAcceptanceStats();
-      const accepted = acceptance.acceptedWithoutEdit || 0;
-      const total = acceptance.totalApplied || 0;
-      const rate = total > 0 ? Math.round(accepted / total * 100) : 0;
-      el.autoAcceptanceChip.textContent = accepted + '/' + total + ' accepted';
-      el.autoAcceptanceChip.title = total > 0
-        ? 'Auto-applied POM lines accepted without edit: ' + accepted + ' of ' + total + ' (' + rate + '%).'
-        : 'No Auto-applied POM lines have been tracked yet.';
-    }
-
-    // Menu items reflect what is actually present.
-    const styleId = currentStyleId();
-    const currentMeaningCount = listConfirmedMeanings(styleId).length;
-    let totalMeaningCount = 0;
-    for (const sid of listKnownStyleIds()) {
-      totalMeaningCount += listConfirmedMeanings(sid).length;
-    }
-    if (el.resetResidualsItem) {
-      el.resetResidualsItem.disabled = learningSamples === 0;
-      el.resetResidualsItem.textContent = 'Reset calibration residuals (' + learningSamples + ')';
-    }
-    if (el.resetMeaningsCurrentItem) {
-      el.resetMeaningsCurrentItem.disabled = currentMeaningCount === 0;
-      const styleLabel = styleId === '__default__' ? 'default bucket' : 'style "' + styleId + '"';
-      el.resetMeaningsCurrentItem.textContent = 'Forget POM meanings — ' + styleLabel + ' (' + currentMeaningCount + ')';
-    }
-    if (el.resetMeaningsAllItem) {
-      el.resetMeaningsAllItem.disabled = totalMeaningCount === 0;
-      el.resetMeaningsAllItem.textContent = 'Forget POM meanings — all styles (' + totalMeaningCount + ')';
-    }
-    if (el.manageMeaningsItem) {
-      el.manageMeaningsItem.disabled = currentMeaningCount === 0;
-    }
   }

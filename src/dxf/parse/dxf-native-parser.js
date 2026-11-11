@@ -1,25 +1,25 @@
-// US-105: DXF Pattern Measurement — the native-coordinate parser adapter.
-// Parses the SAME DXF text US-104's importDxfText already accepts, but into
-// exact native `{kind:'straight'|'arc', ...}` geometry (see
-// src/dxf/parse/dxf-path-kernel.js's header comment for the shapes) instead of
-// the board-annotation-ready straight/Bézier segments parseDxfDocument
-// builds — arcs and bulges stay exactly circular here, never
-// Bézier-approximated, so the measurement kernel's arc length stays
-// analytic.
+// US-105: DXF Pattern Measure — the native-coordinate model, and the ONE set
+// of entity converters every DXF parse runs.
 //
-// Deliberately a SEPARATE parse over the same tokenized pairs, not a
-// modification of parseDxfDocument: that function (src/dxf/dxf-import.js)
-// is a closed, 119-assertion-tested contract (dxf-import-check.mjs), and this
-// story's own "compatibility-preserving adapter" requirement is satisfied
-// most safely by never touching its observable output at all. This file
-// reuses that file's PURE, already-correct primitives by name
-// (dxfNormalizeText, dxfTokenizePairs, dxfScanSections, dxfNum, dxfOptNum,
-// dxfFirst, dxfExtrusion, dxfPlanarOk, dxfOk/dxfSkip/dxfMalformed/
-// dxfNonPlanar/dxfUnsupportedType/dxfUnsupportedFit, dxfParseLwpolylineVertices,
-// dxfBulgeToArcParams, dxfBuildPieces, and the DXF_*_CAP/DXF_BINARY_SENTINEL
-// constants) rather than duplicating them — only the "which shape do I build
-// from this entity" step differs from that file's own converters, and that
-// step is duplicated deliberately per the same reasoning.
+// Each accepted entity becomes exact native geometry `{kind:'straight'|'arc'|
+// 'curve', ...}` (see src/dxf/parse/dxf-path-kernel.js's header comment for the
+// shapes): arcs, bulges and circles stay exactly circular, never
+// Bézier-approximated, so the measurement kernel's arc length stays analytic.
+// dxfParseDocumentAndModel (src/dxf/parse/dxf-parse.js) runs these converters
+// ONCE per parse and builds both views from the one result: the board's
+// Y-flipped straight/Bézier pieces, and the native model below.
+//
+// Until the ADR 0105 follow-up this file was a SECOND parse of the same text,
+// run after the board's, with its own copy of every converter and of the
+// INSERT resolution. The two were paired by index and drifted: the board's
+// duplicate removal ran on Y-flipped coordinates and could keep a different
+// copy than this file did, so with keepQualityCurves on the board drew lines
+// Pattern Measure did not have (SE0583-LACE, SN1252). One parse cannot drift.
+//
+// Shared primitives come from dxf-parse.js by name (dxfNum, dxfOptNum,
+// dxfFirst, dxfExtrusion, dxfPlanarOk, the dxfOk/dxfSkip/... outcome helpers,
+// dxfParseLwpolylineVertices, dxfBulgeToArcParams, dxfSplineParts,
+// dxfInsertParams, dxfInsertTransformPoint, dxfBlockRecordsFor).
 // Source part for app.js. Run `npm run build` after editing.
 
   // ---- $INSUNITS header read --------------------------------------------------
@@ -49,21 +49,13 @@
     return null;
   }
 
-  // ---- Per-entity native converters (mirrors dxf-import.js's converters —
-  // same validation/malformed/planarity rules, native line/arc output) ------
+  // ---- Per-entity converters ----------------------------------------------------
 
   function dxfNativeConvertLineEntity(rec) {
     const x1 = dxfNum(rec.pairs, 10), y1 = dxfNum(rec.pairs, 20);
     const x2 = dxfNum(rec.pairs, 11), y2 = dxfNum(rec.pairs, 21);
     if ([x1, y1, x2, y2].some(v => v === undefined)) return dxfMalformed('LINE missing 10/20 or 11/21');
     if (![x1, y1, x2, y2].every(Number.isFinite)) return dxfMalformed('LINE has a non-finite coordinate');
-    // RB-4: a zero-length LINE (both endpoints exactly coincident) has no
-    // direction and no meaningful length — reject it outright rather than
-    // silently accepting a segment dxfSegmentLength would report as 0 (see
-    // that function's own "never a plausible 0" contract; a segment that
-    // SHOULD never have existed is a different failure than an invalid
-    // length calculation on a real one).
-    if (x1 === x2 && y1 === y2) return dxfMalformed('LINE has zero length (coincident endpoints)');
     const z1 = dxfOptNum(rec.pairs, 30, 0), z2 = dxfOptNum(rec.pairs, 31, 0);
     const thickness = dxfOptNum(rec.pairs, 39, 0);
     const ext = dxfExtrusion(rec.pairs);
@@ -71,6 +63,12 @@
       return dxfMalformed('LINE has a non-finite planarity field');
     }
     if (!dxfPlanarOk([z1, z2], thickness, ext)) return dxfNonPlanar('LINE is not flat');
+    // RB-4 / US-127: a zero-length LINE (both endpoints exactly coincident)
+    // has no direction and no meaningful length — reject it outright rather
+    // than silently accepting a segment dxfSegmentLength would report as 0
+    // (see that function's own "never a plausible 0" contract), and rather
+    // than drawing it as the round dot `lineCap:'round'` makes of it.
+    if (x1 === x2 && y1 === y2) return dxfDegenerate('LINE has zero length (coincident endpoints)');
     return dxfOk([{ kind: 'straight', a: { x: x1, y: y1 }, b: { x: x2, y: y2 } }]);
   }
 
@@ -88,8 +86,8 @@
       return dxfMalformed('ARC has a non-finite planarity field');
     }
     if (!dxfPlanarOk([z], thickness, ext)) return dxfNonPlanar('ARC is not flat');
-    // Same wraparound-safe sweep as convertDxfArcEntity: 350deg -> 10deg is a
-    // 20deg CCW sweep, never a naive -340deg.
+    // Always CCW from start to end per the DXF spec — this handles a
+    // 350deg -> 10deg wraparound as a 20deg sweep, not a naive -340deg.
     const sweepDeg = ((a1Deg - a0Deg) % 360 + 360) % 360;
     if (!(sweepDeg > 1e-9)) return dxfMalformed('ARC has zero sweep');
     const sweepRad = sweepDeg * Math.PI / 180;
@@ -97,14 +95,12 @@
     return dxfOk([{ kind: 'arc', center: { x: cx, y: cy }, radius: r, startAngle: startRad, sweep: sweepRad }]);
   }
 
-  // A CIRCLE is one full-circle arc (sweep = 2*PI). Unlike the board
-  // annotation model (which has no closed-loop annotation type and must
-  // split a circle into four quadrant curves — see convertDxfCircleEntity),
-  // the native measurement kernel has no such constraint: a single arc with
-  // a full sweep is the exact, natural representation, and the arbitrary
-  // start angle (0, matching the entity's own lack of one) does not affect
-  // any measurement made on it — length, projection, and route enumeration
-  // all work uniformly around the whole loop regardless of where t=0 sits.
+  // A CIRCLE is one full-circle arc (sweep = 2*PI): the exact, natural
+  // representation for the measurement kernel, and the arbitrary start angle
+  // (0, matching the entity's own lack of one) does not affect any
+  // measurement made on it — length, projection, and route enumeration all
+  // work uniformly around the whole loop regardless of where t=0 sits. The
+  // board draws it as exactly four quarter Béziers (dxfBoardCurvesForArc).
   function dxfNativeConvertCircleEntity(rec) {
     const cx = dxfNum(rec.pairs, 10), cy = dxfNum(rec.pairs, 20);
     const r = dxfNum(rec.pairs, 40);
@@ -121,13 +117,13 @@
     return dxfOk([{ kind: 'arc', center: { x: cx, y: cy }, radius: r, startAngle: 0, sweep: Math.PI * 2 }]);
   }
 
-  // Shared by LWPOLYLINE and legacy POLYLINE, mirroring
-  // dxfPolylineVerticesToSegments but emitting a native arc (via
-  // dxfBulgeToArcParams) instead of Bézier chunks for a bulged segment. A
-  // A repeated vertex is malformed measurement geometry. US-104 may still
-  // display the other segments from that entity, but Pattern Measure must not
-  // silently erase one authored hop and then claim its shortened topology is
-  // the factory path.
+  // Shared by LWPOLYLINE and legacy POLYLINE: a bulged hop is an exact arc
+  // (via dxfBulgeToArcParams). A repeated vertex — the closing vertex of a
+  // polyline that already ends where it started, or a duplicated authoring
+  // click — is a hop of length zero: not a line (it draws as a dot), never
+  // measurable, and a non-topological member that keeps a boundary chain from
+  // reading as closed. It is dropped and counted (US-127 / ADR 0102); the
+  // entity's other hops stay.
   function dxfNativeVerticesToSegments(vertices, closed) {
     const segs = [];
     let rejectedDegenerateSegments = 0;
@@ -173,7 +169,7 @@
     if (!dxfPlanarOk([elevation], thickness, ext)) return dxfNonPlanar('LWPOLYLINE is not flat');
     const closed = (Math.trunc(flags) & 1) === 1;
     const converted = dxfNativeVerticesToSegments(vertices, closed);
-    if (!converted.segments.length) return dxfMalformed('LWPOLYLINE has no non-degenerate segment');
+    if (!converted.segments.length) return dxfDegenerate('LWPOLYLINE has no non-degenerate segment');
     return { ok: true, segments: converted.segments, rejectedDegenerateSegments: converted.rejectedDegenerateSegments };
   }
 
@@ -203,38 +199,30 @@
     }
     if (!dxfPlanarOk([headerZ, ...vertices.map(v => v.z)], thickness, ext)) return dxfNonPlanar('POLYLINE is not flat');
     const converted = dxfNativeVerticesToSegments(vertices, closed);
-    if (!converted.segments.length) return dxfMalformed('POLYLINE has no non-degenerate segment');
+    if (!converted.segments.length) return dxfDegenerate('POLYLINE has no non-degenerate segment');
     return { ok: true, segments: converted.segments, rejectedDegenerateSegments: converted.rejectedDegenerateSegments };
   }
 
-  // ---- INSERT -> BLOCK resolution (ADR 0073, reversing ADR 0068 item 1) ----
+  // ---- INSERT -> BLOCK resolution (ADR 0073) -----------------------------------
   //
-  // Same real-world motivation as dxf-import.js's dxfConvertInsertEntity:
   // 36/44 real factory files in the demo corpus keep every piece's geometry
-  // inside a named BLOCK and reference it once via INSERT — without resolving
-  // that here, Pattern Measure was structurally dead on all of them (the
-  // board displayed the pieces, this parser returned reason:'empty'; see
-  // findings-dxf.md Finding 1). Gates and reason strings mirror the board
-  // converter byte-for-byte so the two parses never disagree about WHICH
-  // entities are acceptable — only about the shape of the accepted geometry.
+  // inside a named BLOCK and reference it once via INSERT (see the INSERT
+  // section of dxf-parse.js for the full motivation and the gates).
 
-  // Exact similarity transform of a native segment. Unlike the board's
-  // dxfApplyInsertTransformToSegment (straight/curve only — the board never
-  // has an 'arc' kind at INSERT time), this must map an exact arc to an
-  // exact arc: the INSERT gate below enforces |sx| == |sy|, so the linear
-  // part R(angle)·diag(sx,sy) is a similarity — circles map to circles with
-  // radius scaled by |sx|. The new start angle is derived from the
-  // TRANSFORMED start point (not analytic angle arithmetic), which is exact
-  // and uniform across all four sign combinations of (sx, sy); a mirrored
-  // instance (sx·sy < 0) flips traversal orientation, so the sweep sign
-  // flips — |sweep| is unchanged, so a full-circle CIRCLE arc (sweep 2π)
-  // stays within the kernel's |sweep| <= 2π contract.
+  // Exact similarity transform of a native segment: the INSERT gate below
+  // enforces |sx| == |sy|, so the linear part R(angle)·diag(sx,sy) is a
+  // similarity — circles map to circles with radius scaled by |sx|. The new
+  // start angle is derived from the TRANSFORMED start point (not analytic
+  // angle arithmetic), which is exact and uniform across all four sign
+  // combinations of (sx, sy); a mirrored instance (sx·sy < 0) flips traversal
+  // orientation, so the sweep sign flips — |sweep| is unchanged, so a
+  // full-circle CIRCLE arc (sweep 2π) stays within the kernel's |sweep| <= 2π
+  // contract.
   //
-  // Object.assign clone, not a rebuilt object: native segments already carry
-  // provenance (layer/handle/entityOrder/partIndex, stamped by
-  // dxfNativeConvertEntity below) that must survive the transform — the
-  // board's transform rebuilds bare objects only because the board stamps
-  // nothing at that stage.
+  // Object.assign clone, not a rebuilt object: the provenance stamped by
+  // dxfNativeConvertEntity below (layer, entityType, handle, entityOrder,
+  // partIndex) must survive the transform — ADR 0069 lost `instance` exactly
+  // this way once, and the classifier reads `layer`.
   function dxfNativeApplyInsertTransformToSegment(seg, ins) {
     if (seg.kind === 'straight') {
       return Object.assign({}, seg, {
@@ -262,10 +250,15 @@
     return Object.assign({}, seg, { center, radius, startAngle, sweep });
   }
 
-  // `order` is the TOP-LEVEL entity index — every segment resolved out of a
-  // block (however deeply nested) inherits the placing INSERT's own order,
-  // while keeping the child entity's layer/handle (nothing downstream
-  // consumes entityOrder today; it stays pure provenance).
+  // `buckets` is the parse's shared {board, native} rejection tally
+  // (dxfCountRejected): a block's own rejected children (e.g. TEXT alongside
+  // LINE) are counted here as they're found, so one tally covers both
+  // directly-placed and block-resolved entities. `instance` (ADR 0069) is
+  // opaque here — always the SAME value this call's own caller was given,
+  // propagated unchanged to every child so a piece assembled from nested
+  // INSERTs still shares one instance boundary. `order` is the TOP-LEVEL
+  // entity index: every segment resolved out of a block (however deeply
+  // nested) inherits the placing INSERT's own order.
   function dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order, ordinal) {
     const p = dxfInsertParams(rec);
     if (p.blockName == null) return dxfMalformed('INSERT missing block name (group 2)');
@@ -277,15 +270,19 @@
     if ((p.colCount && p.colCount !== 1) || (p.rowCount && p.rowCount !== 1)) {
       return dxfUnsupportedType('INSERT is a rectangular array (MINSERT), not supported');
     }
-    // Same k-th-definition rule as the board parser (dxfBlockRecordsFor).
+    // The k-th top-level INSERT of a name takes the k-th definition
+    // (dxfBlockRecordsFor).
     const blockRecords = dxfBlockRecordsFor(blocks, p.blockName, ordinal);
     if (!blockRecords) return dxfMalformed('INSERT references an undefined block "' + p.blockName + '"');
     if (depth >= DXF_INSERT_MAX_DEPTH) return dxfMalformed('INSERT nesting is too deep (possible circular BLOCK reference)');
     const segments = [];
+    // US-127: a block child's own dropped zero-length hops ride up with the
+    // geometry so one instance's count reaches the import toast (the child's
+    // whole-entity rejections are tallied into `buckets` directly).
     let rejectedDegenerateSegments = 0;
     for (const childRec of blockRecords) {
       const result = dxfNativeConvertEntityResolvingBlocks(childRec, blocks, depth + 1, buckets, instance, order);
-      if (!result.ok) { buckets[result.bucket] += 1; continue; }
+      if (!result.ok) { dxfCountRejected(buckets, result); continue; }
       rejectedDegenerateSegments += result.rejectedDegenerateSegments || 0;
       segments.push(...result.segments);
     }
@@ -298,13 +295,11 @@
   }
 
   // Dispatch + `instance` stamp (ADR 0069: piece detection must never union
-  // segments from different placed instances — without this, a grading-nest
-  // file's overlapping sizes fuse on the native side and the piece list
-  // diverges from the board's, nulling every pieceAnchor in
-  // makeDxfMeasureSession). NOTE this wrapper deliberately does NOT copy the
-  // board wrapper's `{ok, segments}`-only return shape: this parser's
-  // converters also report `rejectedDegenerateSegments` (RB-4), and dropping
-  // that field here would silently zero the bucket for every entity.
+  // segments from different placed instances — a grading-nest file's
+  // overlapping sizes would fuse). NOTE this wrapper deliberately does NOT
+  // reduce its return to `{ok, segments}`: the converters also report
+  // `rejectedDegenerateSegments` (RB-4), and dropping that field here would
+  // silently zero the count for every entity.
   function dxfNativeConvertEntityResolvingBlocks(rec, blocks, depth, buckets, instance, order, ordinal) {
     const result = rec.type === 'INSERT'
       ? dxfNativeConvertInsertEntity(rec, blocks, depth, buckets, instance, order, ordinal)
@@ -317,27 +312,25 @@
     };
   }
 
-  // Same shared reader the board converter uses (src/dxf/parse/dxf-parse.js),
-  // mapped onto the native `{kind:'curve', p0,p1,p2,p3}` shape the
-  // measurement kernel already understands. The two parsers are paired by
-  // index, so they must accept and reject the identical set of splines —
-  // which is why the decision lives in one shared function and only the
-  // output shape differs here.
+  // The one SPLINE reader (dxfSplineParts) mapped onto the native
+  // `{kind:'curve', p0,p1,p2,p3}` shape the measurement kernel understands.
   function dxfNativeConvertSplineEntity(rec) {
     const read = dxfSplineParts(rec);
     if (!read.ok) return read;
-    if (!read.parts.length) return dxfMalformed('SPLINE has no non-degenerate span');
+    if (!read.parts.length) return dxfDegenerate('SPLINE has no non-degenerate span');
     const segments = read.parts.map(part => (part.type === 'line'
       ? { kind: 'straight', a: part.a, b: part.b }
       : { kind: 'curve', p0: part.p0, p1: part.p1, p2: part.p2, p3: part.p3 }));
     return { ok: true, segments, rejectedDegenerateSegments: read.degenerate };
   }
 
-  // Dispatch, then stamp provenance (layer, handle when present, and the
-  // entity's own order in the file) onto every segment the entity produced —
-  // "original entity order and direction" per the checklist, kept on the
-  // segment itself rather than threaded separately through every later
-  // consumer.
+  // Dispatch, then stamp provenance onto every segment the entity produced:
+  // `layer` (group 8 — the ASTM layer dxfClassifyPatterns reads to tell a
+  // piece boundary from a grain line, sew line or internal mark), the source
+  // `entityType`, and the handle, the entity's own order in the file and its
+  // part index ("original entity order and direction" per the checklist, kept
+  // on the segment itself rather than threaded separately through every
+  // later consumer).
   function dxfNativeConvertEntity(rec, order) {
     const result = (() => {
       switch (rec.type) {
@@ -347,7 +340,9 @@
         case 'LWPOLYLINE': return dxfNativeConvertLwpolylineEntity(rec);
         case 'POLYLINE': return dxfNativeConvertPolylineEntity(rec);
         case 'SPLINE': return dxfNativeConvertSplineEntity(rec);
-        // Phase 3 (ADR 0091): same non-geometry bucket as the board parser.
+        // Phase 3 (ADR 0091): ASTM turn/curve points, notches, drill holes and
+        // annotation text are standard non-geometry, not "unsupported" — they
+        // are counted by dxfCollectMarks and reported as what they are.
         case 'POINT': case 'TEXT': case 'MTEXT':
           return dxfSkip('nonGeometry', rec.type + ' is a mark/annotation, not drawn geometry');
         default: return dxfUnsupportedType('entity type "' + rec.type + '" is not supported');
@@ -361,115 +356,21 @@
       handle: handle == null ? null : String(handle).trim(),
       entityOrder: order,
       partIndex,
+      entityType: rec.type,
     }));
     return { ok: true, segments, rejectedDegenerateSegments: result.rejectedDegenerateSegments || 0 };
   }
 
-  // ---- Document-level native parse (pure; no state/DOM) ----------------------
+  // ---- The native model (pure; no state/DOM) -----------------------------------
 
-  // text -> { ok, pieces: [{segments}], unit, unitSource, insunits, buckets,
-  // skippedOversizedPieces } | { ok:false, reason, message, buckets }. Reuses
-  // parseDxfDocument's own binary/corrupt-file/section-scan gates and its
-  // three output caps verbatim (same constants, same thresholds, same
-  // atomic-vs-partial behavior) so the two parses never disagree about
-  // whether a given file is acceptable — only about what SHAPE the accepted
-  // geometry takes.
-  // `options.keepQualityCurves` (Phase 3) must be the SAME value the board
-  // import used — importDxfText passes it, and dxfPatternSource carries it
-  // for every later rebuild — or the two parsers' pieces stop matching.
-  function parseDxfNativeModel(text, options) {
-    const normalized = dxfNormalizeText(text);
-    if (normalized.slice(0, DXF_BINARY_SENTINEL.length) === DXF_BINARY_SENTINEL) {
-      return {
-        ok: false, atomic: true, reason: 'binary',
-        message: 'This looks like a binary DXF file. Re-export as ASCII DXF and try again.',
-      };
-    }
-    const pairs = dxfTokenizePairs(normalized);
-    if (!pairs) {
-      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file.' };
-    }
-    const scan = dxfScanSections(pairs);
-    if (scan.error) {
-      return { ok: false, atomic: true, reason: 'corrupt', message: 'This file is not a valid ASCII DXF file (' + scan.error + ').' };
-    }
-    const insunits = dxfReadInsunits(pairs);
+  // The native-model view of an ACCEPTED parse (dxfParseDocumentAndModel):
+  // `pieces` are [{segments}] in native coordinates, the same pieces in the
+  // same order as the board's, so makeDxfMeasureSession pairs them by index.
+  // `patterns`/`stats` are the one classification's, shared with the board
+  // view — they count board LINES (dxfBoardLineCount: a circle is 4).
+  function dxfNativeModelView(parse) {
+    const { insunits, pieces } = parse;
     const unitInfo = dxfResolveNativeToInch(insunits);
-    const buckets = { unsupportedType: 0, nonPlanar: 0, unsupportedFit: 0, malformed: 0, nonGeometry: 0, rejectedDegenerateSegments: 0 };
-    const acceptedSegments = [];
-    // ADR 0073: same instance-id scheme as parseDxfDocument (ADR 0069) —
-    // instance 0 for every directly-placed entity, a fresh id per top-level
-    // INSERT (nested INSERTs inherit their parent's) — so dxfBuildPieces
-    // groups the native pieces exactly the way it groups the board's,
-    // keeping makeDxfMeasureSession's count-based pieceAnchors pairing alive.
-    let nativeNextInstanceId = 1;
-    const nativeInsertOrdinals = new Map();
-    const pipelineVersion = dxfPipelineVersionOf(options);
-    scan.entityRecords.forEach((rec, order) => {
-      const instance = rec.type === 'INSERT' ? nativeNextInstanceId++ : 0;
-      let ordinal = 0;
-      if (rec.type === 'INSERT') {
-        const blockName = dxfInsertParams(rec).blockName;
-        ordinal = nativeInsertOrdinals.get(blockName) || 0;
-        nativeInsertOrdinals.set(blockName, ordinal + 1);
-        if (pipelineVersion === 1) ordinal = 'all';
-      }
-      const result = dxfNativeConvertEntityResolvingBlocks(rec, scan.blocks, 0, buckets, instance, order, ordinal);
-      if (!result.ok) { buckets[result.bucket] += 1; return; }
-      buckets.rejectedDegenerateSegments += result.rejectedDegenerateSegments || 0;
-      acceptedSegments.push(...result.segments);
-    });
-    if (!acceptedSegments.length) {
-      return { ok: false, atomic: true, reason: 'empty', message: 'No supported entities were found in this DXF file.', buckets };
-    }
-    // Reused verbatim from dxf-import.js: connected-component + containment-
-    // merge piece detection, which already works generically off
-    // dxfSegmentEndpoints/dxfSegmentPoints — both extended for the 'arc' kind
-    // this file emits. No Y-flip here: native space stays exactly as
-    // authored (see this file's header comment).
-    //
-    // ADR 0091: the same dxfClassifyPatterns the board parser runs, on the
-    // same `instance`/`layer`-stamped segments — the ONLY thing keeping the
-    // count-and-order pairing in makeDxfMeasureSession alive is that both
-    // parsers group through this one function. Point-in-polygon containment
-    // is invariant under the board's Y-flip, so the two agree without it.
-    const classified = dxfClassifyPatterns(acceptedSegments, {
-      keepQualityCurves: !!(options && options.keepQualityCurves),
-      excludeInstances: (options && Array.isArray(options.excludeInstances)) ? options.excludeInstances : [],
-      onProgress: (options && typeof options.onProgress === 'function') ? options.onProgress : null,
-      pipelineVersion,
-    });
-    const allPieces = classified.pieces;
-    // Phase 4: no piece-count rejection here either (see
-    // DXF_PATTERN_BATCH_THRESHOLD in dxf-import.js) — the board import that
-    // preceded this call already decided the file is placeable.
-    const keptPieces = [];
-    const keptPatterns = [];
-    let skippedOversizedPieces = 0;
-    for (let i = 0; i < allPieces.length; i += 1) {
-      const piece = allPieces[i];
-      // Same exemption as parseDxfDocument (ADR 0091): a classified pattern
-      // is never dropped by the per-piece cap — the two parsers must keep
-      // the identical piece list or makeDxfMeasureSession's index pairing
-      // breaks.
-      if (piece.length > DXF_PER_PIECE_CAP && classified.patterns[i].kind !== 'classified') { skippedOversizedPieces += 1; continue; }
-      keptPieces.push(piece);
-      keptPatterns.push(classified.patterns[i]);
-    }
-    if (!keptPieces.length) {
-      return {
-        ok: false, atomic: true, reason: 'empty-after-piece-cap', buckets,
-        message: 'Every piece in this DXF exceeded the ' + DXF_PER_PIECE_CAP + '-line per-piece limit. Import rejected.',
-      };
-    }
-    const totalOutputCount = keptPieces.reduce((sum, piece) => sum + piece.length, 0);
-    if (totalOutputCount > DXF_TOTAL_OUTPUT_CAP) {
-      return {
-        ok: false, atomic: true, reason: 'total-cap', buckets,
-        message: 'This DXF would place ' + totalOutputCount + ' lines, over the ' + DXF_TOTAL_OUTPUT_CAP + '-line combined limit. Import rejected.',
-      };
-    }
-    const pieces = keptPieces.map(segments => ({ segments }));
     // US-126: auto-scale. The $INSUNITS header stays authoritative wherever
     // the file declares one this tool understands — a declaration is evidence
     // and a size statistic is only an inference. When it does NOT (31 of the
@@ -519,13 +420,25 @@
     return {
       ok: true,
       pieces,
-      patterns: keptPatterns,
-      stats: classified.stats,
+      patterns: parse.patterns,
+      stats: parse.stats,
       unit,
       unitSource,
       unitDiagnostic,
       insunits,
-      buckets,
-      skippedOversizedPieces,
+      buckets: parse.buckets,
+      skippedOversizedPieces: parse.skippedOversizedPieces,
     };
+  }
+
+  // text -> { ok, pieces: [{segments}], patterns, stats, unit, unitSource,
+  // unitDiagnostic, insunits, buckets, skippedOversizedPieces } | { ok:false,
+  // atomic, reason, message, buckets }. An import does not call this — it
+  // takes both views from its one dxfParseDocumentAndModel — but a saved
+  // project's pattern source re-parses its text on reopen
+  // (rebuildDxfMeasureSessionFromActiveSource) and needs only this view.
+  // `options.keepQualityCurves` must be the value the board import used —
+  // dxfPatternSource carries it for every later rebuild.
+  function parseDxfNativeModel(text, options) {
+    return dxfParseDocumentAndModel(text, options).native;
   }

@@ -1,5 +1,5 @@
-// URL-query-param test/demo boot paths: ground-truth labeling, URL project
-// load, and URL auto-draft demo automation.
+// URL-query-param boot path for ground-truth labeling (?label=1, with an
+// optional &image= to auto-load one image).
 // Source part for app.js. Run `npm run build` after editing.
 
   // Ground-truth labeling helper: ?label=1 shows a floating "Save Ground
@@ -75,46 +75,4 @@
       console.error('[Ground Truth] auto-load failed:', err);
       showToast('Could not auto-load ' + imagePath + ' — add it manually, then Detect Sketch.', 5200);
     }
-  }
-
-  async function loadProjectFromUrl() {
-    const projectUrl = new URLSearchParams(window.location.search).get('project');
-    if (!projectUrl) return;
-    try {
-      const response = await fetch(projectUrl, { cache: 'no-store' });
-      if (!response.ok) throw new Error('Could not load project');
-      await loadProject(await response.json());
-      showToast('Draft project loaded.');
-    } catch (error) {
-      console.error(error);
-      showToast('Could not load the draft project.', 4200);
-    }
-  }
-
-  // Demo helper: ?autoDraft=1 drives Auto Mode → Detect Sketch → Generate POM
-  // Drafts on whatever image is on the board after load. Lets the demo flow be
-  // shared as a URL without manual clicking. No-op when the param is absent.
-  async function maybeAutoDraftFromUrl() {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('autoDraft') !== '1') return;
-    const waitForImage = async () => {
-      for (let i = 0; i < 50; i += 1) {
-        const img = pickAutoSourceImage();
-        if (img && img.img && img.img.complete) return img;
-        await new Promise((r) => setTimeout(r, 100));
-      }
-      return null;
-    };
-    const sourceImage = await waitForImage();
-    if (!sourceImage) {
-      showToast('autoDraft: no source image found.', 4200);
-      return;
-    }
-    setAppMode('auto');
-    await runOfflineDetection();
-    if (state.autoMode.status !== 'detected') {
-      showToast('autoDraft: detection did not complete.', 4200);
-      return;
-    }
-    generatePOMDraftsFromAnchors();
   }

@@ -1,6 +1,6 @@
 // US-095 / ADR 0054: non-measurement Board Graphics and path topology.
 // Board Graphics deliberately live outside state.annotations: nothing in the
-// POM/spec/grading/learning/Excel path reads this collection.
+// POM/spec/grading/Excel path reads this collection.
 
   const BG_MIN_CREATE_SCREEN_PX = 8;
   const BG_KAPPA = 0.5522847498307936;

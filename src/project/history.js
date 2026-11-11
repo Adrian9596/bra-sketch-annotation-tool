@@ -12,14 +12,14 @@
     state.history.future = [];
     // A new board (Open project, a DXF import, Reset Board) replaces the piece
     // list wholesale; an open Pattern pieces panel must not keep the old one.
-    if (typeof syncPatternPiecesPanelToBoard === 'function') syncPatternPiecesPanelToBoard();
+    syncPatternPiecesPanelToBoard();
   }
 
   function makeSnapshot() {
     // US-125: geometry can change through many established drag/nudge/resize
     // paths. Refresh the two Seam Path fingerprints at the shared snapshot
     // boundary so none of those paths can persist stale approval evidence.
-    if (typeof seamPathRefreshAllFingerprints === 'function') seamPathRefreshAllFingerprints();
+    seamPathRefreshAllFingerprints();
     return {
       tool: state.tool,
       drawStyle: state.drawStyle,
@@ -111,8 +111,8 @@
     updateUI();
     // US-135 E2E defect 3: a committed change can add or remove pieces
     // (Delete, paste, Remove unchecked); the open Pattern pieces panel follows.
-    if (typeof syncPatternPiecesPanelToBoard === 'function') syncPatternPiecesPanelToBoard();
-    if (typeof scheduleAutosave === 'function') scheduleAutosave();
+    syncPatternPiecesPanelToBoard();
+    scheduleAutosave();
   }
 
   async function restoreSnapshot(snapshot) {
@@ -145,19 +145,20 @@
     state.idCounter = snapshot.idCounter || inferNextIdCounter();
     state.calibration = snapshot.calibration || { unitsPerPx: null, unit: 'in' };
     state.pomSpecs = clone(snapshot.pomSpecs || {});
-    // migrate defensively: history is session-only, but a snapshot taken by
-    // pre-US-011 code (or with a legacy depthRules field) must still restore.
-    state.gradeRules = migrateGradeRulesV2(snapshot.gradeRules, snapshot.depthRules);
+    // History is session-only and every snapshot comes from makeSnapshot()
+    // above, which copies an already-v2 state.gradeRules — so a plain clone.
+    // Saved files migrate once, in loadProject (migrateGradeRulesV2).
+    state.gradeRules = clone(snapshot.gradeRules);
     state.customPoms = clone(snapshot.customPoms || []);
     state.deletedPomKeys = clone(snapshot.deletedPomKeys || []);
     state.mainPage = snapshot.mainPage ? clone(snapshot.mainPage) : null;
-    if (typeof renderMainPage === 'function') renderMainPage();
+    renderMainPage();
     state.construction = snapshot.construction ? clone(snapshot.construction) : null;
-    if (typeof renderConstruction === 'function') renderConstruction();
+    renderConstruction();
     state.bom = snapshot.bom ? clone(snapshot.bom) : null;
-    if (typeof renderBom === 'function') renderBom();
+    renderBom();
     state.preview = snapshot.preview ? clone(snapshot.preview) : null;
-    if (state.activePage === 'preview' && typeof renderPreviewPage === 'function') renderPreviewPage();
+    if (state.activePage === 'preview') renderPreviewPage();
     state.editingLabelId = null;
     state.drawSession = null;
     state.eraseSession = null;
@@ -212,9 +213,9 @@
     updateUI();
     // US-135 E2E defect 3: Undo/Redo can bring pieces back or take them away;
     // the open Pattern pieces panel used to keep listing the old set.
-    if (typeof syncPatternPiecesPanelToBoard === 'function') syncPatternPiecesPanelToBoard();
+    syncPatternPiecesPanelToBoard();
     requestRender();
-    if (typeof scheduleAutosave === 'function') scheduleAutosave();
+    scheduleAutosave();
   }
 
   async function undo() {

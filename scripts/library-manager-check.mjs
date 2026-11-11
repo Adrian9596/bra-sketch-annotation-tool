@@ -76,7 +76,7 @@ async function main() {
       const ann = { id: 8801, seq: 1, purpose: 'sketch-element', type: 'straight', style: 'solid',
         color: 'red', arrowType: 'none', lineWidth: 2, start: { x: 100, y: 200 }, end: { x: 300, y: 260 },
         control1: null, control2: null, points: [], label: { x: 200, y: 210 }, labelManual: false, text: null, value: null };
-      d.styleEvidence.pushAnnotation(ann);
+      d.pushAnnotation(ann);
       const asset = d.addTemplateFromAnnotationIds('Cup panel', [8801], { category: 'cup', tags: ['Molded', 'molded', ' padded '], notes: '  test note  ' });
       return { asset };
     })()`);
@@ -129,7 +129,7 @@ async function main() {
     // the model function.
     const usage = await session.eval(`(async () => {
       const d = window.__braAutoModeDebug, canvas = document.getElementById('boardCanvas');
-      d.meaning.setAppMode('manual');
+      d.setAppMode('manual');
       document.getElementById('sketchFocusBtn').click();
       const stamp = d.getShapeStamps().find(s => s.name === 'Cup panel');
       const before = stamp.usage.count;
@@ -547,7 +547,7 @@ async function main() {
       const ann = { id: 88801, seq: 900, purpose: 'sketch-element', type: 'straight', style: 'solid',
         color: 'black', arrowType: 'none', lineWidth: 2, start: { x: 50, y: 50 }, end: { x: 150, y: 60 },
         control1: null, control2: null, points: [], label: { x: 100, y: 40 }, labelManual: false, text: null, value: null };
-      d.styleEvidence.pushAnnotation(ann);
+      d.pushAnnotation(ann);
       d.selectAnnotation(88801);
       document.getElementById('libraryBtn').click();
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));

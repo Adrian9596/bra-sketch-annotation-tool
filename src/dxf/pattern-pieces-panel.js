@@ -178,8 +178,8 @@
     if (!ids || !ids.length) return;
     state.selection = { kind: 'annotation', id: ids[0] };
     state.selectedAnnotationIds = ids.slice();
-    if (typeof updateUI === 'function') updateUI();
-    if (typeof requestRender === 'function') requestRender();
+    updateUI();
+    requestRender();
   }
 
   // Deletes every annotation belonging to the given groups. Sketch-element
@@ -213,10 +213,10 @@
     if (kill.has(state.templateGroupEditId)) state.templateGroupEditId = null;
     // findings-dxf.md Finding 7: a removed piece must not stay measurable at
     // its old, now-invisible position.
-    if (typeof dxfMeasureInvalidateOnPieceEdit === 'function') dxfMeasureInvalidateOnPieceEdit();
+    dxfMeasureInvalidateOnPieceEdit();
     pushHistoryIfChanged();
-    if (typeof updateUI === 'function') updateUI();
-    if (typeof requestRender === 'function') requestRender();
+    updateUI();
+    requestRender();
   }
 
   function patternPieceMiniBtn(label, title, onClick) {
@@ -336,8 +336,8 @@
           const result = simplifyPieceGroup(g.groupId);
           if (!result.chains) { showToast('Nothing to simplify — no redundant collinear points found.'); return; }
           pushHistoryIfChanged();
-          if (typeof updateUI === 'function') updateUI();
-          if (typeof requestRender === 'function') requestRender();
+          updateUI();
+          requestRender();
           showToast('Simplified ' + result.chains + (result.chains === 1 ? ' run' : ' runs')
             + ', removed ' + result.removed + (result.removed === 1 ? ' point.' : ' points.'));
           // pushHistoryIfChanged above already re-synced the rows (keeping
@@ -365,7 +365,7 @@
     if (el.patternPiecesBtn) {
       el.patternPiecesBtn.addEventListener('click', (event) => {
         event.stopPropagation();
-        if (typeof closeBoardToolbarMenus === 'function') closeBoardToolbarMenus(null, false);
+        closeBoardToolbarMenus(null, false);
         openPatternPiecesPanel();
       });
     }

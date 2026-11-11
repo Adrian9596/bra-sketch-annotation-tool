@@ -1,10 +1,14 @@
 // US-124 / ADR 0091: DXF pattern identity is a classified closed outline.
 //
-// Pure, DOM-free grouping shared by BOTH DXF parsers (src/dxf/dxf-import.js
-// for the board, src/dxf/parse/dxf-native-parser.js for Pattern Measure) so the
-// two can never disagree about what a pattern is — makeDxfMeasureSession pairs
-// board pieces with native pieces BY INDEX, so a grouping difference between
-// the two would silently null every pieceAnchor.
+// Pure, DOM-free grouping, run ONCE per parse by dxfParseDocumentAndModel
+// (src/dxf/parse/dxf-parse.js). The board's pieces and Pattern Measure's
+// native pieces are two views of its one result, which is what lets
+// makeDxfMeasureSession pair them BY INDEX.
+//
+// Every count it reports (classCounts, segCount, outlineSegCount, dropped,
+// stats.totalSegments/keptSegments…) is in board LINES — dxfBoardLineCount:
+// an exact arc counts as the Bézier curves the board draws it as. Its
+// decisions are made on the exact segments.
 //
 // Why this exists: the pre-ADR-0091 grouping (now dxfBuildPiecesLegacy in
 // dxf-import.js — endpoint connectivity + bounding-box containment, never
@@ -45,8 +49,8 @@
 // Cross-part symbols used (all `function` declarations, hoisted bundle-wide
 // per CLAUDE.md): distance, pointToSegmentDistance (src/core/math.js);
 // dxfSegmentEndpoints, dxfPointOnArcSegment, dxfBoundsOfSegments,
-// dxfBoundsOfPoints, dxfUnionFind, dxfBuildPiecesLegacy
-// (src/dxf/dxf-import.js).
+// dxfBoundsOfPoints, dxfUnionFind, dxfBuildPiecesLegacy, dxfBoardLineCount
+// (src/dxf/parse/dxf-parse.js).
 // Source part for app.js. Run `npm run build` after editing.
 
   // ASTM D6673-10 / AAMA-292 layer table, verified against the corpus
@@ -121,9 +125,10 @@
     const mt = 1 - t;
     const a = mt * mt * mt, b = 3 * mt * mt * t, c = 3 * mt * t * t, d = t * t * t;
     // Hot path: sampled per point per segment while classifying, so this
-    // deliberately inlines what dxfCubicC1/dxfCubicC2 (dxf-path-kernel.js)
-    // define rather than calling them — dxf-measurement-check asserts a 50ms
-    // parse budget for 3380.dxf that a per-sample call was measured against.
+    // deliberately inlines the c1/p1 + c2/p2 read (see the cubic-shape note in
+    // dxf-path-kernel.js) rather than calling a helper — dxf-measurement-check
+    // asserts a 50ms parse budget for 3380.dxf that a per-sample call was
+    // measured against.
     // The two names are the board's `c1/c2` and the native model's `p1/p2`;
     // a board curve therefore costs exactly one extra `undefined` test here
     // versus before SPLINE support existed.
@@ -401,6 +406,13 @@
     counts[key] = (counts[key] || 0) + n;
   }
 
+  // Board lines drawn for the segments at `idxs` (see the header).
+  function dxfPatternLineCount(segments, idxs) {
+    let n = 0;
+    for (const i of idxs) n += dxfBoardLineCount(segments[i]);
+    return n;
+  }
+
   // Flatten a segment to straight chords (curves sampled) for point-to-
   // geometry distance queries.
   function dxfPatternSegmentChords(seg) {
@@ -521,19 +533,22 @@
     const poolIdxs = idxs.filter(i => !inOutline.has(i));
     const poolChains = dxfPatternChains(segments, poolIdxs, tol);
 
-    const patterns = outlines.map((o, oi) => ({
-      kind: 'classified',
-      instance,
-      boundaryLayer,
-      orphan: false,
-      outlineIndex: oi,
-      outlineSegCount: o.segIdxs.length,
-      segIdxs: o.segIdxs.slice(),
-      classCounts: { boundary: o.segIdxs.length },
-      notchChains: 0,
-      // Every assigned chain with its class, for the dedupe pass below.
-      entries: o.segIdxs.map(i => ({ segIdx: i, cls: 'boundary', chainKey: 'outline' })),
-    }));
+    const patterns = outlines.map((o, oi) => {
+      const outlineLines = dxfPatternLineCount(segments, o.segIdxs);
+      return {
+        kind: 'classified',
+        instance,
+        boundaryLayer,
+        orphan: false,
+        outlineIndex: oi,
+        outlineSegCount: outlineLines,
+        segIdxs: o.segIdxs.slice(),
+        classCounts: { boundary: outlineLines },
+        notchChains: 0,
+        // Every assigned chain with its class, for the dedupe pass below.
+        entries: o.segIdxs.map(i => ({ segIdx: i, cls: 'boundary', chainKey: 'outline' })),
+      };
+    });
     const orphans = [];
 
     let chainSerial = 0;
@@ -605,7 +620,7 @@
         const pat = patterns[target];
         pat.segIdxs.push(...chain.segIdxs);
         const effectiveCls = isNotch ? 'notch' : cls;
-        dxfPatternBump(pat.classCounts, effectiveCls, chain.segIdxs.length);
+        dxfPatternBump(pat.classCounts, effectiveCls, dxfPatternLineCount(segments, chain.segIdxs));
         if (isNotch) pat.notchChains += 1;
         // Dedupe ranks and reports by each SEGMENT's own layer class, not the
         // chain's majority: CLO's layer-8 internal line and its layer-85 twin
@@ -618,7 +633,7 @@
         }
       } else {
         const classCounts = {};
-        dxfPatternBump(classCounts, cls, chain.segIdxs.length);
+        dxfPatternBump(classCounts, cls, dxfPatternLineCount(segments, chain.segIdxs));
         orphans.push({
           kind: 'orphan', instance, boundaryLayer, orphan: true,
           outlineSegCount: 0, segIdxs: chain.segIdxs.slice(), classCounts, notchChains: 0,
@@ -638,8 +653,9 @@
       for (const e of pat.entries) {
         const reason = droppedMap.get(e.segIdx);
         if (!reason) continue;
-        pat.dropped[reason] += 1;
-        dxfPatternBump(pat.droppedByClass, e.cls, 1);
+        const lines = dxfBoardLineCount(segments[e.segIdx]);
+        pat.dropped[reason] += lines;
+        dxfPatternBump(pat.droppedByClass, e.cls, lines);
       }
       pat.keptSegIdxs = pat.segIdxs.filter(i => !droppedMap.has(i));
       delete pat.entries;
@@ -657,9 +673,9 @@
 
   // segments -> { pieces, patterns, stats }. `pieces` has the exact shape
   // dxfBuildPieces always returned (array of arrays of the caller's own
-  // segment objects) so parseDxfDocument / parseDxfNativeModel keep every
-  // downstream cap and placement step unchanged; `patterns[i]` describes
-  // `pieces[i]` (same index, same order).
+  // segment objects) so dxfParseDocumentAndModel keeps every downstream cap
+  // and placement step unchanged; `patterns[i]` describes `pieces[i]` (same
+  // index, same order).
   // `options.diagnostics` adds `stats.instances` (one dxfClassifyInstance
   // `diag` per instance) — off by default so a normal parse result stays
   // small; the debug hook turns it on for suites and corpus audits.
@@ -695,37 +711,11 @@
       patternCount: 0, classifiedInstances: 0, legacyInstances: 0,
       classifiedPatterns: 0, legacyPieces: 0, orphans: 0,
       byClass: {}, boundaryLayers: {},
-      totalSegments: segments ? segments.length : 0, keptSegments: 0,
+      totalSegments: segments ? dxfPatternLineCount(segments, segments.keys()) : 0, keptSegments: 0,
       dropped: { exact: 0, qvTwin: 0 }, droppedByClass: {},
       keepQualityCurves: !!(options && options.keepQualityCurves),
     };
     if (wantDiag) stats.instances = [];
-    stats.pipelineVersion = (options && options.pipelineVersion === 1) ? 1 : 2;
-    // Phase 6 (owner decision 5): a saved pre-ADR-0091 source re-groups the
-    // way its board was built — ONE global legacy pass over every segment
-    // (instance-guarded connectivity + containment, root order), no dedupe,
-    // no exclusions, no classification. This is the exact pre-change
-    // dxfBuildPieces body, so the saved pieceFirstAnnotationIds keep pairing
-    // by index with the rebuilt native pieces.
-    if (stats.pipelineVersion === 1) {
-      const legacyPieces = (segments && segments.length) ? dxfBuildPiecesLegacy(segments) : [];
-      const patterns = legacyPieces.map(piece => ({
-        kind: 'legacy', instance: piece.length ? (piece[0].instance == null ? 0 : piece[0].instance) : 0,
-        boundaryLayer: null, orphan: false, outlineSegCount: 0, segCount: piece.length, totalSegCount: piece.length,
-        classCounts: { unknown: piece.length }, notchChains: 0, dropped: { exact: 0, qvTwin: 0 }, droppedByClass: {},
-      }));
-      stats.patternCount = legacyPieces.length;
-      stats.legacyPieces = legacyPieces.length;
-      stats.legacyInstances = new Set(patterns.map(p => p.instance)).size;
-      stats.keptSegments = legacyPieces.reduce((s, p) => s + p.length, 0);
-      return { pieces: legacyPieces, patterns, stats };
-    }
-    // Phase 4 (ADR 0091, owner decision 3): the pre-placement pick. A TD who
-    // hits DXF_TOTAL_OUTPUT_CAP deselects whole placement instances (a graded
-    // size, a piece); both parsers receive the same list, so the pieces they
-    // produce stay index-aligned. Instance 0 (direct ENTITIES) is one unit.
-    const excluded = new Set(Array.isArray(options && options.excludeInstances) ? options.excludeInstances : []);
-    stats.excludedInstances = 0;
     if (!segments || !segments.length) return { pieces: [], patterns: [], stats };
 
     const byInstance = new Map();
@@ -738,15 +728,7 @@
 
     const pieces = [];
     const patterns = [];
-    // Phase 5: per-instance progress for the worker (one call per instance,
-    // including excluded ones, so `done` reaches `total`). Pure — a callback
-    // the caller owns; the synchronous path passes none.
-    const onProgress = (options && typeof options.onProgress === 'function') ? options.onProgress : null;
-    let progressDone = 0;
     for (const instance of instanceKeys) {
-      progressDone += 1;
-      if (onProgress) onProgress(progressDone, instanceKeys.length);
-      if (excluded.has(instance)) { stats.excludedInstances += 1; continue; }
       const idxs = byInstance.get(instance);
       const tol = dxfPatternInstanceTolerance(segments, idxs);
       const result = dxfClassifyInstance(segments, idxs, tol, instance, options);
@@ -755,29 +737,31 @@
         stats.legacyInstances += 1;
         const legacyPieces = dxfBuildPiecesLegacy(idxs.map(i => segments[i]), tol);
         for (const piece of legacyPieces) {
+          const lines = dxfPatternLineCount(piece, piece.keys());
           pieces.push(piece);
           patterns.push({
             kind: 'legacy', instance, boundaryLayer: null, orphan: false,
-            outlineSegCount: 0, segCount: piece.length, totalSegCount: piece.length,
-            classCounts: { unknown: piece.length }, notchChains: 0,
+            outlineSegCount: 0, segCount: lines, totalSegCount: lines,
+            classCounts: { unknown: lines }, notchChains: 0,
             dropped: { exact: 0, qvTwin: 0 }, droppedByClass: {},
           });
           stats.legacyPieces += 1;
-          stats.keptSegments += piece.length;
+          stats.keptSegments += lines;
         }
         continue;
       }
       stats.classifiedInstances += 1;
       for (const pat of result.patterns) {
         const kept = pat.keptSegIdxs || pat.segIdxs;
+        const keptLines = dxfPatternLineCount(segments, kept);
         pieces.push(kept.map(i => segments[i]));
-        stats.keptSegments += kept.length;
+        stats.keptSegments += keptLines;
         stats.dropped.exact += pat.dropped.exact;
         stats.dropped.qvTwin += pat.dropped.qvTwin;
         for (const key of Object.keys(pat.droppedByClass)) dxfPatternBump(stats.droppedByClass, key, pat.droppedByClass[key]);
         const record = {
           kind: pat.kind, instance, boundaryLayer: pat.boundaryLayer, orphan: pat.orphan,
-          outlineSegCount: pat.outlineSegCount, segCount: kept.length, totalSegCount: pat.segIdxs.length,
+          outlineSegCount: pat.outlineSegCount, segCount: keptLines, totalSegCount: dxfPatternLineCount(segments, pat.segIdxs),
           classCounts: pat.classCounts, notchChains: pat.notchChains,
           dropped: pat.dropped, droppedByClass: pat.droppedByClass,
         };

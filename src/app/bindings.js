@@ -159,37 +159,6 @@
     el.autoApplyBtn.addEventListener('click', () => applyApprovedDraftsAtomically());
     el.autoDiscardBtn.addEventListener('click', () => discardAutoDrafts());
     el.autoResetBoardBtn.addEventListener('click', () => resetWorkingBoard());
-    el.autoLearnToggleBtn.addEventListener('click', () => setLearningEnabled(!isLearningEnabled()));
-    if (el.learningToolbarBtn) {
-      el.learningToolbarBtn.addEventListener('click', () => {
-        if (!isLearningEnabled()) {
-          setLearningEnabled(true);
-          showToast('Learning is ON. Correct an Auto line, then Save project + evidence.');
-          return;
-        }
-        openLearningDataDialog();
-      });
-    }
-    if (el.viewLearningDataItem) {
-      el.viewLearningDataItem.addEventListener('click', () => {
-        openLearningDataDialog();
-      });
-    }
-    if (el.resetResidualsItem) {
-      el.resetResidualsItem.addEventListener('click', () => {
-        resetLearning();
-      });
-    }
-    if (el.resetMeaningsCurrentItem) {
-      el.resetMeaningsCurrentItem.addEventListener('click', () => {
-        resetPomMeanings('current');
-      });
-    }
-    if (el.resetMeaningsAllItem) {
-      el.resetMeaningsAllItem.addEventListener('click', () => {
-        resetPomMeanings('all');
-      });
-    }
     if (el.styleIdInput) {
       el.styleIdInput.addEventListener('input', () => {
         state.styleId = el.styleIdInput.value.trim();

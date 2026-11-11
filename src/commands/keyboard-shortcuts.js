@@ -1,9 +1,13 @@
 // Manual-mode keyboard shortcut router. Source part for app.js.
 // Run `npm run build` after editing.
 //
-// onKeyDown is the flat if-chain for every board shortcut (undo/redo,
-// save/open, arrow nudges, tool picks, board clears, exports, Escape); it
-// calls into selection.js, canvas-tools.js, line-nudge.js and the auto/
+// Stable single-key and chord shortcuts (tool picks, board clears, exports,
+// Auto steps, page navigation) are declared once in command-registry.js and
+// dispatched first. onKeyDown keeps the rest: continuous gestures (arrow
+// nudges, Tab point cycling, Space pan, eraser brush stepping, Escape) and the
+// few chords whose behaviour here still differs from their registry command
+// (undo/redo, save/open, select-all, copy, reflect, fit, Add Image, lock-all).
+// It calls into selection.js, canvas-tools.js, line-nudge.js and the auto/
 // render/ clusters. onKeyUp releases continuous Space/Shift modifiers.
 
   function onKeyDown(e) {
@@ -120,26 +124,13 @@
     }
 
     // US-027: Tab picks which point the arrows move — whole line → start →
-    // (mid point on curves) → end. Shift+Tab cycles backwards. Only fires
-    // with a line selected, so field-to-field tabbing keeps working.
+    // end → bend handles. Shift+Tab cycles backwards. Only fires with a line
+    // selected, so field-to-field tabbing keeps working.
     if (!isMeta && e.key === 'Tab' && state.appMode !== 'auto' && state.selection.kind === 'annotation') {
       const ann = getSelectedAnnotation();
       if (ann) {
         e.preventDefault();
         cycleNudgePart(ann, e.shiftKey ? -1 : 1);
-        return;
-      }
-    }
-
-    // Auto-Mode step shortcuts mirror the "1 Detect · 2 Generate · 3 Review"
-    // flow chips: 1 = Detect, 2 = Generate Drafts, 3 = Apply Lines. Clicking the
-    // button (rather than calling the handler) respects its disabled + hidden
-    // (recovery-only) state, so a step can't fire before it's available.
-    if (!isMeta && state.appMode === 'auto' && (key === '1' || key === '2' || key === '3')) {
-      const btn = key === '1' ? el.autoDetectBtn : key === '2' ? el.autoGenerateBtn : el.autoApplyBtn;
-      if (btn && !btn.disabled && btn.offsetParent !== null) {
-        e.preventDefault();
-        btn.click();
         return;
       }
     }
@@ -201,30 +192,10 @@
       return;
     }
 
-    if (!isMeta && key === 's') {
-      e.preventDefault();
-      setTool('select');
-      return;
-    }
-
-    // H shows/hides the Measurements side panel (same as the toolbar button).
-    if (!isMeta && key === 'h') {
-      e.preventDefault();
-      toggleSpecPanel();
-      return;
-    }
-
     // A opens the Add Image file picker (same as the toolbar button).
     if (!isMeta && key === 'a') {
       e.preventDefault();
       el.imageFileInput.click();
-      return;
-    }
-
-    // G opens the Grading dialog (same as the toolbar button).
-    if (!isMeta && key === 'g') {
-      e.preventDefault();
-      openGradingDialog();
       return;
     }
 
@@ -233,83 +204,6 @@
     if (!isMeta && key === 'l') {
       e.preventDefault();
       toggleAllImagesLock();
-      return;
-    }
-
-    // Board-level clears — both work in Auto Mode (this is an auto-only
-    // build) and are one history step, so Undo restores what they remove.
-    //   R — reset the whole working board (photo + lines + drafts). Same as
-    //       the Reset Board button; it keeps its own confirm dialog.
-    //   D — delete every POM line (applied + drafts) but keep the photo, so
-    //       the TD can re-Generate on the same sketch.
-    if (!isMeta && key === 'r') {
-      e.preventDefault();
-      resetWorkingBoard();
-      return;
-    }
-    if (!isMeta && key === 'd') {
-      e.preventDefault();
-      clearAllLinesKeepImage();
-      return;
-    }
-
-    // In Auto Mode, manual creation/eraser shortcuts must not steal the
-    // tool away from select. The project annotations are locked.
-    if (state.appMode !== 'auto') {
-      if (!isMeta && key === '0') {
-        e.preventDefault();
-        setTool('straight');
-        return;
-      }
-
-      if (!isMeta && (key === 'b' || key === 'c')) {
-        e.preventDefault();
-        setTool('curved');
-        return;
-      }
-
-      // Eraser moved E → X (TD request 2026-07-10: E now exports Excel).
-      if (!isMeta && key === 'x' && state.images.length > 0) {
-        e.preventDefault();
-        setTool('eraser');
-        return;
-      }
-
-      // US-092: T = Text note. No image requirement, unlike the eraser — a
-      // note may be a title or a general remark on an empty board.
-      if (!isMeta && key === 't') {
-        e.preventDefault();
-        setTool('text');
-        return;
-      }
-    }
-
-    // E exports the Excel measurement spec (same as the toolbar button;
-    // opens the size picker first). Manual-only, matching the button's
-    // manual-only class and the Cmd/Ctrl+Shift+C copy-image precedent.
-    if (!isMeta && key === 'e' && state.appMode !== 'auto') {
-      e.preventDefault();
-      void exportSpecXlsx();
-      return;
-    }
-
-    // P exports the PDF, I imports a PPTX — mirror the manual-only toolbar
-    // buttons (parity with E = Export Excel). Click the button so behavior
-    // (dialogs, disabled state) matches exactly.
-    if (!isMeta && key === 'p' && state.appMode !== 'auto') {
-      e.preventDefault();
-      el.exportPdfBtn.click();
-      return;
-    }
-    if (!isMeta && key === 'i' && state.appMode !== 'auto') {
-      e.preventDefault();
-      el.importPptxBtn.click();
-      return;
-    }
-
-    if (!isMeta && key === 'n') {
-      e.preventDefault();
-      toggleLabels();
       return;
     }
 

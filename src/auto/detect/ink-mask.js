@@ -34,13 +34,10 @@
     };
   }
 
+  // The defaults, overridden only by an explicit options.params (tests and
+  // tuning). Nothing is learned or persisted between runs.
   function activeDetectionParams(options) {
-    const sources = [];
-    if (!(options && options.skipLearningParams) && typeof getLearnedDetectionParams === 'function') {
-      sources.push(getLearnedDetectionParams());
-    }
-    if (options && options.params) sources.push(options.params);
-    return normalizeDetectionParams(Object.assign({}, ...sources));
+    return normalizeDetectionParams(options && options.params);
   }
 
   // Side-effect-only: reads RGBA pixels off the source image via an offscreen
@@ -150,29 +147,8 @@
     // detectSketchFromImage.
     let inkBackend = null;
 
-    // Phase 3 seam: a registered SAM-like segmentation adapter gets first
-    // refusal. Default is null (see registerSegmentationAdapter), so this
-    // branch is skipped entirely in normal offline runs. An adapter mask keeps
-    // the in-house components path (inkBackend stays null) unless the adapter
-    // also exposes connectedComponentsWithStats — same rule as the legacy path.
-    const adapter = getSegmentationAdapter();
-    if (adapter) {
-      try {
-        const adapted = adapter(src, { targetWidth: DETECTION_TARGET_WIDTH, minSize: 32 });
-        if (adapted && adapted.mask && adapted.stats) {
-          cvAnalysis = adapted;
-          if (!cvAnalysis.engine) cvAnalysis.engine = 'external-segmentation-adapter';
-          inkBackend = (typeof adapted.connectedComponentsWithStats === 'function') ? adapted : null;
-        }
-      } catch (err) {
-        console.warn('[Auto Mode] segmentation adapter failed; using built-in detector:', err);
-        cvAnalysis = null;
-        inkBackend = null;
-      }
-    }
-
     const cv = getCvApi();
-    if (!cvAnalysis && cv && typeof cv.createInkMaskFromImage === 'function') {
+    if (cv && typeof cv.createInkMaskFromImage === 'function') {
       try {
         cvAnalysis = cv.createInkMaskFromImage(src, { targetWidth: DETECTION_TARGET_WIDTH, minSize: 32 });
         if (cvAnalysis && cvAnalysis.mask && cvAnalysis.stats) inkBackend = cv;

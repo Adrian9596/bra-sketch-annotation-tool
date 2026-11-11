@@ -331,9 +331,8 @@
       // re-seeds them from back-view coordinates and leaves that role correct.
       // But on a FRONT-ONLY sketch the back branch never runs, so these anchors
       // carry the FRONT coordinates seeded just above while still labelled
-      // 'back' — which mislabels their view (POM 11) and, worse, files their
-      // learning residuals in the side-*|back bucket where they collide with
-      // genuine back-view corrections. Tag them to the view they came from.
+      // 'back' — which mislabels their view (POM 11). Tag them to the view they
+      // came from.
       if (!backView) {
         roleByKind['side-top'] = 'front_outer';
         roleByKind['side-bottom'] = 'front_outer';

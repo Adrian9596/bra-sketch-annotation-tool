@@ -1,6 +1,6 @@
 // Editable callout labels: positions a floating textarea (el.labelEditor)
-// over a canvas-space point, then commits or cancels the edit — firing the
-// Phase 2/3 learning-sample hook on commit. worldToScreen, the canvas ->
+// over a canvas-space point, then commits or cancels the edit. worldToScreen,
+// the canvas ->
 // screen coordinate helper it needs, lives here and is shared with the
 // renderers. The two el.labelEditor listeners are wired in bindUI()
 // (src/app/bindings.js).
@@ -66,14 +66,6 @@
       if (ann.text !== next) {
         ann.text = next;
         pushHistoryIfChanged();
-      }
-      // Phase 2/3 learning hook. POM 1–5 record silently. POM 6+ with
-      // no confirmed meaning surface a one-click picker. Unknown labels
-      // and re-commits without endpoint changes return 'skipped'.
-      const evalResult = evaluateManualPomSample(ann);
-      if (evalResult.status === 'recorded') {
-        showToast('POM ' + ann.learnSamplePom + ' learning sample saved');
-        updateUI();
       }
     }
     updateUI();

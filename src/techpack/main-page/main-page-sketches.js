@@ -80,7 +80,7 @@
     mpRenderSketches();
     // The Preview & Export sheet shows the same slots; repaint it if that is
     // the page in view (same rule restoreSnapshot follows).
-    if (state.activePage === 'preview' && typeof renderPreviewPage === 'function') renderPreviewPage();
+    if (state.activePage === 'preview') renderPreviewPage();
     pushHistoryIfChanged();
   }
 

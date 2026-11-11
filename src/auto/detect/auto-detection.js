@@ -75,11 +75,8 @@
     const contours = extractContours(seg, { mark });
 
     // Stage 4: geometry analysis (view roles, axis, band/cup rows, seams).
-    // The contour-evidence bundle is threaded in so the geometry stage CAN read
-    // endpoints / curve candidates (Phase 4, item 3); geometry decisions are
-    // unchanged in this phase — it is availability, not forced consumption.
     const geometry = analyzeGeometry(seg, {
-      detectionParams, mark, stageTimingsMs, contourEvidence: contours,
+      detectionParams, mark, stageTimingsMs,
       singleView: !!(opts && opts.singleView),
     });
     if (geometry.earlyReturn) return geometry.earlyReturn;
@@ -107,18 +104,16 @@
 
   // ---- Stage 3: contour / topology extraction (Engineering Workflow Phase 4) ----
   // Input: the cleaned mask from segmentSketch. Output: a clean CONTOUR-EVIDENCE
-  // bundle — { contours, endpoints, junctions, corners, curves, strokeStats }
-  // (plus the raw junctionMap handle for back-compat). This is deliberately a
+  // bundle — { endpoints, junctions, corners, strokeStats } (plus the raw
+  // junctionMap handle for back-compat). This is deliberately a
   // bag of SHAPE EVIDENCE, not geometry decisions: nothing here is an anchor or
   // a garment-level verdict, and downstream stages only READ it. Keeping the
   // raw contour data separate from technical meaning is the whole point of the
   // phase (see Engineering Workflow.md §3, "Keep raw contour data separate").
   //
-  // Two fields are populated lazily by the deferred Potrace edge pass (its
-  // duration is non-deterministic, so it runs at the orchestrator edge, not in
-  // this pure stage): `contours` (traced outlines → detection.contours) and
-  // `curves` (reusable curve candidates → detection.curveCandidates, built by
-  // buildContourCurveCandidates). They are null here by design.
+  // Traced outlines are NOT part of it: the Potrace pass's duration is
+  // non-deterministic, so it runs at the orchestrator edge, not in this pure
+  // stage, and writes detection.contours directly.
   // Auxiliary data only — a failure here must never sink the detection.
   function extractContours(seg, ctx) {
     const _stageMark = ctx.mark;
@@ -144,15 +139,10 @@
     const topology = buildContourTopology(junctionMap);
 
     return {
-      // Raw traced outlines — filled by the deferred Potrace edge pass.
-      contours: null,
       // Skeleton topology, split so consumers don't re-filter by type.
       junctions: topology.junctions,
       endpoints: topology.endpoints,
       corners: topology.corners,
-      // Reusable curve candidates — populated from the trace (see
-      // buildContourCurveCandidates) once detection.contours exists.
-      curves: null,
       // Deterministic skeleton stroke statistics (px, iterations, counts).
       strokeStats: topology.strokeStats,
       // Internal handle: detectLandmarks maps this to the unchanged
@@ -163,8 +153,8 @@
 
   // Phase 4: build a compact, serializable summary of the contour-evidence
   // bundle for the detection result. Deterministic skeleton-derived counts +
-  // stroke stats; the trace-dependent fields (traced / contourCount /
-  // curveCandidateCount) start empty here and are filled at the Potrace edge.
+  // stroke stats; the trace-dependent fields (traced / contourCount) start
+  // empty here and are filled at the Potrace edge.
   function buildContourEvidenceSummary(contourEvidence) {
     const ce = contourEvidence || {};
     const stroke = ce.strokeStats || null;
@@ -176,6 +166,5 @@
       // Raw traced outlines are optional shape evidence attached at the edge.
       traced: false,
       contourCount: null,
-      curveCandidateCount: 0,
     };
   }

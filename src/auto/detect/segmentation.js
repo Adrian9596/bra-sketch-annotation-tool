@@ -1,36 +1,12 @@
 // Stage 2 of the detection pipeline: segmentation. Turns the ink analysis from
 // ink-mask.js into the cleaned foreground mask the rest of the pipeline reads.
 //
-// Holds the pluggable external-segmenter registry (the adapter seam consumed by
-// src/debug/debug-api.js's test hooks), the backend-id classifier, the
-// deterministic segmentation-quality score and its serializable view, the mask
-// statistics / bounds helpers, the in-house connected-component ink filter, and
-// the segmentSketch stage itself.
+// Holds the backend-id classifier, the deterministic segmentation-quality score
+// and its serializable view, the mask statistics / bounds helpers, the in-house
+// connected-component ink filter, and the segmentSketch stage itself.
 //
 // Depends on ink-mask.js and math-utils.js.
 // Source part for app.js. Run `npm run build` after editing.
-
-  // -------- Segmentation adapter seam (Engineering Workflow Phase 3, item 4) --------
-  //
-  // A single, null-guarded plug point for a future SAM-like segmenter. The
-  // contract mirrors the built-in ink-mask adapters (createInkMaskFromImage):
-  // an adapter receives the source bitmap + options and returns the SAME ink
-  // analysis shape { engine, width, height, total, mask, stats, threshold,
-  // luminanceThreshold, backgroundLum, ... }. When registered it is tried
-  // first in buildInkAnalysisFromImage and, on any failure or bad shape, the
-  // pipeline falls back to OpenCV / legacy exactly as before.
-  //
-  // HARD OFFLINE RULE: an adapter MUST run fully locally. It may wrap a
-  // vendored/WASM model, but it MUST NOT make any network call that carries
-  // sketch or measurement data. Nothing here reaches the network; the default
-  // is null, so the runtime is unchanged until a caller opts in.
-  let externalSegmentationAdapter = null;
-  function registerSegmentationAdapter(fn) {
-    externalSegmentationAdapter = (typeof fn === 'function') ? fn : null;
-    return !!externalSegmentationAdapter;
-  }
-  function clearSegmentationAdapter() { externalSegmentationAdapter = null; }
-  function getSegmentationAdapter() { return externalSegmentationAdapter; }
 
   // Normalize the many possible ink-mask engine strings into a small, stable
   // set of backend ids so downstream code / debug summaries never have to
@@ -40,7 +16,6 @@
     if (/^real-opencv/.test(e)) return 'opencv-real';
     if (/^free-opencv/.test(e)) return 'opencv-free';
     if (/^offline-vision-legacy/.test(e)) return 'legacy';
-    if (/^external/.test(e)) return 'external-adapter';
     if (/^synthetic/.test(e)) return 'synthetic';
     return e || 'unknown';
   }

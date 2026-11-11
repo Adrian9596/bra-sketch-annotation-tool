@@ -497,7 +497,7 @@
         if (!a) continue;
         restoreAnnotationMoveGeometry(a, source);
         moveAnnotation(a, aligned.dx, aligned.dy);
-        if (isTDReviewDraft(a)) markDraftTouchedByTD(a);
+        markDraftTouchedByTD(a);
       }
       state.smartAlignGuides = aligned.guides;
       interaction.smartAlignGuides = aligned.guides;
@@ -592,7 +592,7 @@
         ann.label.x += dx;
         ann.label.y += dy;
         ann.labelManual = true;
-        if (isAutoDraft(ann) && state.appMode === 'auto') markDraftTouchedByTD(ann);
+        if (state.appMode === 'auto') markDraftTouchedByTD(ann);
         interaction.changed = true;
         interaction.prevWorld = world;
         requestRender();
@@ -614,7 +614,7 @@
       // OTHER lines cross (see computeSmartIntersectionSnapForHandle).
       const snap = computeSmartIntersectionSnapForHandle(ann, interaction.part, target, e.altKey);
       dragHandle(ann, interaction.part, snap.point, interaction.prevWorld, e.altKey);
-      if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+      markDraftTouchedByTD(ann);
       interaction.changed = true;
       interaction.prevWorld = snap.point;
       state.smartAlignGuides = snap.guide ? [snap.guide] : [];
@@ -752,24 +752,14 @@
       if (interaction.type === 'drag-anchor') {
         const anchor = getAnchorById(interaction.id);
         // U2: pull the released anchor onto the nearest sketch ink, unless
-        // the TD holds ⌥ to place it freely. Snap BEFORE the residual
-        // capture below so the learning loop sees the final position.
+        // the TD holds ⌥ to place it freely.
         if (anchor && !(e && e.altKey)) {
           const snapped = snapAnchorToInk(anchor);
           if (snapped && moveAnchorBy(anchor, snapped.x - anchor.x, snapped.y - anchor.y)) {
             maybeToastSnapHint();
           }
         }
-        // Learning-loop capture: log the (origin → final) anchor residual
-        // exactly once per drag commit. We do this here, not on every
-        // mousemove, so micro-jitter and aborted drags never reach the
-        // bucket. recordAnchorResidual self-filters sub-1px deltas.
-        // Gated on interaction.changed, NOT on the snapshot fingerprint:
-        // anchors are not part of history snapshots, so a pure anchor drag
-        // never changes the fingerprint and the old gate silently dropped
-        // every residual and anchor_dragged event.
-        //
-        // The panel is also refreshed HERE, unconditionally. moveAnchorBy
+        // The panel is refreshed HERE, unconditionally. moveAnchorBy
         // re-syncs the drafts (anchor-drag-sync.js) and that can drop a draft's
         // tdApproved and change its drawability / confidence — all of which the
         // spec panel and the Apply button render, and none of which used to
@@ -781,39 +771,11 @@
         // first place. Once per commit, never per mousemove — updateUI rebuilds
         // the whole spec table, against a re-sync deliberately kept at
         // 0.05-0.08 ms.
-        if (interaction.learnOrigin) {
-          if (anchor && anchor.kind === interaction.learnOrigin.kind) {
-            recordAnchorResidual(
-              anchor.kind,
-              anchor.x - interaction.learnOrigin.x,
-              anchor.y - interaction.learnOrigin.y,
-              anchor
-            );
-            recordAutoTelemetryEvent('anchor_dragged', {
-              sourceImageId: anchor.sourceImageId,
-              anchor_id: anchor.id,
-              anchor_kind: anchor.kind,
-            });
-          }
-        }
+        updateUI();
       }
-      if (interaction.type === 'drag-anchor') updateUI();
       const before = interaction.beforeFingerprint;
       const after = snapshotFingerprint(makeSnapshot());
-      if (before !== after) {
-        const changedAnn = interaction.id != null ? getAnnotationById(interaction.id) : null;
-        pushHistoryIfChanged();
-        if (state.appMode === 'manual'
-            && changedAnn
-            && isAutoDraft(changedAnn)
-            && (interaction.type === 'drag-annotation' || interaction.type === 'drag-handle')) {
-          const evalResult = evaluateManualPomSample(changedAnn, { allowAuto: true });
-          if (evalResult.status === 'recorded') {
-            showToast('POM ' + evalResult.pom + ' learning sample saved from TD edit.');
-            updateUI();
-          }
-        }
-      }
+      if (before !== after) pushHistoryIfChanged();
     }
 
     state.interaction = null;
@@ -1182,20 +1144,10 @@ function resizeImagesFromCorner(interaction, world) {
     } else if (part === 'end') {
       ann.end = clonePoint(world);
       moveBy(ann.control2);
-    } else if (part === 'midPoint' && ann.type === 'curved') {
-      // The middle is a real anchor now: move it and BOTH its handles together
-      // so the whole joint slides and the two segments follow.
-      ann.midPoint = clonePoint(world);
-      moveBy(ann.midHandleIn);
-      moveBy(ann.midHandleOut);
     } else if (part === 'control1' && ann.type === 'curved' && ann.control1) {
       ann.control1 = clonePoint(world); // start handle — bends segment 1 only
     } else if (part === 'control2' && ann.type === 'curved' && ann.control2) {
       ann.control2 = clonePoint(world); // end handle — bends segment 2 only
-    } else if (part === 'midHandleIn' && ann.type === 'curved' && ann.midHandleIn) {
-      ann.midHandleIn = clonePoint(world); // middle handle toward the start
-    } else if (part === 'midHandleOut' && ann.type === 'curved' && ann.midHandleOut) {
-      ann.midHandleOut = clonePoint(world); // middle handle toward the end
     }
 
     if (!ann.labelManual) {

@@ -1,7 +1,7 @@
 // Core app state shape: shared constants, the RULES-derived POM/anchor
 // aliases, and the `state` object itself. DOM handles live in dom-refs.js,
-// boot sequencing in bootstrap.js, URL-driven test/demo bootstrap in
-// app/url-bootstrap.js.
+// boot sequencing in bootstrap.js, the URL-driven ground-truth labeling
+// boot path (?label=1) in app/url-bootstrap.js.
 // Source part for app.js. Run `npm run build` after editing.
 
   const LINE_COLORS = {
@@ -95,7 +95,6 @@
     // US-095: visual vector construction shapes. Deliberately separate from
     // annotations, which are the measurement/POM collection.
     graphics: [],
-    deletedAutoAnnotations: [],
     // US-047: POM labels whose drawn line the TD deleted. Excluded from the
     // exported spec exactly like a hidden line (TD: "delete = hide"), until a
     // line with that label is redrawn. Persisted with the project + history.
@@ -217,9 +216,8 @@
     // Session-only UI state: never serialized with projects or history.
     visionEngine: 'warming',
 
-    // Phase 3.5: per-project style code. Drives meaning store scoping
-    // (POM 6+ meanings are keyed by this). Empty string falls back to
-    // a shared '__default__' bucket. Saved with the project.
+    // Per-project style code. Groups saves by style in the project Library.
+    // Saved with the project.
     styleId: '',
 
     // Per-POM spec sheet targets (Size L nominal + tolerance) shown in
@@ -364,11 +362,10 @@
       // .setEnabled(true) or ?cvDebug=1), runOfflineDetection asks the pure
       // pipeline to attach an intermediate-state object to the returned
       // detection. The last capture is mirrored here so it can be exported
-      // / downloaded independently of the live detection object.
+      // independently of the live detection object.
       cvDebug: {
         enabled: false,
         lastDebug: null,
-        lastExport: null,
       },
     };
   }

@@ -2,9 +2,6 @@
 // (via an offscreen canvas), parses the SVG it emits into normalized contour
 // paths, and fits a cubic through the traced arc between two POM endpoints.
 //
-// Also holds buildContourCurveCandidates, the one classification pass that turns
-// traced paths into the reusable curve-candidate list on the detection object.
-//
 // matchContourForCurve is called cross-file from
 // src/auto/drafts/pom-fixture-builder.js behind a `typeof` guard, so its name is
 // part of the contract. Nothing else in the detector needs to know how an SVG
@@ -289,40 +286,4 @@
       for (let k = 0; k <= backwardLen; k += 1) arc.push(samples[(a - k + n) % n]);
     }
     return arc;
-  }
-
-  // Phase 4: normalize traced contour paths into a reusable curve-candidate
-  // list. One classification pass shared by every downstream consumer (cup
-  // inner seam, gore bottom, and future geometry/landmark curve reads) instead
-  // of each re-scanning contours.paths ad hoc. Pure SHAPE evidence: bbox +
-  // orientation + span flags + a back-reference to the source path index (full
-  // samples remain available via samplePathPoints on demand, so this list stays
-  // lean on the session-only detection object). No garment meaning is baked in.
-  function buildContourCurveCandidates(traced, detection) {
-    if (!traced || !Array.isArray(traced.paths)) return [];
-    const axisX = detection && detection.axisX != null ? detection.axisX : null;
-    const round6 = (v) => Math.round(v * 1e6) / 1e6;
-    const out = [];
-    for (let i = 0; i < traced.paths.length; i += 1) {
-      const p = traced.paths[i];
-      const b = p && p.bbox;
-      if (!b) continue;
-      const width = b.width, height = b.height;
-      const orientation = width >= height * 1.6 ? 'horizontal'
-        : height >= width * 1.6 ? 'vertical'
-        : 'arc';
-      const minX = b.x, maxX = b.x + width;
-      const spansAxisX = axisX != null && minX < axisX && maxX > axisX;
-      out.push({
-        id: i,
-        pathIndex: i,
-        bbox: { x: round6(b.x), y: round6(b.y), width: round6(width), height: round6(height) },
-        orientation,
-        lengthNorm: round6(Math.hypot(width, height)),
-        spansAxisX,
-        center: { x: round6(minX + width / 2), y: round6(b.y + height / 2) },
-        segmentCount: Array.isArray(p.segments) ? p.segments.length : 0,
-      });
-    }
-    return out;
   }

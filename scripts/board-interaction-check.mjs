@@ -423,25 +423,7 @@ async function main() {
   await s.eval(`window.__BI_GATE = ${JSON.stringify(served.radii)}; 'ready'`);
   console.log('board-interaction-check: gate ' + JSON.stringify(served.radii));
 
-  // Learning OFF for the whole run. Every gesture below is a real TD edit as
-  // far as the app is concerned: an applied POM dragged in Manual Mode feeds
-  // evaluateManualPomSample, so a suite that drives ~200 of them would pour
-  // synthetic corrections into the calibration store and quietly bias
-  // detection for every later run — and destabilise learning-tests with it.
-  //
-  // Not restored afterwards, deliberately. Chrome runs on a throwaway
-  // --user-data-dir, so the store this writes to is per-run localStorage and
-  // cannot outlive the process — and an s.eval() queued as a cleanup task runs
-  // AFTER s.close(), where it never resolves and hangs the suite instead of
-  // finishing it. Turning it off is about keeping THIS run deterministic:
-  // learning bias would otherwise shift the anchors the assertions press on.
-  const learningWasOn = await s.eval(`(() => {
-    const l = window.__braAutoModeDebug.learning;
-    const was = l.isEnabled();
-    l.setEnabled(false);
-    return was;
-  })()`);
-  console.log(`board-interaction-check: app ready (learning off for the run, was ${learningWasOn ? 'on' : 'off'})`);
+  console.log('board-interaction-check: app ready');
 
   // ---- Set the board up exactly as a TD sees it after Apply Lines ----
   await s.eval(`(async () => {
@@ -459,8 +441,7 @@ async function main() {
 
   // ---- Auto Mode: a jitter-click must not move an anchor ----
   // Higher stakes than a line: a moved anchor is snapped to the nearest ink on
-  // mouseup AND filed as a TD correction the learner trains on, so an accident
-  // here teaches the model something nobody did. Runs BEFORE Apply, because
+  // mouseup, so an accident moves it somewhere nobody chose. Runs BEFORE Apply, because
   // Apply consumes the anchors and loadProject does not carry them — placing it
   // later made it skip silently, which is worse than not having it.
   const anchorJiggle = await s.eval(`(async () => {

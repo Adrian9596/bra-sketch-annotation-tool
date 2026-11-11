@@ -1,5 +1,5 @@
 // Library dialog: "By Style" card-grid rendering — one card per styleId,
-// aggregated counts + evidence/meaning badges.
+// aggregated counts.
 // Source part for app.js. Run `npm run build` after editing.
 
   function renderStyleGridView(container, entries, handlers) {
@@ -20,23 +20,6 @@
     });
   }
 
-  function styleMemoryBadges(styleId) {
-    let evidenceCount = 0;
-    let meaningCount = 0;
-    if (styleId && typeof summarizeStyleEvidence === 'function') {
-      try {
-        const s = summarizeStyleEvidence(styleId);
-        evidenceCount = (s && s.totalRecords) || 0;
-      } catch (err) { /* memory store may be uninitialized in test contexts */ }
-    }
-    if (styleId && typeof listConfirmedMeanings === 'function') {
-      try {
-        meaningCount = (listConfirmedMeanings(styleId) || []).length;
-      } catch (err) { /* same as above */ }
-    }
-    return { evidenceCount, meaningCount };
-  }
-
   function buildStyleCard(group, handlers) {
     const styleId = group.styleId;
     const latest = group.entries[0] || null;
@@ -44,7 +27,6 @@
     const totalLines = group.entries.reduce((sum, e) => sum + (e.annotationCount || 0), 0);
     const totalImages = group.entries.reduce((sum, e) => sum + (e.imageCount || 0), 0);
     const totalConfirmedPoms = group.entries.reduce((sum, e) => sum + (e.confirmedPomCount || 0), 0);
-    const { evidenceCount, meaningCount } = styleMemoryBadges(styleId);
 
     const row = document.createElement('div');
     row.className = 'library-style-card';
@@ -107,17 +89,6 @@
     if (totalConfirmedPoms) countParts.push(totalConfirmedPoms + ' confirmed POM' + (totalConfirmedPoms === 1 ? '' : 's'));
     counts.textContent = countParts.join('  ·  ');
     info.appendChild(counts);
-
-    if (styleId && (evidenceCount > 0 || meaningCount > 0)) {
-      const badges = document.createElement('div');
-      badges.style.display = 'flex';
-      badges.style.gap = '6px';
-      badges.style.marginTop = '4px';
-      badges.style.flexWrap = 'wrap';
-      if (meaningCount > 0) badges.appendChild(buildBadge(meaningCount + ' meaning' + (meaningCount === 1 ? '' : 's'), '#dbeafe', '#1e40af'));
-      if (evidenceCount > 0) badges.appendChild(buildBadge(evidenceCount + ' evidence', '#dcfce7', '#166534'));
-      info.appendChild(badges);
-    }
     row.appendChild(info);
 
     const actions = document.createElement('div');

@@ -111,7 +111,6 @@
       // ring so the TD can tell "this one moves by itself" from a normal
       // pin. The ring disappears once the anchor is pinned by a direct drag.
       if (!anchor.derivedPinned
-          && typeof anchorDerivationForKind === 'function'
           && anchorDerivationForKind(anchor.kind)) {
         ctx.strokeStyle = 'rgba(15, 23, 42, 0.45)';
         ctx.lineWidth = 1 / z;

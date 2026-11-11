@@ -113,25 +113,21 @@ fixtures, which aren't published here. They run in the private repo.
 **generated**, not written: `npm run build` concatenates ~150 single-concern
 files from `src/` in the order declared in `scripts/source-parts.mjs`, inlining
 the rule JSON. **Edit `src/*` and rebuild; never edit `app.js` directly**, or
-your change is overwritten on the next build. The build also emits one Web
-Worker bundle, generated too — keep it next to `app.js`: `dxf-worker.js` (the
-pure DXF parse layer, so a large pattern DXF parses off the main thread with a
-progress dialog and Cancel).
+your change is overwritten on the next build. It is the only generated file.
 
 | Directory | What lives there |
 |---|---|
 | `auto/detect/` | The detection pipeline: ink mask, view boxes, segmentation, geometry, the per-feature landmark finders, and the two heavily-tuned seam detectors |
 | `auto/anchors/` | Turning detected landmarks into draggable anchors, then deriving and dragging them |
 | `auto/drafts/` | Anchors → the 18 POM rows → drafts → applied lines |
-| `auto/learning/` | The optional, local-only calibration and evidence stores |
 | `manual/` | The Manual-Mode input stack: selection, pointer events, touch, tools, shortcuts |
 | `render/` | The canvas draw loop, overlays, and the PDF / Excel exporters |
 | `ui/` | The measurements panel, the tech-pack pages, and every dialog |
 | `project/` | Save / open / autosave / undo history / the project library |
 
 The 18 POMs and the anchor schema are a versioned contract in
-`auto_mode_rules/*.json`. The learning layer only biases where anchors start —
-it never edits that JSON.
+`auto_mode_rules/*.json`. Nothing is learned between runs — detection reads
+only the image and that JSON.
 
 ### One shared scope
 

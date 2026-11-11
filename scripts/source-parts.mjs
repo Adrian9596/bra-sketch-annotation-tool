@@ -14,8 +14,6 @@ export const SOURCE_PARTS = [
   'src/core/clone.js',
   'src/core/browser-io.js',
   'src/measurements/grading/grade-rules.js',
-  'src/auto/telemetry/session-stats.js',
-  'src/auto/telemetry/session-timer.js',
   'src/core/curves.js',
   'src/core/math.js',
   'src/dxf/parse/dxf-path-kernel.js',
@@ -28,15 +26,6 @@ export const SOURCE_PARTS = [
   'src/commands/help-dialog.js',
   'src/measurements/scale-dialog.js',
   'src/auto/ui/auto-exit-dialog.js',
-  'src/auto/learning/ui/save-evidence-dialog.js',
-  'src/auto/learning/ui/learning-data-shared.js',
-  'src/auto/learning/ui/learning-data-tabs.js',
-  'src/auto/learning/ui/learning-data-telemetry.js',
-  'src/auto/learning/ui/learning-data-summary.js',
-  'src/auto/learning/ui/learning-data-corrections.js',
-  'src/auto/learning/ui/learning-data-meanings.js',
-  'src/auto/learning/ui/learning-data-evidence.js',
-  'src/auto/learning/ui/learning-data-dialog.js',
   'src/library/dialog/library-shared.js',
   'src/library/dialog/library-list-view.js',
   'src/library/dialog/library-grid-view.js',
@@ -45,10 +34,8 @@ export const SOURCE_PARTS = [
   'src/measurements/grading/grading-rules-model.js',
   'src/measurements/grading/size-run-dialog.js',
   'src/measurements/export/export-size-dialog.js',
-  'src/dxf/dxf-pattern-picker-dialog.js',
   'src/measurements/grading/grading-dialog.js',
   'src/auto/ui/view-roles-dialog.js',
-  'src/measurements/fusion.js',
   'src/measurements/spec-visibility.js',
   'src/measurements/spec-values.js',
   'src/measurements/spec-row-builders.js',
@@ -118,7 +105,6 @@ export const SOURCE_PARTS = [
   'src/library/shape-stamps.js',
   'src/dxf/dxf-import.js',
   'src/dxf/parse/dxf-native-parser.js',
-  'src/dxf/dxf-worker-client.js',
   'src/dxf/measure/dxf-measure-session.js',
   'src/dxf/measure/dxf-measure-snap.js',
   'src/dxf/measure/dxf-measure-interaction.js',
@@ -165,14 +151,6 @@ export const SOURCE_PARTS = [
   'src/auto/drafts/apply-drafts.js',
   'src/auto/drafts/board-reset.js',
   'src/auto/drafts/generate-drafts-action.js',
-  'src/auto/learning/acceptance-stats.js',
-  'src/auto/learning/calibration-store.js',
-  'src/auto/learning/shadow-detection.js',
-  'src/auto/learning/meaning-store.js',
-  'src/auto/learning/meaning-commit.js',
-  'src/auto/learning/style-evidence-record.js',
-  'src/auto/learning/style-evidence-capture.js',
-  'src/auto/learning/style-evidence-reuse.js',
   'src/debug/debug-export.js',
   'src/debug/debug-api.js',
   'src/board/export/export-pdf.js',
@@ -196,18 +174,20 @@ export const SOURCE_PARTS = [
   'src/app/url-bootstrap.js',
 ];
 
-// US-124 Phase 5 (ADR 0091): the second bundle. dxf-worker.js runs the SAME
-// pure DXF parse layer app.js ships (math, the pattern classifier, the parse
-// layer split out of dxf-import.js, the native measurement parser) plus one
-// worker-only entry part, so a >120-pattern file (or any file the TD asks
-// to route there) parses off the main thread and the result is byte-identical
-// to the synchronous path by construction — same files, same functions.
-// Board code (src/manual/dxf-import.js, the client, dialogs) stays out.
-export const DXF_WORKER_PARTS = [
+// The pure DXF parse layer: every part a DXF parse needs and nothing that
+// touches the Board, the DOM or window. These parts ship inside app.js (they
+// are all in SOURCE_PARTS above); this list exists so the layer stays pure
+// and testable on its own. `npm run check` rejects `state.` / `showToast(` /
+// `window.` in them and requires every src/dxf/parse/*.js to be listed here,
+// and scripts/dxf-notch-assign-check.mjs concatenates them, in this order,
+// into a node:vm bundle. src/core/math.js is listed because the parse layer
+// calls its geometry helpers. (Until 2026-11-10 the same list also built a
+// second bundle, dxf-worker.js, for a Web Worker no real file ever reached —
+// ADR 0105.)
+export const DXF_PARSE_PARTS = [
   'src/core/math.js',
   'src/dxf/parse/dxf-path-kernel.js',
   'src/dxf/parse/dxf-pattern-classify.js',
   'src/dxf/parse/dxf-parse.js',
   'src/dxf/parse/dxf-native-parser.js',
-  'src/dxf/parse/dxf-worker-entry.js',
 ];

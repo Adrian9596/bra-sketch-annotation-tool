@@ -103,7 +103,7 @@
     }
     state.selection.part = 'point' + index + '.point';
     if (!ann.labelManual) ann.label = computeDefaultLabelPosition(ann);
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     pushHistoryIfChanged();
     updateUI();
     requestRender();

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -14,28 +14,18 @@ const DEFAULT_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Ch
 const DEFAULT_DEMO_IMAGE = 'demo/demo1.jpg';
 const EXPECTED_DRAFT_COUNT = 18;
 const MIN_HIGH_CONFIDENCE = Number(process.env.AUTO_SMOKE_MIN_HIGH_CONFIDENCE || 1);
-const TELEMETRY_BASELINE_PATH = path.join(scriptDir, 'golden', 'telemetry-baseline.json');
 
 const args = parseArgs(process.argv.slice(2));
 const chromePath = args.chrome || process.env.CHROME_PATH || DEFAULT_CHROME;
 const demoImage = args.image || DEFAULT_DEMO_IMAGE;
 const keepBrowser = Boolean(args.keepBrowser);
-const telemetryBaseline = Boolean(args.telemetryBaseline);
-const telemetryLimit = Number(args.limit || 10);
 
 if (!existsSync(chromePath)) {
   fail(`Chrome not found at ${chromePath}. Pass --chrome=/path/to/chrome or set CHROME_PATH.`);
 }
 
-if (!telemetryBaseline && !existsSync(path.join(appDir, demoImage))) {
+if (!existsSync(path.join(appDir, demoImage))) {
   fail(`Demo image not found: ${demoImage}`);
-}
-
-const telemetryImages = telemetryBaseline
-  ? listDemoImages(args.image ? [args.image] : null, telemetryLimit)
-  : [demoImage];
-if (telemetryBaseline && telemetryImages.length === 0) {
-  fail('No demo images found for telemetry baseline.');
 }
 
 let server;
@@ -73,52 +63,6 @@ try {
   await cdp.send('Page.enable');
   await waitForDebugApi(cdp);
 
-  if (telemetryBaseline) {
-    const entries = [];
-    let anyFail = false;
-    for (let i = 0; i < telemetryImages.length; i += 1) {
-      const image = telemetryImages[i];
-      await cdp.send('Page.navigate', { url: `${targetUrl}&telemetryCase=${i}` });
-      await waitForDebugApi(cdp);
-      const result = await runAutoModeSmoke(cdp, image);
-      const checks = evaluateChecks(result);
-      if (checks.length) anyFail = true;
-      entries.push({
-        image,
-        status: checks.length === 0 ? 'pass' : 'fail',
-        failures: checks,
-        metrics: pickTelemetryBaselineMetrics(result),
-        telemetry: result.telemetry && result.telemetry.latest ? result.telemetry.latest : null,
-      });
-    }
-
-    const baseline = {
-      generatedAt: new Date().toISOString(),
-      requestedEntryCount: telemetryLimit,
-      actualEntryCount: entries.length,
-      note: entries.length < telemetryLimit
-        ? `Only ${entries.length} demo image(s) are present in demo/. Add more fixtures to reach the requested ${telemetryLimit}.`
-        : '',
-      medians: summarizeTelemetryEntryMedians(entries),
-      entries,
-    };
-    mkdirSync(path.dirname(TELEMETRY_BASELINE_PATH), { recursive: true });
-    writeFileSync(TELEMETRY_BASELINE_PATH, JSON.stringify(baseline, null, 2) + '\n');
-
-    console.log(JSON.stringify({
-      status: anyFail ? 'fail' : 'pass',
-      wrote: path.relative(appDir, TELEMETRY_BASELINE_PATH),
-      actualEntryCount: entries.length,
-      requestedEntryCount: telemetryLimit,
-      medians: baseline.medians,
-      failures: entries.filter(e => e.failures.length).map(e => ({ image: e.image, failures: e.failures })),
-    }, null, 2));
-    if (anyFail) process.exitCode = 1;
-    await cdp.close();
-    if (chromeStderr && args.verbose) {
-      console.error(chromeStderr.trim());
-    }
-  } else {
   const result = await runAutoModeSmoke(cdp, demoImage);
   await cdp.close();
 
@@ -138,7 +82,6 @@ try {
   if (chromeStderr && args.verbose) {
     console.error(chromeStderr.trim());
   }
-  }
 } catch (error) {
   console.error(error && error.stack ? error.stack : String(error));
   process.exitCode = 1;
@@ -153,24 +96,11 @@ function parseArgs(argv) {
   for (const arg of argv) {
     if (arg === '--keep-browser') parsed.keepBrowser = true;
     else if (arg === '--verbose') parsed.verbose = true;
-    else if (arg === '--telemetry-baseline') parsed.telemetryBaseline = true;
     else if (arg.startsWith('--chrome=')) parsed.chrome = arg.slice('--chrome='.length);
     else if (arg.startsWith('--image=')) parsed.image = arg.slice('--image='.length);
-    else if (arg.startsWith('--limit=')) parsed.limit = Number(arg.slice('--limit='.length));
     else fail(`Unknown argument: ${arg}`);
   }
   return parsed;
-}
-
-function listDemoImages(onlyImages, limit) {
-  if (Array.isArray(onlyImages) && onlyImages.length) {
-    return onlyImages.filter(image => existsSync(path.join(appDir, image)));
-  }
-  return readdirSync(path.join(appDir, 'demo'))
-    .filter(file => /\.(jpe?g|png|webp)$/i.test(file))
-    .sort()
-    .slice(0, Math.max(1, limit || 10))
-    .map(file => `demo/${file}`);
 }
 
 function fail(message) {
@@ -251,7 +181,6 @@ async function runAutoModeSmoke(cdp, imagePath) {
   return await evaluate(cdp, `
     (async () => {
       const debug = window.__braAutoModeDebug;
-      if (debug.clearTelemetryLog) debug.clearTelemetryLog();
       const response = await fetch(${JSON.stringify(imagePath)} + '?smoke=' + Date.now(), { cache: 'no-store' });
       if (!response.ok) throw new Error('Could not fetch smoke image: ' + response.status);
       const blob = await response.blob();
@@ -263,7 +192,7 @@ async function runAutoModeSmoke(cdp, imagePath) {
       });
 
       // Capture CV debug output on the first run so we can prove the
-      // debug API is wired up end-to-end (anchors, learned params, stage
+      // debug API is wired up end-to-end (anchors, detection params, stage
       // timings all reach the export).
       const runResult = await debug.runAutoOnDataUrl(dataURL, { cvDebug: true });
       const cvDebugBlob = runResult && runResult.cvDebug;
@@ -283,8 +212,6 @@ async function runAutoModeSmoke(cdp, imagePath) {
 
       const approvedCount = debug.approveDrawableDrafts();
       const appliedOk = debug.applyApprovedDrafts();
-      const telemetryLog = debug.getTelemetryLog ? debug.getTelemetryLog() : [];
-      const telemetryReport = debug.getTelemetryReport ? debug.getTelemetryReport(10) : null;
       const project = debug.exportProject();
       const appliedAnnotations = project.state.annotations.filter(a => a.auto);
       const requiredMetadata = [
@@ -346,8 +273,6 @@ async function runAutoModeSmoke(cdp, imagePath) {
       } : { present: false };
       const cvExportSummary = cvExport ? {
         anchorCount: Array.isArray(cvExport.anchors) ? cvExport.anchors.length : 0,
-        hasLearningSampleCount: typeof (cvExport.learning && cvExport.learning.sampleCount) === 'number',
-        hasLearnedParams: !!(cvExport.learning && cvExport.learning.learnedParams),
         hasValidation: cvExport.validation != null,
         hasDetectionParams: !!(cvExport.detection && cvExport.detection.detectionParams),
         hasThresholds: !!(cvExport.detection && cvExport.detection.thresholds
@@ -374,50 +299,9 @@ async function runAutoModeSmoke(cdp, imagePath) {
         reopenedMissingMetadata,
         cvDebug: cvDebugSummary,
         cvExport: cvExportSummary,
-        telemetry: {
-          latest: telemetryLog.length ? telemetryLog[telemetryLog.length - 1] : null,
-          report: telemetryReport,
-        },
       };
     })()
   `);
-}
-
-function pickTelemetryBaselineMetrics(result) {
-  const latest = result.telemetry && result.telemetry.latest;
-  const summary = latest && latest.summary ? latest.summary : {};
-  return {
-    draftCount: result.draftCount,
-    approvedCount: result.approvedCount,
-    appliedAutoAnnotationCount: result.appliedAutoAnnotationCount,
-    detect_ms: summary.detect_ms ?? null,
-    edit_ms: summary.edit_ms ?? null,
-    apply_ms: summary.apply_ms ?? null,
-    anchors_dragged: summary.anchors_dragged ?? null,
-    drafts_edited: summary.drafts_edited ?? null,
-    drafts_discarded: summary.drafts_discarded ?? null,
-    touchless: !!summary.touchless,
-  };
-}
-
-function summarizeTelemetryEntryMedians(entries) {
-  const metrics = entries.map(e => e.metrics || {});
-  return {
-    detect_ms: median(metrics.map(m => m.detect_ms)),
-    edit_ms: median(metrics.map(m => m.edit_ms)),
-    apply_ms: median(metrics.map(m => m.apply_ms)),
-    anchors_dragged: median(metrics.map(m => m.anchors_dragged)),
-    drafts_edited: median(metrics.map(m => m.drafts_edited)),
-    drafts_discarded: median(metrics.map(m => m.drafts_discarded)),
-    touchless_count: metrics.filter(m => m.touchless).length,
-  };
-}
-
-function median(values) {
-  const nums = values.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
-  if (!nums.length) return null;
-  const mid = Math.floor(nums.length / 2);
-  return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
 }
 
 async function evaluate(cdp, expression) {
@@ -494,7 +378,6 @@ function evaluateChecks(result) {
     failures.push('CV debug: exportDebug() returned null.');
   } else {
     if (!(cvExp.anchorCount > 0)) failures.push('CV debug export: no anchors recorded.');
-    if (!cvExp.hasLearnedParams) failures.push('CV debug export: learned params missing.');
     if (!cvExp.hasThresholds) failures.push('CV debug export: threshold values missing.');
     if (!cvExp.hasDetectionParams) failures.push('CV debug export: detectionParams missing.');
   }

@@ -65,13 +65,6 @@
       && point.y >= layout.y && point.y <= layout.y + layout.height) || null;
   }
 
-  function ccDistanceToSegment(point, a, b) {
-    const dx = b.x - a.x, dy = b.y - a.y;
-    if (!dx && !dy) return Math.hypot(point.x - a.x, point.y - a.y);
-    const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)));
-    return Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy));
-  }
-
   function ccHitTest(point) {
     const callouts = ccVisibleCallouts();
     for (let i = callouts.length - 1; i >= 0; i -= 1) {
@@ -92,7 +85,7 @@
       const label = ccWorldToCanvas(layout, ccWorldOf(image, callout.textPos));
       for (let ti = callout.targets.length - 1; ti >= 0; ti -= 1) {
         const pin = ccWorldToCanvas(layout, ccWorldOf(image, callout.targets[ti]));
-        if (ccDistanceToSegment(point, label, pin) <= 6) {
+        if (pointToSegmentDistance(point, label, pin) <= 6) {
           return { callout, image, layout, part: 'line', anchorIndex: ti };
         }
       }

@@ -18,33 +18,9 @@
 //                derived   — built from other landmarks (inferred cup model)
 //                projected — extended or guessed (seam projection, ratio seed)
 //                missing   — no seed will be placed; the POM demotes to review
-//   (anchors nudged by the learning loop are re-tagged 'learned' at seed time —
-//   that is an anchor-stage fact, so it lives on the anchor record, not here.)
 //
-// This function only READS the detection object — it never mutates it, places
-// no coordinates, and applies no learning bias.
-
-  // Semantic bra part for a landmark kind (Engineering Workflow Phase 5
-  // vocabulary, consumed by the Phase 8 learning context). This is the
-  // "engine speaks bra construction language" mapping: which named part of
-  // the garment the landmark belongs to. Kind → part is static — a landmark's
-  // meaning does not depend on the sketch.
-  function semanticPartForAnchorKind(kind) {
-    if (!kind) return null;
-    if (kind === 'band-left' || kind === 'band-right') return 'bottomBand';
-    if (kind === 'cf-top' || kind === 'cf-bottom') return 'centerFront';
-    if (kind === 'chest-left' || kind === 'chest-right') return 'cradle';
-    if (kind.indexOf('cradle-') === 0) return 'cradle';
-    if (kind.indexOf('inner-cup-') === 0) return 'frontCup';
-    if (kind === 'apex-left' || kind === 'apex-right') return 'frontCup';
-    if (kind === 'side-top' || kind === 'side-bottom') return 'sideSeam';
-    if (kind === '171' || kind === '172') return 'frontCup';
-    if (kind === '181' || kind === '182') return 'sideSeam';
-    if (kind === 'strap-top' || kind === 'strap-bottom') return 'strap';
-    if (kind === 'back-strap-left' || kind === 'back-strap-right') return 'strap';
-    if (kind.indexOf('back-') === 0) return 'backPanel';
-    return null;
-  }
+// This function only READS the detection object — it never mutates it and
+// places no coordinates.
 
   function buildLandmarkQaFromDetection(detection) {
     if (!detection || !detection.bbox) return null;

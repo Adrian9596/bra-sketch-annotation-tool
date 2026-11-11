@@ -197,7 +197,6 @@ async function main() {
     'US-107: the Templates browse list must NOT be back in the Tools menu — '
     + 'browsing/picking lives exclusively in the unified Library dialog now');
   check(await s.eval(HARNESS) === 'ready', 'harness did not install');
-  await s.eval(`window.__braAutoModeDebug.learning.setEnabled(false)`);
   await s.eval(`window.__braAutoModeDebug.resetShapeStamps()`);
 
   // ---- Setup: one sketch, Manual Mode, one bowed curve ----------------------

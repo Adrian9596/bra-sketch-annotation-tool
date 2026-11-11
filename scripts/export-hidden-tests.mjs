@@ -129,14 +129,14 @@ function check(name, cond, detail) {
 }
 const arrEq = (name, got, want) => check(name, JSON.stringify(got) === JSON.stringify(want), `got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
 
-if (!debug || !debug.exportSpecXlsxBase64 || !debug.setHiddenAnnIds || !(debug.styleEvidence && debug.styleEvidence.pushAnnotation)) {
-  console.error('FAIL: required debug hooks not registered (exportSpecXlsxBase64 / setHiddenAnnIds / styleEvidence.pushAnnotation)');
+if (!debug || !debug.exportSpecXlsxBase64 || !debug.setHiddenAnnIds || !debug.pushAnnotation) {
+  console.error('FAIL: required debug hooks not registered (exportSpecXlsxBase64 / setHiddenAnnIds / pushAnnotation)');
   process.exit(1);
 }
 
 // Seed two applied lines: POM 8 (unpaired) and POM 1 (primary of the 1/2 pair).
-debug.styleEvidence.pushAnnotation({ id: 801, seq: 8, text: '8', start: { x: 0, y: 0 }, end: { x: 40, y: 0 } });
-debug.styleEvidence.pushAnnotation({ id: 101, seq: 1, text: '1', start: { x: 0, y: 0 }, end: { x: 60, y: 0 } });
+debug.pushAnnotation({ id: 801, seq: 8, text: '8', start: { x: 0, y: 0 }, end: { x: 40, y: 0 } });
+debug.pushAnnotation({ id: 101, seq: 1, text: '1', start: { x: 0, y: 0 }, end: { x: 60, y: 0 } });
 
 // ---- minimal STORE unzip (read side of zipStore) ----
 function unzipStore(buf) {

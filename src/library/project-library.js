@@ -4,8 +4,7 @@
 // Every call to writeProjectFile() appends an entry here (in addition to the
 // .json file the browser downloads), so the TD can review and reopen past
 // styles inside the tool itself. The append-only design keeps a per-style
-// edit history; future learning passes can iterate the raw entries via
-// window.__braProjectLibrary as input data.
+// edit history, readable as raw entries via window.__braProjectLibrary.
 //
 // Storage: IndexedDB
 //   db    = 'bra-sketch-project-library'

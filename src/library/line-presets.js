@@ -275,7 +275,7 @@
   function commitLinePresets(list) {
     linePresetStore = normalizeLinePresetList(list);
     lastLinePresetWritePersisted = saveLinePresets();
-    if (typeof updateUI === 'function') updateUI();
+    updateUI();
     return lastLinePresetWritePersisted;
   }
 
@@ -285,7 +285,7 @@
   // nothing is selected — the same fallback the toolbar chips use, so "Save as
   // preset" always has something honest to save.
   function currentLineLook() {
-    const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    const ann = getSelectedAnnotation();
     if (ann) {
       return {
         style: getLineStyle(ann),
@@ -312,8 +312,8 @@
   }
 
   function currentLineTreatment() {
-    const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
-    const selectedRun = typeof seamPathSelectedRun === 'function' ? seamPathSelectedRun(ann) : null;
+    const ann = getSelectedAnnotation();
+    const selectedRun = seamPathSelectedRun(ann);
     if (selectedRun) return normalizeLineTreatment(selectedRun.treatment);
     if (ann && hasLineTreatment(ann)) return normalizeLineTreatment(ann.lineTreatment);
     const look = currentLineLook();
@@ -360,7 +360,7 @@
     if (!treatment || !anns.length) return 0;
     const before = snapshotFingerprint(makeSnapshot());
     for (const ann of anns) {
-      if (ann.seamPath && typeof seamPathApplyTreatmentToAllRuns === 'function') {
+      if (ann.seamPath) {
         seamPathApplyTreatmentToAllRuns(ann, treatment);
       } else {
         ann.lineTreatment = clone(treatment);
@@ -381,8 +381,8 @@
   }
 
   function customizeSelectedLineTreatment(recipe) {
-    const ann = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
-    if (ann && typeof seamPathSelectedRun === 'function' && seamPathSelectedRun(ann)) {
+    const ann = getSelectedAnnotation();
+    if (ann && seamPathSelectedRun(ann)) {
       return applyTreatmentRecipeToSelectedRun(recipe) ? 1 : 0;
     }
     return applyTreatmentRecipeToAnnotations(recipe, ann ? [ann] : []);
@@ -437,18 +437,17 @@
       lineWidth: preset.lineWidth,
       arrowType: preset.arrowType,
     };
-    const selected = (typeof getSelectedAnnotationsForEdit === 'function')
-      ? getSelectedAnnotationsForEdit() : [];
+    const selected = getSelectedAnnotationsForEdit();
     if (selected.length) {
       if (preset.kind === 'treatment' && preset.treatment) {
-        const selectedRun = selected.length === 1 && typeof seamPathSelectedRun === 'function'
+        const selectedRun = selected.length === 1
           ? seamPathSelectedRun(selected[0]) : null;
         if (selectedRun) applyTreatmentRecipeToSelectedRun(preset.treatment);
         else applyTreatmentRecipeToAnnotations(preset.treatment, selected, preset);
       } else {
         applyToSelectedAnnotations({ ...settings, lineTreatment: null });
       }
-      const appliedToRun = selected.length === 1 && typeof seamPathSelectedRun === 'function'
+      const appliedToRun = selected.length === 1
         && !!seamPathSelectedRun(selected[0]);
       showToast(appliedToRun
         ? `${preset.name} applied to the selected Treatment Run.`

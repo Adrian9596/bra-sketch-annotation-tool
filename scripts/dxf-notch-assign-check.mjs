@@ -28,15 +28,21 @@
 // It also proves it can see: a deliberately over-eager skip must be caught by
 // the oracle, and the exhaustive variant must fail the work bound.
 //
-// Pure node: loads the generated dxf-worker.js in a vm, no browser, no demo/.
-// It therefore runs in the public mirror too.
+// Pure node: concatenates the DXF parse layer (DXF_PARSE_PARTS in
+// scripts/source-parts.mjs — the same src/ files app.js ships, in the same
+// one-IIFE shape) and runs it in a vm. No browser, no demo/, so it runs in the
+// public mirror too.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { DXF_PARSE_PARTS } from './source-parts.mjs';
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bundleSource = readFileSync(path.join(appDir, 'dxf-worker.js'), 'utf8');
+const BUNDLE_FOOTER = '\n})();\n';
+const bundleSource = "(() => {\n  'use strict';\n\n"
+  + DXF_PARSE_PARTS.map(part => `  // ---- ${part} ----\n${readFileSync(path.join(appDir, part), 'utf8').trimEnd()}\n`).join('\n')
+  + BUNDLE_FOOTER;
 
 let passed = 0;
 const failures = [];
@@ -53,15 +59,14 @@ function patched(patches) {
   let code = bundleSource;
   for (const [from, to] of patches) {
     // A probe that no longer finds its target would silently test nothing.
-    if (code.split(from).length - 1 !== 1) throw new Error(`probe target not found exactly once in dxf-worker.js: ${from}`);
+    if (code.split(from).length - 1 !== 1) throw new Error(`probe target not found exactly once in the DXF parse layer: ${from}`);
     code = code.replace(from, () => to);
   }
-  const tail = code.lastIndexOf('})();');
-  if (tail < 0) throw new Error('dxf-worker.js footer not found');
+  const tail = code.lastIndexOf(BUNDLE_FOOTER);
+  if (tail < 0) throw new Error('parse-layer bundle footer not found');
   code = code.slice(0, tail) + 'globalThis.__p = { parseDxfDocument, parseDxfNativeModel };\n' + code.slice(tail);
   const sandbox = { console, TextDecoder, performance };
   sandbox.globalThis = sandbox;
-  sandbox.self = sandbox;
   sandbox.__calls = 0;
   vm.createContext(sandbox);
   vm.runInContext(code, sandbox);

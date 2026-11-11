@@ -35,10 +35,9 @@ async function main() {
   const s = await session(port);
   await s.waitFor('window.__braAutoModeDebug && document.getElementById("modeManualBtn")', 8000);
 
-  // ---- Setup: Manual Mode, one board image, learning off --------------------
+  // ---- Setup: Manual Mode, one board image ----------------------------------
   await s.eval(`(async () => {
     const d = window.__braAutoModeDebug;
-    d.learning.setEnabled(false);
     const c = document.createElement('canvas'); c.width = 640; c.height = 420;
     const g = c.getContext('2d'); g.fillStyle = '#ffffff'; g.fillRect(0, 0, 640, 420);
     await d.addBoardImages([c.toDataURL('image/png')]);
@@ -125,7 +124,7 @@ async function main() {
   // draw).
   await s.eval(`(() => {
     const d = window.__braAutoModeDebug;
-    d.styleEvidence.pushAnnotation({
+    d.pushAnnotation({
       id: 96010, seq: 8, type: 'straight', style: 'solid', color: 'red', arrowType: 'double',
       lineWidth: 2.5, start: { x: 250, y: 80 }, end: { x: 350, y: 80 }, control1: null, control2: null,
       points: [], label: { x: 300, y: 62 }, labelManual: false, text: null, value: null,
@@ -271,14 +270,14 @@ async function main() {
   const overlap = await s.eval(`(() => {
     const d = window.__braAutoModeDebug;
     const geometry = { start: { x: 100, y: 380 }, end: { x: 300, y: 380 }, control1: null, control2: null, points: [] };
-    d.styleEvidence.pushAnnotation({
+    d.pushAnnotation({
       id: 96020, seq: null, type: 'straight', style: 'solid', color: 'blue', arrowType: 'none',
       lineWidth: 2.5, ...geometry, label: { x: 200, y: 362 }, labelManual: false, text: null, value: null,
     });
     d.applyLineTreatmentToIds([96020], { name: 'A', scale: 1, layers: [
       { pattern: 'solid', offset: 10, width: 2, color: 'black', spacing: 10, amplitude: 4 },
     ] });
-    d.styleEvidence.pushAnnotation({
+    d.pushAnnotation({
       id: 96021, seq: null, type: 'straight', style: 'solid', color: 'green', arrowType: 'none',
       lineWidth: 2.5, ...geometry, label: { x: 200, y: 404 }, labelManual: false, text: null, value: null,
     });

@@ -26,6 +26,7 @@ import {
   runPipeline,
   pomRow,
   runCases,
+  pack,
 } from './lib/synthetic-detection.mjs';
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -70,21 +71,6 @@ function buildFrame(width, height) {
   return { canvas, setDark, cx, halfBox, cupR, cupY, bandY, cupBottomY: Math.round(cupY + cupR) };
 }
 
-function pack(frame, engine) {
-  const { canvas } = frame;
-  return {
-    engine,
-    width: canvas.stats.colDark.length,
-    height: canvas.stats.rowDark.length,
-    total: canvas.stats.colDark.length * canvas.stats.rowDark.length,
-    mask: canvas.mask,
-    stats: canvas.stats,
-    threshold: 80,
-    luminanceThreshold: 160,
-    backgroundLum: 255,
-  };
-}
-
 // A clear horizontal cradle/cup-bottom seam straddling the CF axis at the
 // cup-bottom row, plus the band below (already drawn) to project POM 6's end.
 function buildSolidCfSeam(width, height) {
@@ -95,12 +81,12 @@ function buildSolidCfSeam(width, height) {
     setDark(Math.round(x), cupBottomY);
     setDark(Math.round(x), cupBottomY + 1);
   }
-  return pack(frame, 'pom6-diagnostic-solid-cf-seam');
+  return pack(frame.canvas, 'pom6-diagnostic-solid-cf-seam');
 }
 
 // Cup outline + chest + band + CF line, but NO cradle seam near CF.
 function buildNoCradle(width, height) {
-  return pack(buildFrame(width, height), 'pom6-diagnostic-no-cradle');
+  return pack(buildFrame(width, height).canvas, 'pom6-diagnostic-no-cradle');
 }
 
 // A tiny decorative mark on the CF axis at the cradle row: 3 columns wide,
@@ -114,7 +100,7 @@ function buildDecorativeTickCf(width, height) {
   for (let x = cx - 1; x <= cx + 1; x += 1) {
     for (let dy = 0; dy <= 2; dy += 1) setDark(Math.round(x), cupBottomY + dy);
   }
-  return pack(frame, 'pom6-diagnostic-decorative-tick-cf');
+  return pack(frame.canvas, 'pom6-diagnostic-decorative-tick-cf');
 }
 
 // A solid off-axis POM 7 vertical line from the cup-bottom seam to the band,
@@ -129,7 +115,7 @@ function buildWeakCfWithCradleCup(width, height) {
   for (let y = cupBottomY - 2; y <= bandY + 1; y += 1) {
     for (let dx = -1; dx <= 1; dx += 1) setDark(pom7X + dx, y);
   }
-  return pack(frame, 'pom6-diagnostic-weak-cf-with-cradlecup');
+  return pack(frame.canvas, 'pom6-diagnostic-weak-cf-with-cradlecup');
 }
 
 function classifyPom6(item) {

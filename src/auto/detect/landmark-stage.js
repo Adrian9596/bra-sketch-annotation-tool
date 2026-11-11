@@ -370,8 +370,8 @@
       // evidence kept SEPARATE from the geometry / landmark decisions above:
       // type-split feature points, deterministic stroke stats, and a compact
       // serializable summary. Additive — the junctions / junctionSummary
-      // contract above is unchanged. The trace-dependent parts (contours,
-      // curveCandidates) are attached later at the Potrace edge.
+      // contract above is unchanged. The trace-dependent part (contours) is
+      // attached later at the Potrace edge.
       endpoints: contourEndpoints,
       corners: contourCorners,
       strokeStats: contourStrokeStats,

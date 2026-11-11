@@ -12,7 +12,7 @@
 // the baseline seed set), seed-cradle-cf.js (POM 6/8 CF cradle geometry),
 // seed-cup-width.js (POM 9/10 cup geometry, used by the front branch),
 // seed-front-view.js and seed-back-view.js — and then runs the cup-anchor QA
-// gate, the anchor-record assembly, and the learning-bias hook that live here.
+// gate and the anchor-record assembly that live here.
 
   // -------- Anchor layer (Phase 2 of the offline engine) --------
   //
@@ -22,7 +22,7 @@
   // Anchors x/y are normalized [0, 1] in the source image's pixel space, so
   // they travel with the image (pan / zoom / resize / save).
 
-  function seedAnchorsFromDetection(detection, sourceImage, options) {
+  function seedAnchorsFromDetection(detection, sourceImage) {
     if (!detection || !detection.bbox || !sourceImage) return [];
 
     const seedCtx = resolveSeedViewContext(detection);
@@ -119,8 +119,7 @@
         reviewRequired,
       };
       // Phase 6 provenance carried onto the anchor record: the landmark
-      // source class (detected / derived / projected — 'learned' is applied
-      // below when the learning loop moves the seed) and the QA notes that
+      // source class (detected / derived / projected) and the QA notes that
       // explain any weakness in TD language.
       if (qaEntry) {
         record.landmarkSourceClass = qaEntry.sourceClass;
@@ -135,33 +134,11 @@
       }
       list.push(record);
     }
-    // Learning-loop hook: when enabled, nudge each seeded anchor by the
-    // median (detected → corrected) residual recorded from past TD drags.
-    // No-op when learning is off or a bucket has fewer than the minimum
-    // samples. The geometric rules above are not changed.
-    //
-    // Phase 2 shadow runs pass { skipLearning: true } so the residual is
-    // computed against the unbiased prediction, never against an already-
-    // biased one (which would compound the error and make the median drift).
-    if (options && options.skipLearning) return captureDerivedOffsets(list);
-    const biased = applyLearningBiasToAnchors(list);
-    // Phase 6: an anchor the learning loop actually moved is 'learned' — the
-    // seed position is no longer purely the detector's landmark. The fine
-    // `source` provenance is untouched (it still says which detector path
-    // produced the seed); only the source CLASS is re-tagged.
-    for (const anchor of biased) {
-      if (anchor && anchor.calibrated && anchor.landmarkSourceClass) {
-        anchor.landmarkSourceClass = 'learned';
-        anchor.qaNotes = (anchor.qaNotes || []).concat(
-          'learned: seed nudged by the median residual of past TD corrections.'
-        );
-      }
-    }
     // Record the hem gap each drop_to_line dependent was seeded with, while the
     // anchors still hold exactly what detection placed. deriveAnchors replays it
     // so a band nudge moves cf-bottom / cradle-cup-bottom WITH the band instead
     // of flattening them onto its chord and discarding US-061's hem following.
-    return captureDerivedOffsets(biased);
+    return captureDerivedOffsets(list);
   }
 
   function clamp01(v) { return Math.max(0, Math.min(1, Number(v) || 0)); }

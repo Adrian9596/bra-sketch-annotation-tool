@@ -95,7 +95,7 @@ const reviewHook = `
     silenceUI: function() {
       updateUI = function() {}; requestRender = function() {}; showToast = function() {};
       renderMainPage = function() {}; renderConstruction = function() {}; renderBom = function() {};
-      scheduleAutosave = function() {}; recordAutoTelemetryEvent = function() {};
+      scheduleAutosave = function() {};
       loadImageFromDataURL = async function() { return { complete: true, naturalWidth: 1000, naturalHeight: 1000 }; };
     }
   };
@@ -534,7 +534,7 @@ console.log('\nstage: detectSketchFromInkAnalysis CV debug capture');
         && typeof debug.thresholds.ink === 'number'
         && typeof debug.thresholds.luminance === 'number',
       `thresholds=${JSON.stringify(debug.thresholds)}`);
-    check('debug.detectionParams includes learned-detector keys',
+    check('debug.detectionParams includes the detector tuning keys',
       debug.detectionParams
         && typeof debug.detectionParams.bandSearchStartRatio === 'number'
         && typeof debug.detectionParams.bandPreferredRatio === 'number'
@@ -599,7 +599,7 @@ console.log('\nstage: detectSketchFromInkAnalysis no-apex style');
     `apexDebug=${JSON.stringify(detection && detection.debug && detection.debug.apex)}`);
 }
 
-// ---- Test 5: Learned detection params propagate into the debug snapshot ----
+// ---- Test 5: Detection params propagate into the debug snapshot ----
 // The bug we want to catch: someone tunes the detector and the debug
 // snapshot stops reflecting the actual params used. Pass a non-default
 // params object and confirm the same values show up under debug.detectionParams.
@@ -657,7 +657,7 @@ console.log('\nstage: POM 6 present — cradle seam at CF, POM 6 DRAWABLE');
     `cradleX=${detection.cradleCfTop && detection.cradleCfTop.x} axisX=${detection.axisX}`);
 
   const sourceImage = { id: 'cradle-fixture', width: W, height: H };
-  const anchors = pipeline.seedAnchorsFromDetection(detection, sourceImage, { skipLearning: true });
+  const anchors = pipeline.seedAnchorsFromDetection(detection, sourceImage);
   const cradleAnchor = anchors.find(a => a.kind === 'cradle-cf-top');
   check('cradle-cf-top anchor seeded', !!cradleAnchor,
     `anchorKinds=${anchors.map(a => a.kind).join(',')}`);
@@ -722,7 +722,7 @@ console.log('\nstage: POM 6 absent — no cradle seam, POM 6 REVIEW_ONLY');
     `reason=${detection.cradleCfTopMissingReason}`);
 
   const sourceImage = { id: 'no-cradle-fixture', width: W, height: H };
-  const anchors = pipeline.seedAnchorsFromDetection(detection, sourceImage, { skipLearning: true });
+  const anchors = pipeline.seedAnchorsFromDetection(detection, sourceImage);
   const cradleAnchor = anchors.find(a => a.kind === 'cradle-cf-top');
   check('cradle-cf-top anchor NOT seeded when absent',
     cradleAnchor === undefined,
@@ -1035,7 +1035,7 @@ console.log('\nstage: POM 7 present — bottom-cup cradle seam, POM 7 DRAWABLE')
     `top.x=${detection.cradleCupTop && detection.cradleCupTop.x} bot.x=${detection.cradleCupBottom && detection.cradleCupBottom.x}`);
 
   const sourceImage = { id: 'bottom-cup-fixture', width: W, height: H };
-  const anchors = pipeline.seedAnchorsFromDetection(detection, sourceImage, { skipLearning: true });
+  const anchors = pipeline.seedAnchorsFromDetection(detection, sourceImage);
   const cradleCupTopAnchor = anchors.find(a => a.kind === 'cradle-cup-top');
   const cradleCupBotAnchor = anchors.find(a => a.kind === 'cradle-cup-bottom');
   check('cradle-cup-top anchor seeded', !!cradleCupTopAnchor,
@@ -1119,7 +1119,7 @@ console.log('\nstage: POM 7 absent — no cradle seam at bottom cup, POM 7 REVIE
     `reason=${detection.cradleCupMissingReason}`);
 
   const sourceImage = { id: 'no-bottom-cup-fixture', width: W, height: H };
-  const anchors = pipeline.seedAnchorsFromDetection(detection, sourceImage, { skipLearning: true });
+  const anchors = pipeline.seedAnchorsFromDetection(detection, sourceImage);
   const cradleCupTopAnchor = anchors.find(a => a.kind === 'cradle-cup-top');
   const cradleCupBotAnchor = anchors.find(a => a.kind === 'cradle-cup-bottom');
   check('cradle-cup-top anchor NOT seeded when absent',
@@ -1199,7 +1199,7 @@ console.log('\nstage: POM 7 structure-only — cup outlines + band, no POM 7 lin
     `cradleCupTier=${detection.cradleCupTier}`);
 
   const sourceImage = { id: 'cup-no-pom7-fixture', width: W, height: H };
-  const anchors = pipeline.seedAnchorsFromDetection(detection, sourceImage, { skipLearning: true });
+  const anchors = pipeline.seedAnchorsFromDetection(detection, sourceImage);
   const cradleCupTopAnchor = anchors.find(a => a.kind === 'cradle-cup-top');
   const cradleCupBotAnchor = anchors.find(a => a.kind === 'cradle-cup-bottom');
   check('cradle-cup-top anchor seeded (arc tier)', !!cradleCupTopAnchor,
@@ -1469,10 +1469,10 @@ console.log('\nstage: contour evidence bundle (Phase 4)');
     detection.strokeStats && detection.junctionSummary
       && detection.strokeStats.skeletonPx === detection.junctionSummary.skeletonPx,
     `stroke=${detection.strokeStats && detection.strokeStats.skeletonPx} summary=${detection.junctionSummary && detection.junctionSummary.skeletonPx}`);
-  // Curve candidates are the deferred half of the bundle: without the Potrace
+  // Traced outlines are the deferred half of the bundle: without the Potrace
   // edge pass (pure Node pipeline) the summary reports none, cleanly.
   check('contourEvidence reports no traced curves in the pure pipeline',
-    ce.traced === false && ce.curveCandidateCount === 0,
+    ce.traced === false && ce.contourCount === null,
     JSON.stringify(ce));
 }
 

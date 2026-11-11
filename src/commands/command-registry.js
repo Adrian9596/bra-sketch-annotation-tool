@@ -280,7 +280,7 @@
     // per user-created stamp.
     appCommand({ id: 'board.shapes.save', label: 'Save Selection as Template', category: 'Board · Style',
       page: 'board', mode: 'manual', target: '#shapeStampSaveBtn',
-      when: () => (typeof canSaveShapeStampReason === 'function' ? canSaveShapeStampReason() : true),
+      when: () => canSaveShapeStampReason(),
       action: () => saveSelectedLineAsShape() }),
     // ADR 0070: same Sketch-Focus gate the retired DXF-import command used —
     // panel only has anything to list once a sketch-element piece exists.
@@ -383,16 +383,6 @@
       page: 'board', mode: 'manual', target: '#sizeRunBtn', action: () => openSizeRunDialog() }),
     appCommand({ id: 'board.grading', label: 'Grading Rules…', category: 'Board · Measurements',
       page: 'board', shortcut: { key: 'g' }, target: '#gradingBtn', action: () => openGradingDialog() }),
-    appCommand({ id: 'board.learning.toggle', label: 'Toggle Learning', category: 'Board · Learning',
-      page: 'board', action: () => setLearningEnabled(!isLearningEnabled()) }),
-    appCommand({ id: 'board.learning.view', label: 'View Learning Data…', category: 'Board · Learning',
-      page: 'board', action: () => openLearningDataDialog() }),
-    appCommand({ id: 'board.learning.reset', label: 'Reset Calibration Residuals…', category: 'Board · Learning',
-      page: 'board', action: () => resetLearning() }),
-    appCommand({ id: 'board.learning.forget-style', label: 'Forget POM Meanings for Current Style…', category: 'Board · Learning',
-      page: 'board', action: () => resetPomMeanings('current') }),
-    appCommand({ id: 'board.learning.forget-all', label: 'Forget POM Meanings for All Styles…', category: 'Board · Learning',
-      page: 'board', action: () => resetPomMeanings('all') }),
     appCommand({ id: 'board.export.copy-image', label: 'Copy Board Image', category: 'Board · Export',
       page: 'board', mode: 'manual', shortcut: { key: 'c', meta: true, shift: true }, target: '#copyImageBtn',
       action: () => { void copyBoardImageToClipboard(); } }),

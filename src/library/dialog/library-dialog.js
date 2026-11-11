@@ -3,8 +3,8 @@
 //
 // Every writeProjectFile() appends an entry to the IndexedDB-backed library
 // in src/library/project-library.js. This pane has two internal sub-tabs:
-//   - "By Style" (default): one card per styleId, aggregated counts +
-//     evidence/meaning badges, "Open latest" or drill into saves.
+//   - "By Style" (default): one card per styleId, aggregated counts,
+//     "Open latest" or drill into saves.
 //   - "By Save": flat list, every snapshot is its own row.
 // Opening a snapshot reuses the existing loadProject() flow, so a re-save
 // creates a new entry (append history), matching the user's chosen
@@ -199,9 +199,7 @@
         } else {
           return;
         }
-      } else if (typeof hasUnsavedWork === 'function'
-        ? hasUnsavedWork()
-        : (state.annotations.length || state.images.length)) {
+      } else if (hasUnsavedWork()) {
         // US-092: ask hasUnsavedWork() rather than re-deriving "is there work
         // here" from two collections. This gate had drifted behind the one in
         // onProjectFileChosen (project-load.js) and silently replaced a board

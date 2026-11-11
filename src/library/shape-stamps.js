@@ -218,7 +218,7 @@
       savedSize: { width: bounds.width, height: bounds.height },
       members,
       // Keep the first member mirrored at top level so v1 exports and the
-      // existing one-path test/debug hooks remain readable during migration.
+      // existing one-path test and debug hooks remain readable during migration.
       ...clone(first),
       // 0 means "no preferred aspect": one of the axes had no extent, so any
       // box height is as faithful as any other.
@@ -341,7 +341,7 @@
     shapeStampStore = normalizeShapeStampList(list);
     lastShapeStampWritePersisted = writeLibraryStore(
       shapeStampsStorageKey(), 'stamps', shapeStampsFormatVersion(), shapeStampStore);
-    if (typeof updateUI === 'function') updateUI();
+    updateUI();
     return lastShapeStampWritePersisted;
   }
 
@@ -355,9 +355,9 @@
   // existing Template selects all its members, so saving a placed group again
   // is the same operation as saving a hand-built back wing.
   function shapeStampSaveTargets() {
-    const selected = (typeof getSelectedAnnotations === 'function') ? getSelectedAnnotations() : [];
+    const selected = getSelectedAnnotations();
     if (selected.length) return selected;
-    const primary = (typeof getSelectedAnnotation === 'function') ? getSelectedAnnotation() : null;
+    const primary = getSelectedAnnotation();
     return primary ? [primary] : [];
   }
 
@@ -465,7 +465,7 @@
     // they just deleted the thing they were about to place.
     if (state.activeStampId === id) {
       setActiveShapeStamp(null);
-      if (state.tool === 'stamp' && typeof setTool === 'function') setTool('select');
+      if (state.tool === 'stamp') setTool('select');
     }
     commitShapeStamps(list);
     return true;
@@ -520,7 +520,7 @@
       const { width, height } = stamp.savedSize;
       return { x: world.x - width / 2, y: world.y - height / 2, width, height };
     }
-    const image = (typeof bgTopImageAt === 'function') ? bgTopImageAt(world) : null;
+    const image = bgTopImageAt(world);
     const maxWidth = image && image.width ? image.width * 0.3 : 200;
     // Code review, 2026-08-23: bound BOTH axes. Sizing only the width meant a
     // tall stamp (aspect 4, say) was placed four times the sketch's own
@@ -609,8 +609,7 @@
     };
     if (curved) ensureCurveControls(ann);
     ann.label = computeDefaultLabelPosition(ann);
-    const owner = (typeof bgTopImageAt === 'function')
-      ? bgTopImageAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }) : null;
+    const owner = bgTopImageAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
     if (owner) ann.sourceImageId = owner.id;
     return ann;
   }
@@ -692,10 +691,10 @@
   // without a second render after setActiveShapeStamp, the toolbar/status
   // bar would keep showing the previously armed (or no) stamp.
   function armShapeStampForPlacement(id, opts) {
-    if (typeof setTool === 'function') setTool('stamp');
+    setTool('stamp');
     setActiveShapeStamp(id);
     if (opts && opts.mirrored) setActiveStampMirrored(true);
-    if (typeof updateUI === 'function') updateUI();
+    updateUI();
   }
 
   function getActiveShapeStamp() {

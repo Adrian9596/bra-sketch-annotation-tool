@@ -3,13 +3,12 @@
 // defined throughout the rest of the bundle by name. Source part for
 // app.js. Run `npm run build` after editing.
 //
-// The export builders this facade calls (exportGroundTruth/downloadGroundTruth,
-// buildCvDebugExport/downloadCvDebugExport, buildStageDebugSummary) live in
-// the sibling src/debug/debug-export.js, which loads before this file.
+// The export builder this facade calls (buildCvDebugExport) lives in the
+// sibling src/debug/debug-export.js, which loads before this file.
 //
 // window.__braAutoModeDebug is a by-NAME contract with the headless test
-// suites (smoke, golden, invariants, contract, learning-tests, evidence-tests,
-// junction-tests, pipeline-tests, and others) — every key/method name here
+// suites (smoke, golden, invariants, contract, junction-tests, pipeline-tests,
+// and others) — every key/method name here
 // must stay character-for-character identical even as implementations move.
 
   if (typeof window !== 'undefined') {
@@ -18,7 +17,6 @@
       // synthetic input and timed independently. Side effects (canvas reads,
       // state writes, toasts) live in runOfflineDetection, not here.
       pipeline: {
-        readSourceImagePixels: (img, targetWidth) => readSourceImagePixels(img, targetWidth),
         pixelsToLegacyInkAnalysis: (pixels, w, h) => pixelsToLegacyInkAnalysis(pixels, w, h),
         detectSketchFromInkAnalysis: (cvAnalysis, opts) => detectSketchFromInkAnalysis(cvAnalysis, opts || {}),
         // Skeleton junction / endpoint / corner pass (Phase 1, plan 2).
@@ -28,8 +26,8 @@
         // Derived-anchor cascade (Phase 3, plan 2). Pure — tests feed an
         // anchor list and assert dependents follow their primaries.
         deriveAnchors: (anchors, opts) => deriveAnchors(anchors, opts),
-        seedAnchorsFromDetection: (detection, sourceImage, options) =>
-          seedAnchorsFromDetection(detection, sourceImage, options),
+        seedAnchorsFromDetection: (detection, sourceImage) =>
+          seedAnchorsFromDetection(detection, sourceImage),
         // Headless-Chrome-free POM-fixture builder. Tests pass an anchor list
         // and the matching detection so the closure that reads
         // state.autoMode.detection (for cradle/cradleCfTop signals) sees the
@@ -62,30 +60,11 @@
         const { inkMask, ...rest } = det;
         return Object.assign(clone(rest), { hasInkMask: !!inkMask });
       },
-      // Read-only per-stage debug summary (Engineering Workflow, Phase 1):
-      // segmentation quality signals, contour/junction counts, geometry facts,
-      // landmark confidence, and anchor confidence for the most recent run.
-      // Pure read of state.autoMode.detection/.anchors — never mutates them, so
-      // it cannot affect detection output.
-      getStageSummary: (name) => clone(buildStageDebugSummary(name)),
-      // Phase 3 segmentation seam. A registered adapter is tried FIRST in the
-      // segmentation stage; it must return the built-in ink-analysis shape and
-      // MUST run fully offline (no network call carrying sketch/measurement
-      // data). Default is unregistered, so the runtime is unchanged until a
-      // caller opts in. clear() restores the built-in OpenCV / legacy path.
-      segmentation: {
-        registerAdapter: (fn) => registerSegmentationAdapter(fn),
-        clearAdapter: () => clearSegmentationAdapter(),
-        hasAdapter: () => !!getSegmentationAdapter(),
-      },
       getAnchors: () => clone(state.autoMode.anchors),
       // Board viewport, so UI-level tests can convert an anchor's world
       // position (image rect + normalized anchor) into canvas screen
       // coordinates for synthetic mouse events.
       getViewport: () => ({ zoom: state.zoom, panX: state.panX, panY: state.panY }),
-      // Ground-truth export for scripts/accuracy-tests.mjs. Returns the
-      // current anchors keyed by kind in normalized image space.
-      exportGroundTruth: (name) => clone(exportGroundTruth(name)),
       getDrafts: () => clone(state.autoMode.draftAnnotations),
       getImages: () => state.images.map(image => ({
         id: image.id,
@@ -128,7 +107,6 @@
           setSelection('graphic',graphicId); state.graphicEdit={graphicId,active:{kind:'segment',subpathId:sp.id,startNodeId:n.id,t:Number.isFinite(t)?t:0.5}};updateUI();requestRender();return true;
         },
         cut: () => cutSelectedBoardGraphicPath(),
-        setSegmentType: type => bgSetActiveSegmentType(type),
         selectImage: id => { setSelection('image', id); return !!getSelectedImage(); },
       },
       // US-092 Board text notes. getNotes is the read side; addNote is the
@@ -140,7 +118,7 @@
         const note = createNote(text, pos, options);
         state.notes.push(note);
         pushHistoryIfChanged();
-        if (typeof requestRender === 'function') requestRender();
+        requestRender();
         return clone(note);
       },
       setNoteAppearance: value => { setNoteAppearance(value); return normalizeNoteAppearance(state.noteAppearance); },
@@ -192,17 +170,15 @@
         return clone(state.hiddenAnnIds);
       },
       // Tier-0 library-value suggestions (scripts/suggestions-tests.mjs).
-      // getPomSuggestions: the raw per-POM corpus stats loaded into scope.
       // getEffectivePomSpec: the panel's effective spec for a POM (TD override
       //   if any, else the library suggestion) — proves the fallback + export
       //   path. setPomSpecOverride: set a TD override and re-render, returning
       //   the new effective spec so a test can assert override wins.
-      getPomSuggestions: () => clone(POM_SUGGESTIONS),
-      getEffectivePomSpec: (key) => (typeof getPomSpec === 'function' ? clone(getPomSpec(key)) : null),
+      getEffectivePomSpec: (key) => clone(getPomSpec(key)),
       setPomSpecOverride: (key, field, value) => {
         const changed = setPomSpec(key, field, value);
         if (changed) pushHistoryIfChanged();
-        if (typeof renderSpecPanel === 'function') renderSpecPanel();
+        renderSpecPanel();
         return clone(getPomSpec(key));
       },
       // US-096 / ADR 0055: the measurement set and the preset library.
@@ -213,19 +189,14 @@
       //     just not measured).
       //   getLinePresets / applyLinePreset: drive the library without opening
       //     the menu, so a suite can assert the model separately from the UI.
-      getMeasurementAnnIds: () => (typeof measurementAnnotations === 'function'
-        ? measurementAnnotations().map(a => a.id) : null),
-      getLinePresets: () => (typeof getLinePresets === 'function' ? clone(getLinePresets()) : null),
-      applyLinePreset: (id) => (typeof applyLinePreset === 'function' ? applyLinePreset(id) : false),
-      addLinePreset: (name) => (typeof addLinePreset === 'function' ? clone(addLinePreset(name)) : null),
-      addLineTreatment: (name, recipe) => (typeof addLineTreatment === 'function'
-        ? clone(addLineTreatment(name, recipe)) : null),
-      updateLineTreatment: (id, recipe, name) => (typeof updateLineTreatment === 'function'
-        ? updateLineTreatment(id, recipe, name) : false),
+      getMeasurementAnnIds: () => measurementAnnotations().map(a => a.id),
+      getLinePresets: () => clone(getLinePresets()),
+      applyLinePreset: (id) => applyLinePreset(id),
+      addLinePreset: (name) => clone(addLinePreset(name)),
+      addLineTreatment: (name, recipe) => clone(addLineTreatment(name, recipe)),
       applyLineTreatmentToIds: (ids, recipe) => {
         const anns = (Array.isArray(ids) ? ids : []).map(id => getAnnotationById(id)).filter(Boolean);
-        return typeof applyTreatmentRecipeToAnnotations === 'function'
-          ? applyTreatmentRecipeToAnnotations(recipe, anns) : 0;
+        return applyTreatmentRecipeToAnnotations(recipe, anns);
       },
       getLineTreatmentMetrics: (id) => {
         const ann = getAnnotationById(id);
@@ -260,8 +231,6 @@
             value: null,
             templateGroupId: raw.templateGroupId || null,
             sourceMode: raw.sourceMode || null,
-            candidateTier: raw.candidateTier || null,
-            reviewDecision: raw.reviewDecision || null,
             tdApproved: !!raw.tdApproved,
             tdApprovalRequired: !raw.tdApproved,
             approvedAt: raw.tdApproved ? (raw.approvedAt || 'test-approved') : null,
@@ -303,15 +272,6 @@
           const result = seamPathInsertTreatmentBreakAt(ann, Number(segIndex), Number(t));
           if (result.status === 'inserted') pushHistoryIfChanged();
           return { result: clone(result), annotation: clone(ann), selectionPart: state.selection.part || null };
-        },
-        selectRun: (id, runId) => {
-          const ann = getAnnotationById(id);
-          if (!ann || !ann.seamPath?.treatmentRuns.some(run => run.id === runId)) return false;
-          setSelection('annotation', id);
-          state.selection.part = seamPathTreatmentPart(runId);
-          updateUI();
-          requestRender();
-          return true;
         },
         applyPreset: (id, runId, presetId) => {
           const ann = getAnnotationById(id);
@@ -376,35 +336,26 @@
       },
       labelsVisible: () => labelsVisible(),
       resetLinePresets: () => {
-        if (typeof resetLinePresetsToBuiltins === 'function') resetLinePresetsToBuiltins();
+        resetLinePresetsToBuiltins();
       },
-      importLinePresetsJson: (text) => (typeof importLinePresetsFromJson === 'function'
-        ? importLinePresetsFromJson(text) : 0),
-      // US-107: a project's own presets the local library does not have yet —
-      // the model half of the Library dialog's "Import N from project" action
-      // (src/library/line-presets.js), so a suite can assert the offer without
-      // the dialog's own visibility rule standing in for it.
-      getPendingLinePresets: () => (typeof getPendingProjectLinePresets === 'function'
-        ? clone(getPendingProjectLinePresets()) : null),
+      importLinePresetsJson: (text) => importLinePresetsFromJson(text),
       // US-097 / ADR 0056: the shape-stamp library. getShapeStamps returns the
       // stored geometry so a suite can compare a placed line against the stamp
       // it came from; sampleAnnotationShape returns the SHAPE of any line,
       // normalized into its own bounding box, which is the only way to assert
       // "the curve that came back is the curve that was saved" independently of
       // where and how big it was placed.
-      getShapeStamps: () => (typeof getShapeStamps === 'function' ? clone(getShapeStamps()) : null),
+      getShapeStamps: () => clone(getShapeStamps()),
       resetShapeStamps: () => {
-        if (typeof commitShapeStamps === 'function') commitShapeStamps([]);
+        commitShapeStamps([]);
       },
-      importShapeStampsJson: (text) => (typeof importShapeStampsFromJson === 'function'
-        ? importShapeStampsFromJson(text) : 0),
+      importShapeStampsJson: (text) => importShapeStampsFromJson(text),
       setActiveShapeStamp: (id) => {
-        if (typeof setActiveShapeStamp === 'function') setActiveShapeStamp(id);
+        setActiveShapeStamp(id);
       },
       addTemplateFromAnnotationIds: (name, ids, options) => {
         const anns = (Array.isArray(ids) ? ids : []).map(id => getAnnotationById(id)).filter(Boolean);
-        const template = typeof shapeStampFromAnnotations === 'function'
-          ? shapeStampFromAnnotations(anns, name, options) : null;
+        const template = shapeStampFromAnnotations(anns, name, options);
         if (!template) return null;
         commitShapeStamps([...getShapeStamps(), template]);
         return clone(template);
@@ -427,13 +378,12 @@
       // small placement seams (place-at-saved-size and mirror) so a suite can
       // assert on the model directly, alongside driving the real dialog.
       library: {
-        categories: () => (typeof libraryCategories === 'function' ? clone(libraryCategories()) : []),
-        setCategory: (id, category) => (typeof setShapeStampCategory === 'function' ? setShapeStampCategory(id, category) : false),
-        setTags: (id, tags) => (typeof setShapeStampTags === 'function' ? setShapeStampTags(id, tags) : false),
-        setNotes: (id, notes) => (typeof setShapeStampNotes === 'function' ? setShapeStampNotes(id, notes) : false),
-        setFavorite: (id, favorite) => (typeof setShapeStampFavorite === 'function' ? setShapeStampFavorite(id, favorite) : false),
-        toggleFavorite: (id) => (typeof toggleShapeStampFavorite === 'function' ? toggleShapeStampFavorite(id) : false),
-        duplicate: (id) => (typeof duplicateShapeStamp === 'function' ? clone(duplicateShapeStamp(id)) : null),
+        categories: () => clone(libraryCategories()),
+        setCategory: (id, category) => setShapeStampCategory(id, category),
+        setTags: (id, tags) => setShapeStampTags(id, tags),
+        setNotes: (id, notes) => setShapeStampNotes(id, notes),
+        toggleFavorite: (id) => toggleShapeStampFavorite(id),
+        duplicate: (id) => clone(duplicateShapeStamp(id)),
         // US-107: deleting a Template is a real dialog action (card menu ▸
         // Delete…, behind a window.confirm the Library dialog itself owns).
         // This hook isolates deleteShapeStamp's OWN model-layer behavior —
@@ -441,14 +391,13 @@
         // the arm and switches the tool away from 'stamp' — from the
         // confirm-dialog plumbing around it, which library-manager-check.mjs
         // already drives for real.
-        deleteStamp: (id) => (typeof deleteShapeStamp === 'function' ? deleteShapeStamp(id) : false),
+        deleteStamp: (id) => deleteShapeStamp(id),
         armForPlacement: (id, opts) => {
-          if (typeof armShapeStampForPlacement === 'function') armShapeStampForPlacement(id, opts);
+          armShapeStampForPlacement(id, opts);
         },
-        getArmedMirrored: () => !!state.activeStampMirrored,
         defaultBoxAt: (id, world) => {
           const stamp = getShapeStampById(id);
-          return stamp && typeof defaultStampBoxAt === 'function' ? clone(defaultStampBoxAt(stamp, world)) : null;
+          return stamp ? clone(defaultStampBoxAt(stamp, world)) : null;
         },
       },
       // US-104: DXF import. `parse` is the pure text -> pieces parser (no
@@ -458,61 +407,36 @@
       // a real viewport. `importText` drives the real one-shot board mutation
       // the Tools-menu button itself calls.
       dxf: {
-        parse: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text)) : null),
-        // ADR 0091: same parse, plus `stats.instances` — the per-instance
-        // boundary diagnosis (segments/chains/closed per boundary layer, and
-        // why an open chain stayed open) so a corpus audit can say WHY an
-        // instance fell back to the legacy grouping.
-        parseDiagnostics: (text) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text, { diagnostics: true })) : null),
-        computePlacement: (bounds, rect, centerWorld, zoom) => (typeof computeDxfPlacementTransform === 'function'
-          ? clone(computeDxfPlacementTransform(bounds, rect, centerWorld, zoom)) : null),
-        importText: (text, rect, fileName, extra) => (typeof importDxfText === 'function'
-          ? clone(importDxfText(text, rect, fileName, extra || undefined)) : null),
+        parse: (text) => clone(parseDxfDocument(text)),
+        computePlacement: (bounds, rect, centerWorld, zoom) => clone(computeDxfPlacementTransform(bounds, rect, centerWorld, zoom)),
+        importText: (text, rect, fileName) => clone(importDxfText(text, rect, fileName)),
         // ADR 0091 follow-up: the byte decoder the real file input runs
         // (strict UTF-8 → $DWGCODEPAGE → GBK → windows-1252), so a suite or a
         // corpus scan can feed the parser EXACTLY the text the TD's pick
         // would, instead of fetch().text()'s lossy UTF-8.
-        decodeBytes: (buffer) => (typeof decodeDxfBytes === 'function' ? decodeDxfBytes(buffer) : null),
+        decodeBytes: (buffer) => decodeDxfBytes(buffer),
         // Phase 3: the import-time options the real toggle in the Pattern
         // Pieces panel writes, and a parse with explicit options (so a suite
-        // can prove keepQualityCurves without touching state).
+        // can prove keepQualityCurves without touching state; `diagnostics:
+        // true` adds the per-instance boundary diagnosis, stats.instances).
         getImportOptions: () => clone(state.dxfImportOptions || { keepQualityCurves: false }),
-        setImportOptions: (opts) => {
-          state.dxfImportOptions = { keepQualityCurves: !!(opts && opts.keepQualityCurves) };
-          if (typeof syncPatternPiecesImportOptions === 'function') syncPatternPiecesImportOptions();
-          return clone(state.dxfImportOptions);
-        },
-        parseWith: (text, opts) => (typeof parseDxfDocument === 'function' ? clone(parseDxfDocument(text, opts || {})) : null),
-        parseNative: (text, opts) => (typeof parseDxfNativeModel === 'function' ? clone(parseDxfNativeModel(text, opts || {})) : null),
-        // Phase 5: the DXF Worker surface.
-        worker: {
-          supported: () => (typeof dxfWorkerSupported === 'function' ? dxfWorkerSupported() : false),
-          route: (text) => (typeof dxfWorkerRoute === 'function' ? dxfWorkerRoute(text) : null),
-          estimate: (text) => (typeof dxfEstimateInstanceCount === 'function' ? dxfEstimateInstanceCount(text) : null),
-          setEnabled: (v) => { if (typeof dxfSetWorkerEnabled === 'function') dxfSetWorkerEnabled(v); },
-          setForce: (v) => { if (typeof dxfSetWorkerForce === 'function') dxfSetWorkerForce(v); },
-          setUrl: (u) => { if (typeof dxfSetWorkerUrl === 'function') dxfSetWorkerUrl(u); },
-          parse: (text, opts) => (typeof dxfWorkerParse === 'function'
-            ? dxfWorkerParse(text, opts || {}).then(r => ({ board: clone(r.board), native: clone(r.native), elapsedMs: r.elapsedMs, progressEvents: r.progressEvents }))
-            : Promise.reject(new Error('no worker client'))),
-          cancel: () => { if (typeof dxfCancelActiveWorkerImport === 'function') dxfCancelActiveWorkerImport(); },
-          lastExecution: () => clone(state.dxfLastImportExecution || null),
-        },
+        parseWith: (text, opts) => clone(parseDxfDocument(text, opts || {})),
+        parseNative: (text, opts) => clone(parseDxfNativeModel(text, opts || {})),
         source: () => (state.dxfPatternSource ? clone(state.dxfPatternSource) : null),
         // ADR 0070: the Pattern Pieces panel's pure state operations, exposed
         // independently of the real DOM panel (src/dxf/pattern-pieces-panel.js)
         // so a headless suite can assert the group-list/remove logic without
         // driving live checkbox clicks for every case.
         patternPieces: {
-          groups: () => (typeof patternPieceGroups === 'function' ? clone(patternPieceGroups()) : null),
+          groups: () => clone(patternPieceGroups()),
           // Phase 3: groupId -> { pieceName, size, quantity, kind, classCounts, dropped, … }.
           meta: () => clone(state.templateGroupMeta || {}),
-          remove: (groupIds) => { if (typeof removePatternPieceGroups === 'function') removePatternPieceGroups(groupIds); },
+          remove: (groupIds) => { removePatternPieceGroups(groupIds); },
           // ADR 0072.
-          simplify: (groupId) => (typeof simplifyPieceGroup === 'function' ? clone(simplifyPieceGroup(groupId)) : null),
-          isOpen: () => (typeof isPatternPiecesPanelOpen === 'function' ? isPatternPiecesPanelOpen() : null),
-          open: () => { if (typeof openPatternPiecesPanel === 'function') openPatternPiecesPanel(); },
-          close: () => { if (typeof closePatternPiecesPanel === 'function') closePatternPiecesPanel(); },
+          simplify: (groupId) => clone(simplifyPieceGroup(groupId)),
+          isOpen: () => isPatternPiecesPanelOpen(),
+          open: () => { openPatternPiecesPanel(); },
+          close: () => { closePatternPiecesPanel(); },
         },
         // US-105: Pattern Measure. `measure.*` exposes the pure native
         // parser + geometry kernel independently of any board/UI state (unit
@@ -523,7 +447,7 @@
         // namespace never substitutes for driving that path in an
         // integration-level test, only for isolating the pure math.
         measure: {
-          parseNative: (text) => (typeof parseDxfNativeModel === 'function' ? clone(parseDxfNativeModel(text)) : null),
+          parseNative: (text) => clone(parseDxfNativeModel(text)),
           // Pure kernel primitives (src/dxf/parse/dxf-path-kernel.js), exposed
           // independently of any session/board state so a unit test can
           // drive exact synthetic segments (bulge signs, wraparound sweeps,
@@ -532,72 +456,56 @@
           reasonCodes: () => clone(DXF_MEASURE_REASON),
           // The sentence a TD reads when the native model could not be built
           // (dxf-import.js folds it into the import toast).
-          failureMessage: (nativeModel) => (typeof dxfMeasureFailureMessage === 'function' ? dxfMeasureFailureMessage(nativeModel) : null),
-          segmentLength: (seg) => (typeof dxfSegmentLength === 'function' ? dxfSegmentLength(seg) : null),
-          segmentFailureReason: (seg) => (typeof dxfSegmentFailureReason === 'function' ? dxfSegmentFailureReason(seg) : null),
-          partialLength: (seg, t0, t1) => (typeof dxfPartialLength === 'function' ? dxfPartialLength(seg, t0, t1) : null),
-          projectPointOnSegment: (point, seg) => (typeof dxfProjectPointOnSegment === 'function' ? clone(dxfProjectPointOnSegment(point, seg)) : null),
-          directDistance: (a, b) => (typeof dxfDirectDistance === 'function' ? dxfDirectDistance(a, b) : null),
+          failureMessage: (nativeModel) => dxfMeasureFailureMessage(nativeModel),
+          segmentLength: (seg) => dxfSegmentLength(seg),
+          segmentFailureReason: (seg) => dxfSegmentFailureReason(seg),
+          partialLength: (seg, t0, t1) => dxfPartialLength(seg, t0, t1),
+          projectPointOnSegment: (point, seg) => clone(dxfProjectPointOnSegment(point, seg)),
+          directDistance: (a, b) => dxfDirectDistance(a, b),
           // US-112: snap. `lineArcIntersections` is pure kernel math (like
-          // directDistance above); the piece-index getters are read-only
-          // inspection of the session's own cached snap index, same
-          // read-only convention as pieceSegments below — this file's header
-          // comment is explicit that a MUTATING action (toggling a snap kind
-          // on/off) always goes through its real UI path
-          // (#dxfMeasureSnapEndpointBtn etc., src/dxf/measure/dxf-measure-panel.js),
-          // never a debug shortcut, so there is deliberately no setter here.
-          lineArcIntersections: (lineSeg, arcSeg) => (typeof dxfMeasureLineArcIntersections === 'function'
-            ? clone(dxfMeasureLineArcIntersections(lineSeg, arcSeg)) : null),
+          // directDistance above) — this file's header comment is explicit
+          // that a MUTATING action (toggling a snap kind on/off) always goes
+          // through its real UI path (#dxfMeasureSnapEndpointBtn etc.,
+          // src/dxf/measure/dxf-measure-panel.js), never a debug shortcut, so
+          // there is deliberately no setter here.
+          lineArcIntersections: (lineSeg, arcSeg) => clone(dxfMeasureLineArcIntersections(lineSeg, arcSeg)),
           // Pure-function versions taking a bare `segments` array directly
           // (no DXF parse, no board import, no piece-grouping involved) —
           // same "isolate the math from any session/board state" contract as
           // parseNative/segmentLength above.
-          buildSnapIndexForSegments: (segments, tolerance) => (typeof dxfMeasureBuildPieceSnapIndex === 'function'
-            ? clone(dxfMeasureBuildPieceSnapIndex({ segments }, tolerance)) : null),
-          buildIntersectionsForSegments: (segments) => (typeof dxfMeasureBuildPieceIntersections === 'function'
-            ? clone(dxfMeasureBuildPieceIntersections({ segments })) : null),
-          pieceSnapIndex: (pieceIndex) => (typeof dxfMeasureEnsurePieceSnapIndex === 'function' && state.dxfMeasureSession
-            ? clone(dxfMeasureEnsurePieceSnapIndex(state.dxfMeasureSession, pieceIndex)) : null),
-          pieceIntersectionIndex: (pieceIndex) => (typeof dxfMeasureEnsurePieceIntersectionIndex === 'function' && state.dxfMeasureSession
-            ? clone(dxfMeasureEnsurePieceIntersectionIndex(state.dxfMeasureSession, pieceIndex)) : null),
-          snapCandidate: (world) => (typeof dxfMeasureSnapCandidate === 'function'
-            ? clone(dxfMeasureSnapCandidate(state.dxfMeasureSession, world)) : null),
+          buildSnapIndexForSegments: (segments, tolerance) => clone(dxfMeasureBuildPieceSnapIndex({ segments }, tolerance)),
+          buildIntersectionsForSegments: (segments) => clone(dxfMeasureBuildPieceIntersections({ segments })),
           // US-114: every within-tolerance candidate, and the near-tie subset
           // dxfMeasureSnapEntityHitsForClick actually resolves a click
           // against — exposed separately so a test can assert both "how many
           // candidates exist at all" and "how many count as a genuine tie".
-          snapCandidates: (world) => (typeof dxfMeasureSnapCandidates === 'function'
-            ? clone(dxfMeasureSnapCandidates(state.dxfMeasureSession, world)) : null),
-          snapTieCandidates: (world) => (typeof dxfMeasureSnapTieCandidates === 'function'
-            ? clone(dxfMeasureSnapTieCandidates(state.dxfMeasureSession, world)) : null),
+          snapCandidates: (world) => clone(dxfMeasureSnapCandidates(state.dxfMeasureSession, world)),
+          snapTieCandidates: (world) => clone(dxfMeasureSnapTieCandidates(state.dxfMeasureSession, world)),
           snapEnabled: () => ({ endpoint: !!state.dxfMeasureSnapEndpoint, midpoint: !!state.dxfMeasureSnapMidpoint, intersection: !!state.dxfMeasureSnapIntersection }),
           // US-114: the Pattern-Measure-only size filter. Read-only by design
           // (see this file's own header on why a real UI action is never
           // exposed as a debug shortcut) — a test drives the real
           // #dxfMeasureSizeSelect element, same as every other real control.
-          pieceSizeLabel: (pieceIndex) => (typeof dxfMeasurePieceSizeLabel === 'function' && state.dxfMeasureSession
+          pieceSizeLabel: (pieceIndex) => (state.dxfMeasureSession
             ? dxfMeasurePieceSizeLabel(state.dxfMeasureSession, pieceIndex) : null),
           // ADR 0084: the size TOKEN the filter actually groups by (the part
           // of the block name after its last underscore) — what
           // availableSizeLabels lists and activeSizeLabel holds.
-          pieceSizeToken: (pieceIndex) => (typeof dxfMeasurePieceSizeToken === 'function' && state.dxfMeasureSession
+          pieceSizeToken: (pieceIndex) => (state.dxfMeasureSession
             ? dxfMeasurePieceSizeToken(state.dxfMeasureSession, pieceIndex) : null),
-          availableSizeLabels: () => (typeof dxfMeasureAvailableSizeLabels === 'function' && state.dxfMeasureSession
+          availableSizeLabels: () => (state.dxfMeasureSession
             ? clone(dxfMeasureAvailableSizeLabels(state.dxfMeasureSession)) : []),
-          enumerateRoutesRaw: (segments, refA, refB, tolerance) => (typeof dxfEnumerateRoutes === 'function'
-            ? clone(dxfEnumerateRoutes(segments, refA, refB, tolerance)) : null),
-          reverseRoute: (route) => (typeof dxfReverseRoute === 'function' ? clone(dxfReverseRoute(route)) : null),
-          routeLength: (route, segments) => (typeof dxfRouteLength === 'function' ? dxfRouteLength(route, segments) : null),
-          routeAuthoredDirectionScore: (route, segments) => (typeof dxfRouteAuthoredDirectionScore === 'function'
-            ? dxfRouteAuthoredDirectionScore(route, segments) : null),
-          resolveNativeToInch: (insunits) => (typeof dxfResolveNativeToInch === 'function' ? clone(dxfResolveNativeToInch(insunits)) : null),
+          enumerateRoutesRaw: (segments, refA, refB, tolerance) => clone(dxfEnumerateRoutes(segments, refA, refB, tolerance)),
+          reverseRoute: (route) => clone(dxfReverseRoute(route)),
+          routeLength: (route, segments) => dxfRouteLength(route, segments),
+          routeAuthoredDirectionScore: (route, segments) => dxfRouteAuthoredDirectionScore(route, segments),
+          resolveNativeToInch: (insunits) => clone(dxfResolveNativeToInch(insunits)),
           // US-126: the geometry-based unit inference, exposed pure so the
           // suite can prove the mm/in decision and the deliberate
           // "fits both / fits neither -> infer nothing" abstention without
           // going through a whole import.
-          inferUnitFromGeometry: (pieces) => (typeof dxfInferUnitFromGeometry === 'function'
-            ? clone(dxfInferUnitFromGeometry(pieces)) : null),
-          unitStatus: () => (typeof dxfMeasureUnitStatus === 'function' && state.dxfMeasureSession
+          inferUnitFromGeometry: (pieces) => clone(dxfInferUnitFromGeometry(pieces)),
+          unitStatus: () => (state.dxfMeasureSession
             ? clone(dxfMeasureUnitStatus(state.dxfMeasureSession)) : null),
           getSession: () => {
             const session = state.dxfMeasureSession;
@@ -613,7 +521,7 @@
               // ADR 0073: the TD's unit override + the resolved status the
               // UI note/status chip renders from.
               unitOverride: session.unitOverride || null,
-              unitStatus: (typeof dxfMeasureUnitStatus === 'function') ? clone(dxfMeasureUnitStatus(session)) : null,
+              unitStatus: clone(dxfMeasureUnitStatus(session)),
               topologyToleranceNative: session.topologyToleranceNative,
               measurementCount: session.measurements.length,
               measurements: clone(session.measurements),
@@ -628,15 +536,13 @@
               historyPast: session.history.past.length,
               historyFuture: session.history.future.length,
               diagnostics: clone(session.diagnostics || {}),
-              pieceAnchorAnnotationIds: (session.pieceAnchors || []).map(anchor => anchor ? anchor.annotationId : null),
               pieceBounds: clone(session.pieceBounds || []),
               // US-112: read-only, for diagnosing the hover-driven snap preview.
               hoverWorld: clone(session.hoverWorld),
               hoverAltKey: !!session.hoverAltKey,
               // US-114: the active-size filter + what's actually selectable.
               activeSizeLabel: session.activeSizeLabel || null,
-              availableSizeLabels: (typeof dxfMeasureAvailableSizeLabels === 'function')
-                ? clone(dxfMeasureAvailableSizeLabels(session)) : [],
+              availableSizeLabels: clone(dxfMeasureAvailableSizeLabels(session)),
             };
           },
           pieceSegments: (pieceIndex) => {
@@ -644,19 +550,9 @@
             const piece = session && session.pieces[pieceIndex];
             return piece ? clone(piece.segments) : null;
           },
-          enumerateRoutes: (refA, refB) => (typeof dxfMeasureEnumerateRoutes === 'function'
-            ? clone(dxfMeasureEnumerateRoutes(state.dxfMeasureSession, refA, refB)) : null),
-          nativeToBoard: (point) => (typeof dxfMeasureNativeToBoard === 'function'
-            ? clone(dxfMeasureNativeToBoard(point, state.dxfMeasureSession)) : null),
-          nativeToBoardLive: (point, pieceIndex) => (typeof dxfMeasureNativeToBoardLive === 'function'
-            ? clone(dxfMeasureNativeToBoardLive(point, state.dxfMeasureSession, pieceIndex)) : null),
-          boardToNative: (point) => (typeof dxfMeasureBoardToNative === 'function'
-            ? clone(dxfMeasureBoardToNative(point, state.dxfMeasureSession)) : null),
-          valueInches: (measurementId) => {
-            const session = state.dxfMeasureSession;
-            const measurement = session && dxfMeasureGetMeasurement(session, measurementId);
-            return measurement ? dxfMeasureValueInches(session, measurement) : null;
-          },
+          enumerateRoutes: (refA, refB) => clone(dxfMeasureEnumerateRoutes(state.dxfMeasureSession, refA, refB)),
+          nativeToBoard: (point) => clone(dxfMeasureNativeToBoard(point, state.dxfMeasureSession)),
+          nativeToBoardLive: (point, pieceIndex) => clone(dxfMeasureNativeToBoardLive(point, state.dxfMeasureSession, pieceIndex)),
           handleWorldPosition: (measurementId, which) => {
             const session = state.dxfMeasureSession;
             const measurement = session && dxfMeasureGetMeasurement(session, measurementId);
@@ -707,36 +603,32 @@
             startAnnotationDrag(ann.id, world);
             return true;
           },
-          formatInches: (value) => (typeof dxfMeasureFormatInches === 'function' ? dxfMeasureFormatInches(value) : null),
+          formatInches: (value) => dxfMeasureFormatInches(value),
           // US-111: seamPairStatus is pure (a {judged} object in, a status
           // string out) — exposed directly for exact-boundary unit testing,
           // same "isolate the math" contract as directDistance/segmentLength.
-          seamPairStatus: (delta) => (typeof dxfMeasureSeamPairStatus === 'function' ? dxfMeasureSeamPairStatus(delta) : null),
-          seamPairPartnerId: (measurementId) => (typeof dxfMeasureSeamPairPartnerId === 'function'
-            ? dxfMeasureSeamPairPartnerId(state.dxfMeasureSession, measurementId) : null),
+          seamPairStatus: (delta) => dxfMeasureSeamPairStatus(delta),
+          seamPairPartnerId: (measurementId) => dxfMeasureSeamPairPartnerId(state.dxfMeasureSession, measurementId),
           seamPairDelta: (pairId) => {
             const session = state.dxfMeasureSession;
-            const pair = session && typeof dxfMeasureGetSeamPair === 'function' ? dxfMeasureGetSeamPair(session, pairId) : null;
-            return pair && typeof dxfMeasureSeamPairDelta === 'function' ? clone(dxfMeasureSeamPairDelta(session, pair)) : null;
+            const pair = session ? dxfMeasureGetSeamPair(session, pairId) : null;
+            return pair ? clone(dxfMeasureSeamPairDelta(session, pair)) : null;
           },
           valueInches: (measurementId) => {
             const session = state.dxfMeasureSession;
-            const m = session && typeof dxfMeasureGetMeasurement === 'function' ? dxfMeasureGetMeasurement(session, measurementId) : null;
-            return m && typeof dxfMeasureValueInches === 'function' ? dxfMeasureValueInches(session, m) : null;
+            const m = session ? dxfMeasureGetMeasurement(session, measurementId) : null;
+            return m ? dxfMeasureValueInches(session, m) : null;
           },
-          deleteMeasurement: (id) => (typeof dxfMeasureDeleteMeasurement === 'function'
-            ? dxfMeasureDeleteMeasurement(state.dxfMeasureSession, id) : false),
           // ADR 0073: the TD unit override — same function the real
           // #dxfMeasureUnitSelect change handler calls.
-          setUnitOverride: (key) => (typeof dxfMeasureSetUnitOverride === 'function'
-            ? dxfMeasureSetUnitOverride(state.dxfMeasureSession, key) : false),
-          undo: () => (typeof dxfMeasureUndo === 'function' ? dxfMeasureUndo() : false),
-          redo: () => (typeof dxfMeasureRedo === 'function' ? dxfMeasureRedo() : false),
+          setUnitOverride: (key) => dxfMeasureSetUnitOverride(state.dxfMeasureSession, key),
+          undo: () => dxfMeasureUndo(),
+          redo: () => dxfMeasureRedo(),
         },
       },
       sampleAnnotationShape: (annotationId, samples) => {
         const ann = state.annotations.find(a => a && a.id === annotationId);
-        if (!ann || typeof getAnnotationPolyline !== 'function') return null;
+        if (!ann) return null;
         const n = Math.max(8, Number(samples) || 64);
         const pts = getAnnotationPolyline(ann, n);
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -761,18 +653,15 @@
         }
         return { points: out, width: w, height: h, aspect: w > 1e-6 ? h / w : 0 };
       },
-      exportLinePresetsJson: () => (typeof linePresetsEnvelope === 'function'
-        ? JSON.stringify(linePresetsEnvelope()) : null),
+      exportLinePresetsJson: () => JSON.stringify(linePresetsEnvelope()),
       // Export image paths honor hidden POMs (scripts/export-hidden-tests.mjs).
       // getExportAnnIds: the exact applied-annotation set the export renderers
       //   (PDF / Copy Image / Excel embedded PNG) draw and crop from, so a test
       //   can assert a hidden POM is dropped without a real canvas.
       // exportBoardDataUrl: the rendered export board as a PNG data URL, for
       //   visual verification that a hidden line's pixels are gone.
-      getExportAnnIds: () => (typeof visibleExportAnnotations === 'function'
-        ? visibleExportAnnotations().map(a => a.id) : null),
+      getExportAnnIds: () => visibleExportAnnotations().map(a => a.id),
       exportBoardDataUrl: () => {
-        if (typeof getContentBounds !== 'function' || typeof renderBoardRegionToCanvas !== 'function') return null;
         const bounds = getContentBounds();
         if (!bounds) return null;
         return renderBoardRegionToCanvas(bounds).toDataURL('image/png');
@@ -815,18 +704,13 @@
           changed: !!it.changed,
         };
       },
-      getAcceptanceStats: () => clone(getAutoAcceptanceStats()),
-      clearAcceptanceStats: () => clearAutoAcceptanceStats(),
-      getTelemetryLog: () => clone(getAutoTelemetryLog()),
-      getTelemetryReport: (limit) => clone(getAutoTelemetryReport(limit || 10)),
-      clearTelemetryLog: () => clearAutoTelemetryLog(),
       runAutoOnDataUrl: async (dataURL, opts) => {
         // Opt-in CV debug capture per-call. When opts.cvDebug is true, the
         // CV debug flag is flipped on before detection so the resulting
         // detection.debug payload is populated for the caller to inspect.
         if (opts && opts.cvDebug) {
           if (!state.autoMode.cvDebug) {
-            state.autoMode.cvDebug = { enabled: false, lastDebug: null, lastExport: null };
+            state.autoMode.cvDebug = { enabled: false, lastDebug: null };
           }
           state.autoMode.cvDebug.enabled = true;
         }
@@ -854,7 +738,7 @@
           detection: window.__braAutoModeDebug.getDetection(),
           anchors: window.__braAutoModeDebug.getAnchors(),
           drafts: window.__braAutoModeDebug.getDrafts(),
-          cvDebug: window.__braAutoModeDebug.cv.getLastDebug(),
+          cvDebug: clone(state.autoMode.cvDebug && state.autoMode.cvDebug.lastDebug),
           cvExport: window.__braAutoModeDebug.cv.exportDebug(sourceImage.id),
         };
       },
@@ -868,17 +752,11 @@
         return targets.length;
       },
       applyApprovedDrafts: () => applyApprovedDraftsAtomically({ suppressPrompt: true }),
-      /* The draft -> applied-annotation field copy on its own, so a suite can
-         assert what survives Apply without having to drive a whole board into a
-         state where Apply succeeds. buildAppliedAnnotation is the mirror of
-         buildDraftAnnotation and a field missing from it vanishes silently. */
-      buildAppliedAnnotationForTest: (draft) => clone(buildAppliedAnnotation(clone(draft))),
       exportProject: () => clone(buildProjectSnapshot()),
       /* US-080: drives a MAIN PAGE sketch slot the way the upload/paste menu
          does, and hands back the RAW runtime state.mainPage — the one history
          clones — so a suite can prove the image bytes never land in it. */
       setMainPageSketch: async (variant, index, dataURL) => {
-        if (typeof mpSetSketch !== 'function') return null;
         await mpSetSketch(variant, index, dataURL);
         return JSON.stringify(state.mainPage);
       },
@@ -889,12 +767,12 @@
       // Autosave hooks — only intended for end-to-end tests that need
       // to force a write without simulating a live edit cycle.
       autosave: {
-        flush: () => (typeof flushAutosave === 'function' ? flushAutosave() : null),
+        flush: () => flushAutosave(),
         peek: () => {
           try { return localStorage.getItem('bra-sketch-autosave-v1'); }
           catch (_) { return null; }
         },
-        clear: () => (typeof clearAutosave === 'function' ? clearAutosave() : null),
+        clear: () => clearAutosave(),
       },
       getState: () => ({
         appMode: state.appMode,
@@ -951,245 +829,43 @@
         run: id => runAppCommand(String(id || '')),
       },
       // CV debug surface. Toggles intermediate detector state capture and
-      // hands tests a compact JSON snapshot they can diff. Pure orthogonal
-      // to learning / meaning — only intermediate detector signals.
+      // hands tests a compact JSON snapshot they can diff — only intermediate
+      // detector signals.
       cv: {
-        isEnabled: () => !!(state.autoMode.cvDebug && state.autoMode.cvDebug.enabled),
         setEnabled: (on) => {
           if (!state.autoMode.cvDebug) {
-            state.autoMode.cvDebug = { enabled: false, lastDebug: null, lastExport: null };
+            state.autoMode.cvDebug = { enabled: false, lastDebug: null };
           }
           state.autoMode.cvDebug.enabled = !!on;
           if (!state.autoMode.cvDebug.enabled) state.autoMode.cvDebug.lastDebug = null;
           return state.autoMode.cvDebug.enabled;
         },
-        getLastDebug: () => clone(state.autoMode.cvDebug && state.autoMode.cvDebug.lastDebug),
-        clearLastDebug: () => {
-          if (state.autoMode.cvDebug) {
-            state.autoMode.cvDebug.lastDebug = null;
-            state.autoMode.cvDebug.lastExport = null;
-          }
-        },
-        // Compact JSON snapshot — anchors + thresholds + learned params +
+        // Compact JSON snapshot — anchors + thresholds + detection params +
         // validation warnings + (when CV debug was on) the full intermediate
         // capture. Safe to call any time after Detect Sketch.
         exportDebug: (imageName) => clone(buildCvDebugExport(imageName)),
-        // Browser-only: triggers a Blob download of the export JSON.
-        downloadDebug: (imageName) => clone(downloadCvDebugExport(imageName)),
       },
-      // Learning-mode test surface. Lets scripts/learning-tests.mjs
-      // drive recordAnchorResidual / getAnchorBias / the on-off toggle
-      // without touching the DOM or window.confirm. Not used by the
-      // app itself — purely a CDP hook for the test runner.
-      learning: {
-        isEnabled: () => isLearningEnabled(),
-        setEnabled: (on) => { setLearningEnabled(!!on); },
-        recordResidual: (kind, dx, dy, anchor) => recordAnchorResidual(kind, dx, dy, anchor),
-        // Phase 8: stage attribution for a hypothetical correction, without
-        // recording it — lets the learning suite assert the classifier.
-        classifyResidual: (kind, dx, dy) => classifyResidualStage(kind, dx, dy),
-        getBias: (kind, anchor) => clone(getAnchorBias(kind, anchor)),
-        getSampleCount: () => getLearningSampleCount(),
-        // US-096 / ADR 0055 code review, 2026-08-23: the LIVE TD-edit capture
-        // funnel (pointer-events drag-commit, line-nudge arrow keys) reached
-        // through directly, so a suite can prove a construction line is refused
-        // without having to run detection and stage a real drag.
-        evaluateManualPomSample: (annotationId, options) => {
-          const ann = state.annotations.find(a => a && a.id === annotationId);
-          if (!ann) return null;
-          return clone(evaluateManualPomSample(ann, options || {}));
-        },
-        getBuckets: () => clone(learningStore.buckets),
-        getParamSamples: () => clone(learningStore.paramSamples || {}),
-        getDetectionParams: () => clone(getLearnedDetectionParams()),
-        summarize: () => clone(summarizeLearningStore()),
-        clearBuckets: () => {
-          learningStore = emptyLearningStore();
-          saveLearningStore();
-          clearManualLearnCache();
-        },
-        applyBiasTo: (anchors) => clone(applyLearningBiasToAnchors(clone(anchors))),
-        evaluateSample: (ann) => {
-          const result = evaluateManualPomSample(ann);
-          // Surface the status + hash so a follow-up call can confirm
-          // the same hash is now considered a duplicate.
-          return {
-            status: result.status,
-            pom: result.pom || null,
-            hash: result.hash || null,
-            annHash: ann.learnSampleHash || null,
-          };
-        },
-        evaluateAutoAppliedSample: (ann) => {
-          const result = evaluateManualPomSample(ann, { allowAuto: true });
-          return {
-            status: result.status,
-            pom: result.pom || null,
-            hash: result.hash || null,
-            annHash: ann.learnSampleHash || null,
-          };
-        },
+      // Switch Auto/Manual mode through the same setAppMode the toolbar
+      // toggle uses. Anything other than 'auto' means Manual.
+      setAppMode: (mode) => { setAppMode(mode === 'auto' ? 'auto' : 'manual'); },
+      // Test-only: push a synthetic annotation straight into state.annotations
+      // (no history entry, no UI refresh). Returns the inserted id.
+      pushAnnotation: (ann) => {
+        if (!ann || typeof ann !== 'object') return null;
+        state.annotations.push(ann);
+        return ann.id;
       },
-      // Meaning-aware learning test surface. scripts/meaning-tests.mjs
-      // drives the (style, POM) catalog and the confirmation flow without
-      // touching the DOM. Keeping it here so the meaning helpers stay
-      // private to auto-drafts.js but a runner can still poke at them.
-      meaning: {
-        getStore: () => clone(meaningStore),
-        clearAll: () => { clearMeaningStore('all'); },
-        clearCurrent: () => { clearMeaningStore('current'); },
-        setStyleId: (id) => { state.styleId = (id == null ? '' : String(id)); },
-        getStyleId: () => state.styleId || '',
-        currentStyleBucketId: () => currentStyleId(),
-        resolve: (pom) => {
-          const m = resolvePomMeaning(String(pom));
-          return m ? clone(m) : null;
-        },
-        confirm: (pom, meaningId) => { confirmPomMeaning(String(pom), meaningId); },
-        forget: (pom, styleId) => forgetPomMeaning(String(pom), styleId),
-        listForStyle: (styleId) => clone(listConfirmedMeanings(styleId || currentStyleId())),
-        summarize: () => clone(summarizeMeaningStore()),
-        knownStyles: () => listKnownStyleIds(),
-        catalog: () => clone(getAllCatalogMeanings()),
-        addCustom: (label, startAnchor, endAnchor) => {
-          const entry = addCustomMeaning(label, startAnchor, endAnchor);
-          return entry ? clone(entry) : null;
-        },
-        usagePriority: (meaningId) => meaningUsagePriority(meaningId),
-        suggest: (ann, limit) => {
-          const image = pickImageForAnnotation(ann);
-          if (!image) return [];
-          return clone(rankCatalogForLine(image, ann, limit || 3));
-        },
-        // Run the full evaluate → commit cycle from a script. Returns the
-        // eval result + the final ann.learnSampleHash so callers can
-        // check whether the sample was actually recorded.
-        commitChoice: (ann, meaningId) => {
-          const evalResult = evaluateManualPomSample(ann);
-          if (evalResult.status !== 'needsConfirmation') {
-            return { status: evalResult.status, pom: evalResult.pom || null, applied: false };
-          }
-          const ok = commitMeaningChoice(evalResult, meaningId);
-          return {
-            status: ok ? 'recorded' : 'skipped',
-            pom: evalResult.pom || null,
-            applied: ok,
-            meaningId,
-          };
-        },
-        commitCustom: (ann, label) => {
-          const evalResult = evaluateManualPomSample(ann);
-          if (evalResult.status !== 'needsConfirmation') {
-            return { status: evalResult.status, pom: evalResult.pom || null, applied: false };
-          }
-          const ok = commitMeaningChoiceCustom(evalResult, label);
-          return {
-            status: ok ? 'recorded' : 'skipped',
-            pom: evalResult.pom || null,
-            applied: ok,
-            label,
-          };
-        },
-        // Force-set a usage record so recency tests can synthesize an
-        // "I confirmed this 100 days ago" history without waiting.
-        seedUsage: (meaningId, count, lastUsedAt) => {
-          if (!meaningId) return false;
-          meaningStore.usage[meaningId] = {
-            count: Number(count) || 0,
-            lastUsedAt: Number(lastUsedAt) || 0,
-          };
-          saveMeaningStore();
-          return true;
-        },
-        // Popover + canvas inspection — these reach into manual-tools.js
-        // through the shared IIFE scope (the bundle wraps every source
-        // part in the same closure). Keeping them here keeps the test
-        // surface in one namespace.
-        getCanvasTool: () => state.tool,
-        setAppMode: (mode) => { setAppMode(mode === 'auto' ? 'auto' : 'manual'); },
-      },
-      // Style evidence test surface. Read-only Phase 1 store — scripts
-      // can list/summarize/add/forget without touching the DOM. Kept
-      // alongside learning and meaning so a test runner sees one
-      // namespace per durable store.
-      styleEvidence: {
-        getStore: () => clone(styleEvidenceStore),
-        list: (styleId) => clone(listStyleEvidence(styleId || currentStyleId())),
-        summarize: (styleId) => clone(summarizeStyleEvidence(styleId || currentStyleId())),
-        add: (styleId, record) => {
-          const out = addStyleEvidence(styleId || currentStyleId(), record);
-          return out ? clone(out) : null;
-        },
-        forget: (styleId, evidenceId) =>
-          forgetStyleEvidence(styleId || currentStyleId(), evidenceId),
-        clearAll: () => clearStyleEvidence('all'),
-        clearStyle: (styleId) => clearStyleEvidence('style', styleId || currentStyleId()),
-        knownStyles: () => listKnownEvidenceStyleIds(),
-        // Phase 2 capture path. Tests can preview the candidate list and
-        // commit it without driving the dialog — the save flow uses the
-        // same two helpers under the hood.
-        collectCandidates: (styleId) =>
-          clone(collectStyleEvidenceCandidates(styleId)),
-        commitCandidates: (styleId, candidates) =>
-          commitStyleEvidenceCandidates(styleId || currentStyleId(), candidates || []),
-        applyAbsenceToDrafts: (drafts) => {
-          const copied = clone(drafts || []);
-          applyStyleAbsenceEvidenceToDrafts(copied);
-          return copied;
-        },
-        // Confirmed-evidence reuse: returns the drafts after the soft
-        // blend toward the median of recent TD-confirmed lines for the
-        // current style. Caller passes the source image so we can convert
-        // normalized evidence into world coords.
-        applyConfirmedToDrafts: (drafts, sourceImage) => {
-          const copied = clone(drafts || []);
-          applyStyleConfirmedEvidenceToDrafts(copied, sourceImage);
-          return copied;
-        },
-        confirmedMedians: (styleId) => {
-          const map = getConfirmedEvidenceMediansByPom(styleId || currentStyleId());
-          const out = {};
-          for (const [pom, value] of map.entries()) out[pom] = clone(value);
-          return out;
-        },
-        // Test-only: push a synthetic annotation into state.annotations
-        // so collectCandidates can see it. Used by the manual-confirmed
-        // path test, which needs a real annotation in the project (not
-        // just a synthetic ann passed through the meaning popover).
-        // Returns the inserted annotation id.
-        pushAnnotation: (ann) => {
-          if (!ann || typeof ann !== 'object') return null;
-          state.annotations.push(ann);
-          return ann.id;
-        },
-        // Test-only: simulate a TD edit on one applied auto annotation
-        // by id. Optional `patch` overrides specific endpoints in world
-        // coordinates so the harness can verify normalization without
-        // having to fake mouse interactions.
-        simulateTdEdit: (annotationId, patch) => {
-          const ann = state.annotations.find(a => a && a.id === annotationId);
-          if (!ann) return null;
-          ann.tdEdited = true;
-          if (patch && typeof patch === 'object') {
-            if (patch.start && typeof patch.start === 'object') {
-              ann.start = { x: Number(patch.start.x), y: Number(patch.start.y) };
-            }
-            if (patch.end && typeof patch.end === 'object') {
-              ann.end = { x: Number(patch.end.x), y: Number(patch.end.y) };
-            }
-          }
-          return clone(ann);
-        },
-        simulateTdDelete: (annotationId) => {
-          const ann = state.annotations.find(a => a && a.id === annotationId);
-          if (!ann) return null;
-          markDeletedAutoAnnotationForEvidence(ann);
-          state.annotations = state.annotations.filter(a => a && a.id !== annotationId);
-          if (state.selection.kind === 'annotation' && state.selection.id === annotationId) {
-            state.selection = { kind: null, id: null };
-          }
-          return clone(ann);
-        },
+      // Test-only: drop one annotation by id (no history entry, no
+      // deletedPomKeys bookkeeping), clearing the selection if it pointed at
+      // it. Returns the removed annotation, or null.
+      removeAnnotation: (annotationId) => {
+        const ann = state.annotations.find(a => a && a.id === annotationId);
+        if (!ann) return null;
+        state.annotations = state.annotations.filter(a => a && a.id !== annotationId);
+        if (state.selection.kind === 'annotation' && state.selection.id === annotationId) {
+          state.selection = { kind: null, id: null };
+        }
+        return clone(ann);
       },
     };
   }

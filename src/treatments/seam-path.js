@@ -7,7 +7,6 @@
 // Source part for app.js. Run `npm run build` after editing.
 
   function seamPathSchemaVersion() { return 'seam-path/1'; }
-  function seamPathTraceVersion() { return 'normalized-detection-trace/1'; }
 
   function seamPathStableValue(value) {
     if (Array.isArray(value)) return value.map(seamPathStableValue);
@@ -31,28 +30,8 @@
     return prefix + '-' + (hash >>> 0).toString(16).padStart(8, '0');
   }
 
-  function seamPathFinitePoint(point) {
-    return !!point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y));
-  }
-
   function seamPathCleanPoint(point) {
     return { x: Number(point.x), y: Number(point.y) };
-  }
-
-  function seamPathNormalizedTrace(raw, sourceImageId, sourceSha256) {
-    if (!raw || raw.version !== seamPathTraceVersion() || !Array.isArray(raw.points)) return null;
-    const points = raw.points.filter(seamPathFinitePoint).map(point => ({
-      x: clamp(Number(point.x), 0, 1),
-      y: clamp(Number(point.y), 0, 1),
-    }));
-    if (points.length < 2) return null;
-    return {
-      version: seamPathTraceVersion(),
-      coordinateSpace: 'source-normalized',
-      sourceImageId: raw.sourceImageId != null ? raw.sourceImageId : sourceImageId,
-      sourceSha256: String(raw.sourceSha256 || sourceSha256 || ''),
-      points,
-    };
   }
 
   function seamPathNodeIds(ann) {
@@ -161,14 +140,7 @@
       ann.tdApproved = false;
       ann.tdApprovalRequired = true;
       ann.approvedAt = null;
-      if (isTDReviewDraft(ann)) ann.tdEdited = true;
-      if (geometryChanged && ann.seamPath.fidelityReceipt) {
-        ann.seamPath.fidelityReceipt = {
-          ...ann.seamPath.fidelityReceipt,
-          status: 'review',
-          invalidatedReason: 'td_geometry_changed',
-        };
-      }
+      markDraftTouchedByTD(ann);
     }
     return { geometryChanged, technicalChanged, geometryFingerprint, technicalContentFingerprint };
   }
@@ -269,11 +241,6 @@
       nextNodeSequence: Number.isInteger(source.nextNodeSequence) ? source.nextNodeSequence : 1,
       nextRunSequence: Number.isInteger(source.nextRunSequence) ? source.nextRunSequence : 1,
       treatmentRuns: Array.isArray(source.treatmentRuns) ? clone(source.treatmentRuns) : [],
-      detectionTrace: seamPathNormalizedTrace(source.detectionTrace,
-        ann.sourceImageId, ann.sourceSha256),
-      endpointTopology: source.endpointTopology ? clone(source.endpointTopology) : null,
-      pathCompleteness: source.pathCompleteness ? clone(source.pathCompleteness) : null,
-      fidelityReceipt: source.fidelityReceipt ? clone(source.fidelityReceipt) : null,
       geometryFingerprint: source.geometryFingerprint || null,
       technicalContentFingerprint: source.technicalContentFingerprint || null,
       validationStatus: source.validationStatus || 'pass',
@@ -318,10 +285,6 @@
         nextNodeSequence: 1,
         nextRunSequence: 1,
         treatmentRuns: [],
-        detectionTrace: options.detectionTrace || null,
-        endpointTopology: options.endpointTopology || null,
-        pathCompleteness: options.pathCompleteness || null,
-        fidelityReceipt: options.fidelityReceipt || null,
         geometryFingerprint: null,
         technicalContentFingerprint: null,
       };
@@ -411,7 +374,7 @@
     seamPathRefreshFingerprints(ann, true);
     state.selection.part = seamPathTreatmentPart(following.id);
     if (!ann.labelManual) ann.label = computeDefaultLabelPosition(ann);
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     return { status: 'inserted', nodeId, runId: following.id };
   }
 
@@ -526,7 +489,7 @@
     seamPathRefreshFingerprints(ann, true);
     state.selection.part = seamPathTreatmentPart(selected.id);
     if (!ann.labelManual) ann.label = computeDefaultLabelPosition(ann);
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     return { status: 'inserted', nodeIds, runId: selected.id };
   }
 
@@ -642,7 +605,7 @@
     run.treatment = clone(treatment);
     if (ann.seamPath.treatmentRuns.length === 1) ann.lineTreatment = clone(treatment);
     seamPathRefreshFingerprints(ann, true);
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     return true;
   }
 
@@ -660,7 +623,7 @@
     if (!changed) return false;
     ann.lineTreatment = clone(treatment);
     seamPathRefreshFingerprints(ann, true);
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     return true;
   }
 
@@ -731,7 +694,7 @@
     state.selection.part = seamPathTreatmentPart(left.id);
     ann.lineTreatment = clone(ann.seamPath.treatmentRuns[0].treatment);
     seamPathRefreshFingerprints(ann, true);
-    if (isTDReviewDraft(ann)) markDraftTouchedByTD(ann);
+    markDraftTouchedByTD(ann);
     pushHistoryIfChanged();
     updateUI();
     requestRender();
@@ -883,10 +846,6 @@
       nextNodeSequence: 1,
       nextRunSequence: 1,
       treatmentRuns: [],
-      detectionTrace: null,
-      endpointTopology: null,
-      pathCompleteness: null,
-      fidelityReceipt: null,
       geometryFingerprint: null,
       technicalContentFingerprint: null,
     };
